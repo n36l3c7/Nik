@@ -3,7 +3,7 @@ import { RotateCcw } from 'lucide-react'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button } from '../ui/index.js'
+import { Badge, Button, EmptyState } from '../ui/index.js'
 
 /*
  * The versions of a playbook, newest first. The current one is what runs.
@@ -62,9 +62,11 @@ export default function PlaybookVersionsTab({ playbook, canEdit, onRestored }) {
   }
   if (versions.length === 0) {
     return (
-      <p className="max-w-prose text-sm text-fg-muted">
-        No version yet. The canvas edits a draft; “Save as version 1” checks it and makes it what runs.
-      </p>
+      <EmptyState
+        skull
+        title="No version yet"
+        message="The canvas edits a draft; “Save as version 1” checks it and makes it what runs."
+      />
     )
   }
   return (

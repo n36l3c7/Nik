@@ -1,0 +1,38 @@
+{
+  "args": {
+    "external_id": "INC-2026-0417",
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/agents/actions/set-external-id",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          },
+          "data": {
+            "externalId": "INC-2026-0417"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

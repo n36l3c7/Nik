@@ -1,0 +1,84 @@
+{
+  "args": {
+    "query": "browser"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-scripts",
+        "query": {
+          "query": "browser",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "7200000000000000001",
+              "scriptName": "Collect browser history",
+              "scriptType": "artifactCollection",
+              "osTypes": [
+                "windows"
+              ],
+              "inputRequired": false,
+              "inputInstructions": "",
+              "inputExample": "",
+              "version": "1.0.0",
+              "scopeLevel": "sentinel",
+              "fileName": "browser-history.ps1",
+              "scriptRuntimeTimeoutSeconds": 3600,
+              "createdByUserId": "4400000000000000001",
+              "supportedDestinations": [
+                "SentinelCloud",
+                "Local"
+              ]
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "scripts": [
+      {
+        "id": "7200000000000000001",
+        "scriptName": "Collect browser history",
+        "scriptType": "artifactCollection",
+        "osTypes": [
+          "windows"
+        ],
+        "inputRequired": false,
+        "inputInstructions": "",
+        "inputExample": "",
+        "version": "1.0.0",
+        "scopeLevel": "sentinel",
+        "fileName": "browser-history.ps1",
+        "scriptRuntimeTimeoutSeconds": 3600,
+        "createdByUserId": "4400000000000000001",
+        "supportedDestinations": [
+          "SentinelCloud",
+          "Local"
+        ]
+      }
+    ],
+    "ids": [
+      "7200000000000000001"
+    ],
+    "script_id": "7200000000000000001",
+    "script_name": "Collect browser history",
+    "input_required": false,
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

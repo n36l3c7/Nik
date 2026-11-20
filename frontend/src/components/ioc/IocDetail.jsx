@@ -11,6 +11,7 @@ import {
   analysisColor,
   analysisLabel,
   countsLine,
+  heldNotice,
   retentionLabel,
   verdictChanges,
   verdictMeta,
@@ -18,6 +19,7 @@ import {
 } from '../../domain/enrichment.js'
 import { formatDateTime, formatRelative } from '../../lib/time.js'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 
 /*
  * Everything Nik knows about one indicator, in two columns:
@@ -27,6 +29,9 @@ import IncidentNumber from '../ui/IncidentNumber.jsx'
  *          its earlier verdicts and its answer as JSON (copy or download).
  * Answers past the retention of their type are asked again when the page
  * opens (Settings can turn that off); "Check again" asks at once.
+ * A value the data guard holds says so where the verdict would be, with the
+ * classes it carries: no source is asked until an administrator opens them
+ * (Settings, Threat intelligence). What the sources said before stays.
  */
 
 const SHARE_COLOUR = {
@@ -42,7 +47,7 @@ function Heading({ children }) {
   return <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">{children}</h3>
 }
 
-function Verdict({ summary, retentionDays, lookedUp, young = null }) {
+function Verdict({ summary, retentionDays, lookedUp, young = null, held = null }) {
   if (!lookedUp)
     return (
       <div className="border border-line bg-panel px-3 py-2.5 text-xs text-fg-muted">
@@ -53,8 +58,8 @@ function Verdict({ summary, retentionDays, lookedUp, young = null }) {
     return (
       <div className="border border-line bg-panel px-3 py-2.5">
         <p className="text-xs text-fg-muted">Reputation · what the sources say</p>
-        <p className="font-mono text-lg font-extrabold text-fg">not checked</p>
-        <p className="text-xs text-fg-muted">No source has answered about this value yet.</p>
+        <p className="font-mono text-lg font-extrabold text-fg">{held ? 'held' : 'not checked'}</p>
+        <p className="text-xs text-fg-muted">{held ? held.line : 'No source has answered about this value yet.'}</p>
       </div>
     )
   const meta = verdictMeta(summary.verdict)
@@ -88,6 +93,11 @@ function Verdict({ summary, retentionDays, lookedUp, young = null }) {
       <p className="text-[11px] text-fg-subtle">
         The score weighs each source (shown as ×1 to ×3). Answers stand for {retentionLabel(retentionDays)}.
       </p>
+      {held && (
+        <p className="text-xs text-fg-muted">
+          Held now: these answers were given before, and the sources are not asked again while it is held.
+        </p>
+      )}
     </div>
   )
 }
@@ -379,7 +389,10 @@ export default function IocDetail({
   onNotice,
   onAnalysis = () => {},
   onOpenArtifact = () => {},
+  onOpenSettings = null,
 }) {
+  const { can } = useAuth()
+  const isAdmin = can('admin')
   const lookedUp = LOOKUP_TYPES.has(type)
   const [lookup, setLookup] = useState({ loading: true, data: null, error: null })
   const [intel, setIntel] = useState({ loading: lookedUp, data: null, error: null })
@@ -448,6 +461,8 @@ export default function IocDetail({
   // Sources that are installed and off: their connector has no instance that is on.
   const off = data?.off ?? []
   const canCheck = Boolean(data && !data.blocked && data.providers.length > 0)
+  // Held by the data guard: said where the verdict would be, and under the sources.
+  const held = heldNotice(data?.held, isAdmin)
   // The source shown: the analyst's choice, else the first that flags the value, else the first.
   const current =
     results.find((r) => r.provider === chosen) ??
@@ -476,7 +491,13 @@ export default function IocDetail({
             </Button>
           )}
           {canCheck && (
-            <Button size="xs" icon={RefreshCw} onClick={() => check(results.length > 0)} disabled={checking}>
+            <Button
+              size="xs"
+              icon={RefreshCw}
+              waiting={checking}
+              onClick={() => check(results.length > 0)}
+              disabled={checking}
+            >
               {checking ? 'Checking…' : results.length ? 'Check again' : 'Check now'}
             </Button>
           )}
@@ -490,6 +511,7 @@ export default function IocDetail({
             retentionDays={data?.retentionDays ?? 30}
             lookedUp={lookedUp}
             young={youngDomainDays(data?.results)}
+            held={held}
           />
 
           <AnalysedByNik
@@ -506,6 +528,22 @@ export default function IocDetail({
               {intel.loading && <p className="font-mono text-xs text-fg-muted">Loading…</p>}
               {intel.error && <p className="text-xs text-high">{intel.error}</p>}
               {data?.blocked && <p className="text-xs text-fg-muted">Never sent outside: {data.blocked}.</p>}
+              {held && (
+                <div
+                  role="status"
+                  aria-label="Held by the data guard"
+                  className="space-y-1.5 border-l-2 border-med-line bg-med-soft/50 px-3 py-2 text-xs text-fg"
+                >
+                  <p>
+                    <b>{held.line}</b> {held.advice}
+                  </p>
+                  {isAdmin && onOpenSettings && (
+                    <Button size="xs" variant="secondary" onClick={onOpenSettings}>
+                      Open Threat intelligence
+                    </Button>
+                  )}
+                </div>
+              )}
               {data && !data.blocked && data.providers.length === 0 && (
                 <p className="text-xs text-fg-muted">
                   {off.length
@@ -582,7 +620,7 @@ export default function IocDetail({
                     ))}
                 </ul>
               )}
-              {canCheck && results.length === 0 && !intel.loading && (
+              {canCheck && !held && results.length === 0 && !intel.loading && (
                 <p className="text-xs text-fg-muted">
                   Not checked yet. “Check now” sends the value to {data.providers.length} source
                   {data.providers.length === 1 ? '' : 's'}.
@@ -625,7 +663,9 @@ export default function IocDetail({
                   ? 'This type is not looked up on external sources.'
                   : data?.blocked
                     ? 'This value stays inside Nik.'
-                    : 'What each source says about this value appears here once it has been checked.'}
+                    : held
+                      ? 'This value is held by the data guard: no source was asked about it.'
+                      : 'What each source says about this value appears here once it has been checked.'}
               </p>
             </div>
           )}

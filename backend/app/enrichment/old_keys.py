@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..automation import connector_actions, instance_keys, state
+from ..automation import connector_actions, credentials, instance_keys, state
 from ..automation.connector_runtime import AUTH_FIELDS
 from ..automation.connectors import ConnectorFile
 from ..core import audit, vault
@@ -91,8 +91,9 @@ def _was_on(db: OrmSession, provider: str) -> bool:
     return bool(allowed.get(provider, True)) if isinstance(allowed, dict) else True
 
 
-def _holds(connection: Connection, field: str, secret: str) -> bool:
-    return any(key.secrets.get(field) == secret for key in instance_keys.keys_of(connection))
+def _holds(db: OrmSession, connection: Connection, field: str, secret: str) -> bool:
+    """Whether a key of the instance is this secret: typed into it, or the value of the credential it names."""
+    return any(credentials.known(db, key.secrets).get(field) == secret for key in instance_keys.keys_of(connection))
 
 
 def _make(
@@ -162,7 +163,7 @@ def adopt(db: OrmSession) -> int:
             missing = [
                 (key, secret)
                 for key, secret in keys
-                if not any(_holds(connection, field, secret) for connection in instances)
+                if not any(_holds(db, connection, field, secret) for connection in instances)
             ]
             if missing:
                 connection = _make(db, row, connector, field, provider, missing)

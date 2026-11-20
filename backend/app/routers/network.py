@@ -160,6 +160,46 @@ async def store_capture(
     return row
 
 
+def keep_capture(
+    db: OrmSession,
+    incident: Incident | None,
+    data: bytes,
+    file_name: str,
+    actor: str,
+    background_tasks: Any,
+    origin: str = "",
+) -> NetworkCapture:
+    """Store bytes Nik holds already as a capture and queue its analysis, where there is no upload
+    (a file artifact analysed as a capture): what ``store_capture`` does, under the same limit.
+    Raises ``HTTPException`` for what is not a capture or is too large."""
+    ext = store.capture_format(data[:CHUNK])
+    if ext is None:
+        raise HTTPException(status_code=422, detail="Not a pcap or pcapng file.")
+    if len(data) > settings.PCAP_MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"The capture exceeds {settings.PCAP_MAX_MB} MB.")
+    capture_id = uuid.uuid4().hex
+    store.write_capture(capture_id, ext, [data])
+    row = NetworkCapture(
+        id=capture_id,
+        incident_id=incident.id if incident is not None else None,
+        kind="pcap",
+        file_name=(file_name or f"capture.{ext}")[:255],
+        size=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        created_at=now_iso(),
+        created_by=actor,
+        meta={},
+        summary={},
+    )
+    db.add(row)
+    from ..core import audit
+
+    said = f"Made the capture {row.file_name} ({len(data)} bytes)" + (f" from {origin}" if origin else "")
+    audit.record(db, actor, "capture.upload", said, incident)
+    service.queue_analysis(db, row, background_tasks)
+    return row
+
+
 # --------------------------------------------------------------------------- #
 # Captures                                                                    #
 # --------------------------------------------------------------------------- #

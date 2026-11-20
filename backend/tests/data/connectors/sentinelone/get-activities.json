@@ -1,0 +1,81 @@
+{
+  "args": {
+    "activity_types": [
+      80
+    ],
+    "agent_ids": [
+      "1234567890123456789"
+    ],
+    "sort_by": "createdAt",
+    "sort_order": "desc"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "activityTypes": "80",
+          "agentIds": "1234567890123456789",
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8800000000000000002",
+              "activityType": 80,
+              "agentId": "1234567890123456789",
+              "siteId": "2222222222222222222",
+              "threatId": null,
+              "primaryDescription": "The agent WKS-FINANCE-01 uploaded the files that were asked for.",
+              "secondaryDescription": "",
+              "data": {
+                "computerName": "WKS-FINANCE-01"
+              },
+              "createdAt": "2026-11-20T10:02:11.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "activities": [
+      {
+        "id": "8800000000000000002",
+        "activityType": 80,
+        "agentId": "1234567890123456789",
+        "siteId": "2222222222222222222",
+        "threatId": null,
+        "primaryDescription": "The agent WKS-FINANCE-01 uploaded the files that were asked for.",
+        "secondaryDescription": "",
+        "data": {
+          "computerName": "WKS-FINANCE-01"
+        },
+        "createdAt": "2026-11-20T10:02:11.000000Z"
+      }
+    ],
+    "ids": [
+      "8800000000000000002"
+    ],
+    "activity_id": "8800000000000000002",
+    "activity_type": 80,
+    "description": "The agent WKS-FINANCE-01 uploaded the files that were asked for.",
+    "agent_id": "1234567890123456789",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

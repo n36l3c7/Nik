@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, Pencil, Plus, Power, Radar, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * capa rules settings section (admin only). The capa worker ships Mandiant's
@@ -59,11 +60,20 @@ export default function CapaRulesSection() {
     load()
   }, [load])
 
-  const edit = (rule) => {
-    setEditing(rule ? rule.id : 'new')
-    setSource(rule ? rule.source : TEMPLATE)
-    setValidation(null)
-  }
+  // The rule in the editor as it was opened: what it is compared with before it is left.
+  const opened = editing === null ? null : editing === 'new' ? TEMPLATE : rules.find((r) => r.id === editing)?.source
+  const unsaved = useUnsavedChanges(editing !== null && source !== (opened ?? source), {
+    what: editing === 'new' ? 'The new capa rule' : 'The capa rule',
+    name: editing === 'new' ? '' : rules.find((r) => r.id === editing)?.name,
+    save: () => save(),
+  })
+  /** Open a rule in the editor (null: a new one), after asking about the one that is being written. */
+  const edit = (rule) =>
+    unsaved.leave(() => {
+      setEditing(rule ? rule.id : 'new')
+      setSource(rule ? rule.source : TEMPLATE)
+      setValidation(null)
+    })
 
   const validate = async () => {
     setBusy(true)
@@ -89,8 +99,10 @@ export default function CapaRulesSection() {
       }
       setEditing(null)
       await load()
+      return true
     } catch (err) {
       setError(err.message)
+      return false
     } finally {
       setBusy(false)
     }
@@ -159,9 +171,7 @@ export default function CapaRulesSection() {
         </div>
 
         {loading ? (
-          <p className="flex items-center gap-2 font-mono text-sm text-fg-muted">
-            <MicroSkull /> loading…
-          </p>
+          <Wait>Loading the rules…</Wait>
         ) : rules.length === 0 && editing === null ? (
           <p className="text-sm text-fg-muted">No admin rules yet: capa uses its bundled rule set.</p>
         ) : (
@@ -255,13 +265,19 @@ export default function CapaRulesSection() {
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" size="sm" disabled={busy || !source.trim()}>
+              <Button waiting={busy} type="submit" size="sm" disabled={busy || !source.trim()}>
                 {busy ? 'Checking…' : editing === 'new' ? 'Save rule' : 'Save changes'}
               </Button>
               <Button type="button" variant="secondary" size="sm" onClick={validate} disabled={busy}>
                 Validate
               </Button>
-              <Button type="button" variant="ghost" size="sm" icon={X} onClick={() => setEditing(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                icon={X}
+                onClick={() => unsaved.leave(() => setEditing(null))}
+              >
                 Cancel
               </Button>
             </div>

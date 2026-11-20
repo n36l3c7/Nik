@@ -49,7 +49,9 @@ import {
   uninstallCounts,
 } from '../../../domain/packs.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * Automation → Content packs (who manages content).
@@ -95,6 +97,11 @@ function Diff({ text }) {
 /** The plan of an import: each item with what would be done, kept or left out. */
 function Plan({ plan, onDone, onCancel }) {
   const [skipped, setSkipped] = useState(() => initialSkips(plan))
+  // What was chosen to keep or leave out, where it differs from what the plan proposed.
+  const [proposed] = useState(() => JSON.stringify(choicesOf(skipped)))
+  const unsaved = useUnsavedChanges(JSON.stringify(choicesOf(skipped)) !== proposed, {
+    what: 'The plan of the pack',
+  })
   const [open, setOpen] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -187,14 +194,14 @@ function Plan({ plan, onDone, onCancel }) {
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={apply} disabled={!can.ok || busy}>
+        <Button waiting={busy} onClick={apply} disabled={!can.ok || busy}>
           {busy
             ? 'Installing…'
             : can.changes
               ? `Install (${can.changes} ${can.changes === 1 ? 'change' : 'changes'})`
               : 'Install'}
         </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={busy}>
+        <Button variant="secondary" onClick={() => unsaved.leave(onCancel)} disabled={busy}>
           Cancel
         </Button>
         <p className="text-xs text-fg-muted">
@@ -249,6 +256,11 @@ function ExportForm({ onClose, onError }) {
   }, [asked])
   const problem = packProblem(form, chosen.size)
   const set = (patch) => setForm((old) => ({ ...old, ...patch }))
+  // A pack being described and filled: leaving the form, Cancel included, asks first.
+  const unsaved = useUnsavedChanges(
+    chosen.size > 0 || Boolean(form.id.trim() || form.name.trim() || form.description.trim() || form.author.trim()),
+    { what: 'The pack being made', name: form.name },
+  )
   const make = () => {
     setBusy(true)
     postForBlob('/packs/export', { ...form, items })
@@ -377,10 +389,10 @@ function ExportForm({ onClose, onError }) {
         Lists go with what they hold (otherwise only what they are)
       </label>
       <div className="flex flex-wrap items-center gap-2">
-        <Button icon={Download} onClick={make} disabled={Boolean(problem) || busy}>
+        <Button waiting={busy} icon={Download} onClick={make} disabled={Boolean(problem) || busy}>
           {busy ? 'Exporting…' : 'Export'}
         </Button>
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="secondary" onClick={() => unsaved.leave(onClose)}>
           Cancel
         </Button>
         <p className="text-xs text-fg-muted">
@@ -662,6 +674,7 @@ function UninstallDialog({ card, onClose, onDone }) {
           </Button>
           {plan && held.length === 0 && (
             <Button
+              waiting={busy}
               variant="danger"
               disabled={busy}
               onClick={() =>
@@ -785,6 +798,7 @@ function BulkDialog({ action, cards, onClose }) {
               Cancel
             </Button>
             <Button
+              waiting={busy}
               variant={action === 'uninstall' ? 'danger' : 'primary'}
               disabled={busy || !plan || counts.ok === 0}
               onClick={apply}
@@ -896,6 +910,10 @@ function AddressDialog({ catalogue, onClose, onSaved }) {
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const unsaved = useUnsavedChanges(
+    address.trim() !== (catalogue.custom ? catalogue.address : '') || Boolean(key.trim()),
+    { what: 'The address of the catalogue' },
+  )
   const save = (body) => {
     setBusy(true)
     setError(null)
@@ -907,7 +925,7 @@ function AddressDialog({ catalogue, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="Catalogue address"
       footer={
         <>
@@ -1074,7 +1092,7 @@ export default function ContentPacksSection() {
     setBusy('file')
     setError(null)
     setMessage(null)
-    upload('/packs/inspect', file)
+    transfer(`Uploading ${file.name}`, (onProgress) => upload('/packs/inspect', file, { onProgress }))
       .then(
         (found) => {
           setPlan(found)
@@ -1088,20 +1106,21 @@ export default function ContentPacksSection() {
     setBusy(card.id)
     setError(null)
     setMessage(null)
-    api
-      .post(`/packs/catalogue/${encodeURIComponent(card.id)}/inspect`)
+    transfer(`Taking ${card.name} from the catalogue`, () =>
+      api.post(`/packs/catalogue/${encodeURIComponent(card.id)}/inspect`),
+    )
       .then(setPlan, (failure) => setError(failure.message))
       .finally(() => setBusy(''))
   }
   const download = (pack) =>
-    fetch(apiUrl(`/packs/${encodeURIComponent(pack.id)}/download`), { credentials: 'include' })
-      .then((response) =>
+    transfer(`Downloading ${pack.id}-${pack.version}.nikpack`, () =>
+      fetch(apiUrl(`/packs/${encodeURIComponent(pack.id)}/download`), { credentials: 'include' }).then((response) =>
         response.ok ? response.blob() : Promise.reject(new Error(`Request failed (${response.status})`)),
-      )
-      .then(
-        (blob) => saveBlob(blob, `${pack.id}-${pack.version}.nikpack`),
-        (failure) => setError(failure.message),
-      )
+      ),
+    ).then(
+      (blob) => saveBlob(blob, `${pack.id}-${pack.version}.nikpack`),
+      (failure) => setError(failure.message),
+    )
 
   const cards = packCards(catalogue, packs)
   const counts = cardCounts(cards)
@@ -1122,6 +1141,7 @@ export default function ContentPacksSection() {
           </div>
           <div className="flex gap-2">
             <Button
+              waiting={busy === 'file'}
               size="sm"
               variant="secondary"
               icon={Upload}
@@ -1184,6 +1204,7 @@ export default function ContentPacksSection() {
           </span>
           <span className="flex-1" />
           <Button
+            waiting={busy === 'catalogue'}
             size="xs"
             variant="secondary"
             icon={RefreshCw}
@@ -1335,9 +1356,15 @@ export default function ContentPacksSection() {
         </p>
       )}
       {!loading && groups.length === 0 && (
-        <p className="border border-line px-3 py-6 text-center text-sm text-fg-muted">
-          {narrowed ? 'No pack matches.' : 'No pack yet.'}
-        </p>
+        <EmptyState
+          skull
+          title={narrowed ? 'No pack matches' : 'No pack yet'}
+          message={
+            narrowed
+              ? 'No pack matches. Change what you typed, or the filters above.'
+              : 'A pack brings connectors, playbooks, types and lists together: install one from the catalogue, or upload a .nikpack.'
+          }
+        />
       )}
       {groups.map((group) => (
         <section key={group.vendor} aria-label={`Packs of ${group.vendor}`} className="space-y-2">

@@ -1,0 +1,71 @@
+{
+  "args": {
+    "statuses": [
+      "Enabled"
+    ],
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/firewall-control",
+        "query": {
+          "statuses": "Enabled",
+          "siteIds": "2222222222222222222",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8500000000000000001",
+              "name": "Block SMB out",
+              "action": "Block",
+              "direction": "outbound",
+              "status": "Enabled",
+              "osType": "windows",
+              "protocol": "TCP",
+              "scope": "site",
+              "scopeId": "2222222222222222222",
+              "order": 3
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "rules": [
+      {
+        "id": "8500000000000000001",
+        "name": "Block SMB out",
+        "action": "Block",
+        "direction": "outbound",
+        "status": "Enabled",
+        "osType": "windows",
+        "protocol": "TCP",
+        "scope": "site",
+        "scopeId": "2222222222222222222",
+        "order": 3
+      }
+    ],
+    "ids": [
+      "8500000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

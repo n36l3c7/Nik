@@ -7,6 +7,158 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-11-20
+
+Moving around Nik and not losing work on the way; credentials kept once
+and used by any instance; playbooks that work with files; the data guard
+on every look-up; and SentinelOne written from the vendor's own reference.
+
+### Added
+
+- **The rail always goes home.** Its entries are, from the top,
+  Dashboards, Incidents, My tasks, Artifacts, Indicators, Automations and
+  Playground. An entry shows the first screen of its section from wherever
+  it is pressed, does nothing when that screen is already shown, and no
+  longer closes what it opened; Back returns to where one was. The side
+  panels of the artifacts and of the indicators have their own button to
+  hide them.
+- **Artifacts is a page.** The Artifacts entry opens `/artifacts`: the
+  list at the side and, until one is chosen, an empty page that says so.
+  The entry returns there from an open artifact; the incident is not
+  shown under it.
+- **Every transfer shows that it is happening.** Uploads and downloads
+  whose size is known show a bar with how much has passed; everything
+  else that takes a moment shows the (o.o) wait with a sentence, in the
+  button that started it or in a tray at the foot of the window for what
+  is started from a menu or by dropping a file.
+- **Empty lists look alike.** A page or a main list with nothing in it
+  shows the sleeping skull with how something gets there, and other
+  words when a search or a filter left nothing; small inner lists keep
+  their one line.
+- **A search bar in the middle of the header** of every screen replaces
+  the search entry of the rail; it opens the same search as Ctrl+K.
+- **Nothing unsaved is lost without asking.** Leaving a form, an editor or
+  a dialog that holds changes not saved asks first, whatever the way out
+  (the rail, a tab, another incident, a link, Back and Forward, closing a
+  dialog, another item of a list, signing out, closing the browser tab),
+  with *Stay*, *Leave without saving* and, where it can be saved from
+  there, *Save and leave*. A form nobody touched, and what saves itself,
+  never ask.
+- **Credentials.** A secret (an API key, a token) or a pair (a user name
+  and a password) is kept once in *Settings → Credentials* and used by any
+  number of instances: the instance names it, by picking it or by writing
+  `{{ credentials.<name> }}`, and the value is read when a request is
+  sent, so changing it in one place changes it everywhere. The value is
+  never shown; the list says where each is used and one in use cannot be
+  deleted; uninstalling a pack leaves them. *Keep as a credential…* turns
+  a secret already typed into an instance into one without typing it
+  again. Only an instance reads a credential: playbooks, scripts, the War
+  Room, the Playground and connector files cannot, and say so.
+- **Playbooks work with files.** A group of nodes, *Files*: add a file to
+  an incident (a file Nik holds, an attachment of a held e-mail, or text
+  or base64 content a step produced), download a file from an address the
+  playbook may reach, put host evidence in an incident, link an artifact
+  or take it out, list the artifacts of an incident, read one, tag it,
+  give it an expiry, unpack an archive. Nothing is run or opened: a file a
+  playbook adds is stored as it came and analysed as an upload is.
+- **A playbook starts an analysis and reads what it found.** *Analyse an
+  artifact* does what *Re-analyse* does for a file, an e-mail or a capture
+  (or the static analysis, the disassembly or capa alone), waits for it
+  with a time limit or goes on, and fails with the name of a worker that
+  is missing or down. *Read an analysis* gives the verdict, the indicators
+  and, by kind, hashes, type and matched rules, SPF, DKIM and DMARC, links
+  and attachments, hosts and names: bounded, by reference, never the bytes.
+- **Analyse as an e-mail, analyse as a capture.** A file Nik holds that is
+  a message (`.eml`, `.msg`) or a packet capture is analysed as one, from
+  its page, from its menu, or from the node (`as`).
+- **Three events** for triggers and webhooks: `code.analysed`,
+  `capabilities.analysed` and `capture.analysed`, on success and on
+  failure.
+- **A connector can unpack an archive.** `unpack: { format: zip, password }`
+  beside `answer: file` keeps the archive and each file inside it as
+  artifacts of the incident. Zip, plain or protected (ZipCrypto, AES), in
+  memory, bounded against archive bombs; a name is never a path, nothing
+  is run or opened, and the password is not shown in runs. An archive
+  that cannot be opened (a wrong password, not a zip, too much inside) is
+  kept as evidence and the step fails naming it; *Unpack an archive*
+  opens it later.
+- **Hosts downloads may come from.** A connector can ask its instance for
+  the storage hosts its files are served from (`download_hosts_from` and
+  a configuration entry of type `hosts`): an administrator writes host
+  names, or `*.name` for the hosts under a name, in the instance. A file
+  download then follows a link or a redirect there over https, with no
+  credentials and no header of the connector. Left empty, nothing
+  changes, and the failure says where to add the host.
+- A sixth shipped playbook, *Analyse the attachments of an e-mail*, off
+  until someone turns it on.
+- **SentinelOne EDR 1.1.0: from 8 commands to 142**, written from
+  SentinelOne's own API reference: agents (isolate, reconnect, scan, tag,
+  restart, disable), threats (mitigation, verdict, notes, timeline,
+  blocklist and exclusions), alerts and custom detection rules, remote
+  scripts, forensic collections, indicators of compromise, applications
+  and vulnerabilities; the file of a threat, files and logs of an
+  endpoint, script output and the console's exports are kept as artifacts
+  of the incident, a fetched archive is unpacked, and downloads that
+  SentinelOne serves from its storage follow the hosts listed in the
+  instance. Every action names
+  its targets: one whose id or filter is empty is stopped before it is
+  sent. **SentinelOne SIEM 1.1.0**: event search and saved searches.
+
+### Changed
+
+- **The data guard judges every look-up, not only those of playbooks.**
+  *Check now*, the checks in bulk and the automatic look-ups no longer
+  send a value that carries an e-mail address, a name under the
+  organisation's own domains (or a private address inside a link), or an
+  allowlisted name inside a longer value: the indicator reads *held*, with
+  the reason, and no source is asked. An administrator opens each class
+  for the look-ups made outside playbooks in *Settings → Threat
+  intelligence → What the look-ups may send*, behind a double check and
+  with an audit entry; all are closed after the upgrade. Playbooks keep
+  their own opened classes, and the two do not mix.
+- **Shodan, Google Safe Browsing and GreyNoise 1.1.1** take their key as
+  the credentials of the instance, like the other sources. Stored keys
+  are kept when the pack is updated. GreyNoise now sends its key with the
+  public RSS feed command too.
+- `nik.link-artifact` also links captures and is listed under *Files*.
+- "Test the instance" of SentinelOne asks `/system/info`; its fetch asks
+  `createdAt__gte`.
+
+### Fixed
+
+- **A file a playbook keeps is written by the backend.** In the container
+  deployment the automation worker reads the store without being able to
+  write it, so a connector command that keeps a file (6.5), the Mail
+  connector's `get-attachments` and the message a fetch keeps as evidence
+  failed there. The bytes are now handed to the backend through the
+  database and the step waits; nothing changes in the compose file.
+- SentinelOne: a Deep Visibility query never ended on the states the
+  console really gives, and a Data Lake query read a field that does not
+  exist (`totalSteps` for `stepsTotal`).
+- Rotating `SECRET_KEY` did not re-encrypt the extra keys of an instance.
+- In *Settings → Connectors* the notice of a switch could erase the error
+  of a test pressed right after it.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migrations `0046_credentials` (one table) and `0047_playbook_files`
+  (two tables) run at start; nothing stored is changed.
+- **Look-ups that were sent before may now be held.** After the upgrade a
+  value that carries an e-mail address, a name under your own domains or
+  an allowlisted name reads *held* until an administrator opens its class
+  in *Settings → Threat intelligence → What the look-ups may send*.
+  Verdicts obtained before stay, and are not refreshed while held.
+- Update Nik first, then the packs: SentinelOne EDR and SIEM 1.1.0 and
+  Shodan, Safe Browsing and GreyNoise 1.1.1 need Nik 6.6. No stored key
+  has to be typed again, and no command, argument or output of SentinelOne
+  was renamed.
+- A SentinelOne action whose id comes out empty now fails before it is
+  sent; before, it was sent with an empty target.
+- Tests and scripts that drove the interface: the rail entry of Settings
+  is named *Platform settings*, there is no search entry on the rail, and
+  an entry no longer closes its page.
+
 ## [6.5.0] - 2026-11-20
 
 The connector engine handles files and its expressions decide and count;
@@ -3291,7 +3443,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.5.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.6.0...HEAD
+[6.6.0]: https://github.com/n36l3c7/Nik/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/n36l3c7/Nik/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/n36l3c7/Nik/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/n36l3c7/Nik/compare/v6.2.0...v6.3.0

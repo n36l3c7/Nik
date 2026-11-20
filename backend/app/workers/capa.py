@@ -87,6 +87,11 @@ def run_capa_job(sha256: str) -> None:
             except AnalyzerError as exc:
                 row.status, row.error = "error", str(exc)
             row.finished_at = now_iso()
+            # Said to the playbooks and the webhooks that wait for it, done or failed.
+            from ..automation import triggers
+
+            db.flush()
+            triggers.capabilities_analysed(db, row)
             db.commit()
         finally:
             db.close()

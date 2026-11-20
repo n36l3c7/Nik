@@ -31,6 +31,12 @@ const AUTH_NAMES = {
   zscaler: 'the Zscaler sign-in',
 }
 
+// The credentials that are a single value.
+const ONE_VALUE = new Set(['bearer', 'header', 'query'])
+
+// What the server gives as the label of an entry whose file says none: its name, capitalised.
+const nameAsLabel = (name) => name.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+
 const label = (name) => SECRET_LABELS[name] ?? name.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
 
 /** How a connector signs in, in words ("a token"); '' when it needs no credentials. */
@@ -59,16 +65,21 @@ export function fieldsOf(connector) {
       masked: false,
     })
   }
+  // Credentials of one value (a token, a key in a header or in the address) are one field: what the
+  // connector calls the entry and says of it are that field's, as for a secret of its own.
+  const auth = (connector?.configuration ?? []).find((item) => ONE_VALUE.has(item.type))
+  // An entry the file gave no label comes with its name as one ("Credentials"): that says nothing.
+  const named = auth && auth.label && auth.label !== nameAsLabel(auth.name) ? auth.label : ''
   for (const name of connector?.secrets ?? []) {
     const param = (connector.configuration ?? []).find((item) => item.name === name && item.type === 'secret')
     fields.push({
       name,
-      label: param?.label || label(name),
+      label: param?.label || (param ? '' : named) || label(name),
       kind: 'secret',
       type: 'secret',
       required: false,
       choices: [],
-      help: param?.help ?? '',
+      help: param?.help ?? (param ? '' : (auth?.help ?? '')),
       placeholder: '',
       masked: !VISIBLE.has(name),
     })
@@ -329,4 +340,12 @@ export function instanceTabs(connector, instance) {
     fetches && exists && { id: 'classifier', label: 'Classifier', wide: true },
     (fetches || Boolean(connector?.mirror)) && exists && { id: 'mappers', label: 'Mappers', wide: true },
   ].filter(Boolean)
+}
+
+/**
+ * A list of hosts as its box shows it: one a line. What is stored comes back with commas between
+ * the hosts; what is being typed is left as it is, a comma or a semicolon becoming the next line.
+ */
+export function hostLines(text) {
+  return String(text ?? '').replace(/[ \t]*[,;][ \t]*/g, '\n')
 }

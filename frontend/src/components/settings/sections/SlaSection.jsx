@@ -4,6 +4,7 @@ import { useFields } from '../../../context/FieldsContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { SEVERITIES, hoursText, slaOf, slaProblem, slaRows } from '../../../domain/timers.js'
 import { Button } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Incidents → SLA (who configures incidents).
@@ -48,20 +49,28 @@ export default function SlaSection() {
   const problem = slaProblem(rows)
   const dirty = JSON.stringify(slaOf(rows)) !== JSON.stringify(slaOf(start))
 
+  // Resolves true once it is saved: the question asked before leaving waits on it.
   const save = async (event) => {
-    event.preventDefault()
+    event?.preventDefault()
     setBusy(true)
     setError(null)
     try {
       await api.put(`/incident-types/${encodeURIComponent(type.id)}`, { sla: slaOf(rows) })
       await reload()
       setSaved(true)
+      return true
     } catch (failure) {
       setError(failure.message)
+      return false
     } finally {
       setBusy(false)
     }
   }
+  const unsaved = useUnsavedChanges(dirty, {
+    what: 'The SLA of the type',
+    name: type?.name,
+    save: problem ? undefined : save,
+  })
 
   if (!type) {
     return (
@@ -83,7 +92,11 @@ export default function SlaSection() {
         <select
           id="sla-type"
           value={type.id}
-          onChange={(event) => setTypeId(event.target.value)}
+          onChange={(event) => {
+            // Another type brings its own times: those typed for this one are asked about first.
+            const next = event.target.value
+            unsaved.leave(() => setTypeId(next))
+          }}
           className={`${INPUT} cursor-pointer`}
         >
           {types.map((item) => (

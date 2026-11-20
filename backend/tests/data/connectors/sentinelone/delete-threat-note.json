@@ -1,0 +1,28 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555",
+    "note_id": "6600000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/web/api/v2.1/threats/5555555555555555555/notes/6600000000000000001",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "success": true
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "success": true
+  }
+}

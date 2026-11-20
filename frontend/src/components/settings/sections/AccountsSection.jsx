@@ -6,6 +6,7 @@ import { formatRelative } from '../../../lib/time.js'
 import { rolesOf, sameRoles } from '../../../domain/permissions.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
 import RolePicker, { RoleChips } from '../RolePicker.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Accounts settings section (admin only): the local accounts. An admin adds
@@ -50,6 +51,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
   if (password) changes.password = password
   if (disabled !== Boolean(user.disabled)) changes.disabled = disabled
   const dirty = Object.keys(changes).length > 0 && roles.length > 0
+  const unsaved = useUnsavedChanges(Object.keys(changes).length > 0, { what: 'The account', name: user.username })
 
   const save = async (event) => {
     event.preventDefault()
@@ -69,7 +71,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={`Account: ${user.username}`}
       maxWidth="max-w-lg"
       footer={
@@ -77,7 +79,7 @@ function EditAccountDialog({ user, isSelf, onClose, onSaved }) {
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="edit-account-form" disabled={saving || !dirty}>
+          <Button waiting={saving} type="submit" form="edit-account-form" disabled={saving || !dirty}>
             {saving ? 'Saving…' : 'Save changes'}
           </Button>
         </>
@@ -164,6 +166,8 @@ export default function AccountsSection() {
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState(null)
   const [listError, setListError] = useState(null)
+
+  useUnsavedChanges(Boolean(newUsername.trim() || newPassword), { what: 'The new account' })
 
   const handleAdd = async (event) => {
     event.preventDefault()
@@ -311,7 +315,7 @@ export default function AccountsSection() {
           <RolePicker idPrefix="add" value={newRoles} onChange={setNewRoles} />
 
           <div className="flex justify-end">
-            <Button type="submit" icon={UserPlus} disabled={submitting || newRoles.length === 0}>
+            <Button waiting={submitting} type="submit" icon={UserPlus} disabled={submitting || newRoles.length === 0}>
               {submitting ? 'Adding…' : 'Add user'}
             </Button>
           </div>

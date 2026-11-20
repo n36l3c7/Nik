@@ -21,10 +21,11 @@ import { argumentHints, completions, lineKind, recall, remember } from '../../do
 import { EVIDENCE, asTable, authorLabel, cell, contextWrites, entryLine, threaded } from '../../domain/warRoom.js'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import IocText from '../ioc/IocText.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -290,6 +291,12 @@ export default function Room({ source }) {
   const menu = useObjectMenu()
   const [text, setText] = useState(source.firstLine ?? '')
   const [busy, setBusy] = useState(false)
+  // A note being written is work that leaving would lose, where the source says so (the War Room). A
+  // command is typed again in a moment, and a line the page was opened with is not the person's writing.
+  useUnsavedChanges(
+    Boolean(source.unsaved) && text.trim() !== '' && text !== (source.firstLine ?? '') && lineKind(text) !== 'command',
+    { what: source.unsaved },
+  )
   const end = useRef(null)
   const count = useRef(0)
 
@@ -448,13 +455,19 @@ export default function Room({ source }) {
             </li>
           )}
           {!entries && !error && (
-            <li role="status" className="px-3 py-2 font-mono text-sm text-fg-muted">
-              Loading the {label}…
+            <li className="px-3 py-2">
+              <Wait>Loading the {label}…</Wait>
             </li>
           )}
           {entries?.length === 0 && (
-            <li className="px-3 py-6 text-center text-sm text-fg-muted">
-              {show === 'all' ? source.empty : 'Nothing of this kind.'}
+            <li className="p-3">
+              <EmptyState
+                skull
+                title={show === 'all' ? 'Nothing here yet' : 'Nothing of this kind'}
+                message={
+                  show === 'all' ? source.empty : 'Nothing of this kind was said or done here. “All” shows everything.'
+                }
+              />
             </li>
           )}
           {list.map((entry) => {

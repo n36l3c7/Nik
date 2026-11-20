@@ -1,12 +1,12 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, FolderSearch, List, Plus } from 'lucide-react'
+import { FolderOpen, List, Plus } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { normalizeOs } from '../../../config/os.js'
 import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
-import { AsciiSkull, Button, EmptyState, ErrorBoundary } from '../../ui/index.js'
+import { Button, EmptyState, ErrorBoundary } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import SystemDialog from './SystemDialog.jsx'
@@ -241,14 +241,13 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
           />
         ) : collected ? (
           <EmptyState
-            icon={FolderSearch}
+            skull
             title="Choose a kind at the side"
             message="What was collected on the machine is under Endpoint, Event logs, Browser and Commands: each asks for the system of the incident before it shows anything."
           />
         ) : (
           <EmptyState
-            illustration={<AsciiSkull preset="medium" tone="muted" />}
-            icon={FolderSearch}
+            skull
             title="No evidence yet"
             message="Drop a file anywhere in the window (an e-mail, a suspicious file, a capture, an export of browser history, event logs), or choose a kind at the side to add one there."
           />

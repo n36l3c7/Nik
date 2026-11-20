@@ -1,0 +1,48 @@
+{
+  "args": {
+    "group_id": "3333333333333333333"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/groups/3333333333333333333/policy",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "mitigationMode": "protect",
+            "mitigationModeSuspicious": "detect",
+            "networkQuarantineOn": false,
+            "autoMitigationAction": "mitigation.quarantineThreat",
+            "inheritedFrom": "account",
+            "agentUiOn": true,
+            "allowRemoteShell": false,
+            "isDefault": false,
+            "updatedAt": "2026-06-01T08:00:00.000000Z"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "policy": {
+      "mitigationMode": "protect",
+      "mitigationModeSuspicious": "detect",
+      "networkQuarantineOn": false,
+      "autoMitigationAction": "mitigation.quarantineThreat",
+      "inheritedFrom": "account",
+      "agentUiOn": true,
+      "allowRemoteShell": false,
+      "isDefault": false,
+      "updatedAt": "2026-06-01T08:00:00.000000Z"
+    },
+    "mitigation_mode": "protect",
+    "mitigation_mode_suspicious": "detect",
+    "inherited_from": "account"
+  }
+}

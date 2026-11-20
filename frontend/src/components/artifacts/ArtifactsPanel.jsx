@@ -1,9 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Boxes, Bug, Download, FolderOpen, Inbox, Link2, Mail, Network, Plus, Tag, Upload } from 'lucide-react'
+import {
+  Boxes,
+  Bug,
+  Download,
+  FolderOpen,
+  Inbox,
+  Link2,
+  Mail,
+  Network,
+  Plus,
+  FileSearch,
+  Tag,
+  Upload,
+} from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
-import { ARTIFACT_KINDS, artifactMeta, artifactPath, verdictBadge } from '../../domain/artifactRegistry.js'
+import {
+  ARTIFACT_KINDS,
+  analyseAsActions,
+  artifactMeta,
+  artifactPath,
+  verdictBadge,
+} from '../../domain/artifactRegistry.js'
+import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, Wait } from '../ui/index.js'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import { useAuth } from '../../context/AuthContext.jsx'
 import QueryInput from '../ui/QueryInput.jsx'
@@ -12,6 +32,8 @@ import { writeValue } from '../../domain/query/complete.js'
 import { conditionOn, withCondition } from '../../domain/query/builder.js'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import { exportRequest } from '../../domain/artifactExpiry.js'
+import HidePanel from '../layout/HidePanel.jsx'
+import { transfer as showTransfer } from '../../lib/transfers.js'
 
 /*
  * The artifacts panel of the sidebar: files, e-mails and captures analysed on
@@ -39,11 +61,23 @@ function Chip({ active, onClick, children }) {
 }
 
 /**
- * @param {{ width: number, onNewAnalysis: () => void }} props
+ * @param {{ width: number, onNewAnalysis: () => void, onHide?: () => void }} props
  */
-export default function ArtifactsPanel({ width, onNewAnalysis }) {
-  const { artifacts, counts, filters, setFilters, loading, error, queryError, currentId, openArtifact, refresh } =
-    useArtifacts()
+export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
+  const {
+    artifacts,
+    counts,
+    filters,
+    setFilters,
+    loading,
+    error,
+    queryError,
+    currentId,
+    openArtifact,
+    analyseAs,
+    refresh,
+  } = useArtifacts()
+  const { showToast } = useToast()
   const { can, currentUser } = useAuth()
   const schema = useQuerySchema('artifacts')
   // "mine" is a condition of the query: the artifacts this account added.
@@ -68,6 +102,21 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
           icon: Download,
           onSelect: () => setTransfer(exportRequest([artifact])),
         },
+        // A file whose name says it is a message or a capture: what it is analysed as opens.
+        ...(can('write') ? analyseAsActions(artifact) : []).map((action) => ({
+          label: action.label,
+          icon: FileSearch,
+          onSelect: async () => {
+            try {
+              const made = await showTransfer(`${action.label}: ${artifact.name}`, () =>
+                analyseAs(artifact.id, action.as),
+              )
+              openArtifact(made.id)
+            } catch (error) {
+              showToast({ message: `${action.label}: ${error.message}` })
+            }
+          },
+        })),
         ...artifact.tags.slice(0, 5).map((tag) => ({
           label: `Filter by #${tag}`,
           icon: Tag,
@@ -85,15 +134,15 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
       style={{ width }}
       className="flex h-full shrink-0 flex-col border-r border-line bg-sunken"
     >
-      <div className="flex items-center gap-2 border-b border-line px-3 py-3">
-        <p className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wider text-fg-muted">
-          ARTIFACTS · {total}
-        </p>
+      {/* Three things share the width of the panel: the title is set tight so its count is not cut. */}
+      <div className="flex items-center gap-1.5 border-b border-line px-3 py-3">
+        <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-fg-muted">ARTIFACTS · {total}</p>
         {can('write') && (
           <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
             New analysis
           </Button>
         )}
+        {onHide && <HidePanel label="Hide the artifacts panel" onClick={onHide} />}
       </div>
 
       <div className="space-y-2 border-b border-line px-3 py-2.5">
@@ -136,14 +185,10 @@ export default function ArtifactsPanel({ width, onNewAnalysis }) {
           </p>
         ) : artifacts.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-            {loading ? (
-              <MicroSkull className="text-lg text-fg-muted" />
-            ) : (
-              <Boxes className="h-6 w-6 text-fg-subtle" aria-hidden="true" />
-            )}
+            {loading ? <Wait>Loading the artifacts…</Wait> : <AsciiSkull preset="small" eyes="closed" tone="muted" />}
             <p className="text-sm text-fg-muted">
               {loading
-                ? 'Loading…'
+                ? ''
                 : filters.q || filters.kind
                   ? 'No artifact matches these filters.'
                   : 'No artifacts yet: start an analysis, or drop a file anywhere.'}

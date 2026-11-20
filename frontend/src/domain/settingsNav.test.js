@@ -3,6 +3,8 @@ import { test } from 'node:test'
 import {
   INSTANCE_TABS,
   SETTINGS_GROUPS,
+  credentialFromPath,
+  credentialPath,
   filterSettings,
   instanceFromPath,
   instancePath,
@@ -92,10 +94,13 @@ test('the search box narrows the sections by label, group and keywords', () => {
   assert.deepEqual(ids(filterSettings(all, 'automation')), [
     'contentPacks',
     'connectors',
+    'credentials',
     'automationNetwork',
     'automationSwitch',
   ])
-  assert.deepEqual(ids(filterSettings(all, 'credentials')), ['connectors'])
+  // The credentials of an instance are typed in Connectors, or kept once in Credentials.
+  assert.deepEqual(ids(filterSettings(all, 'credentials')), ['connectors', 'credentials'])
+  assert.deepEqual(ids(filterSettings(all, 'stored secrets')), ['credentials'])
   // An address of 4.x that named the connections opens the connectors, where their instances are.
   assert.deepEqual(settingsFromPath('/settings/automation/connections'), { id: 'connectors' })
   // The group alone opens its first section: the packs, which bring the rest.
@@ -143,4 +148,19 @@ test('an address names an instance and the part of its form', () => {
   assert.equal(instanceFromPath('/incident/abc123'), null)
   // The address of an instance is still the Connectors section.
   assert.deepEqual(settingsFromPath('/settings/automation/connectors/abc123/fetch'), { id: 'connectors' })
+})
+
+test('an address of Credentials points at one credential, by its name', () => {
+  assert.equal(settingsPath('credentials'), '/settings/automation/credentials')
+  assert.equal(credentialPath('vt_key'), '/settings/automation/credentials/vt_key')
+  assert.equal(credentialFromPath(credentialPath('vt-key_2')), 'vt-key_2')
+  assert.equal(credentialFromPath('/settings/automation/credentials/vt_key/'), 'vt_key')
+  assert.equal(credentialFromPath('/settings/automation/credentials'), '')
+  assert.equal(credentialFromPath('/settings/automation/connectors/vt_key'), '')
+  assert.equal(credentialFromPath('/incident/vt_key'), '')
+  // It is still the Credentials section, for who manages the connectors and nobody else.
+  assert.deepEqual(settingsFromPath(credentialPath('vt_key')), { id: 'credentials' })
+  const sections = (can) => visibleSettings(can).flatMap((group) => group.sections.map((section) => section.id))
+  assert.equal(sections(canOf('connectors.manage')).includes('credentials'), true)
+  assert.equal(sections(canOf('automation.edit', 'automation.run', 'read', 'write')).includes('credentials'), false)
 })

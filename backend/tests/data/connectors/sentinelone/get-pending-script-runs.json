@@ -1,0 +1,74 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-scripts/pending-executions",
+        "query": {
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "pendingExecutionId": "7400000000000000001",
+              "state": "pending",
+              "creator": "nik-service",
+              "creatorId": "4400000000000000001",
+              "reviewer": "",
+              "reviewerId": "",
+              "totalEndpoints": 1,
+              "canApproveOrDecline": true,
+              "createdAt": "2026-11-20T10:09:00.000000Z",
+              "scriptData": {
+                "scriptName": "Collect browser history"
+              },
+              "executionData": {
+                "taskDescription": "Browser history for INC-2026-0417"
+              }
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "runs": [
+      {
+        "pendingExecutionId": "7400000000000000001",
+        "state": "pending",
+        "creator": "nik-service",
+        "creatorId": "4400000000000000001",
+        "reviewer": "",
+        "reviewerId": "",
+        "totalEndpoints": 1,
+        "canApproveOrDecline": true,
+        "createdAt": "2026-11-20T10:09:00.000000Z",
+        "scriptData": {
+          "scriptName": "Collect browser history"
+        },
+        "executionData": {
+          "taskDescription": "Browser history for INC-2026-0417"
+        }
+      }
+    ],
+    "ids": [
+      "7400000000000000001"
+    ],
+    "pending_execution_id": "7400000000000000001",
+    "state": "pending",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

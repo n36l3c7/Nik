@@ -47,7 +47,7 @@ import { isTypingTarget } from '../../domain/search.js'
 import { hasModalLayer } from '../../lib/layers.js'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import ColumnsDialog from './ColumnsDialog.jsx'
 import { ManageFiltersDialog, SaveFilterDialog } from './FilterDialogs.jsx'
@@ -57,6 +57,7 @@ import IncidentTags from '../incident/IncidentTags.jsx'
 import QuickChips from './QuickChips.jsx'
 import QuickView from './QuickView.jsx'
 import { useSavedFilters } from './useSavedFilters.js'
+import SearchBar from '../layout/SearchBar.jsx'
 
 /*
  * ============================================================================
@@ -362,41 +363,45 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
       onContextMenu={pageMenu}
     >
       {/* ----- Title, count, what is made here ----- */}
-      <header className="flex shrink-0 flex-wrap items-center gap-3 px-6 pb-2 pt-4">
-        <h1 className="flex-1 text-lg font-semibold text-fg">Incidents</h1>
-        <p role="status" aria-label="Incidents listed" className="font-mono text-xs text-fg-muted">
-          {rows.length === incidents.length
-            ? `${incidents.length} ${incidents.length === 1 ? 'incident' : 'incidents'}`
-            : `${rows.length} of ${incidents.length}`}
-        </p>
-        <Button variant="secondary" size="sm" icon={Columns3} onClick={() => setDialog('columns')}>
-          Columns…
-        </Button>
-        {!canWrite && (
-          <span
-            className="flex h-8 items-center border border-line px-2.5 font-mono text-xs text-fg-muted"
-            title="Your roles let you read, not change: ask an admin for the Analyst role to work on incidents."
-          >
-            read-only
-          </span>
-        )}
-        {canWrite && (
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Upload}
-              disabled={importing}
-              onClick={() => fileInputRef.current?.click()}
+      <header className="@container flex shrink-0 items-center gap-3 px-6 pb-2 pt-4">
+        <h1 className="flex-1 basis-0 text-lg font-semibold text-fg">Incidents</h1>
+        <SearchBar />
+        <div className="flex flex-1 basis-0 items-center justify-end gap-3">
+          <p role="status" aria-label="Incidents listed" className="whitespace-nowrap font-mono text-xs text-fg-muted">
+            {rows.length === incidents.length
+              ? `${incidents.length} ${incidents.length === 1 ? 'incident' : 'incidents'}`
+              : `${rows.length} of ${incidents.length}`}
+          </p>
+          <Button variant="secondary" size="sm" icon={Columns3} onClick={() => setDialog('columns')}>
+            Columns…
+          </Button>
+          {!canWrite && (
+            <span
+              className="flex h-8 items-center border border-line px-2.5 font-mono text-xs text-fg-muted"
+              title="Your roles let you read, not change: ask an admin for the Analyst role to work on incidents."
             >
-              {importing ? 'Importing…' : 'Import incident'}
-            </Button>
-            <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
-            <Button size="sm" icon={Plus} onClick={onCreateIncident}>
-              New incident
-            </Button>
-          </>
-        )}
+              read-only
+            </span>
+          )}
+          {canWrite && (
+            <>
+              <Button
+                waiting={importing}
+                variant="secondary"
+                size="sm"
+                icon={Upload}
+                disabled={importing}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {importing ? 'Importing…' : 'Import incident'}
+              </Button>
+              <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleImportFile} />
+              <Button size="sm" icon={Plus} onClick={onCreateIncident}>
+                New incident
+              </Button>
+            </>
+          )}
+        </div>
       </header>
 
       {/* ----- The saved filters, the query, the chips that write into it ----- */}
@@ -469,7 +474,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
         {incidents.length === 0 ? (
           <div className="flex h-full items-center justify-center p-6">
             <EmptyState
-              illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+              skull
               title="No incidents yet"
               message={
                 canWrite
@@ -509,7 +514,14 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
               onExport={exportRow}
               onDelete={setDeleteTarget}
             />
-            {rows.length === 0 && <p className="px-6 py-8 text-sm text-fg-muted">No incident matches the filter.</p>}
+            {rows.length === 0 && (
+              <EmptyState
+                skull
+                className="mx-6 my-6"
+                title="No incident matches"
+                message="No incident matches the filter. Change the query, or take the filter off."
+              />
+            )}
             {rows.length > drawn.length && (
               <p className="flex items-center gap-3 px-6 py-3 text-xs text-fg-muted">
                 {drawn.length} of {rows.length} shown

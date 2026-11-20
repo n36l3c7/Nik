@@ -1,0 +1,54 @@
+{
+  "args": {
+    "scheduled_task_id": "7500000000000000001",
+    "run_at": "2026-11-22T02:00:00Z",
+    "expire_time": {
+      "utc": "2026-12-22T02:00:00Z",
+      "tz": "UTC"
+    },
+    "recurrence": {
+      "unit": "week",
+      "interval": 1
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PUT",
+        "path": "/web/api/v2.1/remote-ops/scheduled-tasks/7500000000000000001",
+        "json": {
+          "data": {
+            "scheduling": {
+              "scheduledTime": {
+                "utc": "2026-11-22T02:00:00Z",
+                "tz": "UTC"
+              },
+              "expireTime": {
+                "utc": "2026-12-22T02:00:00Z",
+                "tz": "UTC"
+              },
+              "recurrence": {
+                "unit": "week",
+                "interval": 1
+              }
+            }
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "scheduledTaskId": "7500000000000000001"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "scheduled_task_id": "7500000000000000001"
+  }
+}

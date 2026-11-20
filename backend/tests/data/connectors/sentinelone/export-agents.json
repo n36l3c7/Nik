@@ -1,0 +1,42 @@
+{
+  "args": {
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/export/agents",
+        "query": {
+          "siteIds": "2222222222222222222"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Endpoint Name,Site,Group,OS,Agent Version,Network Status\nWKS-FINANCE-01,Milan,Workstations,Windows 11 Pro,24.2.3.471,connected\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"agents.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "agents.csv",
+      "type": "text/plain",
+      "text": "Endpoint Name,Site,Group,OS,Agent Version,Network Status\nWKS-FINANCE-01,Milan,Workstations,Windows 11 Pro,24.2.3.471,connected\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:agents.csv",
+    "name": "agents.csv",
+    "sha256": "sha256:agents.csv",
+    "size": 127,
+    "type": "text/plain"
+  }
+}

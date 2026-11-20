@@ -9,6 +9,8 @@ import {
   parseTags,
   standaloneIncident,
   verdictBadge,
+  ARTIFACTS_ROOT,
+  isArtifactsPath,
 } from './artifactRegistry.js'
 
 const SHA = 'a'.repeat(64)
@@ -83,4 +85,31 @@ test('the row tells the kind, the detail and where the artifact is linked', () =
     artifactMeta({ ...file, incidents: [{ id: 'i1' }, { id: 'i2' }] }),
     'file · PE32 executable · 2 incidents',
   )
+})
+
+test('a file is offered to be analysed as what the server says it can be', async () => {
+  const { RELATION_LABELS, analyseAsActions } = await import('./artifactRegistry.js')
+  assert.deepEqual(analyseAsActions({ kind: 'file', analyseAs: ['mail'] }), [
+    { as: 'mail', label: 'Analyse as an e-mail', made: 'an e-mail' },
+  ])
+  assert.deepEqual(
+    analyseAsActions({ kind: 'file', analyseAs: ['capture', 'something-new'] }).map((action) => action.label),
+    ['Analyse as a capture'],
+  )
+  // Only a file, and only what the server offers.
+  assert.deepEqual(analyseAsActions({ kind: 'mail', analyseAs: ['mail'] }), [])
+  assert.deepEqual(analyseAsActions({ kind: 'file' }), [])
+  assert.deepEqual(analyseAsActions(null), [])
+  assert.equal(RELATION_LABELS.unpacked, 'unpacked file')
+  assert.equal(RELATION_LABELS.analysed, 'analysis')
+})
+
+test('the page of the artifacts has an address of its own, which is not an artifact', () => {
+  assert.equal(ARTIFACTS_ROOT, '/artifacts')
+  assert.equal(isArtifactsPath('/artifacts'), true)
+  assert.equal(isArtifactsPath('/artifacts/'), true)
+  assert.equal(isArtifactsPath('/artifacts?x=1'), true)
+  assert.equal(isArtifactsPath('/artifact/file-00'), false)
+  assert.equal(isArtifactsPath('/'), false)
+  assert.equal(artifactIdFromPath('/artifacts'), null)
 })

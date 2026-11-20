@@ -285,7 +285,7 @@ export default function IocsTab({ incident }) {
         {state.error && <p className="mb-2 text-xs text-high">{state.error}</p>}
         {!state.loading && state.iocs.length === 0 ? (
           <EmptyState
-            icon={Crosshair}
+            skull
             title="No indicators yet"
             message="Import artifacts, event logs or samples in the other tabs: their indicators show up here."
           />

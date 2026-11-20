@@ -1,0 +1,41 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/5555555555555555555/whitening-options",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "whiteningOptions": [
+              "path",
+              "file_hash"
+            ],
+            "threatType": [
+              "static"
+            ],
+            "threatPolicy": "protect"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "options": [
+      "path",
+      "file_hash"
+    ],
+    "threat_type": [
+      "static"
+    ],
+    "policy": "protect"
+  }
+}

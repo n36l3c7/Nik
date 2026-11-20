@@ -170,6 +170,10 @@ def run_analysis(capture_id: str) -> None:
         except previews.WorkerError as exc:
             row.status, row.error = "error", str(exc)[:500]
         save_reference(db, row)
+        # Said to the playbooks and the webhooks that wait for it, ready or failed.
+        from ..automation import triggers
+
+        triggers.capture_analysed(db, row)
         db.commit()
 
 

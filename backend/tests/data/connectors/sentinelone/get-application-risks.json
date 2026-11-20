@@ -1,0 +1,63 @@
+{
+  "args": {
+    "cve_id": "CVE-2024-11477"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/application-management/risks/applications",
+        "query": {
+          "cveId__contains": "CVE-2024-11477",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "applicationId": "7800000000000000001",
+              "name": "7-Zip 23.01",
+              "vendor": "Igor Pavlov",
+              "cveCount": 2,
+              "endpointCount": 14,
+              "highestSeverity": "HIGH",
+              "highestRiskScore": "7.8",
+              "detectionDate": "2026-08-03T00:00:00Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "applications": [
+      {
+        "applicationId": "7800000000000000001",
+        "name": "7-Zip 23.01",
+        "vendor": "Igor Pavlov",
+        "cveCount": 2,
+        "endpointCount": 14,
+        "highestSeverity": "HIGH",
+        "highestRiskScore": "7.8",
+        "detectionDate": "2026-08-03T00:00:00Z"
+      }
+    ],
+    "ids": [
+      "7800000000000000001"
+    ],
+    "application_id": "7800000000000000001",
+    "highest_severity": "HIGH",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "args": {
+    "action": "initiate-scan",
+    "filter": {
+      "groupIds": [
+        "3333333333333333333"
+      ],
+      "infected": true
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/agents/actions/initiate-scan",
+        "json": {
+          "filter": {
+            "groupIds": [
+              "3333333333333333333"
+            ],
+            "infected": true
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

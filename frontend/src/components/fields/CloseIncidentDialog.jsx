@@ -7,6 +7,7 @@ import { UNCLASSIFIED, byName, fromInput, toInput } from '../../domain/fields.js
 import { closeFields, closeSections, openTasksText } from '../../domain/typePages.js'
 import { Button, Modal } from '../ui/index.js'
 import FieldInput from './FieldInput.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * Closing an incident: a reason among those of its type, notes, and the
@@ -61,8 +62,12 @@ function OpenDialog({ incidentId, onDone }) {
   const [loaded, setLoaded] = useState(null) // { type, sections, wanted, values }
   const [openTasks, setOpenTasks] = useState(0)
   const [typed, setTyped] = useState({})
+  const [opened, setOpened] = useState(null) // the form as it was filled from the incident
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const unsaved = useUnsavedChanges(opened !== null && JSON.stringify(typed) !== opened, {
+    what: 'The form that closes the incident',
+  })
   const name = incidents.find((incident) => incident.id === incidentId)?.name ?? 'this incident'
 
   useEffect(() => {
@@ -93,11 +98,13 @@ function OpenDialog({ incidentId, onDone }) {
         const offered = type?.closeReasons ?? []
         const reason = held.fields.close_reason ?? ''
         const asked = [...sections.flatMap((item) => item.fields), ...wanted]
-        setTyped({
+        const start = {
           close_reason: offered.length && !offered.includes(reason) ? '' : reason,
           close_notes: held.fields.close_notes ?? '',
           ...Object.fromEntries(asked.map(({ field }) => [field.name, toInput(field, held.fields[field.name])])),
-        })
+        }
+        setTyped(start)
+        setOpened(JSON.stringify(start))
       })
       .catch((failure) => alive && setError(failure.message))
     // How much of the work plan is left: said, never in the way (who may not read it is told nothing).
@@ -161,7 +168,7 @@ function OpenDialog({ incidentId, onDone }) {
   return (
     <Modal
       open
-      onClose={onDone}
+      onClose={() => unsaved.leave(onDone)}
       title="Close the incident"
       maxWidth={form ? 'max-w-2xl' : 'max-w-lg'}
       footer={

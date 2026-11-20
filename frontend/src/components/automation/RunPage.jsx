@@ -17,7 +17,7 @@ import {
 } from '../../domain/automation/runs.js'
 import { formatDateTime } from '../../lib/time.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import ApprovalBanner from './ApprovalBanner.jsx'
 import Canvas from './Canvas.jsx'
 import DebugPanel, { DebugStepTools } from './DebugPanel.jsx'
@@ -216,7 +216,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
-          illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+          skull="error"
           title="This run cannot be opened"
           message={error}
           action={

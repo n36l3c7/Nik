@@ -1,0 +1,182 @@
+{
+  "args": {
+    "agent_id": "1234567890123456789",
+    "files": [
+      "C:\\Users\\m.rossi\\Downloads\\invoice.docm"
+    ],
+    "password": "Nik-Fetch-2026!x"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "agentIds": "1234567890123456789",
+          "activityTypes": 80,
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8800000000000000001",
+              "agentId": "1234567890123456789",
+              "activityType": 80,
+              "createdAt": "2026-11-10T09:00:00.000000Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/agents/1234567890123456789/actions/fetch-files",
+        "json": {
+          "data": {
+            "password": "Nik-Fetch-2026!x",
+            "files": [
+              "C:\\Users\\m.rossi\\Downloads\\invoice.docm"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "success": true
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "agentIds": "1234567890123456789",
+          "activityTypes": 80,
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8800000000000000001",
+              "agentId": "1234567890123456789",
+              "activityType": 80,
+              "createdAt": "2026-11-10T09:00:00.000000Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/activities",
+        "query": {
+          "agentIds": "1234567890123456789",
+          "activityTypes": 80,
+          "sortBy": "createdAt",
+          "sortOrder": "desc",
+          "limit": 1
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "8800000000000000002",
+              "agentId": "1234567890123456789",
+              "activityType": 80,
+              "createdAt": "2026-11-20T10:02:11.000000Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/agents/1234567890123456789/uploads/8800000000000000002",
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "UEsDBBQAAQBjAL1WdF0AAAAAQgAAACQAAAAmAAsAQy9Vc2Vycy9tLnJvc3NpL0Rvd25sb2Fkcy9pbnZvaWNlLmRvY20BmQcAAgBBRQMIALwIJPjuY4XNz7q1NOFXOerJgzpdc5ep+7DerDvctboW07C3VsKftwSLWlG7ChAdn+kz8sHpUhVovuIJl0MZ/Y6SFFBLAwQUAAEAYwC9VnRdAAAAACsAAAANAAAADQALAG1hbmlmZXN0Lmpzb24BmQcAAgBBRQMIAGzO29sFv1uhWmEv+qYhFZUi4UwBd05eEB23cXvRbYrLcnYdc8Z2SNqEOhFQSwECFAMUAAEAYwC9VnRdAAAAAEIAAAAkAAAAJgALAAAAAAAAAAAAgAEAAAAAQy9Vc2Vycy9tLnJvc3NpL0Rvd25sb2Fkcy9pbnZvaWNlLmRvY20BmQcAAgBBRQMIAFBLAQIUAxQAAQBjAL1WdF0AAAAAKwAAAA0AAAANAAsAAAAAAAAAAACAAZEAAABtYW5pZmVzdC5qc29uAZkHAAIAQUUDCABQSwUGAAAAAAIAAgClAAAA8gAAAAAA",
+        "headers": {
+          "content-disposition": "attachment; filename=\"WKS-FINANCE-01_files.zip\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "WKS-FINANCE-01_files.zip",
+      "type": "application/octet-stream",
+      "base64": "UEsDBBQAAQBjAL1WdF0AAAAAQgAAACQAAAAmAAsAQy9Vc2Vycy9tLnJvc3NpL0Rvd25sb2Fkcy9pbnZvaWNlLmRvY20BmQcAAgBBRQMIALwIJPjuY4XNz7q1NOFXOerJgzpdc5ep+7DerDvctboW07C3VsKftwSLWlG7ChAdn+kz8sHpUhVovuIJl0MZ/Y6SFFBLAwQUAAEAYwC9VnRdAAAAACsAAAANAAAADQALAG1hbmlmZXN0Lmpzb24BmQcAAgBBRQMIAGzO29sFv1uhWmEv+qYhFZUi4UwBd05eEB23cXvRbYrLcnYdc8Z2SNqEOhFQSwECFAMUAAEAYwC9VnRdAAAAAEIAAAAkAAAAJgALAAAAAAAAAAAAgAEAAAAAQy9Vc2Vycy9tLnJvc3NpL0Rvd25sb2Fkcy9pbnZvaWNlLmRvY20BmQcAAgBBRQMIAFBLAQIUAxQAAQBjAL1WdF0AAAAAKwAAAA0AAAANAAsAAAAAAAAAAACAAZEAAABtYW5pZmVzdC5qc29uAZkHAAIAQUUDCABQSwUGAAAAAAIAAgClAAAA8gAAAAAA"
+    },
+    {
+      "name": "C/Users/m.rossi/Downloads/invoice.docm",
+      "type": "",
+      "text": "an example document, not a real one\n"
+    },
+    {
+      "name": "manifest.json",
+      "type": "",
+      "text": "{\"files\": 1}\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:WKS-FINANCE-01_files.zip",
+    "name": "WKS-FINANCE-01_files.zip",
+    "sha256": "sha256:WKS-FINANCE-01_files.zip",
+    "size": 429,
+    "type": "application/octet-stream",
+    "activity_id": "8800000000000000002",
+    "files": [
+      {
+        "name": "C/Users/m.rossi/Downloads/invoice.docm",
+        "type": "",
+        "size": 36,
+        "sha256": "sha256:C/Users/m.rossi/Downloads/invoice.docm",
+        "artifact": "artifact:C/Users/m.rossi/Downloads/invoice.docm"
+      },
+      {
+        "name": "manifest.json",
+        "type": "",
+        "size": 13,
+        "sha256": "sha256:manifest.json",
+        "artifact": "artifact:manifest.json"
+      }
+    ],
+    "count": 2,
+    "skipped": []
+  }
+}

@@ -312,6 +312,26 @@ def get_mail(sha256: str, _caller: Principal = Depends(reader_principal), db: Or
     }
 
 
+def analysed_again(db: OrmSession, row: Mail, result: dict[str, Any]) -> None:
+    """Keep a new analysis of a stored message: on its row, on its artifact and in every incident
+    that references it (the caller commits and writes the audit entry)."""
+    _apply(row, result)
+    artifacts.register_mail(db, row)
+    automation_triggers.mail_analysed(db, row)
+    for incident in _incidents_referencing(db, row.sha256):
+        doc = dict(relock(db, incident).doc or {})
+        for ref in _refs(doc):
+            if ref.get("sha256") == row.sha256:
+                ref.update(_summary(row))
+        _save_doc(db, incident, doc)
+
+
+def analyse_again(db: OrmSession, row: Mail) -> None:
+    """Analyse a stored message again where there is no request (a playbook asked): what
+    "Re-analyse" does, in the caller's thread. Raises ``MailError`` or ``OSError``."""
+    analysed_again(db, row, _analyse(db, read_mail(row.sha256)))
+
+
 @router.post("/mails/{sha256}/reanalyse")
 async def reanalyse_mail(
     sha256: str, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
@@ -323,15 +343,7 @@ async def reanalyse_mail(
         result = await run_in_threadpool(_analyse, db, read_mail(sha256))
     except (OSError, MailError) as exc:
         raise HTTPException(status_code=422, detail=f"The stored message cannot be analysed: {exc}") from exc
-    _apply(row, result)
-    artifacts.register_mail(db, row)
-    automation_triggers.mail_analysed(db, row)
-    for incident in _incidents_referencing(db, sha256):
-        doc = dict(relock(db, incident).doc or {})
-        for ref in _refs(doc):
-            if ref.get("sha256") == sha256:
-                ref.update(_summary(row))
-        _save_doc(db, incident, doc)
+    analysed_again(db, row, result)
     _audit(db, caller, "mail.reanalyse", f"Re-analysed e-mail {sha256[:12]}… ({row.verdict})", None)
     db.commit()
     return get_mail(sha256, caller, db)

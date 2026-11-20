@@ -17,9 +17,20 @@ the background worker):
   values or lists an analyst marked TLP:RED.
 
 This is the rule of the look-ups and it is checked here, before a command is
-chosen: no setting loosens it. A look-up a playbook makes is judged by the
-playbook's data guard as well (``automation/guard.py``), once, for all the
-sources together.
+chosen: no setting loosens it.
+
+**What is held.** A value that passes that rule is judged by the data guard
+(``automation/guard.py``) as well, once, for all the sources together: it
+holds a value that carries an e-mail address, a name under the organisation's
+own domains or a private address, or an allowlisted name, until an admin
+opens that class. A look-up a playbook makes is judged against the classes
+opened for that playbook; every other (an analyst's "Check now", a check in
+bulk, the automatic look-ups) against the classes opened for the look-ups
+made outside playbooks, a setting of its own that starts with nothing opened
+(``held``). The two do not mix. A held look-up asks no source at all; it is
+not an error and it is not stored: the value is judged again each time, so
+it is asked when the class is opened, or when the allowlist or the
+organisation's domains change what the value is.
 
 **Automatic look-ups** (Settings -> Threat intelligence) are off until an
 analyst turns them on, per type: IP addresses, URLs and domains, file
@@ -43,6 +54,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
@@ -50,6 +62,7 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from ..automation import guard
 from ..core.models import (
     Enrichment,
     EnrichmentHistory,
@@ -73,6 +86,21 @@ INTERNAL_SUFFIXES = (".local", ".lan", ".internal", ".intranet", ".corp", ".home
 
 RETENTION_GROUPS = ("ip", "url", "hash")  # url covers domains, hash the three digests
 
+# The classes of the data guard the value of an indicator can carry, with what each is there. The
+# others are of things an indicator is not (a subject, a file, the text of a message), and TLP:RED
+# is never offered: the rule of the look-ups keeps it in.
+GUARD_CLASSES: dict[str, str] = {
+    "email_address": "In an indicator: a link that carries the address of the person it was sent to.",
+    "private_value": (
+        "In an indicator: a domain under your own domains or a link on one, and a link that carries a "
+        "private address. A private address or an internal name by itself is never sent."
+    ),
+    "allowlisted": (
+        "In an indicator: a link that names a domain or an address of the allowlist, a redirect to your "
+        "own site for example. An indicator that is itself on the allowlist is never sent."
+    ),
+}
+
 DEFAULTS: dict[str, Any] = {
     # Automatic lookups per type (off until an analyst turns them on).
     "auto": {"ip": False, "url": False, "hash": False},
@@ -82,6 +110,9 @@ DEFAULTS: dict[str, Any] = {
     # Ask again when an answer is past its retention (else it is kept and
     # shown as expired until someone checks again).
     "refreshExpired": True,
+    # The classes of the data guard opened for the look-ups made outside playbooks (``GUARD_CLASSES``).
+    # It is not saved with the others: opening one has a route of its own, behind a double check.
+    "guardOpen": [],
 }
 
 
@@ -97,10 +128,12 @@ def config(shared: dict[str, Any]) -> dict[str, Any]:
                 retention[group] = min(730, max(1, int(days)))
         except (TypeError, ValueError):
             pass
+    opened = raw.get("guardOpen") if isinstance(raw.get("guardOpen"), list) else []
     return {
         "auto": {k: bool(v) for k, v in auto.items() if k in DEFAULTS["auto"]},
         "retentionDays": retention,
         "refreshExpired": bool(raw.get("refreshExpired", DEFAULTS["refreshExpired"])),
+        "guardOpen": [name for name in GUARD_CLASSES if name in opened],
     }
 
 
@@ -200,6 +233,63 @@ def _classified_red(db: OrmSession, kind: str, value: str) -> bool:
         )
         is not None
     )
+
+
+# --------------------------------------------------------------------------- #
+# What is held                                                                #
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class Judge:
+    """What the data guard needs to judge the look-ups made outside playbooks: the classes opened for
+    them, the organisation's own domains and its allowlist. Read once for a pass over many values."""
+
+    opened: frozenset
+    context: guard.Context
+
+
+def judge(shared: dict[str, Any]) -> Judge:
+    return Judge(opened=frozenset(config(shared)["guardOpen"]), context=guard.context_of(shared))
+
+
+def held(kind: str, value: str, judged: Judge) -> dict[str, Any] | None:
+    """What the data guard holds of a value a look-up outside a playbook would send, or None when it
+    may leave: ``{classes: [{id, label}], reason}``. The value has no playbook behind it and so no
+    class by where it came from: it is judged by what it carries, as the guard reads any text."""
+    if kind in HASHES:
+        return None  # a digest carries nothing but itself
+    decision = guard.check(value, frozenset(), judged.opened, judged.context)
+    if decision.allowed:
+        return None
+    names = [name for name in guard.CLASSES if name in decision.held]
+    classes = [{"id": name, "label": guard.CLASSES[name]["label"]} for name in names]
+    return {
+        "classes": classes,
+        "reason": (
+            f"Held back: {', '.join(item['label'].lower() for item in classes)}. A look-up may not send them: "
+            "an administrator can open them in Settings, Threat intelligence"
+        ),
+    }
+
+
+def held_note(count: int) -> str:
+    """What a check in bulk says of the indicators it did not ask about because the guard holds them."""
+    return f"{count} held back by the data guard: not asked." if count else ""
+
+
+def guard_classes(shared: dict[str, Any]) -> list[dict[str, Any]]:
+    """The classes an admin can open for the look-ups made outside playbooks, as Settings shows them:
+    what each is in the words of the guard, what it is in an indicator, and whether it is open."""
+    opened = config(shared)["guardOpen"]
+    return [
+        {
+            "id": name,
+            "label": guard.CLASSES[name]["label"],
+            "warning": guard.CLASSES[name]["warning"],
+            "example": example,
+            "open": name in opened,
+        }
+        for name, example in GUARD_CLASSES.items()
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -568,8 +658,15 @@ def check_now(
 ) -> dict[str, Any]:
     """An analyst's "Check now" (or a playbook's): every source that is on for the type, waiting
     briefly for a limit but skipping a source whose keys are all used up. ``force`` asks also the
-    sources whose answer still stands, and past the answers their instances keep."""
+    sources whose answer still stands, and past the answers their instances keep.
+
+    Without a ``playbook`` the data guard is asked first (``held``): a held value asks no source, and
+    ``held`` of what is returned says by which classes. A playbook's look-up was judged by the guard
+    of the playbook before it came here."""
     cfg = config(shared)
+    why = held(kind, value, judge(shared)) if playbook is None else None
+    if why:
+        return {"results": results(db, kind, value, cfg), "skipped": [], "held": why}
     skipped = []
     for source in asked(db, kind):
         if not force and fresh(db.get(Enrichment, (kind, value, source.id)), cfg):
@@ -577,7 +674,7 @@ def check_now(
         reason = ask(db, source, kind, value, max_wait=3.0, again=force, playbook=playbook, automatic=False)
         if reason:
             skipped.append({"provider": source.id, "label": source.label, "reason": reason})
-    return {"results": results(db, kind, value, cfg), "skipped": skipped}
+    return {"results": results(db, kind, value, cfg), "skipped": skipped, "held": None}
 
 
 def normalized(kind: str, value: str) -> str | None:
@@ -599,6 +696,7 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
     if not on:
         return 0
     allowlist = Allowlist(shared.get("iocAllowlist") or [])
+    judged = judge(shared)
     red = red_incidents(db)
     rows = db.execute(
         select(IocEntry.type, IocEntry.value, IocEntry.incident_id, IocEntry.sources)
@@ -625,6 +723,10 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
         if kind in ("md5", "sha1") and _hash_from_files(item["sources"]):
             continue
         if blocked(db, kind, value, allowlist, red=set()):  # TLP:RED handled above
+            continue
+        # Held by the data guard: judged again at every pass, at no request, so it is asked the
+        # pass after its class is opened and never before.
+        if held(kind, value, judged):
             continue
         known = cached.get((kind, value), {})
         jobs += [(s, kind, value) for s in on if s.supports(kind) and not fresh(known.get(s.id), cfg)]
@@ -660,12 +762,15 @@ def plan_check(
     db: OrmSession, pairs: Iterable[tuple[str, str]], shared: dict[str, Any], force: bool = False
 ) -> dict[str, Any]:
     """What a bulk check would ask: per indicator the sources to ask, and
-    per source how many requests against what its instance may still make today."""
+    per source how many requests against what its instance may still make today.
+    ``neverSent`` counts what the rule of the look-ups keeps in, ``held`` what the data guard holds
+    for the look-ups made outside playbooks: neither is asked about."""
     from ..automation import instance_keys
 
     cfg = config(shared)
     allowlist = Allowlist(shared.get("iocAllowlist") or [])
     red = red_incidents(db)
+    judged = judge(shared)
     on = asked(db)
     wanted = list(dict.fromkeys(pairs))[:MAX_CHECK_ITEMS]
     cached: dict[tuple[str, str], dict[str, Enrichment]] = {}
@@ -674,11 +779,14 @@ def plan_check(
         for start in range(0, len(values), 500):
             for row in db.scalars(select(Enrichment).where(Enrichment.value.in_(values[start : start + 500]))):
                 cached.setdefault((row.type, row.value), {})[row.provider] = row
-    pending, never, reused = [], 0, 0
+    pending, never, kept_in, reused = [], 0, 0, 0
     need: dict[str, int] = {}
     for kind, value in wanted:
         if blocked(db, kind, value, allowlist, red=red):
             never += 1
+            continue
+        if held(kind, value, judged):
+            kept_in += 1
             continue
         known = cached.get((kind, value), {})
         ask_ids = [s.id for s in on if s.supports(kind) and (force or not fresh(known.get(s.id), cfg))]
@@ -715,6 +823,7 @@ def plan_check(
         "toAsk": len(pending),
         "reused": reused,
         "neverSent": never,
+        "held": kept_in,
         "seconds": int(seconds),
         "sources": listed,
         "pending": pending,
@@ -734,7 +843,7 @@ def start_check(
         status="running" if plan["pending"] else "done",
         total=plan["toAsk"],
         done=0,
-        message="",
+        message=held_note(plan.get("held", 0)),
         pending=plan["pending"],
         items=plan["items"],
         created_at=now,
@@ -778,7 +887,10 @@ def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 6
     """Work through the bulk checks, oldest first; returns the requests made.
 
     A check whose remaining sources have all used up their keys is left
-    ``waiting`` with a message that says so: it goes on when a key is free again."""
+    ``waiting`` with a message that says so: it goes on when a key is free again.
+
+    The data guard is asked again as a check goes on: what it holds now is not asked about, whatever
+    was planned (a class may have been closed since), and the message of the check counts it."""
     started, calls = time.monotonic(), 0
     active = db.scalars(
         select(IocCheck).where(IocCheck.status.in_(("running", "waiting"))).order_by(IocCheck.created_at)
@@ -786,8 +898,14 @@ def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 6
     if not active:
         return 0
     by_id = {source.id: source for source in asked(db)}
+    judged = judge(shared)
+    allowlist = Allowlist(shared.get("iocAllowlist") or [])
+    red = red_incidents(db)
     for check in active:
-        pending = [[k, v, list(ids)] for k, v, ids in check.pending or []]
+        held_now = {(k, v) for k, v in (tuple(item[:2]) for item in check.items or []) if held(k, v, judged)}
+        # What the rule of the look-ups keeps in was never the guard's to hold: it is not counted as held.
+        note = held_note(sum(1 for k, v in held_now if not blocked(db, k, v, allowlist, red=red)))
+        pending = [[k, v, list(ids)] for k, v, ids in check.pending or [] if (k, v) not in held_now]
         # A source that is off now (or that does not exist any more) is not waited for.
         for item in pending:
             item[2] = [source_id for source_id in item[2] if source_id in by_id]
@@ -815,7 +933,7 @@ def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 6
         check.pending = pending
         flag_modified(check, "pending")
         if not pending:
-            check.status, check.message = "done", ""
+            check.status, check.message = "done", note
             from .. import ioc_history
 
             ioc_history.finish(db, check)
@@ -825,10 +943,10 @@ def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 6
             if len(spent) == len(waiting):
                 check.status = "waiting"
                 check.message = (
-                    f"{', '.join(spent)}: every key is used up. It goes on by itself when one is free again."
-                )
+                    f"{', '.join(spent)}: every key is used up. It goes on by itself when one is free again. {note}"
+                ).strip()
             else:
-                check.status, check.message = "running", ""
+                check.status, check.message = "running", note
         if finished or check.status != "running":
             check.updated_at = now_iso()
         db.commit()

@@ -32,12 +32,31 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..core import vault
+from .. import artifact_jobs
+from ..core import audit, vault
 from ..core.models import Connection, Connector
+from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
-from . import actions, connector_files, connector_logo, egress, instance_keys, mail_evidence, outbound
+from . import (
+    actions,
+    connector_files,
+    connector_logo,
+    credentials,
+    egress,
+    instance_keys,
+    mail_evidence,
+    outbound,
+)
 from . import expressions as ex
-from .connector_runtime import AUTH_FIELDS, FILE_SAMPLE, CommandError, NotSent, Runtime, forget_tokens
+from .connector_runtime import (
+    AUTH_FIELDS,
+    FILE_SAMPLE,
+    UNPACKED_SAMPLE,
+    CommandError,
+    NotSent,
+    Runtime,
+    forget_tokens,
+)
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
 
 SEED_DIR = Path(__file__).parent / "seed" / "connectors"
@@ -82,6 +101,7 @@ def install(
         except connector_logo.LogoError as error:
             raise ConnectorError([Problem(0, f"The logo: {error.message}")]) from None
     row = db.get(Connector, connector.id)
+    before = parsed(row) if row is not None else None
     now = now_iso()
     if row is None:
         row = Connector(id=connector.id, created_at=now, created_by=actor)
@@ -105,12 +125,59 @@ def install(
     row.updated_at = now
     row.updated_by = actor
     db.flush()
+    if before is not None:
+        carry_key(db, before, connector, actor)
     if connector.native is None and any(command.reputation for command in connector.commands):
         # A source of threat intelligence: a key kept for it before 6.5 becomes the key of an instance.
         from ..enrichment import old_keys
 
         old_keys.adopt(db)
     return row, connector
+
+
+def renamed_key(before: ConnectorFile, after: ConnectorFile) -> tuple[str, str] | None:
+    """``(old name, new name)`` when a new version of a connector asks for the same one key under another
+    name: it had one ``secret`` of its own and no credentials (``api_key``, written into each request by
+    hand), and now has credentials of one value (``header``, ``query``, ``bearer``) and that secret no
+    more. None in every other case: nothing else can be told to be the same secret."""
+    old, new = secret_names(before), secret_names(after)
+    gone = [name for name in old if name not in new]
+    came = [name for name in new if name not in old]
+    one_value = after.auth is not None and len(AUTH_FIELDS.get(after.auth.type, ())) == 1
+    if before.auth is None and one_value and len(gone) == 1 and len(came) == 1:
+        return gone[0], came[0]
+    return None
+
+
+def carry_key(db: OrmSession, before: ConnectorFile, after: ConnectorFile, actor: str) -> int:
+    """Keep the keys of the instances when a new version of their connector calls the key otherwise
+    (``renamed_key``): what each key of each instance holds under the old name is held under the new one,
+    a typed value and the name of a stored credential alike. Nobody types a key again because a file
+    was tidied. Returns how many instances were changed (the caller commits)."""
+    names = renamed_key(before, after)
+    if names is None:
+        return 0
+    old, new = names
+    changed = 0
+    for connection in connections_of(db, after.id):
+        moved = False
+        for key in instance_keys.keys_of(connection):
+            if key.secrets.get(old) and not key.secrets.get(new):
+                held = dict(key.secrets)
+                held[new] = held.pop(old)
+                instance_keys.set_key_secrets(connection, key.id, held)
+                moved = True
+        if moved:
+            changed += 1
+            audit.record(
+                db,
+                actor,
+                "connection.update",
+                f'Kept the key of the instance "{connection.name}" under the name version {after.version} of '
+                f"{after.name} asks for it ({old} is {new} now)",
+                target=connection.name,
+            )
+    return changed
 
 
 def package_of(folder: Path) -> tuple[str, dict[str, Any]]:
@@ -185,6 +252,17 @@ def store_secrets(connection: Connection, secrets: dict[str, Any]) -> None:
     kept = {key: str(value) for key, value in secrets.items() if value not in (None, "")}
     connection.secrets = vault.encrypt(json.dumps(kept)) if kept else ""
     forget_tokens(connection.id)
+
+
+def usable_secrets(db: OrmSession, connection: Connection, key: instance_keys.Key | None = None) -> dict[str, Any]:
+    """The secrets a request of the instance goes with (those of ``key``, or of its first key): what was
+    typed as it is, and in place of each stored credential the instance names, the value it has now
+    (credentials.py). A credential that is missing fails the command, by its name: nothing stands in."""
+    held = secrets_of(connection) if key is None or key.id == instance_keys.MAIN else key.secrets
+    try:
+        return credentials.resolved(db, held, connection.name)
+    except credentials.CredentialError as error:
+        raise CommandError(error.message, retry=False) from None
 
 
 def connections_of(db: OrmSession, connector_id: str) -> list[Connection]:
@@ -326,14 +404,24 @@ def runtime_for(
         # A recipient is judged by the playbook's own policy: the host of the mailbox is not one.
         if playbook is not None:
             policy = outbound.policy_for(db, playbook)
-        return MailRuntime(connector, connection.config or {}, secrets_of(connection), policy)
+        return MailRuntime(connector, connection.config or {}, usable_secrets(db, connection), policy)
     if key is None or key.id == instance_keys.MAIN:
         return Runtime(
-            connector, connection.config or {}, secrets_of(connection), policy, token_key=connection.id, clock=clock
+            connector,
+            connection.config or {},
+            usable_secrets(db, connection),
+            policy,
+            token_key=connection.id,
+            clock=clock,
         )
     # Another key signs in on its own: its token is not the first key's.
     return Runtime(
-        connector, connection.config or {}, key.secrets, policy, token_key=f"{connection.id}:{key.id}", clock=clock
+        connector,
+        connection.config or {},
+        usable_secrets(db, connection, key),
+        policy,
+        token_key=f"{connection.id}:{key.id}",
+        clock=clock,
     )
 
 
@@ -389,7 +477,14 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     args = {**said, **{key: args[key] for key in where}}
     now = call.now or time.time()
     classes = {"": sorted(call.classes)} if call.classes else {}
+    if isinstance((call.state or {}).get("kept"), dict):
+        # The command is done; what it kept was handed to the API process, and the step waits for it.
+        return _when_kept(call, call.state, now)
     state = _unseal(call.state)
+    # What the command keeps goes to the store from here, or through the API process when this one
+    # cannot write to it: the step then waits for the files before it gives its outputs.
+    keeper = artifact_jobs.Keeper.of(call, SYSTEM_USER)
+    asked_before = list((state or {}).get("keeping") or [])
     # The keys of the instance take turns (instance_keys.py). Not in a dry run, which sends nothing, and
     # not for a connector Nik speaks for, which has its own way in.
     turns = connector.native is None and not call.dry_run
@@ -437,17 +532,17 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
                 # of this run.
                 runtime.judge = lambda quoted, found: outbound.guarded_message(call, quoted, found, decided)
                 runtime.keep = lambda found, message, wanted: mail_evidence.keep_attachments(
-                    call, found, message, wanted
+                    call, found, message, wanted, keeper
                 )
             else:
                 # A file a command gives is kept there, one it sends is read from there once the guard
                 # has judged it: what the guard says is added to what it said of the arguments.
-                runtime.store = connector_files.Store(call, connector.name, command_name, decided)
+                runtime.store = connector_files.Store(call, connector.name, command_name, decided, keeper)
             if call.dry_run:
                 would = {**runtime.would_send(command_name, args), "held": decided, "connection": connection.name}
                 sample = command.sample if command.sample is not None else dict.fromkeys(command.outputs)
                 if command.sample is None and not command.outputs and command.gives_file:
-                    sample = dict(FILE_SAMPLE)
+                    sample = {**FILE_SAMPLE, **(UNPACKED_SAMPLE if command.unpacks else {})}
                 return actions.Result(output=sample, request=would)
             answer = runtime.run(command_name, args, state)
             break
@@ -472,6 +567,25 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
             )
             if key is not None and error.sent:
                 instance_keys.used(db, connection, key.id, now)
+            if getattr(error, "kept", None):
+                # The command failed and kept something all the same (an archive that could not be
+                # unpacked). A step that fails keeps nothing of what it did, so this one first gives
+                # itself back, which keeps the file (and waits for the API process when it is the one
+                # that writes it), and fails when it is called again.
+                failed = {"message": failure.message, "request": {**(failure.request or {}), "kept": error.kept}}
+                kept = {
+                    "jobs": [*asked_before, *keeper.pending],
+                    "until": now + artifact_jobs.WAIT_FOR,
+                    "audits": [*_audits(state), *keeper.audits],
+                    "request": failed["request"],
+                    "fail": failed,
+                }
+                return actions.Result(
+                    again_at=now + (artifact_jobs.WAIT_EVERY if kept["jobs"] else 0),
+                    state={"kept": kept},
+                    request=failed["request"],
+                    log=failure.message,
+                )
             if key is not None and error.status == instance_keys.QUOTA_STATUS and not pinned:
                 # The vendor says this key is used up: it is left alone, and the next one is tried.
                 instance_keys.refused(db, connection, key.id, now)
@@ -484,19 +598,73 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     record = {**_record(answer.records, decided), "connection": connection.name}
     if key is not None and len(instance_keys.keys_of(connection)) > 1:
         record["key"] = key.name
+    asked = [*asked_before, *keeper.pending]
     if not answer.done:
-        waiting = {**(answer.state or {}), "key": key.id} if key is not None else answer.state
+        waiting = {**(answer.state or {}), "key": key.id} if key is not None else dict(answer.state or {})
+        if asked:
+            # A step of the command kept a file and the command waits for something else: the files
+            # asked for so far are waited for when it ends.
+            waiting["keeping"], waiting["keeping_audits"] = asked, [*_audits(state), *keeper.audits]
         return actions.Result(again_at=answer.again_at, state=_seal(waiting), request=record)
     if keeps:
         instance_keys.keep_answer(db, connection, command_name, args, answer.outputs, answer.context, now)
     # What comes back may repeat what was sent: it keeps the classes of what went out, beside those
     # the command gives its own outputs (the name of an attachment).
-    return actions.Result(
+    result = actions.Result(
         output=answer.outputs,
         classes={**answer.classes, **classes},
         request=record,
         context=answer.context,
         context_source=f"connector:{connector_id}",
+    )
+    if not asked:
+        return result
+    kept = {
+        "jobs": asked,
+        "until": now + artifact_jobs.WAIT_FOR,
+        "audits": [*_audits(state), *keeper.audits],
+        "output": result.output,
+        "classes": result.classes,
+        "request": result.request,
+        "context": [list(pair) for pair in result.context],
+        "source": result.context_source,
+    }
+    return _when_kept(call, {"kept": kept}, now)
+
+
+def _audits(state: dict | None) -> list:
+    return list((state or {}).get("keeping_audits") or [])
+
+
+def _when_kept(call: actions.Call, state: dict, now: float) -> actions.Result:
+    """The result of a command whose files the API process keeps: given once they are kept, and the
+    step looks again until then. A file that could not be kept fails the step."""
+    kept = state["kept"]
+    try:
+        done = artifact_jobs.kept(call.db, kept, SYSTEM_USER, now)
+    except artifact_jobs.JobError as error:
+        raise actions.ActionError(str(error), retry=False, request=kept.get("request")) from None
+    if not done:
+        return actions.Result(
+            again_at=now + artifact_jobs.WAIT_EVERY,
+            state=state,
+            request=kept.get("request"),
+            log="Waiting for the server to keep the file",
+        )
+    if kept.get("fail"):
+        if kept.get("jobs"):
+            # Kept by the API process just now: its line of the audit log is written with this call,
+            # and a step that fails keeps nothing it wrote. So the step fails at the next one.
+            settled = {**kept, "jobs": [], "audits": []}
+            return actions.Result(again_at=now, state={"kept": settled}, request=kept.get("request"))
+        # What was kept is kept: the command itself failed, and says so now.
+        raise actions.ActionError(str(kept["fail"]["message"]), retry=False, request=kept["fail"].get("request"))
+    return actions.Result(
+        output=kept.get("output"),
+        classes=kept.get("classes") or {},
+        request=kept.get("request"),
+        context=[tuple(pair) for pair in kept.get("context") or []],
+        context_source=str(kept.get("source") or ""),
     )
 
 
@@ -511,18 +679,49 @@ _FILE_OUTPUTS = (
 )
 
 
+# And when the file is an archive that is unpacked: the files that were inside it.
+_UNPACKED_OUTPUTS = (
+    {
+        "name": "files",
+        "type": "list",
+        "description": "The files that were in the archive: {name, type, size, sha256, artifact}",
+        "shape": [
+            {"name": "[0].name", "type": "text", "description": "The name of the first file, as the archive says it"},
+            {"name": "[0].type", "type": "text", "description": "What it is, as Nik detected it"},
+            {"name": "[0].size", "type": "number", "description": "Its size in bytes"},
+            {"name": "[0].sha256", "type": "text", "description": "Its SHA-256"},
+            {"name": "[0].artifact", "type": "text", "description": "The artifact it was kept as (file-…)"},
+        ],
+    },
+    {"name": "count", "type": "number", "description": "How many files were taken out"},
+    {
+        "name": "skipped",
+        "type": "list",
+        "description": "What was in the archive and was not taken out, and why: {name, reason}",
+        "shape": [
+            {"name": "[0].name", "type": "text", "description": "The name of the first that was left"},
+            {"name": "[0].reason", "type": "text", "description": "Why"},
+        ],
+    },
+)
+
+
 def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
     connector_id, name = connector.id, command.name
     described = command.gives_file and not command.outputs
+    secret = command.secret_arguments
     return actions.Spec(
         id=f"{connector.id}.{command.name}",
         group=connector.name,
         name=command.name,
         description=command.description,
-        arguments=tuple(argument.model_dump(exclude_none=True) for argument in command.arguments),
+        arguments=tuple(
+            {**argument.model_dump(exclude_none=True), **({"secret": True} if argument.name in secret else {})}
+            for argument in command.arguments
+        ),
         outputs=tuple({"name": key, "type": "any", "description": ""} for key in command.outputs)
         or (
-            _FILE_OUTPUTS
+            (*_FILE_OUTPUTS, *(_UNPACKED_OUTPUTS if command.unpacks else ()))
             if described
             else ({"name": "response", "type": "any", "description": "The answer, as it came"},)
         ),

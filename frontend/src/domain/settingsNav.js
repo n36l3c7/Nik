@@ -172,6 +172,15 @@ export const SETTINGS_GROUPS = [
           'classifiers classify type mappers mapping fields vendor outgoing sample expression mirror queue',
       },
       {
+        id: 'credentials',
+        slug: 'credentials',
+        label: 'Credentials',
+        permission: 'connectors.manage',
+        keywords:
+          // Not "password": that word finds My account, where a person changes their own.
+          'secrets stored api key token user name username pair vault shared reuse instances connectors variable reinstall',
+      },
+      {
         id: 'automationNetwork',
         slug: 'network-and-data',
         label: 'Network and data',
@@ -285,6 +294,22 @@ export function instanceFromPath(pathname) {
     // A stray % in the address: taken as it is written.
   }
   return { instanceId: id, tab: INSTANCE_TABS.includes(tab) ? tab : 'connection' }
+}
+
+/** The address of Credentials with one credential pointed at (by its name). */
+export const credentialPath = (name) => `${settingsPath('credentials')}/${encodeURIComponent(name)}`
+
+/** The credential an address of Credentials points at (its name), or '' when it names none. */
+export function credentialFromPath(pathname) {
+  const path = String(pathname ?? '').split('?')[0]
+  if (settingsFromPath(path)?.id !== 'credentials') return ''
+  const [, , , slug, name] = path.replace(/\/+$/, '').split('/')
+  if (slug !== 'credentials' || !name) return ''
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
 }
 
 /**

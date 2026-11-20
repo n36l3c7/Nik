@@ -2,6 +2,7 @@ import { useFields } from '../../../context/FieldsContext.jsx'
 import { typeOf } from '../../../domain/fields.js'
 import { pageName, pageOf } from '../../../domain/typePages.js'
 import PageGrid from './PageGrid.jsx'
+import { EmptyState } from '../../ui/index.js'
 
 /*
  * ============================================================================
@@ -24,9 +25,13 @@ export default function TypePageTab({ incident, pageId }) {
   if (!page) return <p className="text-sm text-fg-muted">This page is no longer in the type of the incident.</p>
   if (page.grid.length === 0) {
     return (
-      <p role="status" className="text-sm text-fg-muted">
-        Nothing was put on this page yet. Its widgets are chosen in Settings, Incidents, Types.
-      </p>
+      <div role="status">
+        <EmptyState
+          skull
+          title="Nothing on this page yet"
+          message="Nothing was put on this page yet. Its widgets are chosen in Settings, Incidents, Types."
+        />
+      </div>
     )
   }
   return <PageGrid incident={incident} type={type} grid={page.grid} label={`${pageName(page)} of the incident`} />

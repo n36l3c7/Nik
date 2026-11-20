@@ -20,6 +20,7 @@ import {
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
 import TypePagesEditor from './TypePagesEditor.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -121,12 +122,19 @@ function Builder({ type: saved, fields, colours, types, onBack, onSaved, onDelet
       setType(answer)
       setReasons((answer.closeReasons ?? []).join('\n'))
       onSaved(answer)
+      return true
     } catch (failure) {
       setError(failure.message)
+      return false
     } finally {
       setBusy(false)
     }
   }
+  const unsaved = useUnsavedChanges(dirty, {
+    what: 'The type of incident',
+    name: saved.name,
+    save: String(type.name).trim() ? () => save() : undefined,
+  })
   const remove = async () => {
     setBusy(true)
     try {
@@ -143,7 +151,7 @@ function Builder({ type: saved, fields, colours, types, onBack, onSaved, onDelet
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={() => unsaved.leave(onBack)}>
           All types
         </Button>
         <span className="flex-1" />
@@ -545,6 +553,7 @@ export default function IncidentTypesSection() {
     load()
   }, [load])
 
+  const naming = useUnsavedChanges(creating && Boolean(newName.trim()), { what: 'The new type of incident' })
   const create = async (event) => {
     event.preventDefault()
     setBusy(true)
@@ -647,7 +656,7 @@ export default function IncidentTypesSection() {
       )}
       <Modal
         open={creating}
-        onClose={() => setCreating(false)}
+        onClose={() => naming.leave(() => setCreating(false))}
         title="New type"
         footer={
           <>

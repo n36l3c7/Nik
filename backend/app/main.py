@@ -23,7 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from . import urlscan_queue, worker_watch
+from . import artifact_jobs, urlscan_queue, worker_watch
 from .artifacts import backfill as backfill_artifacts
 
 # Import models so their tables are registered on the shared metadata before
@@ -51,6 +51,7 @@ from .routers import (
     capa_rules,
     connectors,
     context,
+    credentials,
     dashboards,
     enrichment,
     fetch,
@@ -151,7 +152,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="6.5.0",
+    version="6.6.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -213,6 +214,8 @@ def on_startup() -> None:
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
+        # So does what playbooks ask about files: the worker cannot write to the store nor reach the analysis workers.
+        artifact_jobs.start()
     # The scripts and the connectors Nik ships are there (a release may bring new versions),
     # and the playbooks it ships were added once.
     if app_settings.AUTOMATION_WORKER != "off":
@@ -314,6 +317,7 @@ app.include_router(query.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 app.include_router(automation.incident_router, prefix="/api")
 app.include_router(connectors.router, prefix="/api")
+app.include_router(credentials.router, prefix="/api")
 app.include_router(fields.router, prefix="/api")
 app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")

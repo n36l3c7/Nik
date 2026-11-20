@@ -261,9 +261,9 @@ def _send_through(call: Call, instance, to: list[str], subject: str, text: str, 
     connector = connector_actions.parsed(row) if row is not None else None
     if connector is None:
         raise ActionError("The Mail connector is not installed", retry=False)
-    runtime = connector_actions.runtime_for(call.db, connector, instance, call.playbook, call.now)
     args = {"to": to, "subject": subject, "text": text}
     try:
+        runtime = connector_actions.runtime_for(call.db, connector, instance, call.playbook, call.now)
         if call.dry_run:
             would = {**runtime.would_send("send", args), "held": decided, "connection": instance.name}
             return Result(output={"sent": False, "recipients": len(to)}, request=would)

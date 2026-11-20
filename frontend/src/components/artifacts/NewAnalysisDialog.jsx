@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Search, Upload } from 'lucide-react'
 import { Button, Modal } from '../ui/index.js'
 import { urlFromText } from '../../domain/urlscan.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * "New analysis": the entry point for analysing something without opening an
@@ -37,6 +38,10 @@ export default function NewAnalysisDialog({ open, onClose, onFile, onUrl, initia
     setBusy(false)
   }, [open, initialUrl])
 
+  const unsaved = useUnsavedChanges(open && address.trim() !== String(initialUrl ?? '').trim(), {
+    what: 'The address to analyse',
+  })
+
   const take = (file) => {
     if (file) onFile(file)
   }
@@ -62,7 +67,7 @@ export default function NewAnalysisDialog({ open, onClose, onFile, onUrl, initia
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="New analysis"
       maxWidth="max-w-xl"
       footer={
@@ -122,7 +127,7 @@ export default function NewAnalysisDialog({ open, onClose, onFile, onUrl, initia
               placeholder="https://… (hxxps://evil[.]top works too)"
               className="h-9 min-w-0 flex-1 border border-line bg-canvas px-3 font-mono text-sm text-fg placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
-            <Button type="submit" icon={Search} disabled={busy || !address.trim()}>
+            <Button waiting={busy} type="submit" icon={Search} disabled={busy || !address.trim()}>
               {busy ? 'Starting…' : 'Scan address'}
             </Button>
           </div>

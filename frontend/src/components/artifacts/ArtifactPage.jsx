@@ -1,10 +1,28 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, Download, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Boxes,
+  Download,
+  FolderOpen,
+  FolderPlus,
+  Link2,
+  Plus,
+  FileSearch,
+  Tag,
+  Trash2,
+} from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { getTabById } from '../../config/tabs.js'
-import { artifactKind, parseTags, standaloneIncident, verdictBadge } from '../../domain/artifactRegistry.js'
+import {
+  RELATION_LABELS,
+  analyseAsActions,
+  artifactKind,
+  parseTags,
+  standaloneIncident,
+  verdictBadge,
+} from '../../domain/artifactRegistry.js'
 import { formatDateTime, anyToMs } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, Chip, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
@@ -15,6 +33,7 @@ import { exportRequest } from '../../domain/artifactExpiry.js'
 import MailboxPage from './MailboxPage.jsx'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import ArtifactRuns from '../automation/ArtifactRuns.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -27,8 +46,6 @@ import ArtifactRuns from '../automation/ArtifactRuns.jsx'
  * tab an incident uses (Malware, Mail or Network Analysis) shows this one
  * artifact through a stand-in incident (see standaloneIncident()).
  */
-
-const RELATION_LABELS = { attachment: 'attachment', extracted: 'extracted object', session: 'browser session' }
 
 function Row({ label, children }) {
   return (
@@ -46,8 +63,19 @@ function Row({ label, children }) {
  * }} props
  */
 export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
-  const { current, currentId, currentError, openArtifact, closeArtifact, link, unlink, setTags, setExpiry, remove } =
-    useArtifacts()
+  const {
+    current,
+    currentId,
+    currentError,
+    openArtifact,
+    closeArtifact,
+    link,
+    analyseAs,
+    unlink,
+    setTags,
+    setExpiry,
+    remove,
+  } = useArtifacts()
   const { incidents, activeIncidentId, retryActiveIncident } = useIncidents()
   const { showToast } = useToast()
   const { setFilters, filters } = useArtifacts()
@@ -59,12 +87,17 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [tagsDraft, setTagsDraft] = useState(null) // null = not editing
   const [busy, setBusy] = useState(false)
+  const [analysing, setAnalysing] = useState(null) // 'mail' | 'pcap' while the file is read as one
   const [reference, setReference] = useState(null) // a capture's live reference
 
   useEffect(() => {
     setReference(null)
     setTagsDraft(null)
   }, [currentId])
+  useUnsavedChanges(tagsDraft !== null && tagsDraft.trim() !== (current?.tags ?? []).join(' '), {
+    what: 'The tags of the artifact',
+    name: current?.name,
+  })
 
   const artifact = current?.id === currentId ? current : null
   const incident = useMemo(() => (artifact ? standaloneIncident(artifact, reference) : null), [artifact, reference])
@@ -73,7 +106,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
     return (
       <div className="flex h-full items-center justify-center">
         <EmptyState
-          illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+          skull="error"
           title="Unable to open the artifact"
           message={currentError}
           action={<Button onClick={closeArtifact}>Close</Button>}
@@ -170,6 +203,16 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
       showToast({ message: `Linked to ${name}.`, action: { label: 'Open', run: () => onOpenIncident(linkTarget) } })
     }, 'Link')
 
+  // A file that is a message or a capture: the e-mail or the capture is made from it, and opened.
+  const handleAnalyseAs = (action) => {
+    setAnalysing(action.as)
+    return run(async () => {
+      const made = await analyseAs(artifact.id, action.as)
+      showToast({ message: `Analysed as ${action.made}. The file stays as it is.` })
+      openArtifact(made.id)
+    }, action.label).finally(() => setAnalysing(null))
+  }
+
   const handleUnlink = (target) =>
     run(async () => {
       await unlink(artifact.id, target.id)
@@ -229,6 +272,18 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           <Button size="sm" icon={FolderPlus} disabled={!canLink} onClick={() => onNewIncident(artifact)}>
             New incident from this
           </Button>
+          {analyseAsActions(artifact).map((action) => (
+            <Button
+              key={action.as}
+              size="sm"
+              icon={FileSearch}
+              waiting={analysing === action.as}
+              disabled={busy}
+              onClick={() => handleAnalyseAs(action)}
+            >
+              {analysing === action.as ? 'Analysing…' : action.label}
+            </Button>
+          ))}
           <Button variant="ghost" size="sm" icon={Download} onClick={() => setExportOpen(true)}>
             Export
           </Button>

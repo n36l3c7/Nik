@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { api } from '../../services/api.js'
 import { formatDateTime } from '../../lib/time.js'
-import { AsciiSkull, Badge, EmptyState } from '../ui/index.js'
+import { Badge, EmptyState } from '../ui/index.js'
 import ApprovalBanner from './ApprovalBanner.jsx'
 import { SectionTitle } from './fields.jsx'
 
@@ -40,7 +40,7 @@ export default function ApprovalsPage({ onOpenRun }) {
         <SectionTitle>Waiting for an answer · {approvals.length}</SectionTitle>
         {approvals.length === 0 ? (
           <EmptyState
-            illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+            skull
             title="Nothing waits for an answer"
             message="A run stops here when a playbook asks a person: at an approval node, or before a node that changes something outside Nik."
           />

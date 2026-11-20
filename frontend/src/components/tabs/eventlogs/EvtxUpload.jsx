@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Check, FileArchive, Loader2 } from 'lucide-react'
+import { AlertTriangle, Check, FileArchive } from 'lucide-react'
 import { api, upload } from '../../../services/api.js'
+import { MicroSkull, TransferBar } from '../../ui/index.js'
 
 /*
  * Drop zone for raw .evtx files. The browser cannot read the binary format, so
@@ -142,14 +143,19 @@ export default function EvtxUpload({ incidentId, onDone, dropped = null }) {
               ) : item.state === 'error' ? (
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-high" />
               ) : (
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-fg-muted" />
+                <MicroSkull className="shrink-0 text-accent" />
               )}
               <span className="min-w-0 flex-1 truncate text-fg" title={item.name}>
                 {item.name} <span className="text-fg-subtle">{formatSize(item.size)}</span>
               </span>
               <span className={item.state === 'error' ? 'text-high' : 'text-fg-muted'}>
                 {item.state === 'queued' && 'queued'}
-                {item.state === 'uploading' && `uploading ${item.percent}%`}
+                {item.state === 'uploading' && (
+                  <span className="inline-flex items-center gap-2">
+                    uploading {item.percent}%
+                    <TransferBar label={`Uploading ${item.name}`} percent={item.percent} className="w-20" />
+                  </span>
+                )}
                 {item.state === 'parsing' && 'parsing on the server…'}
                 {item.state === 'done' && `${(item.result?.rows ?? 0).toLocaleString('en-US')} events kept`}
                 {item.state === 'error' && item.error}

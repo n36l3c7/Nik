@@ -193,7 +193,10 @@ made every field of theirs something a query can ask for, put fetching,
 the classifier and the mappers in the instance, and made Nik's own menu
 answer the right button on every page; 6.5 taught connectors to keep and
 send files and their expressions to decide and count, and made the
-reputation of an indicator something only connectors are asked for.
+reputation of an indicator something only connectors are asked for; 6.6
+made the rail lead home and ask before unsaved work is lost, kept
+credentials once for every instance, gave playbooks nodes for files and
+their analyses, and put the data guard on every look-up.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

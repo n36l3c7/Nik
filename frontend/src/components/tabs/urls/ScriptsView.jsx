@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, FileCode2 } from 'lucide-react'
-import { Badge, Button, EmptyState, MicroSkull, StatCard } from '../../ui/index.js'
+import { Download } from 'lucide-react'
+import { Badge, Button, EmptyState, StatCard, Wait } from '../../ui/index.js'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
@@ -99,7 +99,7 @@ export default function ScriptsView({ scan }) {
   if (scripts.length === 0)
     return (
       <EmptyState
-        icon={FileCode2}
+        skull
         title="No scripts"
         message="The page loaded and carried no script, or it was scanned before scripts were collected: re-scan it."
       />
@@ -268,7 +268,7 @@ export default function ScriptsView({ scan }) {
                   {error}
                 </p>
               ) : !detail ? (
-                <MicroSkull className="text-lg text-fg-muted" />
+                <Wait>Loading the script…</Wait>
               ) : (
                 <Code code={detail.code} findings={detail.findings} focus={focus} beautified={pretty} />
               )}

@@ -10,7 +10,7 @@
         "path": "/web/api/v2.1/threats",
         "query": {
           "contentHashes": "3395856ce81f2b7382dee72602f798b642f14140",
-          "resolved": "false",
+          "resolved": false,
           "limit": 100
         },
         "headers": {
@@ -24,16 +24,37 @@
             {
               "id": "5555555555555555555",
               "threatInfo": {
+                "threatId": "5555555555555555555",
                 "threatName": "dropper.exe",
+                "classification": "Trojan",
+                "confidenceLevel": "malicious",
+                "analystVerdict": "undefined",
+                "incidentStatus": "unresolved",
+                "mitigationStatus": "not_mitigated",
                 "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
-                "mitigationStatus": "not_mitigated"
+                "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+                "filePath": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+                "storyline": "A1B2C3D4E5F60718",
+                "createdAt": "2026-11-16T08:30:05.123456Z",
+                "updatedAt": "2026-11-16T08:31:00.000000Z"
               },
               "agentRealtimeInfo": {
-                "agentComputerName": "WKS-FINANCE-01"
-              }
+                "agentId": "1234567890123456789",
+                "agentComputerName": "WKS-FINANCE-01",
+                "agentOsName": "Windows 11 Pro",
+                "agentNetworkStatus": "connected",
+                "siteId": "2222222222222222222",
+                "siteName": "Milan"
+              },
+              "mitigationStatus": [],
+              "whiteningOptions": [
+                "hash",
+                "path"
+              ]
             }
           ],
           "pagination": {
+            "totalItems": 1,
             "nextCursor": null
           }
         }
@@ -45,18 +66,54 @@
       {
         "id": "5555555555555555555",
         "threatInfo": {
+          "threatId": "5555555555555555555",
           "threatName": "dropper.exe",
+          "classification": "Trojan",
+          "confidenceLevel": "malicious",
+          "analystVerdict": "undefined",
+          "incidentStatus": "unresolved",
+          "mitigationStatus": "not_mitigated",
           "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
-          "mitigationStatus": "not_mitigated"
+          "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+          "filePath": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+          "storyline": "A1B2C3D4E5F60718",
+          "createdAt": "2026-11-16T08:30:05.123456Z",
+          "updatedAt": "2026-11-16T08:31:00.000000Z"
         },
         "agentRealtimeInfo": {
-          "agentComputerName": "WKS-FINANCE-01"
-        }
+          "agentId": "1234567890123456789",
+          "agentComputerName": "WKS-FINANCE-01",
+          "agentOsName": "Windows 11 Pro",
+          "agentNetworkStatus": "connected",
+          "siteId": "2222222222222222222",
+          "siteName": "Milan"
+        },
+        "mitigationStatus": [],
+        "whiteningOptions": [
+          "hash",
+          "path"
+        ]
       }
     ],
     "ids": [
       "5555555555555555555"
     ],
-    "count": 1
+    "threat_id": "5555555555555555555",
+    "threat_name": "dropper.exe",
+    "classification": "Trojan",
+    "confidence_level": "malicious",
+    "analyst_verdict": "undefined",
+    "incident_status": "unresolved",
+    "mitigation_status": "not_mitigated",
+    "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "file_path": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+    "storyline": "A1B2C3D4E5F60718",
+    "agent_id": "1234567890123456789",
+    "computer_name": "WKS-FINANCE-01",
+    "site_id": "2222222222222222222",
+    "count": 1,
+    "total": 1,
+    "truncated": false
   }
 }

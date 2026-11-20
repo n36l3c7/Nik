@@ -15,10 +15,12 @@ import {
 } from '../../domain/automation/scripts.js'
 import { saveBlob } from '../../lib/download.js'
 import { formatDateTime } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import CodeEditor from './CodeEditor.jsx'
 import { SandboxBox } from './ScriptsPage.jsx'
 import { INPUT, SectionTitle } from './fields.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -359,6 +361,29 @@ export default function ScriptPage({ id, onBack, onOpenPlaybooks }) {
   const change = useCallback((patch) => setDraft((before) => (before ? { ...before, ...patch } : before)), [])
   const parsedArgs = parseJson(argsText, {})
   const parsedExpect = parseJson(expectText)
+
+  // Nothing unsaved is lost without asking (lib/unsaved.js). The draft saves itself and is sent on the
+  // way out, so only the browser's tab closing could lose it; a save the server refused, and a test
+  // whose JSON cannot be read (it never reaches the draft), are what leaving would lose.
+  useUnsavedChanges(saveState === 'pending' || saveState === 'saving', {
+    what: 'The script',
+    name: script?.name,
+    sent: true,
+  })
+  useUnsavedChanges(saveState === 'error', {
+    what: 'The draft of the script',
+    name: script?.name,
+    save: () =>
+      api.put(base, { draft: latestDraft.current }).then((found) => {
+        savedDraft.current = latestDraft.current
+        setScript(found)
+        setSaveState('saved')
+      }),
+  })
+  useUnsavedChanges(Boolean(draft) && Boolean(parsedArgs.error || parsedExpect.error), {
+    what: 'The test of the script',
+    name: script?.name,
+  })
   const onArgs = (text) => {
     setArgsText(text)
     const parsed = parseJson(text, {})
@@ -422,7 +447,7 @@ export default function ScriptPage({ id, onBack, onOpenPlaybooks }) {
 
   const exportFile = async () => {
     try {
-      const file = await api.get(`${base}/export`)
+      const file = await transfer(`Preparing the export of ${script.name}`, () => api.get(`${base}/export`))
       saveBlob(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }), `${script.name}.script.json`)
     } catch (failure) {
       showToast({ message: failure.message })
@@ -433,7 +458,7 @@ export default function ScriptPage({ id, onBack, onOpenPlaybooks }) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
-          illustration={<AsciiSkull preset="medium" eyes="x" tone="muted" />}
+          skull="error"
           title="This script cannot be opened"
           message={loadError}
           action={
@@ -494,10 +519,17 @@ export default function ScriptPage({ id, onBack, onOpenPlaybooks }) {
               Delete
             </Button>
           )}
-          <Button variant="secondary" size="sm" icon={FlaskConical} disabled={blocked || testing} onClick={runTest}>
+          <Button
+            waiting={testing}
+            variant="secondary"
+            size="sm"
+            icon={FlaskConical}
+            disabled={blocked || testing}
+            onClick={runTest}
+          >
             {testing ? 'Running…' : 'Run the test'}
           </Button>
-          <Button size="sm" disabled={blocked || saving || !changed} onClick={saveVersion}>
+          <Button waiting={saving} size="sm" disabled={blocked || saving || !changed} onClick={saveVersion}>
             {saving ? 'Testing…' : `Save as version ${nextVersion}`}
           </Button>
         </div>

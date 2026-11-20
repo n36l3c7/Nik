@@ -9,6 +9,7 @@ import {
   DEFAULT_ARTIFACT_KEYWORDS,
   DEFAULT_MALWARE_KEYWORDS,
 } from '../../../config/detectionRules.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Detection-rules settings section: the user-editable keyword rules, plus a
@@ -103,6 +104,8 @@ export default function DetectionRulesSection() {
 
   const draftPatternValid = draft.pattern.trim() === '' || isValidRegex(draft.pattern)
   const canAdd = draft.pattern.trim() !== '' && isValidRegex(draft.pattern)
+
+  useUnsavedChanges(Boolean(draft.label.trim() || draft.pattern.trim()), { what: 'The new detection rule' })
 
   const handleAdd = () => {
     if (!canAdd) return

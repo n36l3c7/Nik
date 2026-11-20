@@ -58,11 +58,15 @@ export default function AsIndicator({ indicator }) {
         </Badge>
       ) : data?.blocked ? (
         <Badge title={data.blocked}>never sent out</Badge>
+      ) : data?.held ? (
+        <Badge color="amber" title={data.held.reason}>
+          Reputation: held
+        </Badge>
       ) : (
         <Badge>Reputation: not checked</Badge>
       )}
-      {data && !data.blocked && data.providers.length > 0 && (
-        <Button size="xs" variant="ghost" icon={Radar} disabled={busy} onClick={check}>
+      {data && !data.blocked && !data.held && data.providers.length > 0 && (
+        <Button waiting={busy} size="xs" variant="ghost" icon={Radar} disabled={busy} onClick={check}>
           {busy ? 'Checking…' : summary ? 'Check again' : 'Check reputation'}
         </Button>
       )}

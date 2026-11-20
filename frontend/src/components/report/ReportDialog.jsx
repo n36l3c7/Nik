@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Eye, FileText, Loader2 } from 'lucide-react'
-import { Button, Modal } from '../ui/index.js'
+import { Download, Eye, FileText } from 'lucide-react'
+import { Button, Modal, Wait } from '../ui/index.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useSocEngine } from '../../context/SettingsContext.jsx'
 import { postForBlob } from '../../services/api.js'
@@ -128,14 +128,27 @@ export default function ReportDialog({ open, onClose, incident }) {
       footer={
         <>
           {error && <span className="mr-auto text-xs text-high">{error}</span>}
-          <Button variant="secondary" icon={Eye} onClick={handlePreview} disabled={Boolean(busy)}>
+          <Button
+            variant="secondary"
+            icon={Eye}
+            waiting={busy === 'preview'}
+            onClick={handlePreview}
+            disabled={Boolean(busy)}
+          >
             {busy === 'preview' ? 'Building…' : 'Preview'}
           </Button>
-          <Button variant="secondary" icon={Download} onClick={() => handleDownload('html')} disabled={Boolean(busy)}>
-            HTML
+          <Button
+            variant="secondary"
+            icon={Download}
+            waiting={busy === 'html'}
+            onClick={() => handleDownload('html')}
+            disabled={Boolean(busy)}
+          >
+            {busy === 'html' ? 'Building…' : 'HTML'}
           </Button>
           <Button
-            icon={busy === 'pdf' ? Loader2 : Download}
+            icon={Download}
+            waiting={busy === 'pdf'}
             onClick={() => handleDownload('pdf')}
             disabled={Boolean(busy)}
           >
@@ -235,11 +248,13 @@ export default function ReportDialog({ open, onClose, incident }) {
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-fg-muted">
               {busy === 'preview' ? (
-                <Loader2 className="h-6 w-6 animate-spin" />
+                <Wait>The server is building the report…</Wait>
               ) : (
-                <FileText className="h-8 w-8 text-fg-subtle" />
+                <>
+                  <FileText className="h-8 w-8 text-fg-subtle" />
+                  <p>Preview the report as the server builds it, then download it as PDF or HTML.</p>
+                </>
               )}
-              <p>Preview the report as the server builds it, then download it as PDF or HTML.</p>
             </div>
           )}
         </div>

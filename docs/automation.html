@@ -391,6 +391,42 @@
               </td>
             </tr>
             <tr>
+              <td><code>code.analysed</code></td>
+              <td>
+                The disassembly of a file ends, done or failed: after an upload, <em>Disassemble</em>,
+                <em>Re-analyse</em> or a node, once for each run of it.
+              </td>
+              <td>
+                The <code>file.…</code> fields of <code>file.analysed</code>;
+                <code>code.status</code> (<code>done</code>, or <code>error</code>), <code>.error</code> (what the
+                worker said), <code>.functions</code>, <code>.imports</code> (how many).
+              </td>
+            </tr>
+            <tr>
+              <td><code>capabilities.analysed</code></td>
+              <td>capa ends on a file, done or failed. A file capa does not read starts no run of it, and no event.</td>
+              <td>
+                The <code>file.…</code> fields; <code>capabilities.status</code> (<code>done</code>,
+                <code>error</code>), <code>.error</code>, <code>.count</code>, <code>.names</code>,
+                <code>.attack</code> (the ATT&amp;CK techniques).
+              </td>
+            </tr>
+            <tr>
+              <td><code>capture.analysed</code></td>
+              <td>
+                The analysis of a packet capture ends, ready or failed: an upload, <em>Re-analyse</em>, new TLS keys, a
+                file analysed as a capture, the log of an isolated browser session that was closed.
+              </td>
+              <td>
+                <code>capture.id</code>, <code>.name</code>, <code>.kind</code> (<code>pcap</code>,
+                <code>browser</code>), <code>.status</code> (<code>ready</code>, or <code>error</code>),
+                <code>.error</code>, <code>.size</code>, <code>.sha256</code>, <code>.packets</code>,
+                <code>.hosts</code>, <code>.domains</code>, <code>.posts</code>, <code>.beacons</code>,
+                <code>.objects</code> (how many of each), <code>.artifact_id</code>, <code>.url</code>; the
+                <code>incident.…</code> fields when the capture is in one.
+              </td>
+            </tr>
+            <tr>
               <td><code>url.analysed</code></td>
               <td>The scan of an address ends.</td>
               <td>
@@ -664,6 +700,10 @@ Content-Type: application/json
       </p>
 
       <h3 id="nik-actions">What a playbook does in Nik</h3>
+      <p>
+        The nodes of the group <em>Nik</em> of the library. Those that work on files and artifacts are a group of their
+        own, <a href="#file-nodes">Files</a>, after this one.
+      </p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -774,14 +814,6 @@ Content-Type: application/json
               </td>
             </tr>
             <tr>
-              <td>Link an artifact</td>
-              <td>
-                <code>artifact</code> (<code>file-…</code>, <code>mail-…</code>, <code>url-…</code>),
-                <code>incident</code>
-              </td>
-              <td><code>linked</code></td>
-            </tr>
-            <tr>
               <td>Scan an address</td>
               <td>
                 <code>url</code> (http or https; defanged text is understood), <code>incident</code>,
@@ -865,6 +897,376 @@ Content-Type: application/json
         its time is <em>breached</em>, once: the incident is marked (<code>{{ incident.sla_breached }}</code>), its War
         Room says so, its owner is told, and <code>sla.breached</code> starts the playbooks that wait for it. The worker
         looks every minute.
+      </p>
+
+      <h3 id="file-nodes">Files and artifacts</h3>
+      <p>
+        What an analyst does with a file on the screens, a playbook does with a node of the group <em>Files</em> of the
+        library: add a file to an incident, link an artifact or take it out, list the artifacts of an incident, read
+        one, start its analysis again, read what the analysis found, tag it, give it a day to expire on. Three things
+        hold for all of them.
+      </p>
+      <ul>
+        <li>
+          <strong>Nothing is run or opened.</strong> An analysis a node starts is one Nik already makes of an artifact:
+          the static analysis and the YARA rules, the disassembly and capa on their workers, the analysis of an e-mail,
+          of a packet capture. A file a node keeps is stored as it came, under its SHA-256, like an upload. No node
+          executes a sample, and none opens one with the program it is meant for.
+        </li>
+        <li>
+          <strong>A file is passed by reference.</strong> A node gives the artifact (its id, name, type, size, SHA-256),
+          never its bytes: nothing of a sample enters what a run keeps. An argument called <code>artifact</code> takes
+          the id (<code>file-…</code>, <code>mail-…</code>, <code>pcap-…</code>, <code>url-…</code>), the SHA-256 of a
+          file, or what another node gave, whole: <code>{{ add_file }}</code> works as well as
+          <code>{{ add_file.artifact }}</code>, and so does <code>{{ trigger.file }}</code>.
+        </li>
+        <li>
+          <strong>The backend does what the worker cannot.</strong> The automation worker reads the store of files
+          read-only and reaches no analysis worker. Keeping a file and starting an analysis are written down as a job;
+          the backend takes it within a few seconds and does what it does for an analyst, and the step looks again
+          meanwhile, without holding a worker. What the job sets off (<code>file.analysed</code>,
+          <code>mail.analysed</code>) says which run caused it, so a playbook that waits for that event does not start
+          on its own doing.
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Node</th>
+              <th>Takes</th>
+              <th>Gives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Add a file</td>
+              <td>
+                <code>incident</code>; then either <code>artifact</code> (a file Nik holds, or an e-mail with
+                <code>attachment</code>: the file name or the place of the attachment to take out), or
+                <code>content</code> with <code>encoding</code> (text, base64), <code>name</code>, <code>type</code> and
+                <code>as</code> (file, mail)
+              </td>
+              <td>
+                The artifact: <code>artifact</code>, <code>kind</code>, <code>name</code>, <code>type</code>,
+                <code>size</code>, <code>sha256</code>, <code>verdict</code>, <code>score</code>, <code>tags</code>,
+                <code>page</code>; <code>linked</code> (it is in an incident), <code>known</code> (Nik held this very
+                file before)
+              </td>
+            </tr>
+            <tr>
+              <td>Download a file</td>
+              <td>
+                <code>url</code>, <code>incident</code>, <code>name</code> (the one the answer gives when empty),
+                <code>timeout</code> (120 seconds; 300 at most)
+              </td>
+              <td>
+                The artifact as above, <code>linked</code>, <code>status</code> (of the answer),
+                <code>content_type</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Unpack an archive</td>
+              <td>
+                <code>artifact</code> (a zip Nik holds), <code>password</code> (not shown in the run),
+                <code>incident</code>
+              </td>
+              <td>
+                <code>artifact</code> (the archive), <code>files</code> (each
+                <code>{name, type, size, sha256, artifact}</code>), <code>count</code>, <code>skipped</code> (each
+                <code>{name, reason}</code>)
+              </td>
+            </tr>
+            <tr>
+              <td>Add host evidence</td>
+              <td>
+                <code>incident</code>, <code>kind</code> (eventlogs, browser, commands, endpoint),
+                <code>artifact</code> or <code>content</code> with <code>encoding</code>, <code>name</code>, and what
+                the kind asks: <code>browser</code>, <code>profile</code>, <code>source</code>, <code>shell</code>,
+                <code>category</code>
+              </td>
+              <td><code>rows</code>, <code>format</code>, <code>target</code> (commands/bash, eventlogs/Security…)</td>
+            </tr>
+            <tr>
+              <td>Link an artifact · Take an artifact out of the incident</td>
+              <td><code>artifact</code>, <code>incident</code></td>
+              <td>
+                <code>linked</code> · <code>removed</code>. A capture belongs to one incident at most. Taken out, the
+                artifact and its analysis stay in Nik.
+              </td>
+            </tr>
+            <tr>
+              <td>List the artifacts of an incident</td>
+              <td>
+                <code>incident</code>, <code>kind</code> (file, mail, pcap, url; all when empty), <code>name</code> (a
+                text the name holds, or a pattern: <code>*.docx</code>)
+              </td>
+              <td>
+                <code>artifacts</code> (each as <em>Add a file</em> gives one), <code>ids</code>, <code>count</code>,
+                <code>total</code>. The oldest first, 200 at most.
+              </td>
+            </tr>
+            <tr>
+              <td>Get an artifact</td>
+              <td><code>artifact</code></td>
+              <td>
+                <code>found</code>, the artifact as above, <code>incidents</code> (their ids), <code>expires</code>,
+                <code>parents</code> and <code>children</code> (what it was taken out of, what was taken out of it)
+              </td>
+            </tr>
+            <tr>
+              <td>Analyse an artifact</td>
+              <td>
+                <code>artifact</code>, <code>as</code> (mail, capture: analyse a file as what it is) with
+                <code>incident</code>, <code>analysis</code> (of a file: static, code, capabilities; what
+                <em>Re-analyse</em> does when empty), <code>wait</code> (on by default), <code>wait_minutes</code> (15;
+                1 to 120)
+              </td>
+              <td>
+                <code>asked</code>, <code>finished</code>, <code>started</code> (static, code, capabilities, mail,
+                capture), <code>skipped</code> (each <code>{analysis, reason}</code>), <code>verdict</code>,
+                <code>artifact</code>, <code>kind</code>, <code>made</code> (with <code>as</code>: the e-mail or the
+                capture), <code>page</code>, <code>summary</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Read an analysis</td>
+              <td><code>artifact</code></td>
+              <td>
+                <code>found</code>, <code>status</code> (done, running, error, none), <code>verdict</code>,
+                <code>score</code>, <code>summary</code>, <code>indicators</code> (each <code>{type, value}</code>) and
+                <code>indicator_count</code>, <code>artifact</code>, <code>kind</code>, <code>name</code>,
+                <code>page</code>, and one object for each kind: <code>file</code>, <code>mail</code>,
+                <code>capture</code>, <code>scan</code>
+              </td>
+            </tr>
+            <tr>
+              <td>Tag an artifact · Take tags off an artifact</td>
+              <td><code>artifact</code>, <code>tags</code> (a list, or words separated by commas)</td>
+              <td>
+                <code>tags</code> afterwards, <code>changed</code>. A tag of an artifact is lower-case letters, digits
+                and <code>. _ : -</code>; an artifact has 12 at most.
+              </td>
+            </tr>
+            <tr>
+              <td>Set the expiry of an artifact</td>
+              <td>
+                <code>artifact</code>, <code>expires</code> (a day, a number of days from today, or empty to take the
+                date away)
+              </td>
+              <td><code>expires</code>, <code>changed</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="add-a-file">
+        <strong>Add a file.</strong> A playbook has no browser to upload from, so "a file" is one of three things a step
+        before gave:
+      </p>
+      <ul>
+        <li>
+          <strong>A file Nik holds already</strong>: what a command of a connector kept (<a href="#connector-files"
+            >its <code>artifact</code></a
+          >), what <code>get-attachments</code> of the Mail connector kept, the file of a
+          <code>file.analysed</code> event. The node puts it in the incident, as <em>Link to incident</em> does.
+        </li>
+        <li>
+          <strong>An attachment of an e-mail Nik holds</strong>: <code>artifact</code> is the e-mail (<code
+            >{{ trigger.mail.artifact_id }}</code
+          >) and <code>attachment</code> the file name of the attachment, or its place in the message (<code>0</code>,
+          <code>1</code>, <code>2.0</code> inside an attached message; the <code>place</code> that
+          <em>Read an analysis</em> gives). The attachment becomes a file artifact, shown as taken out of the e-mail:
+          what <em>Send to Malware Analysis</em> does.
+        </li>
+        <li>
+          <strong>A content</strong> a step produced (a report, a JSON answer, a CSV), as text or as base64, with a file
+          name. It becomes a file artifact, analysed as an upload is. A value that is an object or a list is written as
+          JSON. With <code>as: mail</code> the content is a message (<code>.eml</code>, <code>.msg</code>) and gets the
+          analysis of an e-mail.
+        </li>
+      </ul>
+      <p>
+        The file goes to the incident the node names, to the one the run works on when it names none, and stays on its
+        own when there is none. The limit of an upload applies (<code>SAMPLE_MAX_MB</code>): a larger content or
+        attachment fails the step and nothing is kept. So does an empty one, a content that is not base64 when it says
+        it is, and a "mail" that is not a message. A file the backend has not kept in five minutes fails the step. A
+        file that comes from an address comes through <a href="#download-a-file">Download a file</a>, or through a
+        command of a connector when it needs credentials.
+      </p>
+      <p id="download-a-file">
+        <strong>Download a file</strong> does what no screen does: it fetches a file from an address and keeps it as a
+        file artifact. It is a request of the playbook like any other, under the same rules as
+        <a href="#http-node">HTTP request</a>:
+      </p>
+      <ul>
+        <li>
+          the host must be among those the playbook may reach, and so must every host a redirect leads to (three
+          redirects at most); an address inside the network is reached only when an admin listed that very host;
+        </li>
+        <li>it is a <code>GET</code> with no credentials: no header of the node, no key of an instance, no cookie;</li>
+        <li>
+          the data guard judges the address as it judges the address of an HTTP request: one that carries an e-mail
+          address, an internal name or an allowlisted value is held unless that class was opened;
+        </li>
+        <li>
+          the file is as large as an upload at most (<code>SAMPLE_MAX_MB</code>): reading stops there and nothing is
+          kept; an answer of 400 or more, and an empty one, keep nothing either;
+        </li>
+        <li>
+          it is stored as it came and analysed as an upload is, never run and never opened; the audit log says where it
+          came from; a dry run asks nobody and shows the host it would ask.
+        </li>
+      </ul>
+      <p id="unpack-an-archive">
+        <strong>Unpack an archive</strong> takes the files out of a zip Nik holds (what a connector gave, an attachment,
+        an upload) and keeps each as a file artifact of its own, shown as taken out of the archive. The archive stays as
+        it is. It is the same unpacking a connector's command asks for with
+        <a href="#connector-unpack"><code>unpack</code></a
+        >, with the same rules and limits: nothing is run or opened, a name is only a name, an archive inside the
+        archive is kept as a file, 200 files at most, together no larger than an upload. Plain zips and protected ones
+        (ZipCrypto, AES) are read; the <code>password</code> is replaced by a mark in what the run keeps of the step,
+        and a wrong one fails the step with a sentence that does not repeat it and says that the archive stays as it is.
+        (A password typed in the node is part of the playbook, like everything typed there: take it from where the
+        archive came from.)
+      </p>
+      <p id="analyse-as">
+        <strong>A file analysed as what it is.</strong> A file reaches the store in ways that do not say what it is: a
+        connector downloaded it, it came out of an archive, it was attached to a message. With <code>as</code>,
+        <em>Analyse an artifact</em> does what <em>Analyse as an e-mail</em> and <em>Analyse as a capture</em> do on the
+        page of a file: <code>as: mail</code> analyses an <code>.eml</code> or <code>.msg</code> as an uploaded message
+        is, <code>as: capture</code> copies a <code>.pcap</code> or <code>.pcapng</code> to the store of captures, under
+        the limit of a capture (<code>PCAP_MAX_MB</code>), for the packet capture worker. The file stays;
+        <code>made</code> is the e-mail or the capture, recorded as made from the file, and <code>verdict</code> and
+        <code>page</code> are its own. It goes to the incident the node names, to the one the run works on, or to those
+        the file is in (a capture to one incident at most). The step always waits for the artifact to be made; with
+        <code>wait</code> on it also waits for the analysis of a capture. A file that is not what <code>as</code> says
+        fails the step ("It is not an e-mail Nik can read", "Not a pcap or pcapng file."). Asked twice, nothing is made
+        twice. A capture from a content is these two steps: <em>Add a file</em>, then <em>Analyse an artifact</em> with
+        <code>as: capture</code>, for a capture small enough to be the content of a step.
+      </p>
+      <p id="add-host-evidence">
+        <strong>Add host evidence</strong> is <em>Add a file…</em> for the four kinds that are not artifacts: a Windows
+        event log (<code>.evtx</code>), a browser's history, a shell history, an endpoint collection. The file is a file
+        artifact Nik holds or a content; it is parsed as the upload of the API is (<code
+          >POST /api/incidents/{id}/upload</code
+        >, with the same <code>browser</code>, <code>profile</code>, <code>source</code>, <code>shell</code> and
+        <code>category</code>) and what it holds goes to the tab of its kind. The file itself is not kept.
+      </p>
+      <p id="analyse-an-artifact">
+        <strong>Analyse an artifact</strong> starts again what Nik made of the artifact when it arrived. With
+        <code>analysis</code> empty it does what <em>Re-analyse</em> does for that kind: of a file the static analysis
+        and the YARA rules, then the disassembly and capa where their workers are configured and the file is one they
+        read (what is left out is in <code>skipped</code>, with the reason); of an e-mail its analysis, with the DNS
+        checks; of a capture the packet capture worker. Of a file, <code>static</code>,
+        <code>code</code> (<em>Disassemble</em>) or <code>capabilities</code> (<em>Run capa</em>) asks for that one
+        alone. An address is visited again with <a href="#scan-an-address">Scan an address</a>, which the data guard
+        judges.
+      </p>
+      <ul>
+        <li>
+          <strong>Waiting.</strong> With <code>wait</code> on, the step ends when everything that was started has ended,
+          and fails when it has not after <code>wait_minutes</code>, with a sentence that says what is still running and
+          on which worker. With <code>wait</code> off the step asks and goes on: <code>asked</code> is true,
+          <code>finished</code> false, and a later <em>Read an analysis</em> says where things are
+          (<code>status</code>).
+        </li>
+        <li>
+          <strong>A worker that is not there.</strong> One analysis asked for by name whose worker is not configured
+          fails the step and names the worker ("The analyzer worker is not configured (ANALYZER_URL): the file was not
+          disassembled"). A worker that is configured and does not answer fails it with what the worker's client said
+          and the name of the worker; <em>Settings → System → Workers</em> shows which are down.
+        </li>
+      </ul>
+      <p id="read-an-analysis">
+        <strong>Read an analysis</strong> gives what a playbook can decide on, bounded: lists are cut at 100 items (50
+        attachments), and nothing of the file or the message itself is given: no bytes, no strings, no body.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Under</th>
+              <th>What is there</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>file</code></td>
+              <td>
+                <code>sha256</code>, <code>sha1</code>, <code>md5</code>, <code>size</code>, <code>type</code>,
+                <code>entropy</code>, <code>packed</code>, <code>yara</code> (the names of the rules that matched),
+                <code>yara_severity</code>, <code>strings</code> (how many), <code>code_status</code>,
+                <code>functions</code>, <code>capabilities_status</code>, <code>capabilities</code>,
+                <code>attack</code> (the ATT&amp;CK techniques)
+              </td>
+            </tr>
+            <tr>
+              <td><code>mail</code></td>
+              <td>
+                <code>subject</code>, <code>sender</code>, <code>sender_domain</code>, <code>spf</code>,
+                <code>dkim</code>, <code>dmarc</code>, <code>findings</code> (the reasons behind the verdict by their
+                codes: <code>dmarc-fail</code>, <code>from-lookalike</code>…), <code>urls</code>,
+                <code>attachments</code> (each <code>{name, sha256, size, type, place}</code>)
+              </td>
+            </tr>
+            <tr>
+              <td><code>capture</code></td>
+              <td>
+                <code>status</code>, <code>error</code>, <code>packets</code>, <code>hosts</code> (the public
+                addresses), <code>domains</code>, <code>posts</code>, <code>beacons</code>, <code>objects</code> (how
+                many of each)
+              </td>
+            </tr>
+            <tr>
+              <td><code>scan</code></td>
+              <td>
+                <code>url</code>, <code>final_url</code>, <code>redirected</code>, <code>title</code>,
+                <code>password_form</code>, <code>findings</code>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The four objects are always there, empty for the kinds the artifact is not, so a path the editor offers always
+        leads somewhere. <code>indicators</code> are those an incident that holds the artifact lists: there is no node
+        that "adds the indicators to the incident", because an artifact in an incident gives it its indicators at once,
+        as on the screens. To keep them in the library, give them to <em>Add indicators</em>.
+      </p>
+      <p id="files-and-the-guard">
+        <strong>The data guard.</strong> None of these nodes sends anything out, so none is held. What they give carries
+        its classes, and the guard decides when a later node sends it: a file name is a <em>file name</em>, the subject
+        of an e-mail a <em>subject</em>, its sender an <em>e-mail address</em>; hashes, verdicts, scores, types and ids
+        leave as they always do. The artifact made from a content carries the classes the content came in with: the id
+        and the hash of a file written from the name of an incident are held as that name is. A file that leaves does so
+        through a command of a connector that sends files, which judges it as
+        <a href="#connector-files">an attachment and a sample</a>, whatever it was made from.
+      </p>
+      <p id="files-dry-run">
+        <strong>A dry run and the debugger</strong> keep nothing and start nothing: <em>Add a file</em> gives the
+        artifact the file would be (its name, size and SHA-256 are known without storing it),
+        <em>Analyse an artifact</em> says what it would start, and <em>Read an analysis</em> of a file that was not kept
+        gives every output empty, with <code>found</code> false. Tags, dates and links are not changed.
+      </p>
+      <p id="files-example">
+        <strong>An example.</strong> "Analyse every file that arrives and say so when it is flagged": a trigger on
+        <code>file.analysed</code>; <em>Analyse an artifact</em> with <code>artifact</code>
+        <code>{{ trigger.file }}</code>; <em>Read an analysis</em> of the same; a condition on
+        <code>{{ read.file.yara_severity }}</code> equal to <code>high</code>; <em>Tag an artifact</em> with
+        <code>needs-review</code> and, when the file is in an incident, <em>Add a note</em>. The shipped playbook
+        <a href="#shipped">Analyse the attachments of an e-mail</a> does the same for what a message carries.
+      </p>
+      <p>
+        <strong>What stays a person's act.</strong> Deleting an artifact, downloading a sample or exporting artifacts,
+        the TLS keys of a capture, the isolated browser, the import of the messages of a mailbox, and the names and
+        comments of the functions of a disassembly have no node.
+      </p>
+      <p id="analyses-as-events">
+        <strong>Waiting without a node.</strong> The analyses made by workers say when they end:
+        <code>code.analysed</code>, <code>capabilities.analysed</code> and <code>capture.analysed</code> are
+        <a href="#trigger">events a trigger waits for</a>, written once for each analysis whoever started it, with a
+        <code>status</code> a condition can test when it failed. One a playbook started says which run asked, so that
+        playbook does not start again on its own doing.
       </p>
 
       <h3 id="http-node">HTTP request</h3>
@@ -1992,7 +2394,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <strong>Instances</strong> are listed under their connector. <em>Add instance</em> opens a form built from
           what the connector asks for. <em>Test</em> sends the connector's test request with the credentials and says
           what came back. Credentials are stored encrypted with the vault key and are never shown again, in the screen
-          or in the API: to change one, type it again. The form has a tab for each of its parts: <em>Connection</em>,
+          or in the API: to change one, type it again. A secret can also be kept once and named by several instances:
+          see <a href="#credentials">Credentials</a>. The form has a tab for each of its parts: <em>Connection</em>,
           <em>Keys</em> for a connector that signs in and, for one that brings alerts in,
           <a href="#fetch-status"><em>Fetch</em></a
           >, <a href="#mappers"><em>Classifier</em> and <em>Mappers</em></a> (the last two once the instance is made).
@@ -2057,6 +2460,94 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <a href="#network">network</a> rule (the host of the node's instance is one the playbook may reach, without
         being listed) and the <a href="#data-guard">data guard</a>.
       </p>
+
+      <h3 id="credentials">Credentials</h3>
+      <p>
+        A <strong>credential</strong> is a secret kept once under a name, for the instances to use: an instance names it
+        where it would hold the value. One value then serves several instances, is changed in one place, and is still
+        there when an instance is made again. They are on <em>Settings → Automation → Credentials</em>, for the role
+        <em>Connectors</em>: the people who could type the same value into an instance.
+      </p>
+      <ul>
+        <li>
+          <strong>Two kinds.</strong> A <em>secret</em> is one value: an API key, a token. A <em>pair</em> is a user
+          name and a password kept together; the user name is not secret and is shown, the password is. A client id and
+          a client secret are a pair too. The <strong>name</strong> is how instances call it: a lower-case letter, then
+          lower-case letters, digits, <code>_</code> or <code>-</code>.
+        </li>
+        <li>
+          <strong>The value is never shown.</strong> It is stored encrypted, as the secrets of an instance are, and
+          neither the page nor the API gives it back. <em>Edit</em> replaces it with what you type; left empty, it
+          stays. The list says what each credential is, its user name, when it was changed and by whom, and
+          <strong>where it is used</strong>: each instance is a link to its form.
+        </li>
+        <li>
+          <strong>One that is used stays.</strong> A credential an instance names is not deleted (the dialog, and the
+          API with <code>409</code>, say which instances) and keeps its name. Give those instances another credential,
+          or a typed value, first.
+        </li>
+        <li>
+          <strong>In the form of an instance</strong>, every field that holds a secret (the credentials of the
+          <em>Connection</em> tab, and each part of each key of the <em>Keys</em> tab) is given in one of two ways:
+          <em>Typed here</em>, as always, or <em>From a credential</em>, with a list of those that fit. A pair chosen
+          for a user name or a password fills both; a field that is one value takes a secret, or the password of a pair.
+          The form then shows the name of the credential where the value would be, with a link to it, never the value.
+          The choice appears once there is a credential to choose, and comes first in the form of a new instance.
+        </li>
+        <li>
+          <strong>As a variable.</strong> What the instance stores is the name, written
+          <code>{{ credentials.vt_key }}</code> (a pair: <code>{{ credentials.proxy.username }}</code>,
+          <code>{{ credentials.proxy.password }}</code>), and the same text can be typed into the field by hand. It
+          stands alone there: it is not an expression, and a credential that does not exist is refused when the instance
+          is saved.
+        </li>
+        <li>
+          <strong>Read when a request is built.</strong> Nothing of the value is copied into the instance. Each request
+          reads the credential as it is at that moment, so a value changed here is what every instance that names it
+          sends next; the answers those instances kept, a token they had and the result of their last test are forgotten
+          with the old value. A connector file is not concerned: it reads <code>secret.&lt;name&gt;</code> as before,
+          and nothing in a pack knows that credentials exist.
+        </li>
+        <li>
+          <strong>Only an instance reads one.</strong> <code>credentials</code> is not a name of the
+          <a href="#expressions">expression language</a>: a node of a playbook, a script, a line of the War Room or the
+          Playground and the templates of a connector file cannot read a credential, and say so (<em
+            >A stored credential is read only in a field of an instance of a connector</em
+          >). Otherwise whoever writes a playbook could send a secret to any host the playbook may reach. A playbook
+          uses a credential the only way it uses any secret: by running a command of a connector on an instance.
+        </li>
+        <li>
+          <strong>Keep as a credential…</strong>, beside a secret that was typed into an instance and saved, moves it to
+          Credentials under the name you give and leaves the instance naming it: nobody types it again, and it is not
+          shown. A user name and a password the instance holds together become one pair.
+        </li>
+        <li>
+          <strong>What a step shows.</strong> The value of a credential is blanked wherever the secret of an instance
+          is: in a run, a dry run, a debug session, an error. The audit log says that a credential was made, changed
+          (which part, and which instances use it) or deleted, never what it holds.
+        </li>
+        <li>
+          <strong>Several keys.</strong> A key of an instance may be a credential like its first one, and the keys take
+          turns as before. Two instances that name the same credential each count their own requests against their own
+          limits: the limits are set in an instance, and one never waits for what another sent.
+        </li>
+        <li>
+          <strong>A credential that is gone.</strong> The page does not let one that is used be deleted, but a database
+          put back from an earlier day can name one that is not there. The instance then fails its step with a sentence
+          that names the credential; nothing is tried in its place.
+        </li>
+        <li>
+          <strong>Reinstalling.</strong> Credentials belong to the server, not to a pack: uninstalling a pack, or
+          removing a connector, never removes one. An instance has to be deleted before its connector can go (<a
+            href="#pack-uninstall"
+            >Uninstalling</a
+          >), so after the pack is installed again the instance is made again: with its credential chosen from the list,
+          not typed. For another server, credentials travel as the secrets of instances do: in a backup of the database
+          (<code>deploy/backup.sh</code>), encrypted under <code>SECRET_KEY</code>, which is copied with it. The file of
+          <em>Settings → System → Backup</em> holds incidents, accounts, settings and the audit log: neither instances
+          nor credentials.
+        </li>
+      </ul>
 
       <h3 id="mappers">Classifiers and mappers</h3>
       <p>
@@ -2429,15 +2920,16 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               <td>SentinelOne EDR</td>
               <td>an API token</td>
               <td>
-                agents found, isolated and reconnected; threats read and resolved; hashes added to the blocklist; a Deep
-                Visibility query run and waited for
+                agents found, isolated, scanned, tagged and restarted; threats read, mitigated and resolved; files and
+                logs fetched from endpoints and kept as artifacts; the blocklist and exclusions; alerts and custom
+                detection rules; remote scripts; forensic collections; indicators of compromise; vulnerable applications
               </td>
               <td>the threats created since the last cycle · —</td>
             </tr>
             <tr>
               <td>SentinelOne SIEM (Singularity Data Lake)</td>
               <td>an API token</td>
-              <td>a PowerQuery run; alerts read and their status set</td>
+              <td>a PowerQuery or an event search run; alerts read and their status set</td>
               <td>the alerts detected since the last cycle, 100 a cycle · —</td>
             </tr>
             <tr>
@@ -2668,6 +3160,17 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               </td>
             </tr>
             <tr>
+              <td><code>download_hosts_from</code></td>
+              <td>
+                For a connector whose files come from hosts its file cannot name (a storage host that differs with the
+                region or the tenant): the name of a configuration entry of type <code>hosts</code>, which an
+                administrator fills in the instance. A request whose answer is a file then follows a link or a redirect
+                to one of those hosts, with nothing of the connector sent along (<a href="#connector-download-hosts"
+                  >Hosts downloads may come from</a
+                >). Left out, the connector reaches its instance and <code>more_hosts</code>, as before.
+              </td>
+            </tr>
+            <tr>
               <td><code>lookups</code></td>
               <td>
                 For a connector with a command marked <code>reputation</code>: how its verdicts count in the overall
@@ -2719,8 +3222,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               <td><code>type</code></td>
               <td>
                 A plain value: <code>url</code>, <code>text</code> (the default), <code>number</code>,
-                <code>bool</code>, <code>choice</code> (with <code>choices</code>), or <code>secret</code> (stored
-                encrypted, read as <code>secret.&lt;name&gt;</code>). Or the credentials, of one of the kinds below.
+                <code>bool</code>, <code>choice</code> (with <code>choices</code>), <code>hosts</code> (the hosts
+                downloads may come from: the one entry <code>download_hosts_from</code> names), or
+                <code>secret</code> (stored encrypted, read as <code>secret.&lt;name&gt;</code>). Or the credentials, of
+                one of the kinds below.
               </td>
             </tr>
             <tr>
@@ -2811,6 +3316,21 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <code>header</code> and <code>query</code> credentials the request goes without the header or the parameter, so
         a connector for an API that also answers without a key (more slowly, or less) works on an instance that has
         none.
+      </p>
+      <p>
+        Credentials of one value are added by Nik to every request to the instance, and a command says nothing of them.
+        Where Nik adds nothing, a request to another host the file lists (<code>more_hosts</code>) that the same key
+        opens, the file may write the value itself (since 6.6): <code>secret.token</code> for <code>bearer</code>,
+        <code>secret.value</code> for <code>header</code> and <code>query</code>, as
+        <code>query: { key: "{{ secret.value | default('') }}" }</code>. Whether the value was typed into the instance
+        or comes from a <a href="#credentials">stored credential</a> makes no difference to a file, which cannot name a
+        credential itself.
+      </p>
+      <p>
+        When a new version of a connector asks for the same single key under credentials of one value where it had a
+        <code>secret</code> entry of its own (and no credentials), the key every instance holds is kept under the new
+        name when the connector is installed: nobody types it again. Any other change of what an instance is asked for
+        leaves what is stored as it is.
       </p>
 
       <h4 id="connector-command">A command</h4>
@@ -3008,7 +3528,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
                 <code>auto</code> (the default): the answer is read as JSON when it says it is JSON, as text otherwise
                 (<code>response.text</code>). <code>text</code>: always as text, for a file whose content may itself be
                 JSON. <code>file</code>: not read at all, kept as an artifact (<a href="#connector-files">Files</a>),
-                with <code>save_as</code> to say its name and type.
+                with <code>save_as</code> to say its name and type and <code>unpack</code> when it is an archive whose
+                files are wanted (<a href="#connector-unpack">An archive to unpack</a>).
               </td>
             </tr>
           </tbody>
@@ -3104,9 +3625,115 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           Many vendors answer a download with a redirect to a storage host. The redirect is followed only to a host the
           connector lists in <code>more_hosts</code>; the key of the instance does not go there.
         </li>
+        <li id="connector-download-hosts">
+          <strong>Hosts downloads may come from.</strong> A vendor's reference seldom names its storage: the link is
+          signed, lasts a few minutes, and its host changes with the region, the tenant or the cloud. A connector that
+          cannot list those hosts asks the instance for them:
+          <pre><code>configuration:
+  - { name: url, type: url, required: true }
+  - { name: credentials, type: bearer }
+  - name: download_hosts
+    label: Hosts downloads may come from
+    type: hosts
+    help: "The storage hosts the download links lead to, separated by commas."
+download_hosts_from: download_hosts</code></pre>
+          The instance then shows the field in its <em>Connection</em> tab. It is optional, and it is configuration, not
+          a secret: shown as it was saved, and every change of it is written in the audit log with the hosts before and
+          after.
+          <ul>
+            <li>
+              <strong>What is written there</strong>: host names separated by commas (or one a line through the API): a
+              name (<code>files.vendor.example.com</code>), or every host under a name
+              (<code>*.storage.vendor.example.com</code>; the name itself is not under itself). Nothing else is taken,
+              and saving says why in a sentence: no <code>*</code> alone or in the middle, no address and no range, no
+              <code>https://</code>, no port, no path, no internal name (<code>fileserver</code>,
+              <code>nas.corp</code>). 40 at most.
+            </li>
+            <li>
+              <strong>What it opens</strong>: only a request whose <code>answer</code> is <code>file</code>. Its address
+              may be on one of those hosts (a link the console gave:
+              <code>path: "{{ steps.link.response.url }}"</code>), and a redirect to one is followed, within the three
+              redirects of every request. No other request of the connector goes there.
+            </li>
+            <li>
+              <strong>What is sent there</strong>: the request and nothing with it. Not the credentials of the instance,
+              not the <code>headers</code> of the connector, not the headers of the request: a link that carries its own
+              signature wants none, and a storage host has no business with a key. A redirect that passes through such a
+              host does not get them back afterwards.
+            </li>
+            <li>
+              <strong>The rules that still hold</strong>: https only, the size limit of a file, and the rules of every
+              request of a playbook. A name that resolves to an address inside the network is refused whatever the field
+              says. The data guard has nothing new to judge: nothing leaves but a GET of an address the vendor gave.
+            </li>
+            <li>
+              <strong>Empty</strong>, everything is as before, and the refusal says where the field is: "A request of
+              this connector goes to files.vendor.example.net, not to its instance: add it under Hosts downloads may
+              come from in the instance if it is the vendor's storage". The name to write is the one the step gives. A
+              connector without <code>download_hosts_from</code> has no such field and says the first half only.
+            </li>
+          </ul>
+        </li>
         <li>
           A dry run fetches nothing and keeps nothing: it gives the <code>sample</code>, or an empty description of a
           file.
+        </li>
+        <li id="connector-unpack">
+          <strong>An archive to unpack.</strong> A product that hands over files it collected hands them over as one
+          archive, usually protected by a password. <code>unpack</code>, beside <code>answer: file</code>, says so:
+          <pre><code>request:
+  method: GET
+  path: "/activities/{{ args.activity_id }}/download"
+  answer: file
+  save_as: { name: "fetched-{{ args.activity_id }}.zip", type: application/zip }
+  unpack: { format: zip, password: "{{ args.password }}" }</code></pre>
+          The archive is kept as it came, as any file is, and each file inside it is kept as a file artifact of its own,
+          in the same incident, shown as taken out of the archive and analysed as an upload is.
+          <code>response</code> then also holds <code>files</code> (each with <code>name</code>, the name inside the
+          archive, <code>type</code>, <code>size</code>, <code>sha256</code>, <code>artifact</code>),
+          <code>count</code> and <code>skipped</code> (each <code>name</code> and <code>reason</code>); a command with
+          no <code>outputs</code> gives all of them, and the editor lists what is inside <code>files</code>.
+          <ul>
+            <li>
+              <code>format</code> is <code>zip</code>, plain or protected with ZipCrypto or WinZip AES.
+              <code>password</code> is optional and is a template over what is sent (<code>args</code>,
+              <code>config</code>, <code>secret</code>). It is treated as a secret: an argument it reads is replaced by
+              a mark in what a run keeps of the step, and it is in no record of a request, no output and no dry run. A
+              wrong password, or none for a protected archive, fails the step with a sentence that does not repeat it.
+            </li>
+            <li>
+              It is unpacking and nothing else. A file inside is read in memory and written to the store under its
+              SHA-256: it is never run, never opened by a viewer, never written anywhere else. Its name is data: no path
+              is built from it, so <code>../../etc/passwd</code>, an absolute path and a device name are names like any
+              other. A directory is passed over, a symbolic link is skipped, and an archive inside the archive is kept
+              as a file, not unpacked.
+            </li>
+            <li>
+              Against an archive made to exhaust the server: 200 files at most, together no larger than an upload
+              (<code>SAMPLE_MAX_MB</code>), and what a member says of its own size is not believed. Over the number or
+              the total, the step fails and nothing is unpacked. A single file larger than an upload, an empty one, one
+              packed more than 200 times over, a link or one that cannot be read is left out and listed in
+              <code>skipped</code> with the reason; the others are kept.
+            </li>
+            <li>
+              An archive that cannot be unpacked at all (not a zip, the password, the limits) is evidence all the same.
+              <strong>The archive is kept as it came</strong>, in the incident, as <code>answer: file</code> alone would
+              have kept it; nothing inside it is kept; and the step <strong>fails</strong>, with the sentence that says
+              why and then where the archive is: "The password does not open the archive: nothing was unpacked. The
+              archive was kept as file-…". The step fails rather than going on with no files, so that a playbook does
+              not act as if it had them; what the step records also names the artifact (<code>kept</code>), for whoever
+              reads the run and for a node on its error line. <a href="#unpack-an-archive">Unpack an archive</a> opens
+              that artifact later with the right password. Tried again, the command keeps no second copy: the same bytes
+              are the same artifact. A dry run downloads and unpacks nothing.
+            </li>
+          </ul>
+        </li>
+        <li>
+          <strong>Where the file is written.</strong> The automation worker reads the store read-only. What a command
+          keeps there (the file, the files of an archive, the attachments <code>get-attachments</code> keeps) is handed
+          to the backend through the database, in parts of a few megabytes that are deleted once the file is in the
+          store, and the step waits for it without holding a worker: it fails if the backend has not kept the file in
+          ten minutes. A server whose playbooks run inside the backend writes at once.
         </li>
         <li>
           The answer of such a command is never among the <strong>kept answers</strong> of the instance: asked again,
@@ -3443,10 +4070,10 @@ commands:
 
       <h2 id="shipped">The playbooks Nik ships</h2>
       <p>
-        Five playbooks are in the list from the first start, marked <em>shipped with Nik</em> and <strong>off</strong>:
+        Six playbooks are in the list from the first start, marked <em>shipped with Nik</em> and <strong>off</strong>:
         nothing runs until you turn one on. They are playbooks like any other: read them on the canvas, change them,
         rename them, delete them. One you deleted does not come back, and one you changed is not overwritten by an
-        upgrade. The same five are files in <code>backend/app/automation/seed/playbooks/</code>, to bring in again with
+        upgrade. The same six are files in <code>backend/app/automation/seed/playbooks/</code>, to bring in again with
         <em>Import</em>. Try each with a dry run before turning it on.
       </p>
       <div class="table-wrap">
@@ -3470,6 +4097,17 @@ commands:
                 Opens an incident, puts the e-mail in it, writes in a note the hosts its links lead to (defanged) and
                 its attachments, then asks whether the sender's domain goes in the watched list
                 <em>Phishing senders</em>. Nothing leaves Nik.
+              </td>
+              <td>Nothing.</td>
+            </tr>
+            <tr>
+              <td>Analyse the attachments of an e-mail</td>
+              <td><code>mail.analysed</code>, when the e-mail has attachments and was not imported from a mailbox</td>
+              <td>
+                Takes each attachment out of the e-mail and keeps it as a file of its own, in the incident the e-mail is
+                in when there is one; analyses it as an upload is, and tags the e-mail
+                <code>flagged-attachment</code> when the analysis of one gives a verdict. Nothing is run or opened, and
+                nothing leaves Nik.
               </td>
               <td>Nothing.</td>
             </tr>
@@ -3928,7 +4566,10 @@ commands:
           <tbody>
             <tr>
               <td>An <strong>instance</strong> of its connector, turned on or off (the dialog says which)</td>
-              <td>Delete the instance. It holds credentials that are yours: uninstalling never deletes one for you.</td>
+              <td>
+                Delete the instance. It holds credentials that are yours: uninstalling never deletes one for you. A
+                <a href="#credentials">stored credential</a> it names stays, for the instance made again later.
+              </td>
             </tr>
             <tr>
               <td>A playbook of the pack that is <strong>turned on</strong>, or has a run in progress</td>
@@ -4061,6 +4702,14 @@ nik: "&gt;=6.0"                # the oldest Nik it is for</code></pre>
 
       <h2 id="later">What this release does not do yet</h2>
       <ul>
+        <li>
+          Only zip archives are unpacked (plain, ZipCrypto, AES): not 7-Zip, RAR, tar or gzip. A file by address is a
+          node of playbooks only: <em>Add a file…</em> on the screens has no "from an address". A file is analysed as an
+          e-mail or as a capture, not as a mailbox or as host evidence (<a href="#add-host-evidence"
+            >Add host evidence</a
+          >
+          reads a file artifact as that).
+        </li>
         <li>
           Fetching and mirroring are written for ServiceNow, Jira and SentinelOne; the other shipped connectors send
           commands only. A fetch asks at an interval: nothing is pushed to Nik by the other product except through a

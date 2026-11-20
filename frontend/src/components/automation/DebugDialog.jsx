@@ -69,7 +69,7 @@ export default function DebugDialog({ playbook, branch = null, breakpoints = [],
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button icon={Bug} onClick={start} disabled={busy}>
+          <Button waiting={busy} icon={Bug} onClick={start} disabled={busy}>
             {busy ? 'Starting…' : 'Start debugging'}
           </Button>
         </>

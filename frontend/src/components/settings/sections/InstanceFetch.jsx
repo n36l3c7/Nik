@@ -322,6 +322,7 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
           )}
           <div className="flex flex-wrap gap-2">
             <Button
+              waiting={busy === 'run'}
               variant="secondary"
               size="sm"
               icon={Download}

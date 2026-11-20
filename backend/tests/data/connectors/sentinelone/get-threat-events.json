@@ -1,0 +1,68 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555",
+    "process_name": "dropper"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/5555555555555555555/explore/events",
+        "query": {
+          "processName__like": "dropper",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "9100000000000000001",
+              "eventType": "Process Creation",
+              "objectType": "process",
+              "processName": "dropper.exe",
+              "agentId": "1234567890123456789",
+              "agentName": "WKS-FINANCE-01",
+              "agentOs": "windows",
+              "siteId": "2222222222222222222",
+              "siteName": "Milan",
+              "fileSha1": "3395856ce81f2b7382dee72602f798b642f14140",
+              "createdAt": "2026-11-16T08:30:04.900000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "events": [
+      {
+        "id": "9100000000000000001",
+        "eventType": "Process Creation",
+        "objectType": "process",
+        "processName": "dropper.exe",
+        "agentId": "1234567890123456789",
+        "agentName": "WKS-FINANCE-01",
+        "agentOs": "windows",
+        "siteId": "2222222222222222222",
+        "siteName": "Milan",
+        "fileSha1": "3395856ce81f2b7382dee72602f798b642f14140",
+        "createdAt": "2026-11-16T08:30:04.900000Z"
+      }
+    ],
+    "ids": [
+      "9100000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

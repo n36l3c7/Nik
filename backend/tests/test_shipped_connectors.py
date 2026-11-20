@@ -22,7 +22,10 @@ is given the artifact of that file. A request that sends files lists them in
 under the name it says; an answer that is a file is ``base64`` in the
 response. ``kept`` is what the command must have handed to the store, in
 order. In ``outputs``, ``sha256:<name>`` and ``artifact:<name>`` stand for the
-hash and the artifact of a file of ``kept``.
+hash and the artifact of a file of ``kept``. A command that unpacks the
+archive it is given (6.6) is answered with a real zip, protected with the
+password its arguments set: ``kept`` is then the archive followed by the files
+inside it, each under the name it has in the archive.
 
 ``connection.json`` beside them holds the configuration and the (invented)
 credentials the fixtures are run with.
@@ -38,6 +41,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
+from app import unpack
 from app.automation import connector_actions as ca
 from app.automation import connector_runtime as rt
 from app.automation import egress
@@ -88,11 +92,33 @@ class Held:
     def read(self, sha: str) -> bytes:
         return self.files[sha][1]
 
-    def keep(self, data: bytes, name: str, kind: str) -> dict:
+    def keep(self, data: bytes, name: str, kind: str, unpack_as: dict | None = None) -> dict:
+        """As the store of a run does (connector_files.Store.keep): with ``unpack_as`` the archive is
+        really unpacked, with the password the command gave; one that cannot be is kept alone, and the
+        command fails naming it."""
         sha = hashlib.sha256(data).hexdigest()
-        self.kept.append({"name": name, "type": kind, "data": data})
-        return {"name": name or sha, "type": kind, "size": len(data), "sha256": sha, "artifact": f"file-{sha}",
-                "linked": False}  # fmt: skip
+        described = {"name": name or sha, "type": kind, "size": len(data), "sha256": sha, "artifact": f"file-{sha}",
+                     "linked": False}  # fmt: skip
+        inside = []
+        if unpack_as is not None:
+            try:
+                found = unpack.members(data, unpack_as.get("password") or "", limit=self.limit, fmt=unpack_as["format"])
+            except unpack.UnpackError as error:
+                self.kept.append({"name": name, "type": kind, "data": data})
+                failure = rt.CommandError(f"{error.message}. The archive was kept as file-{sha}")
+                failure.kept = f"file-{sha}"
+                raise failure from None
+            for member in found.members:
+                inside.append({"name": member.name, "type": "", "data": member.data})
+            files = [
+                {"name": item["name"], "type": "", "size": len(item["data"]),
+                 "sha256": hashlib.sha256(item["data"]).hexdigest(),
+                 "artifact": "file-" + hashlib.sha256(item["data"]).hexdigest()}
+                for item in inside
+            ]  # fmt: skip
+            described.update(files=files, count=len(files), skipped=found.skipped)
+        self.kept += [{"name": name, "type": kind, "data": data}, *inside]
+        return described
 
 
 def _named(value, kept: dict[str, bytes]):

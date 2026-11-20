@@ -1,0 +1,61 @@
+{
+  "args": {
+    "application_ids": [
+      "7800000000000000001"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/application-management/risks/cves",
+        "query": {
+          "applicationIds": "7800000000000000001",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "cveId": "CVE-2024-11477",
+              "severity": "HIGH",
+              "nvdBaseScore": "7.8",
+              "riskScore": "7.8",
+              "publishedDate": "2024-11-22T00:00:00Z",
+              "description": "Integer underflow in the Zstandard decompression",
+              "nvdUrl": "https://nvd.nist.gov/vuln/detail/CVE-2024-11477"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "cves": [
+      {
+        "cveId": "CVE-2024-11477",
+        "severity": "HIGH",
+        "nvdBaseScore": "7.8",
+        "riskScore": "7.8",
+        "publishedDate": "2024-11-22T00:00:00Z",
+        "description": "Integer underflow in the Zstandard decompression",
+        "nvdUrl": "https://nvd.nist.gov/vuln/detail/CVE-2024-11477"
+      }
+    ],
+    "ids": [
+      "CVE-2024-11477"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

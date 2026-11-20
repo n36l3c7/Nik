@@ -12,7 +12,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import { AsciiSkull, Badge, Button, Card, EmptyState, MicroSkull } from '../../ui/index.js'
+import { AsciiSkull, Badge, Button, Card, EmptyState, Wait } from '../../ui/index.js'
 import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
@@ -173,7 +173,7 @@ function Requests({ captureId }) {
   }, [captureId])
   const loadEntry = useCallback((id) => api.get(`/captures/${captureId}/requests/${id}`), [captureId])
   if (error) return <p className="font-mono text-xs text-high">{error}</p>
-  if (!entries) return <MicroSkull className="text-lg text-fg-muted" />
+  if (!entries) return <Wait>Loading the requests…</Wait>
   return <RequestLog entries={entries} loadEntry={loadEntry} />
 }
 
@@ -193,7 +193,14 @@ function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }
       icon={Link2}
       actions={
         <>
-          <Button variant="ghost" size="xs" icon={RefreshCw} onClick={onRescan} disabled={busy || scanning}>
+          <Button
+            waiting={scanning}
+            variant="ghost"
+            size="xs"
+            icon={RefreshCw}
+            onClick={onRescan}
+            disabled={busy || scanning}
+          >
             {scanning ? 'Scanning…' : 'Re-scan'}
           </Button>
           <Button variant="secondary" size="xs" icon={Globe} onClick={onBrowse}>
@@ -266,7 +273,7 @@ function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }
           {view === 'scripts' && <ScriptsView scan={scan} />}
         </div>
       ) : (
-        <MicroSkull className="text-lg text-fg-muted" />
+        <Wait>Loading the scan…</Wait>
       )}
     </Card>
   )
@@ -404,7 +411,7 @@ export default function UrlAnalysisTab({ incident, focus = null, evidence = fals
   if (scans.length === 0) {
     return (
       <EmptyState
-        illustration={<AsciiSkull preset="medium" eyes="closed" tone="muted" />}
+        skull
         title="No addresses yet"
         message="Give Nik a link from an e-mail or a chat: the isolated browser visits it for you and brings back a screenshot, the redirects, the page's forms and a verdict. Nothing is typed or submitted."
         action={<div className="w-full max-w-xl">{form}</div>}

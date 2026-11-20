@@ -1,0 +1,81 @@
+{
+  "args": {
+    "name": "PowerShell"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/cloud-detection/rules",
+        "query": {
+          "name__contains": "PowerShell",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "6200000000000000001",
+              "name": "PowerShell with an encoded command",
+              "description": "Encoded commands from Office",
+              "severity": "High",
+              "status": "Active",
+              "expirationMode": "Permanent",
+              "queryType": "events",
+              "s1ql": "SrcProcCmdLine ContainsCIS \"-enc\"",
+              "scope": "site",
+              "scopeId": [
+                "2222222222222222222"
+              ],
+              "generatedAlerts": 3,
+              "networkQuarantine": false,
+              "treatAsThreat": "UNDEFINED",
+              "createdAt": "2026-10-10T10:00:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "rules": [
+      {
+        "id": "6200000000000000001",
+        "name": "PowerShell with an encoded command",
+        "description": "Encoded commands from Office",
+        "severity": "High",
+        "status": "Active",
+        "expirationMode": "Permanent",
+        "queryType": "events",
+        "s1ql": "SrcProcCmdLine ContainsCIS \"-enc\"",
+        "scope": "site",
+        "scopeId": [
+          "2222222222222222222"
+        ],
+        "generatedAlerts": 3,
+        "networkQuarantine": false,
+        "treatAsThreat": "UNDEFINED",
+        "createdAt": "2026-10-10T10:00:00.000000Z"
+      }
+    ],
+    "ids": [
+      "6200000000000000001"
+    ],
+    "rule_id": "6200000000000000001",
+    "name": "PowerShell with an encoded command",
+    "status": "Active",
+    "severity": "High",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

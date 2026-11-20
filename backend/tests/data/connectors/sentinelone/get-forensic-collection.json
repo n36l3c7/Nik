@@ -1,0 +1,86 @@
+{
+  "args": {
+    "task_id": "7700000000000000002"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/remote-ops/forensics/task-result",
+        "query": {
+          "taskId": "7700000000000000002"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "collection": {
+              "tag": "INC-2026-0417",
+              "description": "Triage for INC-2026-0417",
+              "artifacts": [
+                {
+                  "artifactType": "Prefetch",
+                  "osType": "windows",
+                  "status": "completed",
+                  "detailedStatus": "Collected"
+                }
+              ]
+            },
+            "collectionFile": {
+              "agentId": "1234567890123456789",
+              "siteId": "2222222222222222222",
+              "signature": "c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+              "signatureType": "SHA256",
+              "uploadedTimestamp": "2026-11-20T10:31:12.000000Z"
+            },
+            "collectionFileError": null,
+            "collectionProfile": {
+              "id": "7600000000000000001",
+              "name": "Triage (Windows)"
+            },
+            "destination": {}
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "collection": {
+      "tag": "INC-2026-0417",
+      "description": "Triage for INC-2026-0417",
+      "artifacts": [
+        {
+          "artifactType": "Prefetch",
+          "osType": "windows",
+          "status": "completed",
+          "detailedStatus": "Collected"
+        }
+      ]
+    },
+    "artifacts": [
+      {
+        "artifactType": "Prefetch",
+        "osType": "windows",
+        "status": "completed",
+        "detailedStatus": "Collected"
+      }
+    ],
+    "statuses": [
+      "completed"
+    ],
+    "file": {
+      "agentId": "1234567890123456789",
+      "siteId": "2222222222222222222",
+      "signature": "c2lnbmF0dXJlLTAxMjM0NTY3ODk",
+      "signatureType": "SHA256",
+      "uploadedTimestamp": "2026-11-20T10:31:12.000000Z"
+    },
+    "has_file": true,
+    "file_error": null,
+    "profile_name": "Triage (Windows)"
+  }
+}

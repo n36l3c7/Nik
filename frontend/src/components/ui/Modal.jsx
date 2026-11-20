@@ -15,6 +15,8 @@ import { useLayer } from '../../lib/layers.js'
  *   isolated browser), instead of 85% of it.
  * - `full` makes it fill the window (an indicator opened as a page).
  * - `actions` are extra controls in the header, before the close button.
+ * - `front` puts it above every other dialog, menu and notice (the question
+ *   asked before unsaved work is lost).
  * - No portal: the fixed layer + z-50 is enough for this SPA.
  */
 export default function Modal({
@@ -27,6 +29,7 @@ export default function Modal({
   tall = false,
   full = false,
   actions = null,
+  front = false,
 }) {
   const ref = useRef(null)
   useLayer(ref, { open, onClose })
@@ -41,7 +44,8 @@ export default function Modal({
       tabIndex={-1}
       aria-label={typeof title === 'string' ? title : undefined}
       className={[
-        'fixed inset-0 z-50 flex items-center justify-center bg-sunken/70 backdrop-blur-sm focus:outline-none',
+        'fixed inset-0 flex items-center justify-center bg-sunken/70 backdrop-blur-sm focus:outline-none',
+        front ? 'z-[75]' : 'z-50',
         full ? 'p-0' : tall ? 'p-2' : 'p-4',
       ].join(' ')}
       // Close only if the mousedown happens directly on the backdrop

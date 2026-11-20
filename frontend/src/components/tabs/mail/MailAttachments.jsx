@@ -137,6 +137,7 @@ function Attachment({ item, sha256, onDownload, onSend, sending, onOpen, preview
               Zip
             </Button>
             <Button
+              waiting={sending === item.path}
               variant="secondary"
               size="xs"
               icon={Bug}

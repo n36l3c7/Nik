@@ -1131,6 +1131,30 @@ class Connection(Base):
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
+class Credential(Base):
+    """A secret kept once under a name and used by any number of instances (6.6).
+
+    ``kind`` is ``secret`` (one value: an API key, a token) or ``pair`` (a user name and a
+    password). ``secret`` holds the value, or the password of a pair, encrypted with the vault key
+    as the credentials of a connection are, and never returned by the API; ``username`` is not
+    secret and is shown. An instance names a credential where it would hold a value
+    (automation/credentials.py): nothing of it is copied there.
+    """
+
+    __tablename__ = "credentials"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="secret")
+    username: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    secret: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
 class InstanceKeyUse(Base):
     """What a key of an instance was used for: this minute, today, and until when the vendor refuses it."""
 
@@ -1601,6 +1625,52 @@ class SavedFilterDefault(Base):
         String(32), ForeignKey("saved_filters.id", ondelete="CASCADE"), nullable=False
     )
 
+
+class ArtifactJob(Base):
+    """Something a playbook asked the API process to do with a file: keep one, or analyse one again.
+
+    The automation worker reads the store of files read-only and is on no network with the analysis
+    workers, so a node writes what it wants here and the API process does it (``artifact_jobs.py``).
+    ``status`` is queued → running → done | error. The bytes of a file to keep are in
+    ``artifact_job_parts``, only until it is kept; ``result`` is what the node reads back. A row is
+    deleted a day after it was made.
+    """
+
+    __tablename__ = "artifact_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # store | attachment | analyse
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued", index=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    actor: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # The run that asked, and how deep it is: what the job sets off says so, which stops a loop.
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_epoch: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    finished_epoch: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+class ArtifactJobPart(Base):
+    """A part of the bytes a job carries. A file can be as large as an upload, so it crosses the
+    database in parts of a few megabytes, put together by the API process and deleted once the
+    file is in the store."""
+
+    __tablename__ = "artifact_job_parts"
+
+    job_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("artifact_jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+
+# Created by migration 0047_playbook_files where missing, in this order.
+PLAYBOOK_FILE_TABLES = ("artifact_jobs", "artifact_job_parts")
+
+# Created by migration 0046_credentials where missing.
+CREDENTIAL_TABLES = ("credentials",)
 
 # Created by migration 0041_saved_filters where missing, in this order.
 SAVED_FILTER_TABLES = ("saved_filters", "saved_filter_defaults")

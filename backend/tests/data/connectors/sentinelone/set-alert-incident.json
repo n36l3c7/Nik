@@ -1,0 +1,38 @@
+{
+  "args": {
+    "incident_status": "IN_PROGRESS",
+    "alert_id": "6100000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/cloud-detection/alerts/incident",
+        "json": {
+          "filter": {
+            "ids": [
+              "6100000000000000001"
+            ]
+          },
+          "data": {
+            "incidentStatus": "IN_PROGRESS"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}

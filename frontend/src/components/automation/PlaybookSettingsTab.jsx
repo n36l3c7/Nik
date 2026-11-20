@@ -9,6 +9,8 @@ import { hostOf } from '../../domain/automation/hosts.js'
 import { Badge, Button, Modal } from '../ui/index.js'
 import DataGuardDialog from './DataGuardDialog.jsx'
 import { DurationInput, Field, NumberInput, SectionTitle, Seg, Switch, TextInput } from './fields.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { transfer } from '../../lib/transfers.js'
 
 /*
  * ============================================================================
@@ -224,20 +226,32 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
     }
   }
 
+  const sendGeneral = () => run(() => api.put(base, { name: name.trim(), description }), 'Saved.')
   const saveGeneral = (event) => {
     event.preventDefault()
-    run(() => api.put(base, { name: name.trim(), description }), 'Saved.')
+    sendGeneral()
   }
+  useUnsavedChanges(canEdit && (name !== playbook.name || description !== playbook.description), {
+    what: 'The name and description of the playbook',
+    name: playbook.name,
+    save: sendGeneral,
+  })
   const limitsChanged =
     limits &&
     (limits.maxRunsPerHour !== playbook.maxRunsPerHour ||
       limits.onePerObject !== playbook.onePerObject ||
       limits.maxSeconds !== playbook.maxSeconds ||
       limits.approvalDefault !== playbook.approvalDefault)
+  const sendLimits = () => run(() => api.put(base, limits), 'The limits apply from the next run.')
   const saveLimits = (event) => {
     event.preventDefault()
-    run(() => api.put(base, limits), 'The limits apply from the next run.')
+    sendLimits()
   }
+  useUnsavedChanges(canEdit && Boolean(limitsChanged), {
+    what: 'The limits of the playbook',
+    name: playbook.name,
+    save: sendLimits,
+  })
 
   const setHosts = (hosts) => run(() => api.put(`${base}/egress`, { mode: playbook.egressMode, hosts }))
   const addHost = async (event) => {
@@ -249,7 +263,7 @@ export default function PlaybookSettingsTab({ playbook, canEdit, onChanged, onDe
 
   const exportFile = async () => {
     try {
-      const file = await api.get(`${base}/export`)
+      const file = await transfer(`Preparing the export of ${playbook.name}`, () => api.get(`${base}/export`))
       saveBlob(
         new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }),
         `${playbook.name.replace(/[^\w.-]+/g, '_')}.playbook.json`,

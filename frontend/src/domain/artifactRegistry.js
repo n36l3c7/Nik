@@ -32,6 +32,31 @@ export function artifactId(kind, ref) {
   return `${kind}-${ref}`
 }
 
+/* ---- A file analysed as what it is ---- */
+
+const ANALYSE_AS = {
+  mail: { as: 'mail', label: 'Analyse as an e-mail', made: 'an e-mail' },
+  capture: { as: 'capture', label: 'Analyse as a capture', made: 'a capture' },
+}
+
+/**
+ * What a file can be analysed as besides a file: the server says which (`analyseAs`), by the name of
+ * the file in a list and by its first bytes on its own page. Nothing for what is not a file.
+ */
+export function analyseAsActions(artifact) {
+  if (artifact?.kind !== 'file') return []
+  return (artifact.analyseAs ?? []).map((kind) => ANALYSE_AS[kind]).filter(Boolean)
+}
+
+/** Where an artifact comes from, or what was made of it, in a word or two. */
+export const RELATION_LABELS = {
+  attachment: 'attachment',
+  extracted: 'extracted object',
+  session: 'browser session',
+  unpacked: 'unpacked file',
+  analysed: 'analysis',
+}
+
 /* ---- Verdict ---- */
 
 const VERDICTS = {
@@ -74,6 +99,10 @@ export function parseTags(text) {
 const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|(?:pcap|url|mailbox)-[0-9a-f]{32})$/
 
 export const artifactPath = (id) => `/artifact/${id}`
+
+/** The page of the artifacts: their list, and nothing open yet (the first screen of the section). */
+export const ARTIFACTS_ROOT = '/artifacts'
+export const isArtifactsPath = (pathname) => /^\/artifacts\/?$/.test(String(pathname ?? '').split('?')[0])
 
 export function artifactIdFromPath(pathname) {
   return PATH_RE.exec(String(pathname ?? ''))?.[1] ?? null

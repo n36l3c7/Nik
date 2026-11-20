@@ -23,6 +23,8 @@ import {
   toRows,
 } from '../../../domain/lists.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { leaveHere, useUnsavedChanges } from '../../../lib/unsaved.js'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * Lists (who manages lists).
@@ -48,6 +50,7 @@ function NewList({ lists, onClose, onMade }) {
   const [busy, setBusy] = useState(false)
   const shownName = name ?? nameFromLabel(label)
   const problem = shownName ? nameProblem(shownName, lists) : null
+  const unsaved = useUnsavedChanges(Boolean(label.trim() || (name ?? '').trim()), { what: 'The new list' })
 
   const make = async (event) => {
     event.preventDefault()
@@ -64,7 +67,7 @@ function NewList({ lists, onClose, onMade }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title="New list"
       footer={
         <>
@@ -164,6 +167,7 @@ function ValuesEditor({ list, disabled, onSave }) {
   useEffect(() => setDraft(start), [start])
   const entries = textToEntries(draft, list.entries)
   const dirty = entriesToText(entries) !== start
+  useUnsavedChanges(dirty && !disabled, { what: 'The list', name: list.label, save: () => onSave({ entries }) })
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor="list-values" className={LABEL}>
@@ -199,6 +203,11 @@ function RowsEditor({ list, disabled, onSave }) {
   useEffect(() => setRows(start), [start])
   const columns = list.columns ?? []
   const dirty = JSON.stringify(fromRows(list, rows)) !== JSON.stringify(fromRows(list, start))
+  useUnsavedChanges(dirty && !disabled, {
+    what: 'The list',
+    name: list.label,
+    save: () => onSave({ entries: fromRows(list, rows) }),
+  })
   const change = (index, patch) => setRows(rows.map((row, at) => (at === index ? { ...row, ...patch } : row)))
   return (
     <div className="flex flex-col gap-2">
@@ -334,6 +343,11 @@ function DocumentEditor({ list, disabled, onSave }) {
   const [draft, setDraft] = useState(start)
   useEffect(() => setDraft(start), [start])
   const problem = documentProblem(draft)
+  useUnsavedChanges(draft !== start && !disabled, {
+    what: 'The list',
+    name: list.label,
+    save: problem ? undefined : () => onSave({ document: JSON.parse(draft) }),
+  })
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor="list-document" className={LABEL}>
@@ -400,8 +414,10 @@ function Detail({ name, onChanged, onDeleted }) {
       setSaid(done)
       onChanged()
       reload()
+      return true
     } catch (failure) {
       setError(failure.message)
+      return false
     }
   }
   const path = `/lists/${encodeURIComponent(name)}`
@@ -413,7 +429,10 @@ function Detail({ name, onChanged, onDeleted }) {
       return
     }
     const text = await file.text()
-    apply(() => api.post(`${path}/import`, { format, text }), `Imported from ${file.name}.`)
+    apply(
+      () => transfer(`Importing ${file.name}`, () => api.post(`${path}/import`, { format, text })),
+      `Imported from ${file.name}.`,
+    )
   }
 
   if (error && !list) {
@@ -582,10 +601,12 @@ export default function ListsSection() {
     () =>
       onLocationChange(() => {
         const wanted = openFromSearch(window.location.search)
-        if (wanted) setChosen(wanted)
+        if (wanted) choose(wanted)
       }),
     [],
   )
+  /** Open another list, after asking about the items of this one that are not saved. */
+  const choose = (name) => leaveHere(() => setChosen(name))
   const shown = useMemo(() => matching(lists, query), [lists, query])
   const open = chosen && lists?.some((list) => list.name === chosen) ? chosen : (lists?.[0]?.name ?? null)
 
@@ -628,7 +649,7 @@ export default function ListsSection() {
                     onContextMenu={(event) =>
                       menu(event, {
                         title: list.label,
-                        actions: [{ label: 'Open', icon: FolderOpen, onSelect: () => setChosen(list.name) }],
+                        actions: [{ label: 'Open', icon: FolderOpen, onSelect: () => choose(list.name) }],
                         link: listPath(list.name),
                         copy: [{ label: 'Copy the name', text: list.name }],
                       })
@@ -638,7 +659,7 @@ export default function ListsSection() {
                       <button
                         type="button"
                         aria-current={list.name === open ? 'true' : undefined}
-                        onClick={() => setChosen(list.name)}
+                        onClick={() => choose(list.name)}
                         className="text-left text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {list.label}

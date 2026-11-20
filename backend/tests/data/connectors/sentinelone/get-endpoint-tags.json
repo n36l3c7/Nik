@@ -1,0 +1,62 @@
+{
+  "args": {
+    "key": "incident"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/agents/tags",
+        "query": {
+          "key": "incident",
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "7777777777777777001",
+              "key": "incident",
+              "value": "INC-2026-0417",
+              "description": "Hosts of an open incident",
+              "scopeLevel": "site",
+              "scopeId": "2222222222222222222",
+              "totalEndpoints": 3,
+              "type": "agents"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "tags": [
+      {
+        "id": "7777777777777777001",
+        "key": "incident",
+        "value": "INC-2026-0417",
+        "description": "Hosts of an open incident",
+        "scopeLevel": "site",
+        "scopeId": "2222222222222222222",
+        "totalEndpoints": 3,
+        "type": "agents"
+      }
+    ],
+    "ids": [
+      "7777777777777777001"
+    ],
+    "tag_id": "7777777777777777001",
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

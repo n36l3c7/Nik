@@ -1,0 +1,61 @@
+{
+  "args": {
+    "enabled": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/log-collection/rules",
+        "query": {
+          "enabled": true,
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "id": "6500000000000000001",
+              "name": "Windows security log",
+              "enabled": true,
+              "agentType": "windows",
+              "scopeLevel": "site",
+              "scopeId": "2222222222222222222",
+              "description": "Logon and process events",
+              "updatedAt": "2026-10-01T08:00:00.000000Z"
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "rules": [
+      {
+        "id": "6500000000000000001",
+        "name": "Windows security log",
+        "enabled": true,
+        "agentType": "windows",
+        "scopeLevel": "site",
+        "scopeId": "2222222222222222222",
+        "description": "Logon and process events",
+        "updatedAt": "2026-10-01T08:00:00.000000Z"
+      }
+    ],
+    "ids": [
+      "6500000000000000001"
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

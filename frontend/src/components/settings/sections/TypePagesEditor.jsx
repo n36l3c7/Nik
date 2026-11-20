@@ -31,6 +31,7 @@ import {
 } from '../../../domain/typePages.js'
 import { Button, Modal } from '../../ui/index.js'
 import TypePageEditor from './TypePageEditor.jsx'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -296,6 +297,7 @@ export default function TypePagesEditor({ type, layout, onLayout, fields, known 
   const [chosen, setChosen] = useState({ view: 'page', page: null })
   const [naming, setNaming] = useState(null) // the name of the page being added
   const [said, setSaid] = useState('')
+  const namingPage = useUnsavedChanges(Boolean((naming ?? '').trim()), { what: 'The new page' })
   const rows = tabRows(layout, BAR)
   // A page that was deleted is no longer what is edited.
   const page = chosen.view === 'page' && chosen.page && pageOf(layout, chosen.page) ? chosen.page : null
@@ -457,7 +459,7 @@ export default function TypePagesEditor({ type, layout, onLayout, fields, known 
 
       <Modal
         open={naming !== null}
-        onClose={() => setNaming(null)}
+        onClose={() => namingPage.leave(() => setNaming(null))}
         title="Add a page"
         footer={
           <>

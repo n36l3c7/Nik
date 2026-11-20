@@ -27,7 +27,7 @@
         "json": {
           "id": "lrq-77",
           "stepsCompleted": 0,
-          "totalSteps": 4
+          "stepsTotal": 4
         },
         "headers": {
           "x-dataset-query-forward-tag": "srv-17"
@@ -51,7 +51,7 @@
         "json": {
           "id": "lrq-77",
           "stepsCompleted": 2,
-          "totalSteps": 4
+          "stepsTotal": 4
         }
       }
     },
@@ -72,7 +72,6 @@
         "json": {
           "id": "lrq-77",
           "stepsCompleted": 4,
-          "totalSteps": 4,
           "data": {
             "matchCount": 2,
             "columns": [
@@ -95,7 +94,8 @@
                 3
               ]
             ]
-          }
+          },
+          "stepsTotal": 4
         }
       }
     },
@@ -129,6 +129,7 @@
         3
       ]
     ],
-    "matches": 2
+    "matches": 2,
+    "count": 2
   }
 }

@@ -1,5 +1,5 @@
 import AutomationTab from '../automation/AutomationTab.jsx'
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ListChecks, Plus, RefreshCw, Workflow } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useTasks } from '../../../context/TasksContext.jsx'
@@ -8,7 +8,7 @@ import { api } from '../../../services/api.js'
 import { KIND_LABELS, normalise } from '../../../domain/automation/graph.js'
 import { RUN_COLORS, isFinished } from '../../../domain/automation/runs.js'
 import { dueText, isOpen, orderPlans, phaseTitle, progress, statusBadge, stepBadge } from '../../../domain/tasks.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
 import Assign, { assigneeOf } from '../../tasks/Assign.jsx'
 import NewTaskDialog from '../../tasks/NewTaskDialog.jsx'
 import TaskCard from '../../tasks/TaskCard.jsx'
@@ -148,6 +148,9 @@ function OpenTask({ taskId, tasks, canWrite, onClose, onChanged }) {
   const task = tasks.find((item) => item.id === taskId)
   const [assignee, setAssignee] = useState(() => assigneeOf(task))
   const [busy, setBusy] = useState(false)
+  // What is written in the form of the task (TaskCard) is asked about before the dialog closes.
+  const guard = useRef(null)
+  const close = () => (guard.current ? guard.current.leave(onClose) : onClose())
   const give = async () => {
     setBusy(true)
     try {
@@ -160,9 +163,9 @@ function OpenTask({ taskId, tasks, canWrite, onClose, onChanged }) {
     }
   }
   return (
-    <Modal open onClose={onClose} title={task?.kind === 'ask' ? 'Question' : 'Task'} maxWidth="max-w-2xl">
+    <Modal open onClose={close} title={task?.kind === 'ask' ? 'Question' : 'Task'} maxWidth="max-w-2xl">
       <div className="flex flex-col gap-5">
-        <TaskCard taskId={taskId} onChanged={onChanged} />
+        <TaskCard taskId={taskId} onChanged={onChanged} guard={guard} />
         {canWrite && task && isOpen(task) && (
           <div className="flex flex-wrap items-end gap-2 border-t border-line pt-4">
             <Assign value={assignee} onChange={setAssignee} disabled={busy} label="Give it to" />
@@ -285,10 +288,16 @@ export default function WorkPlanTab({ incident }) {
         </p>
       )}
       {plan && plans.length === 0 && plan.tasks.length === 0 && (
-        <p className="text-sm text-fg-muted">
-          Nothing is planned for this incident yet. A plan appears when a playbook runs on it; a task can be added by
-          hand, or typed in the War Room as <code className="font-mono">/task Call the user @anna due=2h</code>.
-        </p>
+        <EmptyState
+          skull
+          title="Nothing planned yet"
+          message={
+            <>
+              Nothing is planned for this incident yet. A plan appears when a playbook runs on it; a task can be added
+              by hand, or typed in the War Room as <code className="font-mono">/task Call the user @anna due=2h</code>.
+            </>
+          }
+        />
       )}
       {plans.map((item) => (
         <Plan key={item.runId} plan={item} view={view} onOpen={setOpenId} />

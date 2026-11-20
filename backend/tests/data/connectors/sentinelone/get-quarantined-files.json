@@ -1,0 +1,47 @@
+{
+  "args": {
+    "threat_id": "5555555555555555555"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/threats/5555555555555555555/quarantined-files",
+        "query": {
+          "limit": 100
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "fileName": "dropper.exe",
+              "filePath": "C:\\Users\\m.rossi\\Downloads\\dropper.exe",
+              "fileSize": 482816
+            }
+          ],
+          "pagination": {
+            "totalItems": 1,
+            "nextCursor": null
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "files": [
+      {
+        "fileName": "dropper.exe",
+        "filePath": "C:\\Users\\m.rossi\\Downloads\\dropper.exe",
+        "fileSize": 482816
+      }
+    ],
+    "count": 1,
+    "total": 1,
+    "truncated": false
+  }
+}

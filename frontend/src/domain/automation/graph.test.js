@@ -314,6 +314,14 @@ test('each event says what its trigger holds, what it is about and a filter to s
   assert.equal(objectName('mail'), 'an e-mail')
   assert.equal(objectName(''), 'nothing')
   assert.equal(eventLabel('file.analysed'), 'A file is analysed · file.analysed')
+  // The analyses the workers make say when they end: a playbook reads what they found, and their status.
+  assert.ok(names({ event: 'code.analysed' }).includes('code.status'))
+  assert.ok(names({ event: 'code.analysed' }).includes('file.sha256'))
+  assert.ok(names({ event: 'capabilities.analysed' }).includes('capabilities.attack'))
+  assert.ok(names({ event: 'capture.analysed' }).includes('capture.packets'))
+  assert.equal(runsOn({ event: 'capabilities.analysed' }), 'file')
+  assert.equal(runsOn({ event: 'capture.analysed' }), 'pcap')
+  assert.equal(objectName('pcap'), 'a capture')
   assert.equal(eventLabel('later.event'), 'later.event')
   assert.deepEqual(sampleFilter('mail.analysed'), {
     all: [{ left: '{{ trigger.mail.verdict }}', op: 'eq', right: 'phishing' }],
@@ -541,6 +549,22 @@ test('the library is in tabs, and its search looks in all of them', async () => 
   assert.deepEqual(found.counts, { commands: 2, scripts: 1, flow: 1 })
   assert.deepEqual(names(libraryOf(entries, 'commands', 'issue')), []) // not offered, so not found
   assert.deepEqual(libraryOf(null).groups, [])
+
+  // The nodes for files are Nik's own, in a group of their own: after Nik, before the connectors.
+  const files = [
+    { id: 'acme.block', kind: 'action', group: 'Acme', name: 'block', connector: 'acme', available: true },
+    { id: 'nik.add-file', kind: 'action', group: 'Files', name: 'Add a file' },
+    { id: 'nik.get-analysis', kind: 'action', group: 'Files', name: 'Read an analysis' },
+    { id: 'http.request', kind: 'action', group: 'HTTP', name: 'HTTP request' },
+  ]
+  assert.deepEqual(names(libraryOf([...files, ...entries], 'commands')), [
+    ['Nik', ['Add a note']],
+    ['Files', ['Add a file', 'Read an analysis']],
+    ['Acme', ['block']],
+    ['Mail', ['send']],
+    ['HTTP', ['HTTP request']],
+  ])
+  assert.deepEqual(names(libraryOf(files, 'commands', 'analysis')), [['Files', ['Read an analysis']]])
 })
 
 test('an output that says what is inside it is listed with it, from the shapes of the catalog', async () => {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api } from '../../services/api.js'
 import { parseTags } from '../../domain/iocLibrary.js'
 import { Button, Modal } from '../ui/index.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * Tags on many indicators at once: the ones selected, or everything the
@@ -25,6 +26,7 @@ export default function TagDialog({ scope, count, onDone, onClose }) {
   const [remove, setRemove] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const unsaved = useUnsavedChanges(Boolean(add.trim() || remove.trim()), { what: 'The tags being changed' })
   const adding = parseTags(add)
   const removing = parseTags(remove)
   const wrong = [...adding.wrong, ...removing.wrong]
@@ -42,14 +44,14 @@ export default function TagDialog({ scope, count, onDone, onClose }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={`Tags on ${count} indicator${count === 1 ? '' : 's'}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={!ready || busy}>
+          <Button waiting={busy} onClick={save} disabled={!ready || busy}>
             {busy ? 'Saving…' : 'Save'}
           </Button>
         </>

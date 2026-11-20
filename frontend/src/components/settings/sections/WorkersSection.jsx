@@ -4,7 +4,7 @@ import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
 import { notAnswering, workerName, workerStatus } from '../../../domain/workers.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, EmptyState } from '../../ui/index.js'
 
 /*
  * System → Workers (admins): the automation worker and the analysis workers,
@@ -87,7 +87,17 @@ export default function WorkersSection() {
               Refresh
             </Button>
           </div>
-          <ul aria-label="Workers" className="divide-y divide-line border border-line bg-panel">
+          {workers.length === 0 && (
+            <EmptyState
+              skull
+              title="No worker"
+              message="The server names no worker. The workers are containers of the deployment: see the configuration guide."
+            />
+          )}
+          <ul
+            aria-label="Workers"
+            className={workers.length === 0 ? 'hidden' : 'divide-y divide-line border border-line bg-panel'}
+          >
             {workers.map((worker) => {
               const status = workerStatus(worker, now)
               return (

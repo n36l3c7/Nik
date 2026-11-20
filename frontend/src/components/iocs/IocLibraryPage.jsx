@@ -1,19 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  BellRing,
-  Download,
-  Eye,
-  Globe,
-  Link2,
-  ListPlus,
-  Pencil,
-  Plus,
-  Rss,
-  ShieldQuestion,
-  Square,
-  Tag,
-  Trash2,
-} from 'lucide-react'
+import { Download, Eye, Globe, Link2, Pencil, Plus, Rss, Square, Tag, Trash2 } from 'lucide-react'
 import { api } from '../../services/api.js'
 import { copyText } from '../../lib/download.js'
 import { formatRelative } from '../../lib/time.js'
@@ -36,7 +22,7 @@ import {
   verdictRowClass,
 } from '../../domain/iocLibrary.js'
 import SortHeader from '../tabs/network/SortHeader.jsx'
-import { Badge, Button, EmptyState, MicroSkull, Modal, Select, StatCard } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Select, StatCard, Wait } from '../ui/index.js'
 import EditIocDialog from './EditIocDialog.jsx'
 import ListHistory from './ListHistory.jsx'
 import TagDialog from './TagDialog.jsx'
@@ -120,10 +106,10 @@ function Alerts({ onOpenIncident }) {
         )}
       </div>
       {alerts === null ? (
-        <MicroSkull className="text-lg text-fg-muted" />
+        <Wait>Loading the alerts…</Wait>
       ) : alerts.length === 0 ? (
         <EmptyState
-          icon={BellRing}
+          skull
           title="No alerts"
           message='Turn on "Watch this list" on a list: Nik tells you here when an incident holds one of its indicators.'
         />
@@ -282,6 +268,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
 
   const rows = useMemo(() => data?.iocs ?? [], [data])
   const total = data?.total ?? 0
+  // Something typed or chosen narrows the table: an empty one then says so, in other words.
+  const narrowed = Object.keys(EMPTY_FILTERS).some((key) => (filters[key] ?? null) !== (EMPTY_FILTERS[key] ?? null))
   const allOnPage = rows.length > 0 && rows.every((row) => selected.has(key(row)))
   const count = wholeFilter ? total : selected.size
   const scope = useCallback(
@@ -364,7 +352,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
   if (!view) return null
   if (view.kind === 'alerts') return <Alerts onOpenIncident={onOpenIncident} />
   if (listId && lists.length > 0 && !list)
-    return <EmptyState icon={ShieldQuestion} title="List not found" message="It may have been removed." />
+    return <EmptyState skull title="List not found" message="It may have been removed." />
 
   const running = checks.filter((check) => check.status === 'running' || check.status === 'waiting')
   return (
@@ -619,18 +607,27 @@ export default function IocLibraryPage({ onOpenIncident }) {
           {error}
         </p>
       ) : data === null ? (
-        <MicroSkull className="text-lg text-fg-muted" />
+        <Wait>Loading the indicators…</Wait>
       ) : rows.length === 0 ? (
-        <EmptyState
-          icon={ListPlus}
-          title={total === 0 && !filters.q ? 'No indicators here' : 'Nothing matches'}
-          message="Add one or many: type, paste, or drop a file of indicators anywhere."
-          action={
-            <Button icon={Plus} onClick={() => openAdd(listId ? { list: listId } : {})}>
-              Add indicators
-            </Button>
-          }
-        />
+        narrowed ? (
+          // A search or a filter left nothing: other words, and nothing to add.
+          <EmptyState
+            skull
+            title="No indicator matches"
+            message="Nothing here matches what you typed and the filters you chose: change them, or take them off."
+          />
+        ) : (
+          <EmptyState
+            skull
+            title="No indicators here"
+            message="Add one or many: type, paste, or drop a file of indicators anywhere."
+            action={
+              <Button icon={Plus} onClick={() => openAdd(listId ? { list: listId } : {})}>
+                Add indicators
+              </Button>
+            }
+          />
+        )
       ) : (
         <div className="overflow-x-auto border border-line">
           <table aria-label="Indicators" className="w-full min-w-[56rem] border-collapse font-mono text-xs">
@@ -693,6 +690,11 @@ export default function IocLibraryPage({ onOpenIncident }) {
                         <Badge color={meta.color}>{meta.label}</Badge>
                       ) : row.neverSent ? (
                         <Badge title={row.neverSent}>never sent out</Badge>
+                      ) : row.held ? (
+                        // The data guard holds its look-up until an administrator opens the class.
+                        <Badge color="amber" title={row.held}>
+                          held
+                        </Badge>
                       ) : (
                         <Badge>not checked</Badge>
                       )}

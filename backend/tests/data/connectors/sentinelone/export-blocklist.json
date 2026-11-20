@@ -1,0 +1,41 @@
+{
+  "args": {
+    "tenant": true
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/export/restrictions",
+        "query": {
+          "tenant": true,
+          "type": "black_hash"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "Hash,OS,Description,Scope\n3395856ce81f2b7382dee72602f798b642f14140,windows,Dropper of incident INC-2026-0417,Milan\n",
+        "headers": {
+          "content-disposition": "attachment; filename=\"blocklist.csv\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "blocklist.csv",
+      "type": "text/plain",
+      "text": "Hash,OS,Description,Scope\n3395856ce81f2b7382dee72602f798b642f14140,windows,Dropper of incident INC-2026-0417,Milan\n"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:blocklist.csv",
+    "name": "blocklist.csv",
+    "sha256": "sha256:blocklist.csv",
+    "size": 115,
+    "type": "text/plain"
+  }
+}

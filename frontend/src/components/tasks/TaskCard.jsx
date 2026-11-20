@@ -10,6 +10,7 @@ import FieldInput from '../fields/FieldInput.jsx'
 import { Badge, Button } from '../ui/index.js'
 import Markdown from './Markdown.jsx'
 import { numberedName } from '../../domain/incidentName.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * ============================================================================
@@ -27,7 +28,7 @@ const INPUT =
 const LABEL = 'text-xs font-medium text-fg-muted'
 
 /** The form whoever the task is for fills. */
-function TaskForm({ task, onDone }) {
+function TaskForm({ task, onDone, guard }) {
   const { assignees } = useIncidents()
   const formId = useId()
   const [form, setForm] = useState(() => emptyForm(task))
@@ -37,6 +38,19 @@ function TaskForm({ task, onDone }) {
   const [why, setWhy] = useState('')
   const needed = missing(task, form)
   const question = task.kind === 'ask'
+  // What was answered or commented and not sent. A dialog that shows the card asks through `guard`
+  // before it closes; a page is asked by the address it leaves.
+  const unsaved = useUnsavedChanges(JSON.stringify(form) !== JSON.stringify(emptyForm(task)) || Boolean(why.trim()), {
+    what: question ? 'The answer to the question' : 'The task',
+    name: task.title,
+  })
+  useEffect(() => {
+    if (!guard) return undefined
+    guard.current = unsaved
+    return () => {
+      guard.current = null
+    }
+  }, [guard, unsaved])
 
   const send = async (event) => {
     event.preventDefault()
@@ -205,7 +219,7 @@ function TaskForm({ task, onDone }) {
  *   onOpenIncident?: (id: string) => void,      // left out where the incident is already open
  * }} props
  */
-export default function TaskCard({ taskId, onChanged, onOpenIncident }) {
+export default function TaskCard({ taskId, onChanged, onOpenIncident, guard }) {
   const { can } = useAuth()
   const { refresh, version } = useTasks()
   const [task, setTask] = useState(null)
@@ -289,6 +303,7 @@ export default function TaskCard({ taskId, onChanged, onOpenIncident }) {
       {isOpen(task) ? (
         task.mine ? (
           <TaskForm
+            guard={guard}
             key={task.id}
             task={task}
             onDone={(next) => {

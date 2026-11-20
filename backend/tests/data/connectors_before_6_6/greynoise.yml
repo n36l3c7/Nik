@@ -1,0 +1,1911 @@
+# GreyNoise, through its API v3 (and what remains under /v1).
+#
+# Written from the vendor's reference, https://docs.greynoise.io/reference:
+# one page for each endpoint, each with its OpenAPI definition. Not run
+# against the real service: see "verified" below.
+#
+# The key goes in the "key" header. The Community API (get-community-ip)
+# answers without a key, a few addresses a day: the key is optional here, and
+# a request is sent without the header when the connection has none.
+#
+# Almost everything else needs a paid plan, and often one entitlement or
+# add-on module among several: those commands say "premium: true", and what
+# each needs beyond a plan is in its description. GreyNoise answers 403 to a
+# key that may not use an endpoint, and 206 with the fields left out named in
+# "restricted_fields" when the plan gives a part only.
+#
+# The verdict of get-community-ip is the one Nik's own look-up code gave for
+# this source: harmless for a common business service (RIOT) and for what
+# GreyNoise classifies as benign, malicious for what it classifies as
+# malicious, unknown for the rest and for an address GreyNoise has not seen
+# (which it answers with 404, taken here as an answer: a 404 holds no
+# classification, so every field is read through first_of or asked by if).
+#
+# A yes or no in a query is written "true" or "false", as the API reads it.
+#
+# The downloads (the PCAP of a session or of several, the raw payload of a
+# session, the BSI bulk file, the Psychic models and snapshots) are kept as
+# file artifacts: nothing opens them. The reference describes each as the
+# file itself in the answer of api.greynoise.io, with no redirect to a
+# storage host, so the connector lists no other host.
+#
+# Not here: the private RSS feed (/v3/articles/rss/{token}). Its address is
+# its credential, and an argument is not a secret.
+name: GreyNoise
+id: greynoise
+version: 3
+description: "What GreyNoise knows of an IP address (internet scanner, business service, classification), GNQL searches, CVEs, tags, callback addresses, blocklists, event feeds and the sessions of your own sensors."
+api_version: "GreyNoise API v3 (api.greynoise.io, OpenAPI 3.0.0 of the reference)"
+verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
+configuration:
+  - name: api_key
+    label: API key
+    type: secret
+    help: "The API key of your GreyNoise account. Leave it empty to ask only the Community API, without an account, a few addresses a day."
+base_url: "https://api.greynoise.io"
+test:
+  request: { method: GET, path: /ping, headers: { key: "{{ secret.api_key | default(null) }}" } }
+commands:
+  - name: get-community-ip
+    description: "What GreyNoise knows of an IP address, from the free Community API: whether it scans the internet (noise), whether it belongs to a common business service (RIOT), and how GreyNoise classifies it."
+    reputation: ip
+    arguments:
+      - { name: ip, type: text, required: true, description: "A routable IPv4 address" }
+    request:
+      method: GET
+      path: "/v3/community/{{ args.ip }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    success: { status: [200, 404] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      # Not seen (404, or an answer that holds nothing): unknown. A business service: harmless.
+      # Otherwise by the classification: malicious, benign (harmless), anything else unknown.
+      verdict: "{{ if(status == 404 or not response, 'unknown',
+        if(response.riot, 'harmless',
+        if(first_of(response.classification, 'unknown') == 'malicious', 'malicious',
+        if(first_of(response.classification, 'unknown') == 'benign', 'harmless', 'unknown')))) }}"
+      # The name is left out of "internet scanner" when GreyNoise gives none or says "unknown".
+      summary: "{{ if(status == 404 or not response, 'not seen scanning the internet',
+        if(response.riot, 'common business service (' ~ first_of(response.name, 'known') ~ ')',
+        if(response.noise,
+        first_of(response.classification, 'unknown') ~ ' internet scanner'
+        ~ if(first_of(response.name, 'unknown') != 'unknown', ' (' ~ response.name ~ ')', ''),
+        'not seen scanning the internet'))) }}"
+      link: "https://viz.greynoise.io/ip/{{ args.ip }}"
+      known: "{{ not (status == 404 or not response) }}"
+      noise: "{{ response.noise }}"
+      riot: "{{ response.riot }}"
+      classification: "{{ response.classification }}"
+      name: "{{ response.name }}"
+      last_seen: "{{ response.last_seen }}"
+      message: "{{ response.message }}"
+
+  - name: ping
+    description: "Check that GreyNoise answers and what the key gives: its plan, its add-on modules and when it expires."
+    arguments: []
+    request:
+      method: GET
+      path: "/ping"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      message: "{{ response.message }}"
+      plan: "{{ response.plan }}"
+      modules: "{{ response.modules }}"
+      offering: "{{ response.offering }}"
+      expiration: "{{ response.expiration }}"
+      address: "{{ response.address }}"
+
+  - name: get-ip
+    description: "Everything GreyNoise knows of an IP address: what it was seen scanning for (classification, actor, tags, CVEs, ports and requests) and the business service it belongs to, with its trust level."
+    premium: true
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IP address" }
+      - { name: quick, type: bool, description: "Only the address with its classification or trust level, for a faster answer" }
+      - { name: workspace_labels, type: text, description: "The datasets to read, separated by commas: greynoise (GreyNoise's own, the only one read when left out), community (what the community contributes), personal (your own workspace). Needs the Community Dataset entitlement" }
+    request:
+      method: GET
+      path: "/v3/ip/{{ args.ip }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
+        workspace_labels: "{{ args.workspace_labels }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ip: "{{ response.ip }}"
+      seen_scanning: "{{ response.internet_scanner_intelligence.found }}"
+      classification: "{{ response.internet_scanner_intelligence.classification }}"
+      actor: "{{ response.internet_scanner_intelligence.actor }}"
+      tags: "{{ response.internet_scanner_intelligence.tags | pluck('name') }}"
+      cves: "{{ response.internet_scanner_intelligence.cves }}"
+      first_seen: "{{ response.internet_scanner_intelligence.first_seen }}"
+      last_seen: "{{ response.internet_scanner_intelligence.last_seen }}"
+      tor: "{{ response.internet_scanner_intelligence.tor }}"
+      vpn: "{{ response.internet_scanner_intelligence.vpn }}"
+      spoofable: "{{ response.internet_scanner_intelligence.spoofable }}"
+      organization: "{{ response.internet_scanner_intelligence.metadata.organization }}"
+      country: "{{ response.internet_scanner_intelligence.metadata.source_country }}"
+      asn: "{{ response.internet_scanner_intelligence.metadata.asn }}"
+      rdns: "{{ response.internet_scanner_intelligence.metadata.rdns }}"
+      business_service: "{{ response.business_service_intelligence.found }}"
+      service_name: "{{ response.business_service_intelligence.name }}"
+      service_category: "{{ response.business_service_intelligence.category }}"
+      trust_level: "{{ response.business_service_intelligence.trust_level }}"
+      scanner: "{{ response.internet_scanner_intelligence }}"
+      service: "{{ response.business_service_intelligence }}"
+      restricted_fields: "{{ response.request_metadata.restricted_fields }}"
+
+  - name: get-ips
+    description: "Everything GreyNoise knows of several IP addresses at once, 10 000 at most: for each, what it was seen scanning for and the business service it belongs to."
+    premium: true
+    arguments:
+      - { name: ips, type: list, required: true, description: "The IP addresses, 10 000 at most" }
+      - { name: quick, type: bool, description: "Only each address with its classification or trust level, for a faster answer" }
+      - { name: workspace_labels, type: text, description: "The datasets to read, separated by commas: greynoise (GreyNoise's own, the only one read when left out), community (what the community contributes), personal (your own workspace). Needs the Community Dataset entitlement" }
+    request:
+      method: POST
+      path: "/v3/ip"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
+        workspace_labels: "{{ args.workspace_labels }}"
+      json:
+        ips: "{{ args.ips }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      records: "{{ response.data }}"
+      found: "{{ response.data | pluck('ip') }}"
+      not_found: "{{ response.request_metadata.ips_not_found }}"
+      invalid: "{{ response.request_metadata.invalid_ips }}"
+      message: "{{ response.request_metadata.message }}"
+      restricted_fields: "{{ response.request_metadata.restricted_fields }}"
+
+  - name: get-ip-timeline
+    description: "How one field of an IP address' scanning changed over time: its classification, the ports it reached, its tags, its user agents, counted for each span of time. Needs an additional licence."
+    premium: true
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 address" }
+      - { name: field, type: choice, choices: ["classification", "destination_port", "http_path", "http_user_agent", "source_asn", "source_asn_subnet", "source_org", "source_rdns", "tag_ids"], default: "classification", description: "The field whose values are counted" }
+      - { name: days, type: number, description: "How many days back: 1 when left out; source_asn_subnet goes back 90 days at most" }
+      - { name: granularity, type: text, description: "The length of a span, in hours (1h to 24h) or days (1d to 90d): 1d when left out" }
+      - { name: workspace_labels, type: text, description: "The datasets to read, separated by commas: greynoise (GreyNoise's own, the only one read when left out), community (what the community contributes), personal (your own workspace). Needs the Community Dataset entitlement" }
+    request:
+      method: GET
+      path: "/v3/noise/ips/{{ args.ip }}/timeline"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        field: "{{ args.field }}"
+        days: "{{ args.days }}"
+        granularity: "{{ args.granularity }}"
+        workspace_labels: "{{ args.workspace_labels }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      labels: "{{ response.results | pluck('label') | unique }}"
+      first_seen: "{{ response.metadata.first_seen }}"
+      start: "{{ response.metadata.start }}"
+      end: "{{ response.metadata.end }}"
+      metadata: "{{ response.metadata }}"
+
+  - name: search-gnql
+    description: "The IP addresses that match a GNQL query, each with everything GreyNoise knows of it, read page by page (5 000 addresses at most)."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: quick, type: bool, description: "Only each address with its classification or trust level" }
+      - { name: exclude, type: text, description: "Fields to leave out of each record, separated by commas: raw_data,metadata.organization,tags" }
+    request:
+      method: GET
+      path: "/v3/gnql"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
+        exclude: "{{ args.exclude }}"
+    pagination:
+      type: cursor
+      param: scroll
+      next: "{{ response.request_metadata.scroll }}"
+      limit_param: size
+      limit: 1000
+      items: "{{ response.data }}"
+      max_pages: 5
+    error: { message: "{{ response.message }}" }
+    timeout: 120
+    outputs:
+      records: "{{ response.items }}"
+      ips: "{{ response.items | pluck('ip') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: search-gnql-metadata
+    description: "The IP addresses that match a GNQL query, each without the raw data of its scans (ports, requests, fingerprints): a lighter answer than search-gnql, read page by page (5 000 addresses at most)."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: quick, type: bool, description: "Only each address with its classification or trust level" }
+      - { name: exclude, type: text, description: "More fields to leave out of each record, separated by commas: metadata.organization,metadata.rdns,tags" }
+    request:
+      method: GET
+      path: "/v3/gnql/metadata"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
+        exclude: "{{ args.exclude }}"
+    pagination:
+      type: cursor
+      param: scroll
+      next: "{{ response.request_metadata.scroll }}"
+      limit_param: size
+      limit: 1000
+      items: "{{ response.data }}"
+      max_pages: 5
+    error: { message: "{{ response.message }}" }
+    timeout: 120
+    outputs:
+      records: "{{ response.items }}"
+      ips: "{{ response.items | pluck('ip') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: get-gnql-stats
+    description: "The most common organisations, actors, tags, ASNs, countries, classifications and operating systems among the addresses that match a GNQL query."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: count, type: number, description: "How many of the most common values of each kind: 1 to 10 000, 1 000 when left out" }
+    request:
+      method: GET
+      path: "/v3/gnql/stats"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        count: "{{ args.count }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      count: "{{ response.count }}"
+      adjusted_query: "{{ response.adjusted_query }}"
+      classifications: "{{ response.stats.classifications }}"
+      tags: "{{ response.stats.tags }}"
+      actors: "{{ response.stats.actors }}"
+      organizations: "{{ response.stats.organizations }}"
+      asns: "{{ response.stats.asns }}"
+      source_countries: "{{ response.stats.source_countries }}"
+      stats: "{{ response.stats }}"
+
+  - name: count-gnql
+    description: "How many IP addresses match a GNQL query, without the addresses themselves."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+    request:
+      method: GET
+      path: "/v3/gnql/count"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      count: "{{ response.count }}"
+      query: "{{ response.query }}"
+      adjusted_query: "{{ response.adjusted_query }}"
+      message: "{{ response.message }}"
+      restricted_fields: "{{ response.restricted_fields }}"
+
+  - name: export-gnql-ips
+    description: "Every IP address that matches a GNQL query, the addresses alone, most recently seen first, in one answer. Needs the IP bulk export entitlement."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: exclude_riot, type: bool, description: "Leave out the addresses of business services of trust level 1 and 2, which a blocklist should never hold. Needs the BSI module: without it nothing is left out" }
+    request:
+      method: GET
+      path: "/v3/gnql/ips"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        exclude_riot: "{{ args.exclude_riot | map('true', 'true', 'false', 'false') }}"
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    outputs:
+      ips: "{{ response.ips }}"
+      count: "{{ response.request_metadata.count }}"
+      adjusted_query: "{{ response.request_metadata.adjusted_query }}"
+      message: "{{ response.request_metadata.message }}"
+
+  - name: validate-gnql
+    description: "Say whether a GNQL query would be accepted, without running it, with every reason it is refused and the query that would run if the plan rewrites it."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "The GNQL query to check, 4 096 characters at most" }
+      - { name: report_unknown_tags, type: bool, description: "Also name the tags of the query that no tag of your workspace matches" }
+    request:
+      method: POST
+      path: "/v3/gnql/validate"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        query: "{{ args.query }}"
+        report_unknown_tags: "{{ args.report_unknown_tags }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      valid: "{{ response.valid }}"
+      message: "{{ response.message }}"
+      errors: "{{ response.errors }}"
+      adjusted_query: "{{ response.adjusted_query }}"
+      is_query_adjusted: "{{ response.is_query_adjusted }}"
+      unknown_tags: "{{ response.unknown_tags }}"
+
+  - name: list-gnql-fields
+    description: "The fields a GNQL query may use, each with what it holds, the kinds of value it takes and whether your plan includes it."
+    premium: true
+    arguments: []
+    request:
+      method: GET
+      path: "/v3/gnql/fields"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      fields: "{{ response.fields }}"
+      names: "{{ response.fields | pluck('name') }}"
+      restricted: "{{ response.fields | where('is_restricted') | pluck('name') }}"
+
+  - name: get-gnql-timeseries
+    description: "The records that matched a GNQL query in each hour of a time range (Recall): the answer has one entry for each hour, named YYYY-MM-DD-HH, holding the addresses seen in it."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: start, type: text, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end, type: text, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: limit, type: number, description: "How many records are read, spread over the hours" }
+      - { name: offset, type: number, description: "How many records to skip before the limit applies, to read a long answer in parts" }
+    request:
+      method: GET
+      path: "/v3/gnql/timeseries"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        start: "{{ args.start }}"
+        end: "{{ args.end }}"
+        limit: "{{ args.limit }}"
+        offset: "{{ args.offset }}"
+    error: { message: "{{ response.message }}" }
+    timeout: 120
+    outputs:
+      hours: "{{ response | keys }}"
+      records: "{{ response }}"
+
+  - name: get-gnql-timeseries-stats
+    description: "How many distinct IP addresses matched a GNQL query in each hour or each day of a time range (Recall)."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: interval, type: choice, required: true, choices: ["hour", "day"], description: "Count for each hour or for each day" }
+      - { name: start, type: text, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end, type: text, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+    request:
+      method: GET
+      path: "/v3/gnql/timeseries/stats"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        interval: "{{ args.interval }}"
+        start: "{{ args.start }}"
+        end: "{{ args.end }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      count: "{{ response.count }}"
+      min: "{{ response.min }}"
+      max: "{{ response.max }}"
+      points: "{{ response.data }}"
+
+  - name: list-cves
+    description: "The CVEs GreyNoise tracks, newest first or by CVSS score, 1 000 at most. Needs the bulk CVE search entitlement; how much each record says depends on the CVE Insights tier of the plan."
+    premium: true
+    arguments:
+      - { name: sort, type: choice, choices: ["published", "updated", "cvss"], description: "What the list is ordered by: published when left out" }
+      - { name: order, type: choice, choices: ["desc", "asc"], description: "Highest or newest first (desc, the default) or last (asc)" }
+      - { name: exploitable_only, type: bool, description: "Only the CVEs that are attacked over the network" }
+      - { name: limit, type: number, description: "How many CVEs: 1 to 1 000, 100 when left out" }
+      - { name: include_vendors, type: bool, description: "Also give the vendors and the products the CVE concerns" }
+    request:
+      method: GET
+      path: "/v3/cves/list"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        sort: "{{ args.sort }}"
+        order: "{{ args.order }}"
+        exploitable_only: "{{ args.exploitable_only | map('true', 'true', 'false', 'false') }}"
+        limit: "{{ args.limit }}"
+        include_vendors: "{{ args.include_vendors | map('true', 'true', 'false', 'false') }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      cves: "{{ response.cves }}"
+      ids: "{{ response.cves | pluck('id') }}"
+      count: "{{ response.cves | length }}"
+      generated_at: "{{ response.generated_at }}"
+
+  - name: get-cves
+    description: "What GreyNoise knows of several CVEs at once, 10 000 at most: details, dates, whether they are exploited and by how many addresses. How much each record says depends on the plan."
+    premium: true
+    arguments:
+      - { name: cves, type: list, required: true, description: "The CVE ids, 10 000 at most: CVE-2024-12345" }
+      - { name: include_vendors, type: bool, description: "Also give the vendors and the products the CVE concerns" }
+    request:
+      method: POST
+      path: "/v3/cves"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        include_vendors: "{{ args.include_vendors | map('true', 'true', 'false', 'false') }}"
+      json:
+        cves: "{{ args.cves }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      cves: "{{ response }}"
+      ids: "{{ response | pluck('id') }}"
+      exploited: "{{ response | where('exploitation_activity.activity_seen') | pluck('id') }}"
+
+  - name: get-cve
+    description: "What GreyNoise knows of one CVE: its details, its dates, whether an exploit exists and whether addresses were seen exploiting it in the last 1, 10 and 30 days. How much it says depends on the plan."
+    premium: true
+    arguments:
+      - { name: cve, type: text, required: true, description: "The id of the CVE: CVE-2024-12345" }
+      - { name: include_vendors, type: bool, description: "Also give the vendors and the products the CVE concerns" }
+      - { name: workspace_labels, type: text, description: "The datasets to read, separated by commas: greynoise (GreyNoise's own, the only one read when left out), community (what the community contributes), personal (your own workspace). Needs the Community Dataset entitlement" }
+    request:
+      method: GET
+      path: "/v1/cve/{{ args.cve }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        include_vendors: "{{ args.include_vendors | map('true', 'true', 'false', 'false') }}"
+        workspace_labels: "{{ args.workspace_labels }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.details.vulnerability_name }}"
+      description: "{{ response.details.vulnerability_description }}"
+      cvss: "{{ response.details.cve_cvss_score }}"
+      vendor: "{{ response.details.vendor }}"
+      product: "{{ response.details.product }}"
+      published: "{{ response.timeline.cve_published_date }}"
+      kev_added: "{{ response.timeline.cisa_kev_date_added }}"
+      attack_vector: "{{ response.exploitation_details.attack_vector }}"
+      exploit_found: "{{ response.exploitation_details.exploit_found }}"
+      in_kev: "{{ response.exploitation_details.exploitation_registered_in_kev }}"
+      epss: "{{ response.exploitation_details.epss_score }}"
+      activity_seen: "{{ response.exploitation_activity.activity_seen }}"
+      threat_ips_1d: "{{ response.exploitation_activity.threat_ip_count_1d }}"
+      threat_ips_10d: "{{ response.exploitation_activity.threat_ip_count_10d }}"
+      threat_ips_30d: "{{ response.exploitation_activity.threat_ip_count_30d }}"
+      cve: "{{ response }}"
+
+  - name: list-tags
+    description: "The tags GreyNoise gives to what addresses do (a worm, a scanner, the exploitation of a CVE), each with its intention, its category, its CVEs and whether GreyNoise recommends blocking."
+    arguments:
+      - { name: name, type: text, description: "Only the tags whose name holds this text: Mirai" }
+      - { name: slug, type: text, description: "Only the tag with exactly this slug: mirai" }
+      - { name: cve, type: text, description: "Only the tags that concern this CVE: CVE-2020-1234" }
+      - { name: include_vendors, type: bool, description: "Also give the vendors and the products each tag concerns" }
+    request:
+      method: GET
+      path: "/v3/tags"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        name: "{{ args.name }}"
+        slug: "{{ args.slug }}"
+        cve: "{{ args.cve }}"
+        include_vendors: "{{ args.include_vendors | map('true', 'true', 'false', 'false') }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      tags: "{{ response.tags }}"
+      names: "{{ response.tags | pluck('name') }}"
+      ids: "{{ response.tags | pluck('id') }}"
+      count: "{{ response.tags | length }}"
+
+  - name: get-tag-activity
+    description: "How many distinct IP addresses were seen for one tag in each span of time over the last days, and, when asked, the addresses themselves (1 000 a span at most)."
+    premium: true
+    arguments:
+      - { name: id, type: text, required: true, description: "The UUID of the tag, as list-tags gives it" }
+      - { name: days, type: number, description: "How many days back: 1 to 90, 1 when left out. The plan may shorten it" }
+      - { name: granularity, type: text, description: "The length of a span in whole hours, from 1h to 168h: 24h when left out" }
+      - { name: include_ips, type: bool, description: "Also give the addresses seen in each span: much slower than the counts alone" }
+      - { name: workspace_labels, type: text, description: "The datasets to read, separated by commas: greynoise (GreyNoise's own, the only one read when left out), community (what the community contributes), personal (your own workspace). Needs the Community Dataset entitlement" }
+    request:
+      method: GET
+      path: "/v3/tags/{{ args.id }}/activity"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        days: "{{ args.days }}"
+        granularity: "{{ args.granularity }}"
+        include_ips: "{{ args.include_ips | map('true', 'true', 'false', 'false') }}"
+        workspace_labels: "{{ args.workspace_labels }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      slug: "{{ response.slug }}"
+      activity: "{{ response.activity }}"
+      total_ips: "{{ response.aggregations.total_ips }}"
+      by_intention: "{{ response.aggregations.classification }}"
+      start: "{{ response.metadata.start_date }}"
+      end: "{{ response.metadata.end_date }}"
+      ips_truncated: "{{ response.metadata.ips_truncated }}"
+
+  - name: diff-workspaces
+    description: "Compare what two workspaces hold of the addresses that match a GNQL query: for each address, which workspace has it and which fields differ. One page at a time: give next_token to read the next."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: source_workspace, type: text, description: "The workspace compared from: a workspace UUID, or greynoise, community or personal. The workspace of the key when left out" }
+      - { name: target_workspace, type: text, description: "The workspace compared against: a workspace UUID, or greynoise, community or personal. GreyNoise's own data when left out" }
+      - { name: size, type: number, description: "How many addresses a page: 1 to 1 000, 10 when left out" }
+      - { name: next_token, type: text, description: "The next_token of the page before, to read the page after it" }
+      - { name: require_both_workspaces, type: bool, description: "Only the addresses both workspaces hold" }
+      - { name: ips_from_source, type: bool, description: "Only the addresses that come from the source workspace" }
+    request:
+      method: POST
+      path: "/v3/workspaces/diff"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        source_workspace: "{{ args.source_workspace }}"
+        target_workspace: "{{ args.target_workspace }}"
+        query: "{{ args.query }}"
+        size: "{{ args.size }}"
+        next_token: "{{ args.next_token }}"
+        require_both_workspaces: "{{ args.require_both_workspaces }}"
+        ips_from_source: "{{ args.ips_from_source }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      diffs: "{{ response.ip_diffs }}"
+      ips: "{{ response.ip_diffs | pluck('ip') }}"
+      count: "{{ response.count }}"
+      next_token: "{{ response.next_token }}"
+      source_workspace_name: "{{ response.source_workspace_name }}"
+      target_workspace_name: "{{ response.target_workspace_name }}"
+      adjusted_query: "{{ response.adjusted_query }}"
+
+  - name: diff-workspace-stats
+    description: "Compare the statistics of a GNQL query in two workspaces: the most common classifications, tags, organisations, countries and ASNs of each, and which are in both or in one only."
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: source_workspace, type: text, description: "The workspace compared from: a workspace UUID, or greynoise, community or personal. The workspace of the key when left out" }
+      - { name: target_workspace, type: text, description: "The workspace compared against: a workspace UUID, or greynoise, community or personal. GreyNoise's own data when left out" }
+      - { name: count, type: number, description: "How many values of each kind: 10 when left out" }
+    request:
+      method: POST
+      path: "/v3/workspaces/stats-diff"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        source_workspace: "{{ args.source_workspace }}"
+        target_workspace: "{{ args.target_workspace }}"
+        query: "{{ args.query }}"
+        count: "{{ args.count }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      source_count: "{{ response.source_count }}"
+      target_count: "{{ response.target_count }}"
+      source_stats: "{{ response.source_stats }}"
+      target_stats: "{{ response.target_stats }}"
+      diff: "{{ response.diff }}"
+      adjusted_query: "{{ response.adjusted_query }}"
+
+  - name: start-unique-ips-job
+    description: "Start the search for the addresses that match a GNQL query in one workspace and not in another. It gives the id of a job: get-unique-ips-job waits for it and gives the addresses."
+    premium: true
+    idempotent: false
+    arguments:
+      - { name: query, type: text, required: true, description: "A GNQL query: classification:malicious last_seen:1d" }
+      - { name: source_workspace, type: text, description: "The workspace compared from: a workspace UUID, or greynoise, community or personal. The workspace of the key when left out" }
+      - { name: target_workspace, type: text, description: "The workspace compared against: a workspace UUID, or greynoise, community or personal. GreyNoise's own data when left out" }
+    request:
+      method: POST
+      path: "/v3/workspaces/unique-ips"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        source_workspace: "{{ args.source_workspace }}"
+        target_workspace: "{{ args.target_workspace }}"
+        query: "{{ args.query }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      job_id: "{{ response.job_id }}"
+
+  - name: get-unique-ips-job
+    description: "Wait for a job started by start-unique-ips-job and give the addresses it found, a page at a time. A job is kept 15 minutes after it finishes."
+    premium: true
+    arguments:
+      - { name: job_id, type: text, required: true, description: "The id start-unique-ips-job gave" }
+      - { name: limit, type: number, description: "How many addresses: 10 000 when left out" }
+      - { name: offset, type: number, description: "How many addresses to skip, to read the next page" }
+    request:
+      method: GET
+      path: "/v3/workspaces/unique-ips/{{ args.job_id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        limit: "{{ args.limit }}"
+        offset: "{{ args.offset }}"
+    poll:
+      until: { all: [{ left: "{{ response.status }}", op: "eq", right: "complete" }] }
+      fail_when: { all: [{ left: "{{ response.status }}", op: "eq", right: "error" }] }
+      every: 10
+      timeout: 1800
+    error: { message: "{{ response.message }}" }
+    outputs:
+      status: "{{ response.status }}"
+      ips: "{{ response.unique_ips }}"
+      found: "{{ response.found }}"
+      total: "{{ response.total }}"
+      has_more: "{{ response.has_more }}"
+      capped: "{{ response.capped }}"
+
+  - name: get-callback-ip
+    description: "What GreyNoise knows of a callback address, one that payloads seen by its sensors call back to: its stage, the scanners that pointed to it and the malware files downloaded from it."
+    premium: true
+    arguments:
+      - { name: ip, type: text, required: true, description: "The callback IP address" }
+    request:
+      method: GET
+      path: "/v1/callback/ip/{{ args.ip }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ip: "{{ response.ip }}"
+      is_stage_1: "{{ response.is_stage_1 }}"
+      is_stage_2: "{{ response.is_stage_2 }}"
+      is_riot: "{{ response.is_riot }}"
+      first_seen: "{{ response.first_seen }}"
+      last_seen: "{{ response.last_seen }}"
+      scanner_ips: "{{ response.scanner_ips }}"
+      scanner_count: "{{ response.scanner_count }}"
+      file_count: "{{ response.file_count }}"
+      files: "{{ response.active_files }}"
+      sha256: "{{ response.active_files | pluck('sha256') }}"
+      enrichment: "{{ response.enrichment }}"
+
+  - name: list-callback-ips
+    description: "The callback addresses that match filters, each with its stage, its scanners and its files. One page at a time: page counts from 0."
+    premium: true
+    arguments:
+      - { name: is_stage_1, type: bool, description: "Only addresses a file was downloaded from (true) or was not (false)" }
+      - { name: is_stage_2, type: bool, description: "Only addresses suspected of command and control (true) or not (false)" }
+      - { name: first_seen_after, type: text, description: "Only addresses first seen after this date: YYYY-MM-DD" }
+      - { name: first_seen_before, type: text, description: "Only addresses first seen before this date: YYYY-MM-DD" }
+      - { name: last_seen_after, type: text, description: "Only addresses last seen after this date: YYYY-MM-DD" }
+      - { name: last_seen_before, type: text, description: "Only addresses last seen before this date: YYYY-MM-DD" }
+      - { name: has_files, type: bool, description: "Only addresses with malware files (true) or without (false)" }
+      - { name: file_type, type: text, description: "Only addresses with a file of this MIME type: application/x-executable" }
+      - { name: file_name, type: text, description: "Only addresses with a file whose name holds this text" }
+      - { name: file_hash, type: text, description: "Only addresses with the file of this SHA-256" }
+      - { name: scanner_ips, type: list, description: "Only addresses that these scanner addresses pointed to" }
+      - { name: ips, type: list, description: "Only these callback addresses" }
+      - { name: page, type: number, description: "The page, counted from 0: 0 when left out" }
+      - { name: page_size, type: number, description: "How many addresses a page: 1 to 1 000, 20 when left out" }
+    request:
+      method: POST
+      path: "/v1/callback/ips"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        is_stage_1: "{{ args.is_stage_1 }}"
+        is_stage_2: "{{ args.is_stage_2 }}"
+        first_seen_after: "{{ args.first_seen_after }}"
+        first_seen_before: "{{ args.first_seen_before }}"
+        last_seen_after: "{{ args.last_seen_after }}"
+        last_seen_before: "{{ args.last_seen_before }}"
+        has_files: "{{ args.has_files }}"
+        file_type: "{{ args.file_type }}"
+        file_name: "{{ args.file_name }}"
+        file_hash: "{{ args.file_hash }}"
+        scanner_ips: "{{ args.scanner_ips }}"
+        ips: "{{ args.ips }}"
+        page: "{{ args.page }}"
+        page_size: "{{ args.page_size }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      records: "{{ response.items }}"
+      ips: "{{ response.items | pluck('ip') }}"
+      total: "{{ response.total }}"
+      page: "{{ response.page }}"
+      page_size: "{{ response.page_size }}"
+
+  - name: export-callback-ips
+    description: "The callback addresses that match filters, the addresses alone, as a list and as plain text."
+    premium: true
+    arguments:
+      - { name: is_stage_1, type: bool, description: "Only addresses a file was downloaded from (true) or was not (false)" }
+      - { name: is_stage_2, type: bool, description: "Only addresses suspected of command and control (true) or not (false)" }
+      - { name: first_seen_after, type: text, description: "Only addresses first seen after this date: YYYY-MM-DD" }
+      - { name: first_seen_before, type: text, description: "Only addresses first seen before this date: YYYY-MM-DD" }
+      - { name: last_seen_after, type: text, description: "Only addresses last seen after this date: YYYY-MM-DD" }
+      - { name: last_seen_before, type: text, description: "Only addresses last seen before this date: YYYY-MM-DD" }
+      - { name: has_files, type: bool, description: "Only addresses with malware files (true) or without (false)" }
+      - { name: file_type, type: text, description: "Only addresses with a file of this MIME type: application/x-executable" }
+      - { name: file_name, type: text, description: "Only addresses with a file whose name holds this text" }
+      - { name: file_hash, type: text, description: "Only addresses with the file of this SHA-256" }
+      - { name: scanner_ips, type: list, description: "Only addresses that these scanner addresses pointed to" }
+      - { name: ips, type: list, description: "Only these callback addresses" }
+    request:
+      method: POST
+      path: "/v1/callback/export-ips"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        is_stage_1: "{{ args.is_stage_1 }}"
+        is_stage_2: "{{ args.is_stage_2 }}"
+        first_seen_after: "{{ args.first_seen_after }}"
+        first_seen_before: "{{ args.first_seen_before }}"
+        last_seen_after: "{{ args.last_seen_after }}"
+        last_seen_before: "{{ args.last_seen_before }}"
+        has_files: "{{ args.has_files }}"
+        file_type: "{{ args.file_type }}"
+        file_name: "{{ args.file_name }}"
+        file_hash: "{{ args.file_hash }}"
+        scanner_ips: "{{ args.scanner_ips }}"
+        ips: "{{ args.ips }}"
+      answer: text
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ips: "{{ response.text | split('\\n') }}"
+      count: "{{ response.text | split('\\n') | length }}"
+      text: "{{ response.text }}"
+
+  - name: get-callback-overview
+    description: "Counts of the callback addresses that match filters: by stage, with and without files or scanners, by trust level, and the most common threat names."
+    premium: true
+    arguments:
+      - { name: is_stage_1, type: bool, description: "Only addresses a file was downloaded from (true) or was not (false)" }
+      - { name: is_stage_2, type: bool, description: "Only addresses suspected of command and control (true) or not (false)" }
+      - { name: first_seen_after, type: text, description: "Only addresses first seen after this date: YYYY-MM-DD" }
+      - { name: first_seen_before, type: text, description: "Only addresses first seen before this date: YYYY-MM-DD" }
+      - { name: last_seen_after, type: text, description: "Only addresses last seen after this date: YYYY-MM-DD" }
+      - { name: last_seen_before, type: text, description: "Only addresses last seen before this date: YYYY-MM-DD" }
+      - { name: has_files, type: bool, description: "Only addresses with malware files (true) or without (false)" }
+      - { name: file_type, type: text, description: "Only addresses with a file of this MIME type: application/x-executable" }
+      - { name: file_name, type: text, description: "Only addresses with a file whose name holds this text" }
+      - { name: file_hash, type: text, description: "Only addresses with the file of this SHA-256" }
+      - { name: scanner_ips, type: list, description: "Only addresses that these scanner addresses pointed to" }
+      - { name: ips, type: list, description: "Only these callback addresses" }
+    request:
+      method: POST
+      path: "/v1/callback/overview"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        is_stage_1: "{{ args.is_stage_1 }}"
+        is_stage_2: "{{ args.is_stage_2 }}"
+        first_seen_after: "{{ args.first_seen_after }}"
+        first_seen_before: "{{ args.first_seen_before }}"
+        last_seen_after: "{{ args.last_seen_after }}"
+        last_seen_before: "{{ args.last_seen_before }}"
+        has_files: "{{ args.has_files }}"
+        file_type: "{{ args.file_type }}"
+        file_name: "{{ args.file_name }}"
+        file_hash: "{{ args.file_hash }}"
+        scanner_ips: "{{ args.scanner_ips }}"
+        ips: "{{ args.ips }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      total_ips: "{{ response.total_ips }}"
+      stage_1_ips: "{{ response.stage_1_ips }}"
+      stage_2_ips: "{{ response.stage_2_ips }}"
+      total_files: "{{ response.total_files }}"
+      distinct_scanners: "{{ response.distinct_scanners }}"
+      top_threat_names: "{{ response.top_threat_names }}"
+      overview: "{{ response }}"
+
+  - name: download-gnql-file
+    description: "Every address matching a GNQL query as one CSV file GreyNoise builds and keeps current. The first request for a query subscribes to it, which counts against the limit of the workspace, and waits for the file to be built. Nik keeps the first 200 000 characters. Needs an Advanced or Elite licence."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: query, type: text, required: true, description: "The GNQL query that selects the addresses, 4 096 characters at most. Each query is a subscription of its own" }
+      - { name: profile, type: text, description: "The layout of the columns, as id or id@version: ngsiem when left out. list-feed-profiles gives the others" }
+      - { name: limit, type: number, description: "How many addresses at most, most recently seen first: all of them when left out" }
+    request:
+      method: GET
+      path: "/v3/files/gnql"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        format: "csv"
+        profile: "{{ args.profile }}"
+        limit: "{{ args.limit }}"
+      answer: text
+    success: { status: [200, 202] }
+    poll:
+      until: { all: [{ left: "{{ status }}", op: "eq", right: 200 }] }
+      every: 30
+      timeout: 900
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    outputs:
+      text: "{{ response.text }}"
+      generated_at: "{{ headers['x-greynoise-generated-at'] }}"
+      row_count: "{{ headers['x-greynoise-row-count'] }}"
+      total_count: "{{ headers['x-greynoise-total-count'] }}"
+      truncated: "{{ headers['x-greynoise-truncated'] }}"
+      feed_status: "{{ headers['x-greynoise-feed-status'] }}"
+      profile: "{{ headers['x-greynoise-profile'] }}"
+    sample: { text: "source.ip,source.ip.greynoise.is.classification\n198.51.100.42,malicious\n", generated_at: "2026-10-26T12:00:00Z", row_count: "1", total_count: "1", truncated: "false", feed_status: "active", profile: "ngsiem@1" }
+
+  - name: delete-gnql-file-subscription
+    description: "Delete the subscription download-gnql-file made for a query, at once: it stops counting against the limit of the workspace."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: query, type: text, required: true, description: "The GNQL query the subscription was made for" }
+      - { name: profile, type: text, description: "The profile it was fetched with, as id or id@version: ngsiem when left out. With a version, it is deleted only while it is pinned to that version" }
+    request:
+      method: DELETE
+      path: "/v3/files/gnql"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        format: "csv"
+        profile: "{{ args.profile }}"
+    success: { status: 204 }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      deleted: "{{ status | map('204', true, else=false) }}"
+    sample: { deleted: true }
+
+  - name: get-gnql-file-metadata
+    description: "Describe the file download-gnql-file would give for a query, without the file: its status, when it was built and how many addresses it holds. Like the download, the first request for a query subscribes to it. Needs an Advanced or Elite licence."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: query, type: text, required: true, description: "The GNQL query that selects the addresses, 4 096 characters at most" }
+      - { name: profile, type: text, description: "The layout of the columns, as id or id@version: ngsiem when left out. list-feed-profiles gives the others" }
+      - { name: limit, type: number, description: "How many addresses at most, most recently seen first: all of them when left out" }
+    request:
+      method: GET
+      path: "/v3/files/gnql/metadata"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        query: "{{ args.query }}"
+        format: "csv"
+        profile: "{{ args.profile }}"
+        limit: "{{ args.limit }}"
+    success: { status: [200, 202] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ready: "{{ status | map('200', true, else=false) }}"
+      status: "{{ response.status }}"
+      generated_at: "{{ response.generated_at }}"
+      row_count: "{{ response.row_count }}"
+      total_count: "{{ response.total_count }}"
+      truncated: "{{ response.truncated }}"
+      profile: "{{ response.profile }}"
+      deprecated: "{{ response.deprecated }}"
+    sample: { ready: true, status: "active", generated_at: "2026-10-26T12:00:00Z", row_count: 1, total_count: 1, truncated: false, profile: "ngsiem@1", deprecated: false }
+
+  - name: list-feed-profiles
+    description: "The profiles a GNQL query file can be asked in, each with the columns its files carry."
+    premium: true
+    arguments: []
+    request:
+      method: GET
+      path: "/v3/files/profiles"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      profiles: "{{ response.profiles }}"
+      ids: "{{ response.profiles | pluck('profile') }}"
+
+  - name: download-callback-file
+    description: "Every callback address seen in the last days as one CSV file, rebuilt every hour; waits while the file is being built. Nik keeps the first 200 000 characters. Needs an Advanced or Elite licence and the Callback Detection module."
+    premium: true
+    arguments:
+      - { name: days, type: number, description: "How many days back, 1 to 7: 7 when left out. The plan may shorten it" }
+    request:
+      method: GET
+      path: "/v3/files/callback"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        days: "{{ args.days }}"
+        format: "csv"
+        profile: "ngsiem"
+      answer: text
+    success: { status: [200, 202] }
+    poll:
+      until: { all: [{ left: "{{ status }}", op: "eq", right: 200 }] }
+      every: 30
+      timeout: 900
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    outputs:
+      text: "{{ response.text }}"
+      generated_at: "{{ headers['x-greynoise-generated-at'] }}"
+      row_count: "{{ headers['x-greynoise-row-count'] }}"
+
+  - name: get-callback-file-metadata
+    description: "Describe the file download-callback-file would give, without the file: when it was built, its size and how many addresses it holds. Needs an Advanced or Elite licence and the Callback Detection module."
+    premium: true
+    arguments:
+      - { name: days, type: number, description: "How many days back, 1 to 7: 7 when left out" }
+    request:
+      method: GET
+      path: "/v3/files/callback/metadata"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        days: "{{ args.days }}"
+        format: "csv"
+        profile: "ngsiem"
+    success: { status: [200, 202] }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ready: "{{ status | map('200', true, else=false) }}"
+      generated_at: "{{ response.generated_at }}"
+      last_modified: "{{ response.last_modified }}"
+      cutoff: "{{ response.cutoff }}"
+      days: "{{ response.days }}"
+      size_bytes: "{{ response.size_bytes }}"
+      row_count: "{{ response.row_count }}"
+
+  - name: search-sessions
+    description: "The network sessions your GreyNoise sensors captured in a time range, filtered by a Lucene query, read page by page (1 000 sessions at most)."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: sort_by, type: text, description: "The field the sessions are ordered by: lastPacket when left out" }
+      - { name: sort_desc, type: choice, choices: ["true", "false"], description: "Highest first (true, the default) or lowest first (false)" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        query: "{{ args.query }}"
+        sort_by: "{{ args.sort_by }}"
+        sort_desc: "{{ args.sort_desc }}"
+        scope: "{{ args.scope }}"
+    pagination:
+      type: page
+      param: page
+      limit_param: page_size
+      limit: 100
+      items: "{{ response.sessions }}"
+      max_pages: 10
+    error: { message: "{{ response.message }}" }
+    outputs:
+      sessions: "{{ response.items }}"
+      ids: "{{ response.items | pluck('_id') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-session-fields
+    description: "The fields of a session that can be used in a query, a sort or a count, each with its type and what it holds."
+    premium: true
+    arguments:
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/fields"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        scope: "{{ args.scope }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      fields: "{{ response.fields }}"
+      names: "{{ response.fields | pluck('value') }}"
+
+  - name: count-sessions
+    description: "How many sessions there are for each value of one or more fields in a time range: the addresses that connected most, the ports reached most."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: fields, type: text, required: true, description: "The fields counted, separated by commas; each after the first is counted within the one before: source.ip,destination.port" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: size, type: number, description: "How many values of each field: 1 to 100, 10 when left out" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/counts"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        fields: "{{ args.fields }}"
+        query: "{{ args.query }}"
+        size: "{{ args.size }}"
+        scope: "{{ args.scope }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      counts: "{{ response.items }}"
+      labels: "{{ response.items | pluck('label') }}"
+      total: "{{ response.total }}"
+
+  - name: get-session-connections
+    description: "Who talked to whom in the sessions of a time range, as a graph: the values of a source field and of a destination field, and how many sessions link each pair."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: src_field, type: text, description: "The field of the sources: source.ip when left out" }
+      - { name: dest_field, type: text, description: "The field of the destinations: destination.ip when left out" }
+      - { name: max_nodes, type: number, description: "How many nodes at most: 1 to 10 000, 100 when left out" }
+      - { name: min_connections, type: number, description: "The fewest connections a node must have to be given: 1 when left out" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/connections"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        query: "{{ args.query }}"
+        src_field: "{{ args.src_field }}"
+        dest_field: "{{ args.dest_field }}"
+        max_nodes: "{{ args.max_nodes }}"
+        min_connections: "{{ args.min_connections }}"
+        scope: "{{ args.scope }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      nodes: "{{ response.nodes }}"
+      links: "{{ response.links }}"
+      total: "{{ response.total }}"
+
+  - name: get-session-timeseries
+    description: "How many sessions there were in each span of a time range, in all or for each of the most common values of a field."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: field, type: text, description: "A field to count separately for each of its values: destination.port" }
+      - { name: size, type: number, description: "How many values of the field: 1 to 100, 10 when left out" }
+      - { name: interval, type: choice, choices: ["auto", "1s", "1m", "1h", "1d"], description: "The length of a span: auto when left out" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/timeseries"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        query: "{{ args.query }}"
+        field: "{{ args.field }}"
+        size: "{{ args.size }}"
+        interval: "{{ args.interval }}"
+        scope: "{{ args.scope }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      timeseries: "{{ response.timeseries }}"
+      by_value: "{{ response.items }}"
+      total: "{{ response.total }}"
+
+  - name: get-session-unique-values
+    description: "The distinct values a field takes in the sessions of a time range (every source address, every port), as CSV, with how many sessions hold each when asked. Nik keeps the first 200 000 characters."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: field, type: text, required: true, description: "The field whose values are listed: source.ip" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: include_counts, type: choice, choices: ["true", "false"], description: "Also give how many sessions hold each value: false when left out" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/unique"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        field: "{{ args.field }}"
+        query: "{{ args.query }}"
+        include_counts: "{{ args.include_counts }}"
+        scope: "{{ args.scope }}"
+      answer: text
+    error: { message: "{{ response.message }}" }
+    outputs:
+      text: "{{ response.text }}"
+      lines: "{{ response.text | split('\\n') }}"
+
+  - name: get-session
+    description: "One session by its id: when it started and ended, its two ends, how much each sent, its classification."
+    premium: true
+    arguments:
+      - { name: session_id, type: text, required: true, description: "The id of the session, as search-sessions gives it" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/{{ args.session_id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        scope: "{{ args.scope }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response._id }}"
+      first_packet: "{{ response.firstPacket }}"
+      last_packet: "{{ response.lastPacket }}"
+      source_ip: "{{ response['source.ip'] }}"
+      source_port: "{{ response['source.port'] }}"
+      destination_ip: "{{ response['destination.ip'] }}"
+      destination_port: "{{ response['destination.port'] }}"
+      classification: "{{ response.classification }}"
+      session: "{{ response }}"
+
+  - name: download-session-pcap
+    description: "The packets of one session as a PCAP file, kept as an artifact: what Wireshark opens."
+    premium: true
+    arguments:
+      - { name: session_id, type: text, required: true, description: "The id of the session, as search-sessions gives it" }
+      - { name: scope, type: choice, choices: ["workspace", "demo"], description: "workspace (the default): the sessions of your own sensors, which needs the Sensors entitlement; demo: sample data, which needs the Swarm entitlement" }
+    request:
+      method: GET
+      path: "/v3/sessions/{{ args.session_id | urlencode }}/frames"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        scope: "{{ args.scope }}"
+      answer: file
+      save_as: { name: "session-{{ args.session_id }}.pcap", type: application/vnd.tcpdump.pcap }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: session-abc123.pcap, type: application/vnd.tcpdump.pcap, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-sessions-pcap
+    description: "The packets of the sessions of a time range that match a query, in one PCAP file, kept as an artifact: one page of the matches, or all of them up to 1 000 sessions. Only for the sessions of your own sensors, not the demo data."
+    premium: true
+    arguments:
+      - { name: start_time, type: text, required: true, description: "The start of the time range, as an ISO 8601 date: 2025-01-01T00:00:00Z" }
+      - { name: end_time, type: text, required: true, description: "The end of the time range, as an ISO 8601 date: 2025-01-07T23:59:59Z" }
+      - { name: query, type: text, description: "A Lucene query that filters the sessions" }
+      - { name: mode, type: choice, choices: ["page", "all"], description: "page (the default): one page of the matches, chosen with page and page_size; all: every match, up to page_size sessions" }
+      - { name: page, type: number, description: "The page to export when mode is page: 1 when left out" }
+      - { name: page_size, type: number, description: "How many sessions a page holds, or the most that are exported when mode is all: 1 to 1 000, 100 when left out" }
+      - { name: sort_by, type: text, description: "The field the sessions are ordered by: lastPacket when left out" }
+      - { name: sort_desc, type: choice, choices: ["true", "false"], description: "Highest first (true, the default) or lowest first (false)" }
+    request:
+      method: GET
+      path: "/v3/sessions/export"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        query: "{{ args.query }}"
+        mode: "{{ args.mode }}"
+        page: "{{ args.page }}"
+        page_size: "{{ args.page_size }}"
+        sort_by: "{{ args.sort_by }}"
+        sort_desc: "{{ args.sort_desc }}"
+      answer: file
+      save_as: { name: sessions.pcap, type: application/vnd.tcpdump.pcap }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: sessions.pcap, type: application/vnd.tcpdump.pcap, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: export-session-data
+    description: "One session as a file, kept as an artifact: its packets (pcap), or the raw payload of its source (rawSource) or of its destination (rawDestination). Only for the sessions of your own sensors, not the demo data."
+    premium: true
+    arguments:
+      - { name: session_id, type: text, required: true, description: "The id of the session, as search-sessions gives it" }
+      - { name: type, type: choice, choices: ["pcap", "rawSource", "rawDestination"], default: "pcap", description: "What to export: the packets, or the raw payload of one end" }
+    request:
+      method: GET
+      path: "/v3/sessions/{{ args.session_id | urlencode }}/export"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        type: "{{ args.type }}"
+      answer: file
+      save_as:
+        name: "session-{{ args.session_id }}{{ if(args.type == 'pcap', '.pcap', '-' ~ args.type ~ '.bin') }}"
+        type: "{{ if(args.type == 'pcap', 'application/vnd.tcpdump.pcap', 'application/octet-stream') }}"
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: session-abc123.pcap, type: application/vnd.tcpdump.pcap, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: get-bsi-trust-stats
+    description: "How many addresses and networks of business services (BSI, once RIOT) there are for each trust level, now or on a past day. Needs the BSI entitlements."
+    premium: true
+    arguments:
+      - { name: date, type: text, description: "now (the default) for what is current, or a day for what was then: YYYY-MM-DD" }
+    request:
+      method: GET
+      path: "/v3/bsi/trust"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        date: "{{ args.date }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      stats: "{{ response.stats.trust_levels }}"
+      date: "{{ response.date }}"
+      source: "{{ response.source }}"
+
+  - name: get-bsi-company-stats
+    description: "How many addresses and networks of business services (BSI, once RIOT) there are for each company, now or on a past day. Needs the BSI entitlements."
+    premium: true
+    arguments:
+      - { name: date, type: text, description: "now (the default) for what is current, or a day for what was then: YYYY-MM-DD" }
+    request:
+      method: GET
+      path: "/v3/bsi/company"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        date: "{{ args.date }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      stats: "{{ response.stats.companies }}"
+      date: "{{ response.date }}"
+      source: "{{ response.source }}"
+
+  - name: get-bsi-category-stats
+    description: "How many addresses and networks of business services (BSI, once RIOT) there are for each category, now or on a past day. Needs the BSI entitlements."
+    premium: true
+    arguments:
+      - { name: date, type: text, description: "now (the default) for what is current, or a day for what was then: YYYY-MM-DD" }
+    request:
+      method: GET
+      path: "/v3/bsi/category"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        date: "{{ args.date }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      stats: "{{ response.stats.categories }}"
+      date: "{{ response.date }}"
+      source: "{{ response.source }}"
+
+  - name: get-bsi-ip
+    description: "The business services whose networks hold an IPv4 address, the one that counts most first; none means the address is not a known business service. Needs an additional licence."
+    premium: true
+    arguments:
+      - { name: ip, type: text, required: true, description: "An IPv4 address" }
+    request:
+      method: GET
+      path: "/v3/bsi/lookup"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        ip: "{{ args.ip }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ip: "{{ response.ip }}"
+      matches: "{{ response.matches }}"
+      known: "{{ response.matches | length | map('0', false, else=true) }}"
+      name: "{{ response.matches[0].name }}"
+      category: "{{ response.matches[0].category }}"
+      trust_level: "{{ response.matches[0].trust_level }}"
+
+  - name: get-bsi-ips
+    description: "The business services whose networks hold each of several IPv4 addresses, 1 000 at most, in the order given. Needs an additional licence."
+    premium: true
+    arguments:
+      - { name: ips, type: list, required: true, description: "The IPv4 addresses, 1 000 at most. One IPv6 address refuses the whole request" }
+    request:
+      method: POST
+      path: "/v3/bsi/bulk"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        ips: "{{ args.ips }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      results: "{{ response.results }}"
+      known: "{{ response.results | where('matches') | pluck('ip') }}"
+
+  - name: download-bsi-file
+    description: "The whole list of business services (BSI, once RIOT) of a day as a file, kept as an artifact: gzipped JSON, one record a line, each a network (ip_cidr) with its provider, category and trust level. Needs an additional licence."
+    premium: true
+    arguments:
+      - { name: date, type: text, description: "now (the default) for today's file, or a day for the file of then: YYYY-MM-DD. GreyNoise answers 404 when it has none for that day" }
+    request:
+      method: GET
+      path: "/v3/bsi/download"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        date: "{{ args.date }}"
+      answer: file
+      save_as: { type: application/gzip }
+    error: { message: "{{ response.message }}" }
+    timeout: 300
+    sample: { name: riot-bulk-2026-05-14.json.gz, type: application/gzip, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: create-blocklist
+    description: "Create a blocklist in a workspace: a list of addresses defined by a GNQL query, which GreyNoise keeps current."
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: query, type: text, required: true, description: "The GNQL query that says which addresses are on the blocklist: classification:malicious last_seen:1d" }
+      - { name: name, type: text, description: "A name for the blocklist" }
+      - { name: ip_limit, type: number, description: "How many addresses it gives at most" }
+      - { name: enabled, type: bool, description: "Whether the blocklist is active" }
+      - { name: query_workspace_id, type: text, description: "The UUID of the workspace whose data the query reads. Needs the GNQL Diff entitlement" }
+    request:
+      method: POST
+      path: "/v3/workspaces/{{ args.workspace_id }}/blocklists"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        query: "{{ args.query }}"
+        name: "{{ args.name }}"
+        ip_limit: "{{ args.ip_limit }}"
+        enabled: "{{ args.enabled }}"
+        query_workspace_id: "{{ args.query_workspace_id }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      query: "{{ response.query }}"
+      enabled: "{{ response.enabled }}"
+      ip_limit: "{{ response.ip_limit }}"
+      last_ip_count: "{{ response.last_ip_count }}"
+      created_at: "{{ response.created_at }}"
+      updated_at: "{{ response.updated_at }}"
+    sample: { id: "550e8400-e29b-41d4-a716-446655440000", name: "Malicious scanners", query: "classification:malicious last_seen:1d", enabled: true, ip_limit: 1000, last_ip_count: 427, created_at: "2026-01-24T10:00:00Z", updated_at: "2026-01-24T10:00:00Z" }
+
+  - name: list-blocklists
+    description: "The blocklists of a workspace, read page by page (1 000 at most)."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+    request:
+      method: GET
+      path: "/v3/workspaces/{{ args.workspace_id }}/blocklists"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    pagination:
+      type: offset
+      param: offset
+      limit_param: limit
+      limit: 100
+      items: "{{ response.blocklists }}"
+      max_pages: 10
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ids: "{{ response.items | pluck('id') }}"
+      names: "{{ response.items | pluck('name') }}"
+      queries: "{{ response.items | pluck('query') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: update-blocklist
+    description: "Change a blocklist: its GNQL query, its name, how many addresses it gives, whether it is active."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: blocklist_id, type: text, required: true, description: "The UUID of the blocklist" }
+      - { name: query, type: text, required: true, description: "The GNQL query that says which addresses are on the blocklist: classification:malicious last_seen:1d" }
+      - { name: name, type: text, description: "A name for the blocklist" }
+      - { name: ip_limit, type: number, description: "How many addresses it gives at most" }
+      - { name: enabled, type: bool, description: "Whether the blocklist is active" }
+      - { name: query_workspace_id, type: text, description: "The UUID of the workspace whose data the query reads. Needs the GNQL Diff entitlement" }
+    request:
+      method: PUT
+      path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        query: "{{ args.query }}"
+        name: "{{ args.name }}"
+        ip_limit: "{{ args.ip_limit }}"
+        enabled: "{{ args.enabled }}"
+        query_workspace_id: "{{ args.query_workspace_id }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      query: "{{ response.query }}"
+      enabled: "{{ response.enabled }}"
+      ip_limit: "{{ response.ip_limit }}"
+      last_ip_count: "{{ response.last_ip_count }}"
+      created_at: "{{ response.created_at }}"
+      updated_at: "{{ response.updated_at }}"
+    sample: { id: "550e8400-e29b-41d4-a716-446655440000", name: "Malicious scanners", query: "classification:malicious last_seen:1d", enabled: true, ip_limit: 1000, last_ip_count: 427, created_at: "2026-01-24T10:00:00Z", updated_at: "2026-01-24T10:00:00Z" }
+
+  - name: get-blocklist
+    description: "One blocklist: its GNQL query, its name, its limit and how many addresses it held when last refreshed."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: blocklist_id, type: text, required: true, description: "The UUID of the blocklist" }
+    request:
+      method: GET
+      path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      query: "{{ response.query }}"
+      enabled: "{{ response.enabled }}"
+      ip_limit: "{{ response.ip_limit }}"
+      last_ip_count: "{{ response.last_ip_count }}"
+      created_at: "{{ response.created_at }}"
+      updated_at: "{{ response.updated_at }}"
+
+  - name: delete-blocklist
+    description: "Delete a blocklist."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: blocklist_id, type: text, required: true, description: "The UUID of the blocklist" }
+    request:
+      method: DELETE
+      path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    success: { status: 204 }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      deleted: "{{ status | map('204', true, else=false) }}"
+    sample: { deleted: true }
+
+  - name: get-blocklist-ips
+    description: "The IP addresses that match the GNQL query of a blocklist now."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: blocklist_id, type: text, required: true, description: "The UUID of the blocklist" }
+      - { name: size, type: number, description: "How many addresses at most: the limit of the blocklist when left out" }
+    request:
+      method: GET
+      path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}/ips"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        size: "{{ args.size }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ips: "{{ response.ips }}"
+      count: "{{ response.ips | length }}"
+
+  - name: search-feed-events
+    description: "Search the events the feeds of the workspace kept (an address that changed classification, a spike of a CVE or a tag, a new callback address), newest first, without moving any consumer. One page at a time: give cursor to read the next."
+    premium: true
+    arguments:
+      - { name: feed_ids, type: list, description: "The UUIDs of the feeds, 100 at most: every enabled feed of the workspace when left out" }
+      - { name: event_types, type: list, description: "Only these kinds of event: ip-classification-change, cve-status-change, cve-activity-spike, vendor-cve-spike, tag-spike, new-callback-ip, new-callback-file, credential-observed" }
+      - { name: ip, type: text, description: "Only the events of exactly this IP address" }
+      - { name: cve, type: text, description: "Only the events of exactly this CVE" }
+      - { name: tag, type: text, description: "Only the events of exactly this tag: Mirai Variant" }
+      - { name: classification, type: text, description: "Only the events of exactly this classification: malicious" }
+      - { name: from, type: text, description: "Since when: a number of hours or days before the end (6h, 7d), a UTC day (YYYY-MM-DD) or an RFC 3339 time. One hour before the end when left out" }
+      - { name: to, type: text, description: "Until when, not included: a UTC day (YYYY-MM-DD) or an RFC 3339 time. Now when left out" }
+      - { name: cursor, type: text, description: "The cursor of the page before, to read the page after it: then only limit may be given with it" }
+      - { name: limit, type: number, description: "How many events: 1 to 1 000, 100 when left out" }
+    request:
+      method: POST
+      path: "/v3/feeds/events/search"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        feed_ids: "{{ args.feed_ids }}"
+        event_types: "{{ args.event_types }}"
+        ip: "{{ args.ip }}"
+        cve: "{{ args.cve }}"
+        tag: "{{ args.tag }}"
+        classification: "{{ args.classification }}"
+        from: "{{ args.from }}"
+        to: "{{ args.to }}"
+        cursor: "{{ args.cursor }}"
+        limit: "{{ args.limit }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      events: "{{ response.events }}"
+      count: "{{ response.events | length }}"
+      cursor: "{{ response.cursor }}"
+      has_more: "{{ response.has_more }}"
+      oldest_available_at: "{{ response.retention.oldest_available_at }}"
+
+  - name: fetch-feed-events
+    description: "The events of a feed that come after what a consumer acknowledged, oldest first. Nothing moves until acknowledge-feed-events is given the cursor: asking again before that gives the same events."
+    premium: true
+    arguments:
+      - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
+      - { name: consumer, type: text, description: "The name of the consumer, whose place in the feed GreyNoise keeps: default when left out" }
+      - { name: limit, type: number, description: "How many events: 1 to 1 000, 100 when left out" }
+    request:
+      method: GET
+      path: "/v3/feeds/{{ args.feed_id }}/events"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        consumer: "{{ args.consumer }}"
+        limit: "{{ args.limit }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      events: "{{ response.events }}"
+      count: "{{ response.events | length }}"
+      cursor: "{{ response.cursor }}"
+      has_more: "{{ response.has_more }}"
+      consumer: "{{ response.consumer }}"
+      gap_detected: "{{ response.retention.gap_detected }}"
+      oldest_available_at: "{{ response.retention.oldest_available_at }}"
+
+  - name: acknowledge-feed-events
+    description: "Tell GreyNoise that the events up to a cursor were dealt with: the consumer moves there and the next fetch gives what comes after. Acknowledging the same or an older cursor again changes nothing."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
+      - { name: cursor, type: text, required: true, description: "The cursor fetch-feed-events gave" }
+      - { name: consumer, type: text, description: "The consumer the events were fetched with: default when left out" }
+    request:
+      method: POST
+      path: "/v3/feeds/{{ args.feed_id }}/events/ack"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        cursor: "{{ args.cursor }}"
+        consumer: "{{ args.consumer }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      advanced: "{{ response.advanced }}"
+      consumer: "{{ response.consumer }}"
+      cursor: "{{ response.cursor }}"
+      acknowledged_at: "{{ response.acknowledged_at }}"
+    sample: { advanced: true, consumer: "scheduled-lambda", cursor: "eyJ2IjoxLCJ3IjoiLi4uIn0.signature", acknowledged_at: "2026-08-07T14:25:00Z" }
+
+  - name: list-feed-consumers
+    description: "The consumers of a feed, each with when it last acknowledged, about how far behind it is, and whether it is active, idle or expired."
+    premium: true
+    arguments:
+      - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
+    request:
+      method: GET
+      path: "/v3/feeds/{{ args.feed_id }}/consumers"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      consumers: "{{ response.consumers }}"
+      names: "{{ response.consumers | pluck('name') }}"
+      oldest_available_at: "{{ response.retention.oldest_available_at }}"
+
+  - name: create-feed-consumer
+    description: "Create a consumer of a feed: a place in the feed GreyNoise keeps under a name, starting at the oldest event it still has. A feed has 25 consumers at most."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
+      - { name: consumer, type: text, required: true, description: "The name: it starts with a letter or a digit and holds only letters, digits, . _ and -" }
+    request:
+      method: POST
+      path: "/v3/feeds/{{ args.feed_id }}/consumers"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        consumer: "{{ args.consumer }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      name: "{{ response.name }}"
+      status: "{{ response.status }}"
+      has_acknowledged: "{{ response.has_acknowledged }}"
+      acknowledged_at: "{{ response.acknowledged_at }}"
+      approximate_lag: "{{ response.approximate_lag }}"
+      updated_at: "{{ response.updated_at }}"
+    sample: { name: "scheduled-lambda", status: "active", has_acknowledged: false, acknowledged_at: null, approximate_lag: 12, updated_at: "2026-08-07T14:21:18Z" }
+
+  - name: reset-feed-consumer
+    description: "Send a consumer back to the oldest event the feed still has: the next fetch gives again events it already had."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
+      - { name: consumer, type: text, required: true, description: "The name of the consumer" }
+    request:
+      method: POST
+      path: "/v3/feeds/{{ args.feed_id }}/consumers/{{ args.consumer }}/reset"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      name: "{{ response.name }}"
+      status: "{{ response.status }}"
+      has_acknowledged: "{{ response.has_acknowledged }}"
+      acknowledged_at: "{{ response.acknowledged_at }}"
+      approximate_lag: "{{ response.approximate_lag }}"
+      updated_at: "{{ response.updated_at }}"
+    sample: { name: "scheduled-lambda", status: "active", has_acknowledged: false, acknowledged_at: null, approximate_lag: 12, updated_at: "2026-08-07T14:21:18Z" }
+
+  - name: delete-feed-consumer
+    description: "Delete a consumer of a feed."
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
+      - { name: consumer, type: text, required: true, description: "The name of the consumer" }
+    request:
+      method: DELETE
+      path: "/v3/feeds/{{ args.feed_id }}/consumers/{{ args.consumer }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    success: { status: 204 }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      deleted: "{{ status | map('204', true, else=false) }}"
+    sample: { deleted: true }
+
+  - name: list-articles
+    description: "The Threat Briefs GreyNoise published, newest first. One page at a time."
+    premium: true
+    arguments:
+      - { name: search, type: text, description: "Only the articles whose title, subtitle or description holds this text" }
+      - { name: category, type: text, description: "Only the articles of this category, by its value as list-article-categories gives it" }
+      - { name: page, type: number, description: "The page, counted from 1: 1 when left out" }
+      - { name: size, type: number, description: "How many articles a page" }
+      - { name: sort_by, type: text, description: "The field the articles are ordered by: published_at when left out" }
+      - { name: sort_desc, type: choice, choices: ["true", "false"], description: "Newest first (true, the default) or oldest first (false)" }
+    request:
+      method: GET
+      path: "/v3/articles"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        search: "{{ args.search }}"
+        category: "{{ args.category }}"
+        page: "{{ args.page }}"
+        size: "{{ args.size }}"
+        sort_by: "{{ args.sort_by }}"
+        sort_desc: "{{ args.sort_desc }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      articles: "{{ response.data }}"
+      titles: "{{ response.data | pluck('title') }}"
+      ids: "{{ response.data | pluck('id') }}"
+      total: "{{ response.metadata.total_results }}"
+      page: "{{ response.metadata.current_page }}"
+
+  - name: list-article-categories
+    description: "The categories of Threat Briefs."
+    premium: true
+    arguments: []
+    request:
+      method: GET
+      path: "/v3/articles/categories"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      categories: "{{ response }}"
+      values: "{{ response | pluck('value') }}"
+
+  - name: get-article
+    description: "One Threat Brief by its id."
+    premium: true
+    arguments:
+      - { name: id, type: text, required: true, description: "The UUID of the article, as list-articles gives it" }
+    request:
+      method: GET
+      path: "/v3/articles/{{ args.id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      title: "{{ response.title }}"
+      subtitle: "{{ response.subtitle }}"
+      description: "{{ response.description }}"
+      category: "{{ response.category.value }}"
+      author: "{{ response.author }}"
+      link: "{{ response.link }}"
+      published_at: "{{ response.published_at }}"
+      article: "{{ response }}"
+
+  - name: get-rss-feed-url
+    description: "The address of the private RSS feed of Threat Briefs of the workspace (made at the first request) and of the public one. The private address is itself the credential: whoever has it reads the feed."
+    premium: true
+    arguments: []
+    request:
+      method: GET
+      path: "/v3/articles/rss-token"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      feed_url: "{{ response.feed_url }}"
+      public_feed_url: "{{ response.public_feed_url }}"
+
+  - name: generate-rss-feed-url
+    description: "Replace the private RSS feed address of the workspace by a new one: the old address stops working. For an address that leaked."
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments: []
+    request:
+      method: POST
+      path: "/v3/articles/rss-token"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+    error: { message: "{{ response.message }}" }
+    outputs:
+      feed_url: "{{ response.feed_url }}"
+      public_feed_url: "{{ response.public_feed_url }}"
+    sample: { feed_url: "https://api.greynoise.io/v3/articles/rss/EXAMPLE-FEED-TOKEN", public_feed_url: "https://api.greynoise.io/v3/articles/rss" }
+
+  - name: get-public-rss-feed
+    description: "The public RSS feed of the Threat Briefs of the community category, as XML text. It needs no key."
+    arguments: []
+    request:
+      method: GET
+      path: "/v3/articles/rss"
+      answer: text
+    error: { message: "{{ response.message }}" }
+    outputs:
+      xml: "{{ response.text }}"
+
+  - name: search-tactics-detections
+    description: "The Tactics detections of a workspace: the attacker sessions seen on your sensors that match a MITRE ATT&CK technique, each with its commands, techniques, tactics and files. Read page by page (500 at most)."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: start_time, type: text, description: "Only detections active at or after this time, as an ISO 8601 date. Without it the whole history is searched: give one" }
+      - { name: end_time, type: text, description: "Only detections active at or before this time: now when left out" }
+      - { name: sensor_id, type: text, description: "Only detections seen on the sensor of this UUID" }
+      - { name: profile_id, type: text, description: "Only detections seen on the profile of this UUID" }
+      - { name: profile_instance_id, type: text, description: "Only detections seen on the profile instance of this UUID" }
+      - { name: rules, type: list, description: "Only detections that set off one of these sensor rules: command_run, internet_access" }
+      - { name: techniques, type: list, description: "Only detections with one of these ATT&CK techniques: T1082, T1059.004. Either a technique or a tactic has to match" }
+      - { name: tactics, type: list, description: "Only detections with one of these ATT&CK tactics: TA0007, TA0002. Either a technique or a tactic has to match" }
+      - { name: process_name, type: text, description: "Only detections where a process of this name ran: curl" }
+      - { name: process_parent, type: text, description: "Only detections where the parent of a process had this name: bash" }
+      - { name: process_grandparent, type: text, description: "Only detections where the grandparent of a process had this name" }
+      - { name: process_great_grandparent, type: text, description: "Only detections where the great-grandparent of a process had this name" }
+      - { name: any_process, type: text, description: "Only detections where this name is a process or any of its three ancestors: wget" }
+      - { name: ip, type: text, description: "Only detections whose session reached this IPv4 address" }
+      - { name: exclude_non_interactive, type: bool, description: "Only the sessions that have a shell among their ancestors" }
+    request:
+      method: POST
+      path: "/v3/workspaces/{{ args.workspace_id }}/tactics"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        exclude_non_interactive: "{{ args.exclude_non_interactive | map('true', 'true', 'false', 'false') }}"
+      json:
+        start_time: "{{ args.start_time }}"
+        end_time: "{{ args.end_time }}"
+        sensor_id: "{{ args.sensor_id }}"
+        profile_id: "{{ args.profile_id }}"
+        profile_instance_id: "{{ args.profile_instance_id }}"
+        rules: "{{ args.rules }}"
+        techniques: "{{ args.techniques }}"
+        tactics: "{{ args.tactics }}"
+        process_name: "{{ args.process_name }}"
+        process_parent: "{{ args.process_parent }}"
+        process_grandparent: "{{ args.process_grandparent }}"
+        process_great_grandparent: "{{ args.process_great_grandparent }}"
+        any_process: "{{ args.any_process }}"
+        ip: "{{ args.ip }}"
+    pagination:
+      type: cursor
+      param: cursor
+      next: "{{ response.next_cursor }}"
+      limit_param: page_size
+      limit: 100
+      items: "{{ response.sessions }}"
+      max_pages: 5
+    error: { message: "{{ response.message }}" }
+    outputs:
+      detections: "{{ response.items }}"
+      ids: "{{ response.items | pluck('session_id') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: get-tactics-detection
+    description: "One Tactics detection: its commands in order with the techniques of each, the paths of the files it touched, and the addresses it reached. Commands and files come 500 a page, each with its own page number."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: detection_id, type: text, required: true, description: "The id of the detection: the session_id that search-tactics-detections gives" }
+      - { name: commands_page, type: number, description: "The page of the commands, counted from 1" }
+      - { name: artifacts_page, type: number, description: "The page of the file paths, counted from 1" }
+    request:
+      method: GET
+      path: "/v3/workspaces/{{ args.workspace_id }}/tactics/{{ args.detection_id }}"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        commands_page: "{{ args.commands_page }}"
+        artifacts_page: "{{ args.artifacts_page }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      session_id: "{{ response.session_id }}"
+      start_time: "{{ response.start_time }}"
+      end_time: "{{ response.end_time }}"
+      techniques: "{{ response.techniques }}"
+      tactics: "{{ response.tactics }}"
+      rules: "{{ response.rules }}"
+      commands: "{{ response.commands }}"
+      command_events: "{{ response.command_events }}"
+      commands_has_more: "{{ response.commands_has_more }}"
+      artifacts: "{{ response.artifacts }}"
+      artifacts_has_more: "{{ response.artifacts_has_more }}"
+      dest_ips: "{{ response.dest_ips }}"
+      interactive: "{{ response.interactive }}"
+
+  - name: list-tactics-destination-ips
+    description: "The addresses the session of a Tactics detection reached, read page by page (5 000 at most): those on the internet, and those of private networks when asked."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: detection_id, type: text, required: true, description: "The id of the detection: the session_id that search-tactics-detections gives" }
+      - { name: include_lateral, type: bool, description: "Also the private (RFC 1918) and loopback addresses" }
+    request:
+      method: GET
+      path: "/v3/workspaces/{{ args.workspace_id }}/tactics/{{ args.detection_id }}/dest-ips"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        include_lateral: "{{ args.include_lateral | map('true', 'true', 'false', 'false') }}"
+    pagination:
+      type: page
+      param: page
+      limit_param: page_size
+      limit: 1000
+      items: "{{ response.ips }}"
+      max_pages: 5
+    error: { message: "{{ response.message }}" }
+    outputs:
+      ips: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-tactics-files
+    description: "The files seen during the session of a Tactics detection, each with its path, size, type and hashes; never their content."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: detection_id, type: text, required: true, description: "The id of the detection: the session_id that search-tactics-detections gives" }
+      - { name: mutations_only, type: bool, description: "Only the files the session created or changed" }
+    request:
+      method: POST
+      path: "/v3/workspaces/{{ args.workspace_id }}/tactics/{{ args.detection_id }}/files"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      query:
+        mutations_only: "{{ args.mutations_only | map('true', 'true', 'false', 'false') }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      files: "{{ response }}"
+      paths: "{{ response | pluck('path') }}"
+      sha256: "{{ response | pluck('sha256_hash') }}"
+
+  - name: get-host-artifact-content
+    description: "The content of a file seen on one of your sensors, by its path, as it was last seen: in the answer as base64 when it is small, as a download address that soon expires when it is large. Needs the Tactics file-content entitlement."
+    premium: true
+    arguments:
+      - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
+      - { name: path, type: text, required: true, description: "The full path of the file on the sensor: /tmp/.x/miner" }
+    request:
+      method: POST
+      path: "/v3/workspaces/{{ args.workspace_id }}/host-artifact/content"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        path: "{{ args.path }}"
+    error: { message: "{{ response.message }}" }
+    outputs:
+      type: "{{ response.type }}"
+      contents: "{{ response.contents }}"
+      url: "{{ response.url }}"
+      expires_at: "{{ response.expires_at }}"
+      path: "{{ response.path }}"
+      sha256: "{{ response.sha256_hash }}"
+      file_size: "{{ response.file_size }}"
+
+  - name: download-psychic-model
+    description: "A Psychic model file, kept as an artifact: the latest daily model, the one of a day, or one file for a range of 30 days at most, in GreyNoise's binary format or as a MaxMind DB. Needs the Psychic entitlement of that model, and its lookback entitlement for a past day."
+    premium: true
+    arguments:
+      - { name: model, type: choice, choices: ["1", "2", "3", "m1", "m2", "m3", "model1", "model2", "model3"], required: true, description: "The model: 1, 2 or 3, under any of its three spellings" }
+      - { name: date, type: text, description: "latest (the default) or a day, YYYY-MM-DD, not in the future. Not with start_date and end_date" }
+      - { name: start_date, type: text, description: "The first day of a range, YYYY-MM-DD, given together with end_date" }
+      - { name: end_date, type: text, description: "The last day of the range, YYYY-MM-DD, 30 days after the first at most" }
+      - { name: format, type: choice, choices: ["bin", "mmdb"], description: "bin (the default): the binary model format; mmdb: a MaxMind DB file" }
+    request:
+      method: POST
+      path: "/v1/psychic"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        model: "{{ args.model }}"
+        date: "{{ args.date }}"
+        start_date: "{{ args.start_date }}"
+        end_date: "{{ args.end_date }}"
+        format: "{{ args.format }}"
+      answer: file
+    error: { message: "{{ first_of(response.error, response.message) }}" }
+    timeout: 300
+    sample: { name: m2-2026-06-04.bin, type: application/octet-stream, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-psychic-snapshot
+    description: "A Psychic snapshot, kept as an artifact: the file GreyNoise prepared for the last 7 or 30 days of a model, in its binary format or as a MaxMind DB. Nothing is computed on request: 404 means that snapshot does not exist. Needs the Psychic entitlement of that model and its lookback entitlement."
+    premium: true
+    arguments:
+      - { name: model, type: choice, choices: ["1", "2", "3", "m1", "m2", "m3", "model1", "model2", "model3"], required: true, description: "The model: 1, 2 or 3, under any of its three spellings" }
+      - { name: days, type: choice, choices: ["7", "30"], required: true, description: "The window of the snapshot, in days" }
+      - { name: format, type: choice, choices: ["bin", "mmdb"], description: "bin (the default): the binary model format; mmdb: a MaxMind DB file" }
+    request:
+      method: POST
+      path: "/v1/psychic/snapshots"
+      headers: { key: "{{ secret.api_key | default(null) }}" }
+      json:
+        model: "{{ args.model }}"
+        days: "{{ args.days | int }}"
+        format: "{{ args.format }}"
+      answer: file
+    error: { message: "{{ first_of(response.error, response.message) }}" }
+    timeout: 300
+    sample: { name: m3-2026-06-17-to-2026-06-23.bin, type: application/octet-stream, size: 0, sha256: "", artifact: "", linked: false }

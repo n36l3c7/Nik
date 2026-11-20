@@ -1,0 +1,48 @@
+{
+  "args": {
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/agents/applications",
+        "query": {
+          "ids": "1234567890123456789"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": [
+            {
+              "name": "7-Zip 23.01",
+              "publisher": "Igor Pavlov",
+              "version": "23.01",
+              "size": 5400000,
+              "installedDate": "2026-03-02T10:11:12Z"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "applications": [
+      {
+        "name": "7-Zip 23.01",
+        "publisher": "Igor Pavlov",
+        "version": "23.01",
+        "size": 5400000,
+        "installedDate": "2026-03-02T10:11:12Z"
+      }
+    ],
+    "names": [
+      "7-Zip 23.01"
+    ],
+    "count": 1
+  }
+}

@@ -1,7 +1,7 @@
 {
   "args": {
-    "threat_id": "5555555555555555555",
-    "text": "Seen in Nik: INC-2026-0412"
+    "text": "Contained by the playbook; the file was sent for analysis.",
+    "threat_id": "5555555555555555555"
   },
   "exchanges": [
     {
@@ -9,13 +9,13 @@
         "method": "POST",
         "path": "/web/api/v2.1/threats/notes",
         "json": {
-          "data": {
-            "text": "Seen in Nik: INC-2026-0412"
-          },
           "filter": {
             "ids": [
               "5555555555555555555"
             ]
+          },
+          "data": {
+            "text": "Contained by the playbook; the file was sent for analysis."
           }
         },
         "headers": {

@@ -13,14 +13,16 @@ import {
 import { stateBadge } from '../../../domain/fetch.js'
 import { instanceFromPath, instancePath, settingsPath } from '../../../domain/settingsNav.js'
 import { formatRelative } from '../../../lib/time.js'
-import { onLocationChange, setPath } from '../../../lib/location.js'
+import { freely, onLocationChange, setPath } from '../../../lib/location.js'
+import { leaveHere } from '../../../lib/unsaved.js'
 import { PLAYGROUND_ROOT, leaveLine, tryLine } from '../../../domain/playground.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, SearchInput } from '../../ui/index.js'
 import InstancePane from './InstancePane.jsx'
 import MirrorQueue from './MirrorQueue.jsx'
 import Switch from './Switch.jsx'
+import { transfer } from '../../../lib/transfers.js'
 
 /*
  * Automation → Connectors (the role Connectors, or an admin).
@@ -117,10 +119,25 @@ export default function ConnectorsSection() {
     )
   }, [asked, connectors, instances])
 
-  /** Open the form of an instance on a tab (a new one when `instance` is null), or close it (`null`). */
+  const pathOf = (next) => (next?.instance ? instancePath(next.instance.id, next.tab) : settingsPath('connectors'))
+  /** Show the form of an instance on a tab (a new one when `instance` is null), or none (`null`). */
   const edit = (next) => {
     setEditing(next ? { tab: 'connection', ...next } : null)
-    setPath(next?.instance ? instancePath(next.instance.id, next.tab) : settingsPath('connectors'), { replace: true })
+    // The address follows the form: whoever asked for the move was asked about what is not saved.
+    freely(() => setPath(pathOf(next), { replace: true }))
+  }
+  /**
+   * The same, when the person asks for it: the form that is open may hold changes that are not saved
+   * (another part of the same form keeps them; another instance, or closing it, would lose them).
+   */
+  const openForm = (next) => {
+    const sameForm =
+      next !== null &&
+      editing !== null &&
+      next.connector.id === editing.connector.id &&
+      (next.instance?.id ?? null) === (editing.instance?.id ?? null)
+    if (sameForm) edit(next)
+    else leaveHere(() => edit(next))
   }
   const wide =
     editing !== null &&
@@ -137,7 +154,7 @@ export default function ConnectorsSection() {
     setError(null)
     try {
       const source = await file.text()
-      const found = await api.post('/automation/connectors/check', { source })
+      const found = await transfer(`Checking ${file.name}`, () => api.post('/automation/connectors/check', { source }))
       setUpload({ fileName: file.name, source, problems: found.problems, connector: found.connector })
     } catch (failure) {
       setError(`${file.name}: ${failure.message}`)
@@ -168,7 +185,7 @@ export default function ConnectorsSection() {
     setLogoError(null)
     const path = `/automation/connectors/${encodeURIComponent(connector.id)}/logo`
     try {
-      if (file) await api.put(path, file)
+      if (file) await transfer(`Uploading ${file.name}`, () => api.put(path, file))
       else await api.del(path)
       setShown(await api.get(`/automation/connectors/${encodeURIComponent(connector.id)}`))
       load()
@@ -207,11 +224,14 @@ export default function ConnectorsSection() {
 
   /* ---- instances ---- */
   const toggle = async (instance, enabled) => {
+    setError(null)
     // Shown at once; the list read again says what the server kept.
     setInstances((current) => current.map((item) => (item.id === instance.id ? { ...item, enabled } : item)))
     try {
       await api.put(`/automation/instances/${encodeURIComponent(instance.id)}`, { enabled })
-      said(`${instance.name} is ${enabled ? 'on' : 'off'}.`)
+      // Not said(): the answer may arrive after another action failed (a test pressed right after
+      // the switch), and the error of that one must stay on the screen.
+      setNotice(`${instance.name} is ${enabled ? 'on' : 'off'}.`)
     } catch (failure) {
       setError(failure.message)
     }
@@ -337,9 +357,15 @@ export default function ConnectorsSection() {
           </p>
         )}
         {connectors && rows.length === 0 && (
-          <p className="text-sm text-fg-muted">
-            {connectors.length === 0 ? 'No connector is installed.' : 'No connector matches.'}
-          </p>
+          <EmptyState
+            skull
+            title={connectors.length === 0 ? 'No connector yet' : 'No connector matches'}
+            message={
+              connectors.length === 0
+                ? 'No connector is installed. A connector comes with a content pack, or as a file added here.'
+                : 'No connector matches. Change what you typed, or the filter.'
+            }
+          />
         )}
 
         <ul aria-label="Connectors" className="flex max-w-5xl flex-col gap-2.5">
@@ -355,7 +381,7 @@ export default function ConnectorsSection() {
                     connector.readable && {
                       label: 'Add instance',
                       icon: Plus,
-                      onSelect: () => edit({ connector, instance: null }),
+                      onSelect: () => openForm({ connector, instance: null }),
                     },
                   ],
                   copy: [{ label: 'Copy the id', text: connector.id }],
@@ -402,7 +428,7 @@ export default function ConnectorsSection() {
                   icon={Plus}
                   disabled={!connector.readable}
                   aria-label={`Add an instance of ${connector.name}`}
-                  onClick={() => edit({ connector, instance: null })}
+                  onClick={() => openForm({ connector, instance: null })}
                 >
                   Add instance
                 </Button>
@@ -423,7 +449,7 @@ export default function ConnectorsSection() {
                             {
                               label: 'Edit',
                               icon: Pencil,
-                              onSelect: () => edit({ connector, instance }),
+                              onSelect: () => openForm({ connector, instance }),
                             },
                             { label: 'Test the instance', icon: Zap, onSelect: () => test(instance) },
                             {
@@ -458,7 +484,7 @@ export default function ConnectorsSection() {
                           type="button"
                           aria-label={`Fetching of ${instance.name}: ${stateBadge(instance.fetch).label}`}
                           title="How it fetches, and how it goes"
-                          onClick={() => edit({ connector, instance, tab: 'fetch' })}
+                          onClick={() => openForm({ connector, instance, tab: 'fetch' })}
                           className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           <Badge color={stateBadge(instance.fetch).color}>{stateBadge(instance.fetch).label}</Badge>
@@ -466,6 +492,7 @@ export default function ConnectorsSection() {
                       )}
                       <span className="flex gap-1">
                         <Button
+                          waiting={testing === instance.id}
                           variant="secondary"
                           size="xs"
                           icon={Zap}
@@ -480,7 +507,7 @@ export default function ConnectorsSection() {
                           size="xs"
                           icon={Pencil}
                           aria-label={`Edit ${instance.name}`}
-                          onClick={() => edit({ connector, instance })}
+                          onClick={() => openForm({ connector, instance })}
                         />
                       </span>
                       {instance.lastTest && !instance.lastTest.ok && (
@@ -503,11 +530,16 @@ export default function ConnectorsSection() {
           instance={editing.instance}
           testing={testing !== null}
           tab={editing.tab}
-          onTab={(tab) => edit({ ...editing, tab })}
+          onTab={(tab) => openForm({ ...editing, tab })}
           wide={wide}
-          onClose={() => edit(null)}
+          onClose={() => openForm(null)}
           onTest={test}
           onDelete={setDeleting}
+          onChanged={(saved) => {
+            // Something of the instance was changed without leaving its form (a secret kept as a credential).
+            setEditing((current) => (current?.instance?.id === saved.id ? { ...current, instance: saved } : current))
+            load()
+          }}
           onSaved={(saved) => {
             edit(null)
             said(`${saved.name} is saved. Test it to see that ${saved.connectorName} answers.`)
@@ -526,8 +558,8 @@ export default function ConnectorsSection() {
             <Button variant="secondary" onClick={() => setUpload(null)}>
               Cancel
             </Button>
-            <Button disabled={busy || lines.length > 0} onClick={install}>
-              Install
+            <Button waiting={busy} disabled={busy || lines.length > 0} onClick={install}>
+              {busy ? 'Installing…' : 'Install'}
             </Button>
           </>
         }
@@ -762,8 +794,9 @@ export default function ConnectorsSection() {
         }
       >
         <p className="text-sm text-fg">
-          <span className="font-semibold">{deleting?.name}</span> goes with its credentials. An instance a playbook uses
-          cannot be deleted; it can be turned off.
+          <span className="font-semibold">{deleting?.name}</span> goes with the credentials typed into it; a stored
+          credential it names stays in Settings, Credentials. An instance a playbook uses cannot be deleted; it can be
+          turned off.
         </p>
       </Modal>
     </section>

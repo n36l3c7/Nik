@@ -137,14 +137,15 @@
       </p>
       <h3 id="incident-list">The list of incidents</h3>
       <p>
-        The first entry of the rail opens the list: a table that takes the whole area next to the rail, with the number,
-        the title, the <a href="#incident-tags">tags</a>, the type, the severity, the status, the owner and the dates of
-        each incident (a cell shows the tags it has room for, then <em>+2</em> for the others). A click on the heading
-        of a column orders the list by it, a second click turns the order round. The number at the top says how many
-        incidents are listed, and of how many when a filter is on. <strong>New incident</strong> and
+        The <strong>Incidents</strong> entry of the rail opens the list: a table that takes the whole area next to the
+        rail, with the number, the title, the <a href="#incident-tags">tags</a>, the type, the severity, the status, the
+        owner and the dates of each incident (a cell shows the tags it has room for, then <em>+2</em> for the others). A
+        click on the heading of a column orders the list by it, a second click turns the order round. The number at the
+        top says how many incidents are listed, and of how many when a filter is on. <strong>New incident</strong> and
         <strong>Import incident</strong> are at the top; a right-click on a row has what is done to an incident without
         opening it (its report, its export, its link, a playbook to run on it, <strong>Add a tag…</strong>, its status
-        and its owner, deleting it). The entry of the rail, clicked again, goes back to the incident you came from.
+        and its owner, deleting it). The entry of the rail always leads here, also from an open incident; the browser's
+        Back returns to the incident you came from.
       </p>
       <ul>
         <li>
@@ -218,16 +219,66 @@
 
       <h2 id="layout">The screen</h2>
       <p>
-        The narrow column of icons on the left edge is the <strong>rail</strong>, in the order of a working day: the
-        <strong>incidents</strong>, <strong>your tasks</strong>, the <strong>dashboards</strong>, the
-        <strong>Indicators</strong>, the <strong>artifacts</strong> (the files, e-mails and captures analysed so far),
-        the search, the <strong>playground</strong> (a command outside any incident), then the
-        <strong>automations</strong>. The incidents are a page, <a href="#incident-list">their list</a>, from which one
-        is opened. The Indicators page and the artifacts open a list in the side panel: click the active icon again to
-        close the panel and give the whole width to the analysis. At the foot of the rail are the notifications, the
-        settings and <strong>your account</strong>, which says who is signed in, opens <em>My account</em> and signs
-        out. The audit log, the accounts and the backup are sections of Settings. An entry is there for the accounts
-        whose roles let them use it.
+        The narrow column of icons on the left edge is the <strong>rail</strong>. From the top: the
+        <strong>dashboards</strong>, the <strong>incidents</strong>, <strong>your tasks</strong>, the
+        <strong>artifacts</strong> (the files, e-mails and captures analysed so far), the <strong>Indicators</strong>,
+        the <strong>automations</strong> and the <strong>playground</strong> (a command outside any incident). At the
+        foot of the rail are the notifications, the settings and <strong>your account</strong>, which says who is signed
+        in, opens <em>My account</em> and signs out. The audit log, the accounts and the backup are sections of
+        Settings. An entry is there for the accounts whose roles let them use it.
+      </p>
+      <p id="rail-home">
+        <strong>An entry of the rail always shows the first screen of its section</strong>, from wherever you press it:
+        Dashboards shows the dashboard you chose for sign-in (or the first), also from another dashboard or from one you
+        are editing; Incidents shows <a href="#incident-list">their list</a>, also from an open incident; My tasks shows
+        the tasks that wait for you; Automations shows the playbooks, also from the editor, a run or a script; Settings
+        shows its first section. Pressed on that first screen, an entry does nothing: it never closes what it opened.
+        Going there is a move like any other, so the browser's Back returns to where you were. A page that takes the
+        whole area (Dashboards, My tasks, Automations, the Playground, Settings) has a close button of its own at its
+        top right, which goes back to what was open before it.
+      </p>
+      <p id="artifacts-page">
+        <strong>Artifacts</strong> opens a page of their own (<code>/artifacts</code>): the list of every artifact at
+        the side, with its filter, and beside it nothing open until you choose one: the sleeping skull, and
+        <em>No artifact selected</em>. Choose an artifact in the list and it opens there; press the entry again, or the
+        browser's Back, and you are at the list with none open. The incident you were on is not shown under this page:
+        it is where Back takes you. On this page the list is what there is to choose from, so it has no button to hide
+        it.
+      </p>
+      <p>
+        The <strong>Indicators</strong> come with a list in a <strong>side panel</strong> too: their entry shows the
+        page on every indicator, with the panel. The small button at the top right of a side panel (<em
+          >Hide the indicators panel</em
+        >, and <em>Hide the artifacts panel</em> beside an open artifact) hides it and gives the whole width to the
+        analysis; it stays hidden until you press its entry of the rail again.
+      </p>
+      <p id="waits">
+        <strong>What is on its way says so, always in the same way.</strong> A file going up or coming down whose size
+        is known shows a bar with how much of it has passed; anything else that takes a moment (a report being built, an
+        export being prepared, a pack being read) shows the small skull that blinks, <code>(o.o)</code>, with a sentence
+        that says what is happening, in the button that started it or beside it. A transfer started from a menu, or by
+        dropping a file anywhere, has no place of its own on the screen: it is shown at the foot of the window until it
+        ends. An empty list shows the sleeping skull with what would fill it, and other words when it is a search or a
+        filter that left nothing.
+      </p>
+      <p id="search-bar">
+        The <strong>search bar</strong> is in the middle of the header, on every screen: press it, or
+        <kbd>Ctrl</kbd>+<kbd>K</kbd>, and <a href="#search">the search</a> opens. On a narrow window the bar shrinks to
+        its magnifier before anything else in the header gives way.
+      </p>
+      <p id="unsaved">
+        <strong>Nothing you have not saved is lost without asking.</strong> While a form, an editor or a dialog holds
+        changes that are not saved (a section of Settings, the form of an instance, a dashboard being edited, the
+        settings of a playbook, a rule, a list, a note or a comment being written, a dialog you typed in), whatever
+        would take you away from it asks first: an entry of the rail, another tab, another incident, a link, the
+        browser's Back and Forward, the close button of a dialog, <kbd>Esc</kbd>, a click outside it, another item of
+        the same list, signing out. The question names what is not saved and offers <em>Stay</em> (also <kbd>Esc</kbd>),
+        <em>Leave without saving</em>, and <em>Save and leave</em> where what you were editing can be saved from there;
+        if saving fails you stay, and the reason is shown. A form you opened and did not touch never asks, and neither
+        does one you put back as it was. What saves itself as you go (the canvas of a playbook, the code of a script,
+        the options of the report, the tags) is never asked about. Closing or reloading the browser's tab while
+        something is not saved makes the browser ask. If your session ends, sign in again in the dialog that appears:
+        the forms stay open under it as you left them.
       </p>
       <p>
         <strong>Every side panel can be resized</strong>: the lists of the rail, the quick view of the incident list,
@@ -305,6 +356,15 @@
           the artifact.
         </li>
         <li><strong>New incident from this</strong>: create the incident and link the artifact in one step.</li>
+        <li>
+          <strong>Analyse as an e-mail</strong>, <strong>Analyse as a capture</strong>: on a file that is a message
+          (<code>.eml</code>, <code>.msg</code>) or a packet capture (<code>.pcap</code>, <code>.pcapng</code>), as a
+          connector downloaded it, an archive held it or a message carried it. The e-mail or the capture an upload of
+          the same file would have made is made from it and opens, with the analysis of its kind; it goes to the
+          incidents the file is in (a capture to the one incident, when there is just one). The file stays as it is, and
+          each shows the other under <em>Related</em>. The button is there only when the first bytes of the file say it
+          fits; the menu of a file in the Artifacts panel offers the same by its name.
+        </li>
         <li>
           <strong>Tags</strong>: free labels (a campaign, a malware family, a customer) that the panel's filter and the
           list show.
@@ -424,10 +484,11 @@
 
       <h2 id="ioc-library">The Indicators page</h2>
       <p>
-        The third icon of the rail opens the library: one table of every indicator Nik knows, whether an incident holds
-        it, an analyst added it or it came from a file. The side panel has quick filters (added by hand, malicious,
-        never checked, expired), the alerts and the lists; the table filters by text, type, verdict and origin, and
-        sorts by any column. A row is tinted by its verdict only. Click a value for the indicator's page.
+        The <strong>Indicators</strong> entry of the rail opens the library: one table of every indicator Nik knows,
+        whether an incident holds it, an analyst added it or it came from a file. The side panel has quick filters
+        (added by hand, malicious, never checked, expired), the alerts and the lists; the table filters by text, type,
+        verdict and origin, and sorts by any column. A row is tinted by its verdict only. Click a value for the
+        indicator's page.
       </p>
       <h3>Add one or many</h3>
       <p>
@@ -480,7 +541,11 @@
         <strong>Check</strong> first shows what it costs: how many indicators are asked, how many answers are still
         fresh, how many are never sent out, and per source how many requests against what is left of today's quota. The
         check then runs in the background, with its progress at the top of the library. When a source's quota is used up
-        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it.
+        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it. Indicators the data guard holds (<a
+          href="#held-look-ups"
+          >below</a
+        >) are counted apart before the check starts and are not asked about; the check says how many when it ends, and
+        in the table their verdict reads <em>held</em>.
       </p>
       <p>
         <strong>Export</strong> asks for the format (CSV, JSON, STIX 2.1, MISP, or one value per line) and the fields.
@@ -753,6 +818,51 @@
         when the indicator is malicious and amber when it is suspicious; being seen in other incidents is a number, not
         a colour. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
         <strong>allowlist</strong> (right-click → Add to the allowlist).
+      </p>
+      <h4 id="held-look-ups">When a look-up is held</h4>
+      <p>
+        Two things decide whether a value is sent to the sources. The first never changes: a private address, an
+        internal name, an allowlisted value and a value of a TLP:RED incident are <em>never sent outside</em>, and
+        nothing opens that. The second is the <strong>data guard</strong>, the same that judges what a playbook sends
+        (<a href="automation.html#data-guard">Automation → Data</a>): it reads the value, and holds it when it carries
+      </p>
+      <ul>
+        <li>
+          an <strong>e-mail address</strong>: a link such as
+          <code>https://portal.example.org/reset?user=anna.bianchi@example.org</code>, which tells whoever receives it
+          who was written to;
+        </li>
+        <li>
+          an <strong>internal name or address</strong>: a domain under your organisation's own domains, a link on one,
+          or a link with a private address in it;
+        </li>
+        <li>
+          an <strong>allowlisted name</strong>: a link that names a domain or an address of the allowlist, a redirect to
+          your own site for example.
+        </li>
+      </ul>
+      <p>
+        A held indicator says so where its verdict would be: <em>held</em>, the classes it carries, and that an
+        administrator can open them. It is not an error and not a silent "unknown": no source was asked. This applies to
+        <strong>Check now</strong>, to the checks in bulk and to the automatic look-ups, which leave a held value alone
+        instead of trying it again. Nothing is remembered about being held: the value is read again each time, so it is
+        looked up as soon as its class is opened, or when the allowlist or your own domains change what it is. The
+        answers the sources gave before it was held stay on its page and keep counting in its verdict.
+      </p>
+      <p>
+        An administrator opens a class in <em>Settings → Threat intelligence</em>, under
+        <em>What the look-ups may send</em>: each of the three is closed until it is opened, behind a box to tick and
+        the name of the class to type, and opening and closing are written in the audit log. An opened class goes to
+        every source that is on. This setting is for the look-ups made outside playbooks only: a look-up a playbook
+        makes (the node <em>Reputation of an indicator</em>, a <code>!url</code> typed in a War Room) keeps to the
+        classes opened for that playbook, and neither opens anything for the other.
+      </p>
+      <p>
+        <strong>Making a domain yours.</strong> The guard knows your organisation's domains from
+        <em>Settings → Mail analysis → Your organisation's domains</em>, a list (edited under <em>Settings → Lists</em>)
+        that covers the subdomains of each entry. A name under one of them is an internal name: it is held in a look-up
+        and in what a playbook sends. The <em>IOC allowlist</em> is the other list the guard reads: an indicator that is
+        itself on it is never sent, and a longer value that names an entry of it is held as an allowlisted name.
       </p>
       <figure class="shot">
         <img src="img/iocs.png" alt="The Indicators tab" width="1600" height="1000" loading="lazy" />
@@ -1590,8 +1700,8 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Mail analysis</td>
               <td>
-                Your organisation's domains (look-alike senders are flagged) and the mail servers whose authentication
-                results are trusted (admins).
+                Your organisation's domains (look-alike senders are flagged, and a name under them is an internal name
+                to the data guard) and the mail servers whose authentication results are trusted (admins).
               </td>
             </tr>
             <tr>
@@ -1617,7 +1727,10 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
                 <em>Connectors</em>, not here. A source that needs no key (RDAP, Shodan's InternetDB, urlscan.io and
                 GreyNoise without an account) has a <em>Turn on</em> button that makes its instance. The API keys
                 entered on this page before 6.5 are listed until an instance has them: each moves by itself when the
-                pack of its source is installed (admins).
+                pack of its source is installed (admins). <em>What the look-ups may send</em> lists the classes of data
+                the data guard holds in an indicator (e-mail addresses, internal names and addresses, allowlisted
+                names), each closed until an administrator opens it: see
+                <a href="#held-look-ups">When a look-up is held</a>.
               </td>
             </tr>
             <tr>
@@ -1733,6 +1846,16 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
                 <a href="automation.html#connectors">Automation → Connectors</a>,
                 <a href="automation.html#fetch-status">Fetching</a> and
                 <a href="automation.html#mappers">Classifiers and mappers</a>.
+              </td>
+            </tr>
+            <tr>
+              <td>Credentials <em>(the Connectors role)</em></td>
+              <td>
+                Secrets kept once under a name, for the instances of the connectors to use: an API key or a token, or a
+                user name and a password. An instance names a credential instead of holding the value, so the value is
+                changed in one place and is still there when an instance is made again. The value is never shown; the
+                list says where each credential is used. See
+                <a href="automation.html#credentials">Automation → Credentials</a>.
               </td>
             </tr>
             <tr>
@@ -1859,8 +1982,9 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Connectors</td>
               <td>
-                Install connectors and add their instances, with the credentials of the other products. It does not
-                build playbooks by itself: give it with Playbooks to who does both.
+                Install connectors and add their instances, with the credentials of the other products, typed into an
+                instance or kept once in <em>Credentials</em>. It does not build playbooks by itself: give it with
+                Playbooks to who does both.
               </td>
             </tr>
             <tr>

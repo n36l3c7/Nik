@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, FileSearch, Pencil, Plus, Power, Trash2, X } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
-import { Badge, Button, MicroSkull } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * YARA rules settings section (admin only). Nik ships a built-in rule set;
@@ -56,24 +57,41 @@ export default function YaraRulesSection() {
     load()
   }, [load])
 
-  const startNew = () => {
+  // The rule set in the editor as it was opened: what it is compared with before it is left.
+  const openedRule = editing === null || editing === 'new' ? null : rules.find((r) => r.id === editing)
+  const unsaved = useUnsavedChanges(
+    editing !== null &&
+      (editing === 'new'
+        ? name.trim() !== '' || source !== TEMPLATE
+        : Boolean(openedRule) && (name !== openedRule.name || source !== openedRule.source)),
+    {
+      what: editing === 'new' ? 'The new YARA rule set' : 'The YARA rule set',
+      name: editing === 'new' ? '' : openedRule?.name,
+      save: () => save(),
+    },
+  )
+
+  const startNew = () => unsaved.leave(openNew)
+  const openNew = () => {
     setEditing('new')
     setName('')
     setSource(TEMPLATE)
     setValidation(null)
   }
 
-  const startEdit = (rule) => {
+  const startEdit = (rule) => unsaved.leave(() => openRule(rule))
+  const openRule = (rule) => {
     setEditing(rule.id)
     setName(rule.name)
     setSource(rule.source)
     setValidation(null)
   }
 
-  const cancel = () => {
-    setEditing(null)
-    setValidation(null)
-  }
+  const cancel = () =>
+    unsaved.leave(() => {
+      setEditing(null)
+      setValidation(null)
+    })
 
   const validate = async () => {
     try {
@@ -96,8 +114,10 @@ export default function YaraRulesSection() {
       }
       setEditing(null)
       await load()
+      return true
     } catch (err) {
       setError(err.message)
+      return false
     } finally {
       setSaving(false)
     }
@@ -178,9 +198,7 @@ export default function YaraRulesSection() {
         </div>
 
         {loading ? (
-          <p className="flex items-center gap-2 font-mono text-sm text-fg-muted">
-            <MicroSkull /> loading…
-          </p>
+          <Wait>Loading the rules…</Wait>
         ) : rules.length === 0 && editing === null ? (
           <p className="text-sm text-fg-muted">No admin rules yet. Add a rule set to extend the built-in detection.</p>
         ) : (
@@ -287,7 +305,7 @@ export default function YaraRulesSection() {
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" size="sm" disabled={saving || !name.trim()}>
+              <Button waiting={saving} type="submit" size="sm" disabled={saving || !name.trim()}>
                 {saving ? 'Saving…' : editing === 'new' ? 'Save rule set' : 'Save changes'}
               </Button>
               <Button type="button" variant="secondary" size="sm" onClick={validate}>

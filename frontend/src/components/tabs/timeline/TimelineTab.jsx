@@ -200,7 +200,7 @@ export default function TimelineTab({ incident }) {
       <div className="mx-auto max-w-3xl">
         <div className="border border-line bg-panel py-10">
           <EmptyState
-            icon={ListTree}
+            skull
             title="Nothing on the timeline yet"
             message="The timeline merges every timestamped event from the other tabs. Import evidence there and it shows up here in chronological order."
           />

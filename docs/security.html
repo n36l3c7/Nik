@@ -295,7 +295,10 @@
                 key of the instance, by the one command of its file marked for that kind of indicator: never a command
                 that changes something at the vendor or that needs a paid plan. For a domain a registry is sent the
                 registered domain only. Never a private or internal value, one on the allowlist, or one of an incident
-                marked TLP:RED: no setting and no playbook opens that
+                marked TLP:RED: no setting and no playbook opens that. A value that passes this rule is then read by the
+                data guard, whoever asks: one that carries an e-mail address, a name under the organisation's own
+                domains or a private address, or an allowlisted name is <strong>held</strong>, and no source is asked at
+                all, until an admin opens that class (<a href="#held-look-ups">below</a>)
               </td>
             </tr>
             <tr>
@@ -340,6 +343,47 @@
         </table>
       </div>
       <p>The app's own pages load nothing from outside: no CDN, no fonts, no telemetry.</p>
+      <h3 id="held-look-ups">What stops a look-up</h3>
+      <ul>
+        <li>
+          <strong>The rule of the look-ups</strong>, first and for everyone: a private, loopback or reserved address, an
+          internal name, a value on the IOC allowlist, a value of an incident marked TLP:RED and anything classified
+          TLP:RED are refused before a source is chosen. No setting, no playbook and no role loosens it.
+        </li>
+        <li>
+          <strong>The data guard</strong>, on what passed the rule. A value is read as any text that leaves is read: an
+          e-mail address in it, a name under the organisation's own domains (<em>Settings → Mail analysis</em>), a
+          private address or a name of the allowlist inside a longer value each give it a class, and a class that is not
+          open holds the look-up whole. Held, no source is asked: not some of them.
+        </li>
+        <li>
+          <strong>Which classes are open depends on who asks.</strong> A look-up a playbook makes is judged against the
+          classes opened for that playbook, as before. Every other look-up (<em>Check now</em>, a check in bulk, the
+          automatic look-ups of the worker, a list checked again) is judged against one setting of its own,
+          <em>Settings → Threat intelligence → What the look-ups may send</em>: three classes an indicator can carry
+          (e-mail addresses, internal names and addresses, allowlisted indicators), <strong>all closed</strong> on a new
+          server and after an upgrade to 6.6. The two do not mix: what is opened there opens nothing in a playbook, and
+          what a playbook has opened opens nothing there.
+        </li>
+        <li>
+          <strong>Opening a class</strong> is an admin's, behind the same double check as on a playbook (a box, and the
+          name of the class typed as it is written); it cannot be done by saving the other settings, and the classes
+          that are whole messages or files, and TLP:RED data, are not offered at all. Opening and closing are in the
+          audit log, opening with the sources that are on, and so is each <em>Check now</em> that was held. An opened
+          class goes to every source that is on, and to any turned on later.
+        </li>
+        <li>
+          <strong>Being held is not stored.</strong> The guard is asked again at each look-up, at each pass of the
+          worker and as a check in bulk goes on, so closing a class stops what was queued, and a held value is asked
+          about only once its class is open. The answers stored before a value was held stay, and are not refreshed
+          while it is held.
+        </li>
+        <li>
+          <strong>What the guard cannot see.</strong> It reads addresses, names and e-mail addresses. A person's name, a
+          token or a customer number written in the path of a link has no class and leaves with the link: do not turn on
+          the automatic look-ups of URLs where such links must not reach a vendor.
+        </li>
+      </ul>
 
       <h2 id="automation">Playbooks and scripts</h2>
       <p>
@@ -377,6 +421,73 @@
           allowlisted values typed by hand.
         </li>
         <li>
+          <strong>Files.</strong> The nodes that work on files (<a href="automation.html#file-nodes">Automation</a>) add
+          no way of running or opening one. A file a playbook adds is stored as it came, under its SHA-256, within the
+          size of an upload, and gets the analyses an upload gets; an analysis a playbook starts is one Nik already
+          makes of an artifact. The automation container still reads the store read-only and reaches no analysis worker:
+          a node writes what it wants as a row of the database, and the backend, which serves the same thing to an
+          analyst, does it. A file is passed between nodes by its id: what an analysis found is given bounded, and no
+          byte, string or body of a sample or a message enters what a run keeps. None of these nodes sends anything out;
+          what they give carries its class (a file name, a subject, an e-mail address), and the artifact made from a
+          content carries the classes of that content. No node deletes an artifact, downloads a sample or exports one: a
+          playbook can take an artifact out of an incident, tag it and give it a day to expire on, each written to the
+          audit log under <code>nik-automation</code> with the run.
+        </li>
+        <li>
+          <strong>The store and the worker.</strong> Everything a playbook keeps is written by the backend. The
+          <code>automation</code> container mounts the store read-only and is on no network with the analysis workers,
+          and nothing was added to either: the file a connector's command gives, the files of an archive, the
+          attachments of a message, a message a fetch made an incident from and a file a node downloads are handed over
+          through the database (<code>artifact_jobs</code>, the bytes in parts of 4 MB in
+          <code>artifact_job_parts</code>, deleted once the file is in the store or the job is given up) and the step
+          waits. The backend treats them as it treats an upload: the same size limit, the same analyses.
+        </li>
+        <li>
+          <strong>Archives.</strong> A connector's command (<code>unpack</code>) and the node
+          <em>Unpack an archive</em> take the files out of a zip, plain or protected (ZipCrypto, WinZip AES; read with
+          <code>pyzipper</code>, which Nik already used to write protected downloads). Unpacking happens in memory, in
+          the process that has the archive, and does nothing else: no member is run, opened by a viewer or written to a
+          disk; each is stored under its SHA-256 as an upload is. A member's name is never made a path: a name with
+          <code>..</code>, an absolute path or a device name is kept as text and shown as text. Links are skipped,
+          directories passed over, an archive inside the archive is stored and not unpacked. The limits are 200 members,
+          a total no larger than an upload, and 200 times as the most a member may inflate; sizes written in the archive
+          are not believed, reading stops at the limit. The password is given by an expression, never written to a
+          record, an output or a dry run, replaced by a mark in the arguments a run keeps, and not sent to the backend:
+          the worker unpacks, the files travel. A wrong password is said without repeating it. An archive that cannot be
+          unpacked (the password, not a zip, more inside than an archive may hold) is kept all the same, as the file it
+          is and nothing more: it is evidence, and the step fails naming the artifact.
+        </li>
+        <li>
+          <strong>Hosts downloads may come from.</strong> A connector reaches its instance and the hosts its file lists.
+          One whose vendor serves files from storage hosts the file cannot name may ask the instance for them
+          (<code>download_hosts_from</code>, <a href="automation.html#connector-download-hosts">Automation</a>): who
+          manages connectors writes host names, or <code>*.</code> and a name for the hosts under it, and nothing looser
+          (no bare <code>*</code>, no address or range, no scheme, port or path, no internal name; checked when the
+          instance is saved, each change in the audit log). It lets out one thing: a <code>GET</code> for a file, to one
+          of those hosts, over https, when a command whose answer is a file is given a link there or is redirected
+          there. <strong>No credential follows</strong>, and no header of the connector or of the request either: the
+          egress client strips the request to its address before it leaves for such a host, because a signed link needs
+          nothing else and a key sent to a storage host would be a key given away. No other request of the connector
+          goes there, an address inside the network is still refused, and the size limit of a file and the redirect
+          limit are those of every download. With the field empty, and for every connector that does not ask for it,
+          nothing changed.
+        </li>
+        <li>
+          <strong>A file from an address.</strong> <em>Download a file</em> is the one node that brings a file in
+          without a connector. It sends a <code>GET</code> with no credentials through the same guarded path as every
+          request of a playbook: only to a listed host (or any, when an admin allowed that), a redirect only to such a
+          host, an address inside the network only when that very host is listed, the address judged by the data guard,
+          the size of an upload enforced while reading, a time limit. What comes back is stored as it came and never
+          opened; the audit log names the host. The screens have no such action.
+        </li>
+        <li>
+          <strong>A file analysed as an e-mail or a capture.</strong> <em>Analyse as an e-mail</em> and
+          <em>Analyse as a capture</em> (the page and the menu of a file,
+          <code>POST /api/artifacts/{id}/analyse-as</code>, write permission; the node <em>Analyse an artifact</em>) run
+          the analysis an upload of the same file would get, on bytes Nik already holds: the mail parser, or the packet
+          capture worker under <code>PCAP_MAX_MB</code>. Nothing new reads a file.
+        </li>
+        <li>
           <strong>Expressions.</strong> The <code>{{ }}</code> language compares, counts and chooses, and is still not
           code: it is read by a parser written for it, a name is a path into the data or one of four functions, and
           nothing in it reaches Python (no attribute of an object, no call that is not in its table of filters). Its
@@ -407,6 +518,21 @@
           record what was sent, not credentials, and a value equal to a secret is blanked wherever it would be shown.
           Tokens obtained with OAuth2 and sessions opened by a connector live in memory, or encrypted in the state of a
           step that waits; never in a table in the clear.
+        </li>
+        <li id="stored-credentials">
+          <strong>Stored credentials.</strong> A secret can be kept once (<a href="automation.html#credentials"
+            >Settings, Credentials</a
+          >) and named by the instances that use it. It is encrypted with the same key as the secrets of an instance, in
+          a table of its own, and no route returns it; an instance stores the name, and the value is read at the moment
+          a request is built. It is managed and used with <code>connectors.manage</code>, the permission that already
+          lets a person type the same secret into an instance. Who may make an instance may make one that sends a
+          credential to an address of their choosing, without ever seeing it: give that permission as you would give the
+          secrets themselves. <strong>A credential never reaches a playbook</strong>: <code>credentials</code> is not a
+          name an expression can read, in a node, a script, the War Room, the Playground or a connector file, so who
+          writes a playbook cannot send one to a host of their choosing. A playbook only runs commands on an instance,
+          whose host is the one the instance was made for. What is blanked for a secret of an instance (a step, a dry
+          run, a debug session, an error) is blanked for a credential, and the audit log records that one was made,
+          changed or deleted, never its value.
         </li>
         <li id="connectors">
           <strong>Connectors are data, not code.</strong> A connector is a YAML file read with a safe loader and checked
@@ -557,9 +683,11 @@
         </li>
         <li>
           <code>SECRET_KEY</code> encrypts the credentials of the instances of connectors (the keys of the
-          threat-intelligence sources among them) and the TLS key logs stored in the database. It lives in
-          <code>.env</code>, which <code>deploy/backup.sh</code> copies with each backup: a backup directory holds the
-          data, the samples and the key that decrypts the secrets.
+          threat-intelligence sources among them), the <a href="#stored-credentials">stored credentials</a> they name
+          and the TLS key logs stored in the database. Changing it with <code>SECRET_KEY_PREVIOUS</code> set re-encrypts
+          all of them, the keys an instance holds beside its first included. It lives in <code>.env</code>, which
+          <code>deploy/backup.sh</code> copies with each backup: a backup directory holds the data, the samples and the
+          key that decrypts the secrets.
         </li>
         <li>
           Treat a backup as you treat the server: it contains live malware and password hashes. Keep a copy off the

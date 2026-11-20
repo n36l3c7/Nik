@@ -3,7 +3,7 @@ import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
 import { notificationKind, safeLink } from '../../domain/timers.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
-import { Badge, Button, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 
 /*
  * What the account was told: a task given, a reminder, an approval that
@@ -38,10 +38,12 @@ export default function NotificationsDialog({ onClose }) {
       }
     >
       {notifications.length === 0 ? (
-        <p className="text-sm text-fg-muted">
-          Nothing yet. You are told here when a task is given to you, an approval waits, someone mentions you in a War
-          Room, or a timer of an incident you own passes its time.
-        </p>
+        <EmptyState
+          skull
+          compact
+          title="Nothing yet"
+          message="You are told here when a task is given to you, an approval waits, someone mentions you in a War Room, or a timer of an incident you own passes its time."
+        />
       ) : (
         <ul aria-label="Notifications" className="flex flex-col divide-y divide-line-soft border border-line">
           {notifications.map((item) => {

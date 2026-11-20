@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../services/api.js'
-import { durationLabel, sourceLine } from '../../domain/iocLibrary.js'
-import { Button, Modal, StatCard } from '../ui/index.js'
+import { durationLabel, heldLine, sourceLine } from '../../domain/iocLibrary.js'
+import { Button, Modal, StatCard, Wait } from '../ui/index.js'
 
 /*
  * Bulk check: before anything is asked, what it costs against each source's
@@ -66,7 +66,7 @@ export default function BulkCheckDialog({ request, onClose, onStarted }) {
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={busy || !plan || plan.toAsk === 0} onClick={start}>
+            <Button waiting={busy} disabled={busy || !plan || plan.toAsk === 0} onClick={start}>
               {busy ? 'Starting…' : 'Start'}
             </Button>
           </span>
@@ -74,9 +74,13 @@ export default function BulkCheckDialog({ request, onClose, onStarted }) {
       }
     >
       {!plan ? (
-        <p role={error ? 'alert' : 'status'} className={`text-sm ${error ? 'font-mono text-high' : 'text-fg-muted'}`}>
-          {error ?? 'Counting…'}
-        </p>
+        error ? (
+          <p role="alert" className="font-mono text-sm text-high">
+            {error}
+          </p>
+        ) : (
+          <Wait>Counting…</Wait>
+        )
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -85,6 +89,13 @@ export default function BulkCheckDialog({ request, onClose, onStarted }) {
             <StatCard label="Never sent out" value={plan.neverSent} />
             <StatCard label="Takes about" value={durationLabel(plan.seconds)} />
           </div>
+          {plan.held > 0 && (
+            <p role="note" aria-label="Held by the data guard" className="border-l-2 border-med-line px-3 text-sm">
+              <b>{heldLine(plan.held)}</b> Each carries a class of data the guard holds (an e-mail address in a link, a
+              name under your own domains, an allowlisted name) and is not asked about until an administrator opens the
+              class in Settings, Threat intelligence.
+            </p>
+          )}
           {plan.sources.length === 0 ? (
             <p className="text-sm text-fg-muted">
               {plan.toAsk === 0 && plan.reused > 0

@@ -87,12 +87,17 @@
         "json": {
           "data": [
             {
+              "id": "9200000000000000001",
               "eventType": "Process Creation",
-              "srcProcName": "powershell.exe",
-              "endpointName": "WKS-FINANCE-01"
+              "processName": "powershell.exe",
+              "agentName": "WKS-FINANCE-01",
+              "agentId": "1234567890123456789",
+              "srcProcCmdLine": "powershell -enc SQBFAFgA",
+              "createdAt": "2026-11-16T08:29:58.000000Z"
             }
           ],
           "pagination": {
+            "totalItems": 1,
             "nextCursor": null
           }
         }
@@ -103,11 +108,16 @@
     "query_id": "q1a2b3c4",
     "events": [
       {
+        "id": "9200000000000000001",
         "eventType": "Process Creation",
-        "srcProcName": "powershell.exe",
-        "endpointName": "WKS-FINANCE-01"
+        "processName": "powershell.exe",
+        "agentName": "WKS-FINANCE-01",
+        "agentId": "1234567890123456789",
+        "srcProcCmdLine": "powershell -enc SQBFAFgA",
+        "createdAt": "2026-11-16T08:29:58.000000Z"
       }
     ],
-    "count": 1
+    "count": 1,
+    "total": 1
   }
 }

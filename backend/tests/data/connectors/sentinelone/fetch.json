@@ -8,7 +8,7 @@
         "method": "GET",
         "path": "/web/api/v2.1/threats",
         "query": {
-          "createdAt__gt": "2026-11-16T08:00:00Z",
+          "createdAt__gte": "2026-11-16T08:00:00Z",
           "sortBy": "createdAt",
           "sortOrder": "asc",
           "limit": 100

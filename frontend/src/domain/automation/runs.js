@@ -100,9 +100,9 @@ export function runnable(playbooks, { dry = false, on = '' } = {}) {
   )
 }
 
-/** What "Run a playbook…" sends for an artifact: null for a kind no playbook runs on (a capture, a mailbox). */
+/** What "Run a playbook…" sends for an artifact: null for a kind no playbook runs on (a mailbox). */
 export function artifactTarget(artifact) {
-  if (!artifact || !['mail', 'file', 'url'].includes(artifact.kind)) return null
+  if (!artifact || !['mail', 'file', 'pcap', 'url'].includes(artifact.kind)) return null
   return { kind: 'artifact', id: artifact.id, what: artifact.kind, label: artifact.name || artifact.id }
 }
 

@@ -1,0 +1,53 @@
+{
+  "args": {
+    "script_id": "7200000000000000001",
+    "task_description": "Browser history for INC-2026-0417",
+    "run_at": "2026-11-21T02:00:00Z",
+    "agent_id": "1234567890123456789"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/remote-ops/schedule/remote-script",
+        "json": {
+          "filter": {
+            "ids": [
+              "1234567890123456789"
+            ]
+          },
+          "data": {
+            "action": {
+              "scriptId": "7200000000000000001",
+              "taskDescription": "Browser history for INC-2026-0417",
+              "outputDestination": "SentinelCloud"
+            },
+            "scheduling": {
+              "scheduledTime": {
+                "utc": "2026-11-21T02:00:00Z",
+                "tz": "UTC"
+              }
+            }
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1,
+            "scheduledTaskId": "7500000000000000001"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "scheduled_task_id": "7500000000000000001",
+    "affected": 1,
+    "pending_execution_id": null
+  }
+}

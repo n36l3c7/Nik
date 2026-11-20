@@ -179,7 +179,7 @@ export default function CommandsSection({ incident, shellId, commands = [] }) {
   if (commands.length === 0) {
     return (
       <EmptyState
-        icon={Terminal}
+        skull
         title="No commands to show"
         message="Load the shell history from the 'Data source' card above."
       />

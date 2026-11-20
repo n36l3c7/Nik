@@ -218,6 +218,7 @@ function Objects({ capture, onDownload, onSend, sending }) {
                   Zip
                 </Button>
                 <Button
+                  waiting={sending === o.token}
                   size="xs"
                   variant="secondary"
                   icon={Bug}

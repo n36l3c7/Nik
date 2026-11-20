@@ -1,0 +1,42 @@
+{
+  "args": {
+    "site_ids": [
+      "2222222222222222222"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/web/api/v2.1/unified-exclusions/export",
+        "query": {
+          "siteIds": "2222222222222222222"
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": "[{\"exclusionName\": \"ERP binaries\", \"type\": \"path\", \"value\": \"C:\\\\ERP\\\\bin\\\\\"}]",
+        "headers": {
+          "content-disposition": "attachment; filename=\"exclusions.json\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "exclusions.json",
+      "type": "text/plain",
+      "text": "[{\"exclusionName\": \"ERP binaries\", \"type\": \"path\", \"value\": \"C:\\\\ERP\\\\bin\\\\\"}]"
+    }
+  ],
+  "outputs": {
+    "artifact": "artifact:exclusions.json",
+    "name": "exclusions.json",
+    "sha256": "sha256:exclusions.json",
+    "size": 78,
+    "type": "text/plain"
+  }
+}

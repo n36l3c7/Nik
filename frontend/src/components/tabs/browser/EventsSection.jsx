@@ -293,7 +293,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
   if (history.length === 0 && downloads.length === 0) {
     return (
       <EmptyState
-        icon={Activity}
+        skull
         title="No events to show"
         message="Load the browser history or downloads from the 'Data sources' card."
       />

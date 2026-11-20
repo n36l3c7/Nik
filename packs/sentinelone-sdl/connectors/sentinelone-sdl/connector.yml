@@ -1,20 +1,30 @@
 # SentinelOne Singularity Data Lake (the SIEM) and the alerts of the
 # Singularity Operations Center.
 #
-# Neither has a public reference. This file was written from SentinelOne's
-# own code on GitHub (Sentinel-One/purple-mcp: the long-running query API
-# under /sdl/v2/api/queries and the alerts under
-# /web/api/v2.1/unifiedalerts/graphql) and, for the changes to an alert, from
-# the Cortex XSOAR integration, which is the only public source for them.
-# Three things in it are the least certain and are marked below. Not run
-# against a real console: see "verified" below.
+# The queries are written from SentinelOne's own reference of the API (the
+# one the console shows to a signed-in user): launching a query, polling it
+# and deleting it under /sdl/v2/api/queries, the header that routes the poll
+# to the server that started the query, the bearer token. The reference says
+# the result of a query is "an object" and no more: the columns and the rows
+# of a PowerQuery are read where SentinelOne's own code on GitHub
+# (Sentinel-One/purple-mcp) reads them.
+#
+# The alerts (/web/api/v2.1/unifiedalerts/graphql) are not in that reference.
+# They are written from purple-mcp and, for the changes to an alert, from the
+# Cortex XSOAR integration, which is the only public source for them: the two
+# things that are the least certain are marked below. Not run against a real
+# console: see "verified" below.
 #
 # The token is one of a service user of the console, with its scope at
 # account or site level (a token of global scope is refused by the Data Lake).
+#
+# Deep Visibility, the custom detection rules and their alerts are commands
+# of the SentinelOne EDR connector: they are part of the Management API,
+# which takes the token another way.
 name: SentinelOne SIEM
 id: sentinelone-sdl
-version: 3
-description: PowerQuery searches in the Singularity Data Lake, and the alerts of the Singularity Operations Center.
+version: 4
+description: PowerQuery and event searches in the Singularity Data Lake, and the alerts of the Singularity Operations Center.
 api_version: "SDL long-running query API v2 (/sdl/v2/api/queries); unified alerts GraphQL (/web/api/v2.1/unifiedalerts/graphql)"
 verified: false
 configuration:
@@ -42,6 +52,7 @@ commands:
       - { name: query, type: text, required: true, description: "The PowerQuery: event.type = 'Process Creation' | limit 100" }
       - { name: start_time, type: text, required: true, description: "From when: an ISO 8601 time, or as the Data Lake reads it (24h)" }
       - { name: end_time, type: text, description: To when (now when empty) }
+      - { name: account_ids, type: list, description: "Only in these accounts (ids, as a list or separated by commas)" }
     steps:
       - name: launch
         request:
@@ -52,8 +63,8 @@ commands:
             tenant: true
             startTime: "{{ args.start_time }}"
             endTime: "{{ args.end_time }}"
+            accountIds: "{{ if(args.account_ids, args.account_ids | join(',') | split(',')) }}"
             queryPriority: LOW
-            # Least certain: the name of the key that holds the query. It is "pq" in SentinelOne's code.
             pq: { query: "{{ args.query }}", resultType: TABLE }
         error: { message: "{{ response.error.message }}" }
       - name: result
@@ -66,10 +77,11 @@ commands:
             X-Dataset-Query-Forward-Tag: "{{ steps.launch.headers['x-dataset-query-forward-tag'] | default('') }}"
         error: { message: "{{ response.error.message }}" }
         poll:
-          until: { all: [{ left: "{{ response.stepsCompleted }}", op: gte, right: "{{ response.totalSteps }}" }] }
+          until: { all: [{ left: "{{ response.stepsCompleted }}", op: gte, right: "{{ response.stepsTotal }}" }] }
           fail_when: { all: [{ left: "{{ response.error.message }}", op: exists }] }
           every: 2
           timeout: 280
+      # A query is deleted once it is read: the reference asks for it.
       - name: cleanup
         request:
           method: DELETE
@@ -81,6 +93,75 @@ commands:
       columns: "{{ steps.result.response.data.columns | pluck('name') }}"
       rows: "{{ steps.result.response.data.values }}"
       matches: "{{ steps.result.response.data.matchCount }}"
+      count: "{{ steps.result.response.data.values | length }}"
+
+  - name: search-events
+    description: The events that match a filter over a time range, in order of time, as the Event Search of the console lists them.
+    timeout: 120
+    arguments:
+      - { name: filter, type: text, required: true, description: "What to match, as the search field of the console takes it: event.type = 'Process Creation' and endpoint.name = 'WKS-FINANCE-01'" }
+      - { name: start_time, type: text, required: true, description: "From when: an ISO 8601 time, or as the Data Lake reads it (24h)" }
+      - { name: end_time, type: text, description: To when (now when empty) }
+      - { name: limit, type: number, default: 100, description: How many events to read (the Data Lake gives 1000 when not said) }
+      - { name: oldest_first, type: bool, default: false, description: From the oldest to the newest (from the newest when off) }
+      - { name: cursor, type: text, description: "To go on from where an earlier search stopped: the cursor its answer gave" }
+      - { name: account_ids, type: list, description: "Only in these accounts (ids, as a list or separated by commas)" }
+    steps:
+      - name: launch
+        request:
+          method: POST
+          path: /sdl/v2/api/queries
+          json:
+            queryType: LOG
+            tenant: true
+            startTime: "{{ args.start_time }}"
+            endTime: "{{ args.end_time }}"
+            accountIds: "{{ if(args.account_ids, args.account_ids | join(',') | split(',')) }}"
+            queryPriority: LOW
+            log:
+              filter: "{{ args.filter }}"
+              limit: "{{ args.limit }}"
+              ascending: "{{ args.oldest_first }}"
+              cursor: "{{ args.cursor }}"
+        error: { message: "{{ response.error.message }}" }
+      - name: result
+        request:
+          method: GET
+          path: "/sdl/v2/api/queries/{{ steps.launch.response.id }}"
+          query: { lastStepSeen: 0 }
+          headers:
+            X-Dataset-Query-Forward-Tag: "{{ steps.launch.headers['x-dataset-query-forward-tag'] | default('') }}"
+        error: { message: "{{ response.error.message }}" }
+        poll:
+          until: { all: [{ left: "{{ response.stepsCompleted }}", op: gte, right: "{{ response.stepsTotal }}" }] }
+          fail_when: { all: [{ left: "{{ response.error.message }}", op: exists }] }
+          every: 2
+          timeout: 280
+      - name: cleanup
+        request:
+          method: DELETE
+          path: "/sdl/v2/api/queries/{{ steps.launch.response.id }}"
+          headers:
+            X-Dataset-Query-Forward-Tag: "{{ steps.launch.headers['x-dataset-query-forward-tag'] | default('') }}"
+        success: { status: [200, 204, 404] }
+    # The reference says the result is an object and does not describe it: it is given as it comes.
+    outputs:
+      data: "{{ steps.result.response.data }}"
+      query_id: "{{ steps.launch.response.id }}"
+
+  - name: list-saved-searches
+    description: The searches saved in the Event Search of the console, private to the token's user or shared in its scope.
+    arguments:
+      - { name: type, type: choice, choices: [PRIVATE, SHARED], default: PRIVATE, description: Whose searches }
+    request:
+      method: GET
+      path: /sdl/v2/api/saved-searches
+      query: { type: "{{ args.type }}" }
+    error: { message: "{{ response.error.message }}" }
+    outputs:
+      searches: "{{ response }}"
+      names: "{{ response | pluck('name') }}"
+      count: "{{ response | length }}"
 
   - name: get-alert
     description: One alert of the Singularity Operations Center.

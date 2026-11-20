@@ -138,6 +138,19 @@ class SaveAs(_Strict):
     type: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class Unpack(_Strict):
+    """A file that comes back is an archive, and the files inside it are what is wanted.
+
+    The archive is kept as it came and each file inside it becomes an artifact of its own, taken out
+    of the archive: read in memory, never run, never written anywhere but the store. ``password`` is a
+    template over what is sent (``args``, ``config``, ``secret``): an archive of collected files is
+    usually protected, and the password is the one the request asked for. It is treated as a secret:
+    an argument it reads is not shown in the run."""
+
+    format: Literal["zip"] = "zip"
+    password: str | None = Field(default=None, min_length=1, max_length=500)
+
+
 class FilePart(_Strict):
     """A file Nik holds, as a request sends it: which one, under what name, as what type.
 
@@ -175,6 +188,8 @@ class RequestSpec(_Strict):
     # bytes are kept as an artifact and {{ response }} describes it.
     answer: Literal["auto", "text", "file"] = "auto"
     save_as: SaveAs | None = None
+    # The file that comes back is an archive: the files inside it are kept as artifacts too.
+    unpack: Unpack | None = None
 
     @model_validator(mode="after")
     def _one_body(self):
@@ -194,6 +209,8 @@ class RequestSpec(_Strict):
             raise ValueError(f"a {self.method} request has no body")
         if self.save_as is not None and self.answer != "file":
             raise ValueError('"save_as" belongs to a request whose answer is a file: answer: file')
+        if self.unpack is not None and self.answer != "file":
+            raise ValueError('"unpack" belongs to a request whose answer is a file: answer: file')
         return self
 
     @property
@@ -345,6 +362,19 @@ class Command(_Strict):
     @property
     def gives_file(self) -> bool:
         return any(request.answer == "file" for request in self.requests())
+
+    @property
+    def unpacks(self) -> bool:
+        return any(request.unpack is not None for request in self.requests())
+
+    @property
+    def secret_arguments(self) -> set[str]:
+        """The arguments the password of an archive is read from: not shown in a run."""
+        found: set[str] = set()
+        for request in self.requests():
+            if request.unpack is not None and request.unpack.password:
+                found.update(re.findall(r"\bargs\.([a-z][a-z0-9_]*)", request.unpack.password))
+        return found
 
     @property
     def sends_file(self) -> bool:
@@ -546,8 +576,8 @@ class ConfigParam(_Strict):
     name: str
     label: str = Field(default="", max_length=100)
     type: Literal[
-        "url", "text", "number", "bool", "choice", "secret", "basic", "bearer", "header", "query", "oauth2_client",
-        "session", "zscaler",
+        "url", "text", "number", "bool", "choice", "hosts", "secret", "basic", "bearer", "header", "query",
+        "oauth2_client", "session", "zscaler",
     ] = "text"  # fmt: skip
     required: bool = False
     default: Any = None
@@ -634,6 +664,11 @@ class ConnectorFile(_Strict):
     # in the file: never a template, never an address. A command reaches one by giving the full https
     # address as its ``path``; the credentials of the instance are sent to the host of ``base_url`` only.
     more_hosts: list[str] = Field(default_factory=list, max_length=40)
+    # The hosts a file may be downloaded from, when the file cannot name them: the name of a configuration
+    # entry of type ``hosts``, which an administrator fills in the instance (6.6, download_hosts.py). Only a
+    # request whose answer is a file goes there, without the credentials of the instance or any header of
+    # the connector. Left out, a connector reaches its instance and ``more_hosts`` and nothing else.
+    download_hosts_from: str | None = Field(default=None, max_length=60)
     # How its reputation commands count among the sources of the look-ups (6.5); weight 1 when left out.
     lookups: Lookups | None = None
 
@@ -667,6 +702,20 @@ class ConnectorFile(_Strict):
         commands = [command.name for command in self.commands]
         if len(set(commands)) != len(commands):
             raise ValueError("two commands have the same name")
+        listed = [param.name for param in self.configuration if param.type == "hosts"]
+        if self.download_hosts_from is None:
+            if listed:
+                raise ValueError(
+                    f'the configuration entry "{listed[0]}" is a list of hosts: "download_hosts_from" names it'
+                )
+        else:
+            if listed != [self.download_hosts_from]:
+                raise ValueError(
+                    '"download_hosts_from" names the one configuration entry of type hosts: '
+                    f"- {{ name: {self.download_hosts_from}, type: hosts }}"
+                )
+            if not any(command.gives_file for command in self.commands):
+                raise ValueError('"download_hosts_from" is for a connector with a command whose answer is a file')
         if self.lookups is not None and not any(command.reputation for command in self.commands):
             raise ValueError('"lookups" is for a connector with a command marked "reputation"')
         if self.native is None:
@@ -807,7 +856,11 @@ def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, pr
             problems.append(Problem(_line_of(lines, loc), f"{error.message} (in {value[:80]!r})", _where(loc)))
             return
         for name, _position in found:
-            if name not in allowed:
+            if name == "credentials" and name not in allowed:
+                # A stored credential is named in a field of an instance; a file reads what the instance
+                # holds as {{ secret.<name> }} and never knows where the value came from.
+                problems.append(Problem(_line_of(lines, loc), ex.CREDENTIALS_ELSEWHERE, _where(loc)))
+            elif name not in allowed:
                 where = (
                     "what is sent"
                     if "secret" in allowed
@@ -967,6 +1020,10 @@ def load(text: str | bytes) -> ConnectorFile:
     return connector
 
 
+# The credentials that are one value, and what that value is called among the secrets of an instance.
+_ONE_VALUE = {"bearer": "token", "header": "value", "query": "value"}
+
+
 def _paths(value: Any, root: str) -> set[str]:
     """The first names read under ``root`` by the templates of a value: ``config.url`` → ``url``."""
     return ex.first_names(value, root)
@@ -980,6 +1037,11 @@ def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Probl
     if auth is not None and auth.type in ("session", "zscaler", "basic"):
         # What a session logs in with: the parts of the credentials.
         secret |= {"username", "password", "api_key"}
+    elif auth is not None and auth.type in _ONE_VALUE:
+        # Credentials of one value are added to every request to the instance by the runtime, and a file
+        # says nothing of them. It may still write the value by hand where the runtime adds nothing: a
+        # request to another host the file lists (``more_hosts``), which the same key opens (6.6).
+        secret |= {_ONE_VALUE[auth.type]}
     for name in sorted(_paths(raw, "config") - plain):
         if name in secret:
             problems.append(Problem(0, f'"{name}" is a secret: read it as {{{{ secret.{name} }}}}', "config"))
@@ -1094,6 +1156,7 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "version": connector.version,
         "description": connector.description,
         "moreHosts": list(connector.more_hosts),
+        "downloadHostsFrom": connector.download_hosts_from,
         "apiVersion": connector.api_version,
         "verified": connector.verified,
         "native": connector.native,

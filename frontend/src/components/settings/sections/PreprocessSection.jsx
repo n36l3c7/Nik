@@ -15,7 +15,8 @@ import {
 } from '../../../domain/mappers.js'
 import { instancePath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
+import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
  * Incidents → Pre-processing rules (who configures incidents).
@@ -33,6 +34,11 @@ const LABEL = 'text-xs font-medium text-fg-muted'
 
 function RuleDialog({ rule, same, onClose, onSaved }) {
   const [form, setForm] = useState(() => ruleForm(rule))
+  const [opened] = useState(() => JSON.stringify(ruleForm(rule)))
+  const unsaved = useUnsavedChanges(JSON.stringify(form) !== opened, {
+    what: rule?.id ? 'The preprocess rule' : 'The new preprocess rule',
+    name: rule?.id ? rule.name : '',
+  })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const problem = ruleProblem(form)
@@ -59,7 +65,7 @@ function RuleDialog({ rule, same, onClose, onSaved }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => unsaved.leave(onClose)}
       title={form.id ? `Rule: ${rule.name}` : 'New rule'}
       maxWidth="max-w-2xl"
       footer={
@@ -312,7 +318,7 @@ export default function PreprocessSection() {
           Loading the rules…
         </p>
       ) : rules.length === 0 ? (
-        <p className="text-sm text-fg-muted">No rule yet: every new item becomes an incident.</p>
+        <EmptyState skull title="No rule yet" message="No rule yet: every new item becomes an incident." />
       ) : (
         <ol aria-label="Pre-processing rules" className="flex flex-col divide-y divide-line-soft border border-line">
           {rules.map((rule, index) => (

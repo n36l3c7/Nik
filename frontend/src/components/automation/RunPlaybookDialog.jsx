@@ -7,6 +7,7 @@ import { objectName } from '../../domain/automation/catalog.js'
 import { inputValues, runnable } from '../../domain/automation/runs.js'
 import { Button, Modal } from '../ui/index.js'
 import IncidentPicker from '../ui/IncidentPicker.jsx'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
  * "Run a playbook…": choose the playbook, what it runs on, what it is given,
@@ -54,6 +55,11 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
   const [typed, setTyped] = useState({})
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  // What was typed for the inputs of the playbook; the choices beside it are a click to make again.
+  const unsaved = useUnsavedChanges(
+    Object.values(typed).some((value) => String(value ?? '').trim() !== ''),
+    { what: 'The inputs of the run' },
+  )
 
   useEffect(() => {
     let alive = true
@@ -123,7 +129,7 @@ function OpenDialog({ runRequest, closeRun, onStarted }) {
   return (
     <Modal
       open={open}
-      onClose={closeRun}
+      onClose={() => unsaved.leave(closeRun)}
       title={fixed && chosen ? `Run “${chosen.name}”` : 'Run a playbook'}
       footer={
         <>

@@ -96,7 +96,13 @@ def put_settings(
             if body.mail is not None
             else current["mail"]
         ),
-        "enrichment": body.enrichment.model_dump() if body.enrichment is not None else current["enrichment"],
+        # What the data guard lets the look-ups send is not saved here: opening a class has a route
+        # of its own, behind a double check (PUT /api/enrichment/guard), and saving the rest keeps it.
+        "enrichment": (
+            {**body.enrichment.model_dump(), "guardOpen": current["enrichment"]["guardOpen"]}
+            if body.enrichment is not None
+            else current["enrichment"]
+        ),
     }
     changed = sorted(key for key, value in doc.items() if value != current.get(key))
     # What is a list is written to its list; the document keeps which list that is.

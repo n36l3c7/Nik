@@ -1,0 +1,38 @@
+{
+  "args": {
+    "script_id": "7200000000000000001",
+    "agent_ids": [
+      "1234567890123456789"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/remote-scripts/guardrails/check",
+        "json": {
+          "data": {
+            "scriptId": "7200000000000000001",
+            "agentIds": [
+              "1234567890123456789"
+            ]
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "requiresApproval": true
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "requires_approval": true
+  }
+}

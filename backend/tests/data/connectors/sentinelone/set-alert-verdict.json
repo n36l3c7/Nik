@@ -1,0 +1,38 @@
+{
+  "args": {
+    "analyst_verdict": "TRUE_POSITIVE",
+    "alert_id": "6100000000000000001"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/web/api/v2.1/cloud-detection/alerts/analyst-verdict",
+        "json": {
+          "filter": {
+            "ids": [
+              "6100000000000000001"
+            ]
+          },
+          "data": {
+            "analystVerdict": "TRUE_POSITIVE"
+          }
+        },
+        "headers": {
+          "Authorization": "ApiToken s1-service-user-token-0123456789"
+        }
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "affected": 1
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "affected": 1
+  }
+}
