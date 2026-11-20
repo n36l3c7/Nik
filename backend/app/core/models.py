@@ -47,9 +47,6 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     # What the account may do: a list of role names (core/permissions.py).
     roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    # The single role of releases before 4.0, kept filled with the most able
-    # role for a downgrade; the code does not read it.
-    role: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
     # Raised each time the roles change. The roles themselves are read on every
     # request; the counter is for whatever keeps a copy of them (a long-lived
     # worker, a client) to notice that its copy is old.
@@ -655,8 +652,6 @@ class ApiKey(Base):
 
     Permissions are set by the admin at creation and tied to the key:
     - ``roles``  a list of role names (core/permissions.py), as on an account.
-    - ``role`` and ``scopes`` are what releases before 4.0 stored; they are
-      kept filled for a downgrade and the code does not read them.
     - ``expires_at`` optional ISO timestamp after which the key is rejected.
 
     A revoked key has a non-null ``revoked_at`` and is rejected.
@@ -669,8 +664,6 @@ class ApiKey(Base):
     prefix: Mapped[str] = mapped_column(String, nullable=False)
     key_hash: Mapped[str] = mapped_column(String, nullable=False)
     roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    role: Mapped[str] = mapped_column(String, nullable=False, default="analyst")
-    scopes: Mapped[str] = mapped_column(String, nullable=False, default="read,write")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     expires_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -1124,6 +1117,9 @@ class Connection(Base):
     fetch_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     fetch_state: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     fetch_status: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # How this instance fetches where it differs from its connector (6.4): {intervalSeconds,
+    # firstFetch, lookbackMinutes}. A value left out is the connector's (fetch.settings_of).
+    fetch_settings: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # More keys than one (6.1): the credentials beside the first, encrypted like ``secrets``, and how
     # the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours, mainName}
     # (automation/instance_keys.py).
@@ -1624,6 +1620,9 @@ INSTANCE_COLUMNS: dict[str, tuple[str, ...]] = {
     "connections": ("enabled",),
     "connectors": ("logo", "logo_type", "readme"),
 }
+
+# The column migration 0043_instance_fetch adds where missing.
+INSTANCE_FETCH_COLUMNS: dict[str, tuple[str, ...]] = {"connections": ("fetch_settings",)}
 
 # Created by migration 0035_incident_numbers where missing; and the column it adds.
 NUMBER_TABLES = ("sequences",)

@@ -97,7 +97,7 @@ def _rows(
     db: OrmSession, widget: dict, query: str, principal: Any, source: Callable[[], Iterable[dict]] | None
 ) -> tuple[list[str], list[list[Any]], int]:
     """The rows of a table widget: its columns, the first rows, how many there are."""
-    entity = ql.entity_of(widget["entity"])
+    entity = ql.entity_of(widget["entity"], db)
     options = widget.get("options") or {}
     specs = [spec for spec in (entity.field(name) for name in options.get("columns") or []) if spec is not None]
     specs = specs or [entity.fields[0]]
@@ -108,7 +108,7 @@ def _rows(
         shown = [[spec.getter(row) if spec.getter else None for spec in specs] for row in kept[:limit]]
         return [spec.name for spec in specs], shown, len(kept)
     specs = [spec for spec in specs if spec.column is not None] or [entity.fields[0]]
-    conditions = ql.sql(entity.name, query, principal)
+    conditions = ql.sql(entity.name, query, principal, db=db)
     ql.statement_timeout(db)
     newest = entity.field(TIME_FIELD.get(entity.name, "")) or specs[0]
     found = db.execute(

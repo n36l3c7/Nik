@@ -47,6 +47,7 @@ import { mailboxFormatOf } from './domain/mailbox.js'
 import NewAnalysisDialog from './components/artifacts/NewAnalysisDialog.jsx'
 import PastePrompt from './components/artifacts/PastePrompt.jsx'
 import KeyboardShortcuts from './components/keyboard/KeyboardShortcuts.jsx'
+import { useAmbientMenu } from './components/menu/usePageMenu.js'
 import { kindForTab } from './domain/artifactRegistry.js'
 import { recognise } from './domain/pasted.js'
 import { useIocLookup } from './context/IocLookupContext.jsx'
@@ -544,6 +545,16 @@ export default function App() {
 
   // The list of keyboard shortcuts ("?" or the header button).
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  // What the right-click menu needs of the application for the entries that belong to no page.
+  useAmbientMenu({
+    signedIn: isAuthenticated,
+    canRead,
+    canWrite,
+    openSearch: navigation.openSearch,
+    openShortcuts: () => setShortcutsOpen(true),
+    openIoc,
+    addIndicator: (text) => openAdd({ text }),
+  })
 
   // Incident report dialog (preview, PDF/HTML download).
   const [reportOpen, setReportOpen] = useState(false)
@@ -986,6 +997,7 @@ export default function App() {
                           kinds={evidenceKinds}
                           kind={resolved.kind}
                           onKind={chooseTab}
+                          onAddFile={canWrite ? (file) => placeFile(file, { asEvidence: true }) : undefined}
                         />
                       ) : (
                         <ActiveTabComponent incident={activeIncident} />

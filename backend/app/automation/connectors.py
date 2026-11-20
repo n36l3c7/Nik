@@ -82,6 +82,8 @@ ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice", "
 MAX_PAGES = 100
 PAGE_MAX = 1000
 FETCH_MIN_INTERVAL = 30
+FETCH_MAX_INTERVAL = 86_400
+LOOKBACK_MAX_MINUTES = 1440
 _FIRST_FETCH = re.compile(r"^\s*(\d{1,4})\s*(minute|hour|day)s?\s*$")
 
 
@@ -392,13 +394,21 @@ class Command(_Strict):
 class FetchSpec(_Strict):
     """How a connection brings alerts in: one request, read to the end of its pages, again and again.
 
-    The request reads ``state``: what the last cycle left in ``next_state``, and before the first
-    cycle what ``first_state`` says, which reads ``first`` (the moment ``first_fetch`` ago, as
-    ``first.iso``, ``first.epoch``, ``first.epoch_ms``). Each item of the answer is told apart by
-    ``item_id``: one seen before is skipped."""
+    A request that filters by time reads ``since`` (``since.iso``, ``since.epoch``,
+    ``since.epoch_ms``): the moment to ask from, which Nik works out. Before the first cycle it is
+    the moment ``first_fetch`` ago; afterwards the newest time the cycles saw on an item, less the
+    look-back of the instance. The time of an item is ``item_time``, or ``occurred`` when the
+    request filters on that. The comparison is to include the moment itself (``>=``): what comes
+    back a second time is skipped, because each item is told apart by ``item_id``.
 
-    interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=86_400)
+    A request that goes on from a cursor reads ``state`` instead: what the last cycle left in
+    ``next_state``, and before the first cycle what ``first_state`` says, which reads ``first``
+    (the moment ``first_fetch`` ago). ``interval_seconds``, ``first_fetch`` and
+    ``lookback_minutes`` are what an instance starts with: each is changed in the instance."""
+
+    interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=FETCH_MAX_INTERVAL)
     first_fetch: str = Field(default="3 days", max_length=40)
+    lookback_minutes: int = Field(default=0, ge=0, le=LOOKBACK_MAX_MINUTES)
     # None for a native connector, whose runtime knows how to read what is new.
     request: RequestSpec | None = None
     success: Success | None = None
@@ -408,6 +418,8 @@ class FetchSpec(_Strict):
     items: str | None = Field(default=None, max_length=500)
     item_id: str = Field(min_length=1, max_length=500)  # "{{ item.id }}"
     occurred: str | None = Field(default=None, max_length=500)  # "{{ item.createdAt }}"
+    # The time of an item the request filters on, when it is not ``occurred``.
+    item_time: str | None = Field(default=None, max_length=500)  # "{{ item.sys_created_on }}"
     first_state: dict[str, Any] = Field(default_factory=dict)  # { last_time: "{{ first.iso }}" }
     next_state: dict[str, Any] = Field(default_factory=dict)
 
@@ -421,11 +433,34 @@ class FetchSpec(_Strict):
             raise ValueError('"item_id" is a template over the item: "{{ item.id }}"')
         if len(self.next_state) > 20 or len(self.first_state) > 20:
             raise ValueError("the state of a fetch holds 20 values at most")
+        if any(str(name).startswith("_") for name in (*self.first_state, *self.next_state)):
+            raise ValueError("a name of the state does not start with _: those are kept for Nik")
         return self
 
     @property
     def first_seconds(self) -> int:
         return first_fetch_seconds(self.first_fetch) or 0
+
+    @property
+    def by_time(self) -> bool:
+        """Whether the request asks from a moment (it reads ``since``): the look-back applies to it."""
+        sent = [self.request.model_dump() if self.request is not None else None]
+        sent.append(self.pagination.model_dump() if self.pagination is not None else None)
+        return _reads(sent, "since")
+
+
+def _reads(value: Any, name: str) -> bool:
+    """Whether a template somewhere under ``value`` reads ``name``."""
+    if isinstance(value, dict):
+        return any(_reads(item, name) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_reads(item, name) for item in value)
+    if not isinstance(value, str) or "{{" not in value:
+        return False
+    try:
+        return any(found == name for found, _position in ex.references(value))
+    except ex.ExpressionError:
+        return False
 
 
 class SchemaField(_Strict):
@@ -753,8 +788,8 @@ _ANSWER = frozenset({"config", "args", "steps", "now", "response", "status", "he
 # What a file that came back is named from: the answer is not read, only what came with it.
 _SAVED = _ANSWER - {"response"}
 # A fetch: what its request reads, what is read from its answer, what is read of one item.
-_FETCH_SENT = frozenset({"config", "secret", "state", "first", "now"})
-_FETCH_ANSWER = frozenset({"config", "state", "first", "now", "response", "status", "headers", "items"})
+_FETCH_SENT = frozenset({"config", "secret", "state", "first", "now", "since"})
+_FETCH_ANSWER = frozenset({"config", "state", "first", "now", "since", "response", "status", "headers", "items"})
 _FETCH_ITEM = frozenset({"config", "state", "item"})
 # Mirroring: what a call is given, and what is read of a comment.
 _MIRROR_ARGS = frozenset({"mirror", "fields", "comment", "since", "incident", "context"})
@@ -898,7 +933,7 @@ def load(text: str | bytes) -> ConnectorFile:
         _request_templates(fetch.get("request"), ("fetch", "request"), lines, problems, _FETCH_SENT, files=False)
         for key in ("pagination", "items", "next_state", "success", "error"):
             _check_templates(fetch.get(key), _FETCH_ANSWER, ("fetch", key), lines, problems)
-        for key in ("item_id", "occurred"):
+        for key in ("item_id", "occurred", "item_time"):
             _check_templates(fetch.get(key), _FETCH_ITEM, ("fetch", key), lines, problems)
         _check_templates(
             fetch.get("first_state"), frozenset({"config", "first", "now"}), ("fetch", "first_state"), lines, problems
@@ -1064,7 +1099,13 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "native": connector.native,
         # What it can do besides commands: bring alerts in, keep an object in step.
         "fetch": (
-            {"intervalSeconds": connector.fetch.interval_seconds, "firstFetch": connector.fetch.first_fetch}
+            {
+                "intervalSeconds": connector.fetch.interval_seconds,
+                "firstFetch": connector.fetch.first_fetch,
+                "lookbackMinutes": connector.fetch.lookback_minutes,
+                # Whether its request asks from a moment: the look-back of an instance applies to it.
+                "byTime": connector.fetch.by_time,
+            }
             if connector.fetch is not None
             else None
         ),

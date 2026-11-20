@@ -273,7 +273,9 @@ def test_a_fetch_that_fails_is_tried_later_and_later_and_says_why(admin: TestCli
     assert second["status"]["nextAt"] - wait_one > 100  # later each time
     with SessionLocal() as db:
         told = db.scalars(select(Notification).where(Notification.kind == "fetch.failing")).all()
-        assert [(note.username, note.link) for note in told] == [("admin", "/settings/automation/fetch-status")]  # once
+        # Once, and it leads to the instance, where its fetching is seen and set.
+        link = f"/settings/automation/connectors/{connection['id']}/fetch"
+        assert [(note.username, note.link) for note in told] == [("admin", link)]
         assert db.get(Connection, connection["id"]).fetch_state is None  # nothing moved
     assert incidents(admin) == {}
 
@@ -353,6 +355,211 @@ def test_the_worker_fetches_the_connections_whose_time_has_come(admin: TestClien
     requests_before = len(outside.requests)
     worker.tick(T0 + 1000)
     assert len(outside.requests) == requests_before
+
+
+# --------------------------------------------------------------------------- #
+# How an instance fetches: its interval, its first fetch, its look-back       #
+# --------------------------------------------------------------------------- #
+# Radar asked by time: the request reads the moment Nik works out, and keeps no state of its own.
+BY_TIME = RADAR.replace('"{{ state.last_time }}"', '"{{ since.iso }}"').split("  first_state:")[0] + (
+    "schema:\n  incoming:\n    - { name: id, type: text }\n"
+)
+
+
+def radar_by_time(admin: TestClient, outside, served: list) -> dict:
+    """Radar whose fetch asks "from when", and a fake Radar that gives what is of that moment or later."""
+    assert admin.post(f"{BASE}/connectors", json={"source": BY_TIME}).status_code == 201
+    made = admin.post(
+        f"{BASE}/instances",
+        json={"name": "Radar SOC", "connector": "radar", "config": {"url": "https://radar.example.com/api"}},
+    )
+    assert made.status_code == 201, made.text
+    outside.host("radar.example.com")
+
+    def reply(method, host, target, _headers, _body):
+        parts = urlsplit(target)
+        if host != "radar.example.com" or parts.path != "/api/alerts":
+            return None
+        query = parse_qs(parts.query)
+        since = query.get("since", [""])[0]
+        newer = sorted((alert for alert in served if alert["created"] >= since), key=lambda alert: alert["created"])
+        start = int(query.get("cursor", ["0"])[0])
+        body = {"data": newer[start : start + 2], "next": str(start + 2) if start + 2 < len(newer) else ""}
+        return 200, {"content-type": "application/json"}, json.dumps(body).encode()
+
+    outside.answers.append(reply)
+    return made.json()
+
+
+def fetching(admin: TestClient, connection: dict, **settings) -> dict:
+    """Save how the instance fetches, as its form does: with the instance."""
+    saved = admin.put(f"{BASE}/instances/{connection['id']}", json={"fetch": settings})
+    assert saved.status_code == 200, saved.text
+    return saved.json()["fetch"]
+
+
+def test_the_look_back_catches_an_item_that_turns_up_late_with_an_older_time(admin: TestClient, outside):
+    served = [dict(alert) for alert in ALERTS[:2]]  # 08:00 and 09:00
+    connection = radar_by_time(admin, outside, served)
+    mapped(admin)
+    shown = fetching(admin, connection, enabled=True)
+    assert (shown["enabled"], shown["byTime"], shown["lookbackMinutes"], shown["started"]) == (True, True, 0, False)
+
+    assert run(admin, connection)["result"]["new"] == 2
+    with SessionLocal() as db:
+        kept = db.get(Connection, connection["id"]).fetch_state
+        # Nik keeps how far it reached, under a name of its own: the newest time it saw.
+        assert list(kept) == ["_since"] and kept["_since"]["cut"] is False
+        newest = datetime.fromisoformat(f"{DAY}T09:00:00+00:00").timestamp()
+        assert kept["_since"]["reached"] == newest
+
+    # An alert that Radar shows only now, made two minutes before the newest one Nik has seen.
+    served.append({"id": "A-0", "title": "Late one", "score": 30, "created": f"{DAY}T08:58:00Z", "host": "WKS-09"})
+    # Without a look-back the cycle asks from the newest time seen, that moment included: the
+    # alert it has is read again and skipped, and the late one is not asked for.
+    again = run(admin, connection)["result"]
+    assert sinces(outside)[-1] == f"{DAY}T09:00:00Z" and (again["fetched"], again["new"]) == (1, 0)
+    assert "Late one" not in incidents(admin)
+
+    # With five minutes of look-back it asks from 08:55: the late one comes in, once.
+    assert fetching(admin, connection, lookbackMinutes=5)["lookbackMinutes"] == 5
+    caught = run(admin, connection)
+    assert sinces(outside)[-1] == f"{DAY}T08:55:00Z"
+    assert (caught["result"]["fetched"], caught["result"]["new"], caught["result"]["created"]) == (2, 1, 1)
+    assert caught["status"]["sinceAt"] == f"{DAY}T08:55:00Z"
+    once_more = run(admin, connection)["result"]
+    assert (once_more["fetched"], once_more["new"]) == (2, 0)
+    assert sorted(incidents(admin)) == ["Emotet on WKS-01", "Late one", "Phishing page opened"]
+    items = admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]
+    assert sorted(item["itemId"] for item in items) == ["A-0", "A-1", "A-2"]  # none twice
+
+    # A time in the future is a clock that is wrong: the cycle does not believe it, and goes on asking.
+    served.append({"id": "A-9", "title": "From 2099", "score": 1, "created": "2099-01-01T00:00:00Z", "host": "X"})
+    assert run(admin, connection)["result"]["new"] == 1
+    assert run(admin, connection)["result"]["fetched"] == 3 and sinces(outside)[-1] == f"{DAY}T08:55:00Z"
+
+
+def test_an_instance_says_how_often_it_fetches_and_how_far_back_the_first_time(admin: TestClient, outside):
+    connection = radar_by_time(admin, outside, ALERTS)
+    mapped(admin)
+    listed = admin.get(f"{BASE}/instances").json()["instances"][0]["fetch"]
+    # A new instance fetches as its connector says.
+    assert (listed["enabled"], listed["intervalSeconds"], listed["firstFetch"], listed["lookbackMinutes"]) == (
+        False,
+        120,
+        "3 days",
+        0,
+    )
+    assert listed["defaults"] == {"intervalSeconds": 120, "firstFetch": "3 days", "lookbackMinutes": 0}
+
+    def refused(**settings) -> str:
+        answer = admin.put(f"{BASE}/instances/{connection['id']}", json={"fetch": settings})
+        assert answer.status_code == 400, answer.text
+        return answer.json()["detail"]
+
+    assert refused(intervalSeconds=5) == "An instance fetches every 30 seconds at the least, once a day at most"
+    assert refused(firstFetch="soon").startswith("The first fetch is a length of time")
+    assert refused(lookbackMinutes=-1) == "The look-back is a number of minutes, 1440 at most"
+    assert refused(colour="red") == '"colour" is not something of how an instance fetches'
+
+    # Its own interval and first fetch, saved with the instance; the alerts are of yesterday morning.
+    shown = fetching(admin, connection, enabled=True, intervalSeconds=600, firstFetch="12 Hours")
+    assert (shown["enabled"], shown["intervalSeconds"], shown["firstFetch"]) == (True, 600, "12 hours")
+    before = datetime.now(timezone.utc).timestamp()
+    done = run(admin, connection)
+    asked = datetime.fromisoformat(sinces(outside)[-1].replace("Z", "+00:00")).timestamp()
+    assert abs(asked - (before - 12 * 3600)) < 30 and done["result"]["fetched"] == 0
+    assert abs(done["status"]["nextAt"] - (before + 600)) < 30
+    # The first cycle found nothing: the next asks from the same moment, not from twelve hours before itself.
+    run(admin, connection)
+    assert sinces(outside)[-1] == sinces(outside)[-2]
+    changes = [entry["details"] for entry in admin.get("/api/audit").json()["entries"]]
+    assert 'Changed the instance "Radar SOC": fetching (fetches, every 600 s, first fetch 12 hours)' in changes
+
+    # What is its connector's again is not kept: the instance follows its connector.
+    back = fetching(admin, connection, intervalSeconds=120, firstFetch="3 days", lookbackMinutes=0)
+    assert (back["intervalSeconds"], back["firstFetch"]) == (120, "3 days")
+    with SessionLocal() as db:
+        row = db.get(Connection, connection["id"])
+        assert row.fetch_settings is None
+        # A shorter interval is not made to wait for the turn the longer one had set.
+        assert row.fetch_status["nextAt"] < before + 200
+    # A connector that cannot fetch has nothing to set.
+    plain = RADAR.split("fetch:")[0].replace("id: radar", "id: quiet").replace("name: Radar", "name: Quiet")
+    assert admin.post(f"{BASE}/connectors", json={"source": plain}).status_code == 201
+    quiet = admin.post(
+        f"{BASE}/instances",
+        json={"name": "Quiet", "connector": "quiet", "config": {"url": "https://radar.example.com/api"}},
+    ).json()
+    assert quiet["fetch"] is None
+    assert admin.put(f"{BASE}/instances/{quiet['id']}", json={"fetch": {"enabled": True}}).status_code == 400
+
+
+def test_resetting_the_last_run_starts_from_the_first_fetch_and_makes_nothing_twice(admin: TestClient, outside):
+    connection = radar_by_time(admin, outside, ALERTS)
+    mapped(admin)
+    fetching(admin, connection, enabled=True)
+    assert run(admin, connection)["result"]["created"] == 3
+
+    analyst = make_key(admin, label="a", roles=["analyst"])
+    assert admin.post(f"/api/fetch/{connection['id']}/reset", headers=analyst).status_code == 403
+    assert admin.post("/api/fetch/nope/reset").status_code == 404
+    reset = admin.post(f"/api/fetch/{connection['id']}/reset")
+    assert reset.status_code == 200 and reset.json()["started"] is False and reset.json()["enabled"] is True
+    with SessionLocal() as db:
+        assert db.get(Connection, connection["id"]).fetch_state is None  # the engine's part and the connector's
+    entry = admin.get("/api/audit").json()["entries"][0]
+    assert (entry["action"], entry["details"]) == (
+        "fetch.reset",
+        'Reset the last run of "Radar SOC": its next cycle starts from the first fetch',
+    )
+
+    # The next cycle reads three days back again; everything it finds is known by its id.
+    before = datetime.now(timezone.utc).timestamp()
+    again = run(admin, connection)["result"]
+    asked = datetime.fromisoformat(sinces(outside)[-2].replace("Z", "+00:00")).timestamp()
+    assert abs(asked - (before - 3 * 86400)) < 30
+    assert (again["fetched"], again["new"], again["created"]) == (3, 0, 0) and len(incidents(admin)) == 3
+    assert len(admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]) == 3
+
+
+def test_a_state_an_older_release_left_starts_from_the_first_fetch_once(admin: TestClient, outside):
+    connection = radar_by_time(admin, outside, ALERTS)
+    mapped(admin)
+    fetching(admin, connection, enabled=True)
+    assert run(admin, connection)["result"]["created"] == 3
+    with SessionLocal() as db:
+        # What 6.3 kept for this connector: its own value, and nothing of Nik's.
+        db.get(Connection, connection["id"]).fetch_state = {"last_time": f"{DAY}T10:00:00Z"}
+        db.commit()
+    before = datetime.now(timezone.utc).timestamp()
+    upgraded = run(admin, connection)["result"]
+    asked = datetime.fromisoformat(sinces(outside)[-2].replace("Z", "+00:00")).timestamp()
+    assert abs(asked - (before - 3 * 86400)) < 30 and (upgraded["fetched"], upgraded["new"]) == (3, 0)
+    with SessionLocal() as db:
+        kept = db.get(Connection, connection["id"]).fetch_state
+        assert kept["last_time"] == f"{DAY}T10:00:00Z" and kept["_since"]["reached"] > before - 2 * 86400
+    # From then on it asks from where it reached.
+    run(admin, connection)
+    assert sinces(outside)[-1] == f"{DAY}T10:00:00Z"
+
+
+def test_the_time_of_an_item_is_read_however_the_product_writes_it():
+    moment = datetime(2026, 11, 16, 9, 10, 40, tzinfo=timezone.utc).timestamp()
+    for written in (
+        "2026-11-16T09:10:40Z",
+        "2026-11-16T09:10:40.000000Z",
+        "2026-11-16T09:10:40.000+0000",
+        "2026-11-16T10:10:40+01:00",
+        "2026-11-16 09:10:40",
+        "Mon, 16 Nov 2026 09:10:40 +0000",
+        moment,
+        int(moment * 1000),
+        str(int(moment)),
+    ):
+        assert fetch._epoch_of(written) == moment, written
+    for nothing in (None, "", "soon", True, 0, -5):
+        assert fetch._epoch_of(nothing) is None
 
 
 # --------------------------------------------------------------------------- #

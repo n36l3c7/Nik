@@ -210,6 +210,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("DELETE", "/api/packs/{pack_id}"): ("content.manage",),
     ("GET", "/api/packs/{pack_id}/logo"): ("content.manage",),
     ("GET", "/api/packs/{pack_id}/uninstall"): ("content.manage",),
+    ("POST", "/api/packs/bulk/plan"): ("content.manage",),
+    ("POST", "/api/packs/bulk/apply"): ("content.manage",),
     # The catalogue of packs: reading it and taking a pack from it is for who manages content;
     # where it is read from, and the key it is trusted by, is the admin's.
     ("GET", "/api/packs/catalogue"): ("content.manage",),
@@ -243,6 +245,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("PUT", "/api/fetch/{connection_id}"): ("connectors.manage",),
     ("POST", "/api/fetch/{connection_id}/run"): ("connectors.manage",),
     ("POST", "/api/fetch/{connection_id}/resume"): ("connectors.manage",),
+    ("POST", "/api/fetch/{connection_id}/reset"): ("connectors.manage",),
     ("GET", "/api/fetch/{connection_id}/items"): ("connectors.manage",),
     ("GET", "/api/fetch/{connection_id}/sample"): ("connectors.manage",),
     # Pre-processing rules: whoever configures incidents.
@@ -391,6 +394,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/backup/export"): ("admin",),
     ("POST", "/api/backup/import"): ("admin",),
     ("GET", "/api/storage"): ("admin",),
+    ("GET", "/api/workers"): ("admin",),
 }
 
 

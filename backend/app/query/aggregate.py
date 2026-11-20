@@ -331,7 +331,7 @@ def _find(
             if keep(row)
         )
         return _worked(held, groups, measure, now)
-    conditions = conditions_of(entity.name, query, principal, now=now)
+    conditions = conditions_of(entity.name, query, principal, now=now, db=db)
     statement_timeout(db)
     plain = all(group.spec.kind != "tags" and group.bucket != "week" for group in groups)
     if measure.fn == "count" and plain:
@@ -361,7 +361,7 @@ def run(
     """``{columns, rows, total, previous?, more, truncated, range}``: a row is its group values, then the measure."""
     from . import _allowed, entity_of
 
-    entity = entity_of(name)
+    entity = entity_of(name, db)
     _allowed(entity, principal)
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
     groups = [group_of(entity, text) for text in group_by]

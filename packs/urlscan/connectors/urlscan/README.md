@@ -20,7 +20,7 @@ commands known to answer it. Give a key for everything else.
 
 `get-url-reputation` and `get-domain-reputation` answer the War Room's `!url` and `!domain`. They **submit
 nothing**: they search the scans that already exist (`page.url:"…"`, `page.domain:"…"`, the last ten). The
-verdict and the summary are the ones Nik's own enrichment gives for urlscan, and the rule is written in the
+verdict and the summary are the ones Nik's own look-up code gave for urlscan, and the rule is written in the
 file:
 
 | What the search answers | Verdict | Summary |

@@ -671,3 +671,335 @@ def test_the_permission_of_an_entity_is_part_of_the_query(admin: TestClient, sto
     assert caller.get("/api/query/schema", headers=auditor, params={"entity": "incidents"}).status_code == 403
     assert caller.post("/api/query/check", headers=viewer, json={"entity": "audit", "query": "x"}).status_code == 403
     assert caller.post("/api/query", json={"entity": "incidents", "query": ""}).status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# The fields of the registry: every one is asked by its name                  #
+# --------------------------------------------------------------------------- #
+REGISTRY_FIELDS = [
+    # name, type, options
+    ("customer", "text", {}),
+    ("notes", "long_text", {}),
+    ("portal", "url", {}),
+    ("amount", "number", {}),
+    ("confirmed", "bool", {}),
+    ("due_back", "date", {}),
+    ("region", "choice", {"choices": ["EMEA", "North America", "APAC"]}),
+    ("channels", "multi_choice", {"choices": ["mail", "phone", "chat"]}),
+    ("keywords", "tags", {}),
+    ("handler", "user", {}),
+    ("team", "role", {}),
+    ("c2", "indicator", {}),
+    ("contacts", "list", {"columns": [{"name": "name", "type": "text"}, {"name": "mail", "type": "text"}]}),
+    ("raw", "json", {}),
+    ("waited", "timer", {}),
+    ("number", "text", {}),  # a name the language had: it is asked as field.number
+]
+
+# What each incident holds in ``incidents.fields``. "d" holds values that are not of the type of
+# their field (a release, or a hand, wrote them before the field was what it is): none of them
+# is a value, in SQL as on rows, and none makes the database refuse the query.
+REGISTRY_INCIDENTS = {
+    "a": {
+        "customer": "Acme Corp", "notes": "Called the CFO\nabout the wire transfer", "portal": "https://portal.acme.example/x",
+        "amount": 100, "confirmed": True, "due_back": "2026-11-17T09:30:00Z", "region": "EMEA",
+        "channels": ["mail", "phone"], "keywords": ["Phish", "wire"], "handler": "anna", "team": "analyst",
+        "c2": {"type": "ip", "value": "185.220.101.47"},
+        "contacts": [{"name": "Mario Rossi", "mail": "m.rossi@acme.example"}], "raw": {"vendor": "Contoso", "score": 7},
+        "waited": {"state": "stopped", "accumulated_s": 120}, "number": "PO-7",
+        "labels": ["vip"], "tlp": "amber", "phase": "Containment", "due": "2026-11-20T00:00:00Z",
+    },
+    "b": {
+        "customer": "acme_100%", "amount": 99.5, "confirmed": False, "due_back": "2026-11-10T23:59:59Z",
+        "region": "North America", "channels": ["chat"], "keywords": [], "handler": "Bob",
+        "c2": {"type": "domain", "value": "evil.example"}, "contacts": [], "raw": {},
+        "waited": {"state": "running", "accumulated_s": 0}, "number": "PO-8", "tlp": "amber+strict",
+    },
+    "c": {},
+    "d": {
+        "customer": 42, "amount": "abc", "confirmed": "yes", "due_back": None, "region": "", "keywords": "phish",
+        "raw": "plain words", "waited": 5, "c2": "185.220.101.47", "labels": "vip",
+    },
+    "e": {
+        "customer": "Città di Castello", "amount": -5, "due_back": "2025-12-31T10:00:00.123456Z", "region": "APAC",
+        "channels": [], "keywords": ["città"],
+    },
+}  # fmt: skip
+
+REGISTRY_CASES = {
+    # text, long text, address: contains
+    "customer:acme": "ab",
+    "customer:ACME*": "ab",
+    "customer:*corp": "a",
+    "!customer:acme": "cde",
+    'customer:"acme corp"': "a",
+    "customer:100%": "b",
+    "customer:acme_1": "b",
+    'customer:""': "cd",
+    "customer:*": "abe",
+    "customer:città": "e",
+    "field.customer:corp": "a",
+    "notes:wire": "a",
+    "portal:portal.acme.example": "a",
+    "portal:https://portal.acme.example/x": "a",
+    # number
+    "amount:100": "a",
+    "amount:>=99.5": "ab",
+    "amount:<0": "e",
+    "amount:-5": "e",
+    "!amount:100": "bcde",
+    "amount:[0 TO 100]": "ab",
+    "amount:[* TO 99.5]": "be",
+    'amount:""': "cd",
+    "amount:*": "abe",
+    # yes / no
+    "confirmed:true": "a",
+    "confirmed:no": "bcde",
+    "!confirmed:true": "bcde",
+    'confirmed:""': "cde",
+    "confirmed:*": "ab",
+    # date (now is 2026-11-17 12:00 UTC)
+    "due_back:today": "a",
+    "due_back:2026-11": "ab",
+    "due_back:>=2026-11-11": "a",
+    "due_back:<2026-11-10": "e",
+    "due_back:<=2026-11-10": "be",
+    "due_back:>=now-7d": "ab",
+    "due_back:[2026-11-01 TO *]": "ab",
+    "!due_back:today": "bcde",
+    'due_back:""': "cd",
+    "due_back:*": "abe",
+    # choice: one of its choices, however it is cased
+    "region:emea": "a",
+    'region:"north america"': "b",
+    "!region:EMEA": "bcde",
+    "region IN (emea, apac)": "ae",
+    "region:a*": "e",
+    'region:""': "cd",
+    "region:*": "abe",
+    # several choices, tags: holds the value, whole
+    "channels:phone": "a",
+    "!channels:mail": "bcde",
+    'channels:""': "cde",
+    "channels:*": "ab",
+    "keywords:phish": "a",
+    "keywords:PH*": "a",
+    "keywords:phi": "",
+    "!keywords:wire": "bcde",
+    "keywords:città": "e",
+    'keywords:""': "bcd",
+    "keywords:*": "ae",
+    # user and role: equals, as owner does
+    "handler:ANNA": "a",
+    "handler:bob": "b",
+    "handler:ann": "",
+    "handler:b*": "b",
+    'handler:""': "cde",
+    "team:analyst": "a",
+    # indicator: its value
+    "c2:185.220": "a",
+    "c2:evil.example": "b",
+    "c2:*": "ab",
+    'c2:""': "cde",
+    # table and JSON: a word found anywhere in it
+    "contacts:rossi": "a",
+    'contacts:"mario rossi"': "a",
+    "contacts:m.rossi@acme.example": "a",
+    "!contacts:rossi": "bcde",
+    'contacts:""': "bcde",
+    "contacts:*": "a",
+    "raw:contoso": "a",
+    "raw:plain": "d",
+    'raw:""': "bce",
+    "raw:*": "ad",
+    # timer: the seconds it counted
+    "waited:>=60": "a",
+    "waited:0": "b",
+    "waited:[0 TO 200]": "ab",
+    'waited:""': "cde",
+    # a custom field whose name the language had
+    "field.number:po-7": "a",
+    "field.number:*": "ab",
+    # the fields of the registry Nik ships, kept in the same place
+    "labels:vip": "a",
+    'labels:""': "bcde",
+    "tlp:amber": "a",
+    "tlp:amber+strict": "b",
+    "phase:contain": "a",
+    "due:>today": "a",
+    "due:[2026-11-01 TO 2026-11-30]": "a",
+    "category:*": "",
+    # together
+    "customer:acme amount:>=100": "a",
+    "(region:emea or region:apac) -keywords:città": "a",
+    "not confirmed:* due_back:*": "e",
+    "handler:* or raw:plain": "abd",
+}
+
+
+@pytest.fixture()
+def registry_incidents(client):
+    """The custom fields above, and five incidents that hold them."""
+    from app import fields as registry
+
+    with SessionLocal() as db:
+        for name, kind, options in REGISTRY_FIELDS:
+            registry.create(db, {"name": name, "type": kind, "options": options, "allTypes": True}, "test")
+        for key, held in REGISTRY_INCIDENTS.items():
+            db.add(Incident(id=key, name=f"incident {key}", doc={}, fields=held))
+        db.commit()
+    return [{"id": key, "fields": held} for key, held in REGISTRY_INCIDENTS.items()]
+
+
+def _registry_rows(db) -> Entity:
+    """The fields of the incidents that are read in ``incidents.fields``, as an entity of rows."""
+    held = tuple(
+        spec for spec in query.entity_of("incidents", db).fields if spec.getter is not None or spec.test is not None
+    )
+    return Entity(name="rowincidents", label="Incidents", permission="read", fields=held, text_fields=())
+
+
+def test_a_condition_on_a_field_of_the_registry_means_the_same_in_sql_and_on_rows(registry_incidents, monkeypatch):
+    """One test for all of them (each would build the registry and the incidents again): what
+    differs is gathered and shown together."""
+    wrong = {}
+    with SessionLocal() as db:
+        monkeypatch.setitem(query.ENTITIES, "rowincidents", _registry_rows(db))
+        for text, expected in REGISTRY_CASES.items():
+            found = db.scalars(select(Incident.id).where(*query.sql("incidents", text, now=NOW, db=db)))
+            keep = query.rows("rowincidents", text, now=NOW)
+            got = "".join(sorted(found)), "".join(row["id"] for row in registry_incidents if keep(row))
+            if got != (expected, expected):
+                wrong[text] = {"expected": expected, "sql": got[0], "rows": got[1]}
+    assert wrong == {}
+
+
+def test_every_field_of_the_registry_is_a_field_of_the_language(registry_incidents):
+    from app import fields as registry
+
+    plain = query.entity_of("incidents")
+    # The system fields need no database: every installation has them.
+    assert [name for name in registry.SYSTEM_FIELDS if plain.field(name) is None] == []
+    assert plain.field("customer") is None and plain.field("close_reason").name == "closeReason"
+    assert plain.field("sla_breached").name == "slaBreached" and plain.field("time_to_close").kind == "number"
+    with SessionLocal() as db:
+        entity = query.entity_of("incidents", db)
+        kinds = {name: entity.field(name).kind for name, _type, _options in REGISTRY_FIELDS if name != "number"}
+    assert kinds == {
+        "customer": "text", "notes": "text", "portal": "text", "amount": "number", "confirmed": "bool",
+        "due_back": "date", "region": "keyword", "channels": "tags", "keywords": "tags", "handler": "keyword",
+        "team": "keyword", "c2": "text", "contacts": "text", "raw": "text", "waited": "number",
+    }  # fmt: skip
+    # A name the language already uses wins: the number of an incident stays what "number" asks.
+    assert entity.field("number").column is Incident.number and entity.field("no") is entity.field("number")
+    taken = entity.field("field.number")
+    assert (taken.name, taken.aliases, taken.custom, taken.label) == ("field.number", (), True, "number")
+    assert entity.field("field.customer") is entity.field("customer") and entity.field("Customer").custom
+    assert entity.field("field.status") is None  # field.<name> is for the fields made in Settings
+
+
+def test_what_a_field_of_the_registry_cannot_be_asked_says_why(registry_incidents):
+    def error(text: str) -> QueryError:
+        with SessionLocal() as db, pytest.raises(QueryError) as caught:
+            query.sql("incidents", text, db=db)
+        return caught.value
+
+    refused = error("status:open region:nowhere")
+    assert (refused.code, refused.position) == ("bad_value", 12)
+    assert refused.message == '"region" is one of: EMEA, North America, APAC'
+    assert error("region:emae").suggestion == "emea"
+    assert error("amount:lots").message == "A number is expected here"
+    assert error("due_back:soon").code == "bad_value"
+    assert error("confirmed:maybe").code == "bad_value" and error("confirmed:>true").code == "bad_operator"
+    assert error("customer:>a").code == "bad_operator" and error("keywords:<a").code == "bad_operator"
+    assert error("customer:[a TO b]").code == "bad_range" and error("keywords:[a TO b]").code == "bad_range"
+    whole = error("status:open contacts:>a")
+    assert (whole.code, whole.position) == ("bad_operator", 12)
+    assert whole.message == '"contacts" is searched as text: field:value or !field:value only'
+    assert error("raw:[a TO b]").code == "bad_range"
+    assert error("contacts:" + "*a" * 9).code == "too_many_wildcards"
+    unknown = error("custmer:acme")
+    assert (unknown.code, unknown.suggestion) == ("unknown_field", "customer")
+    # Without the registry at hand a custom field is not known: whoever compiles for a person passes it.
+    with pytest.raises(QueryError) as caught:
+        query.sql("incidents", "customer:acme")
+    assert caught.value.code == "unknown_field"
+
+
+def test_the_endpoints_know_the_custom_fields_and_a_deleted_one_is_unknown_again(admin: TestClient, registry_incidents):
+    def ids(q: str) -> str:
+        answer = admin.get("/api/incidents", params={"view": "summary", "q": q})
+        assert answer.status_code == 200, answer.text
+        return "".join(sorted(row["id"] for row in answer.json()["incidents"]))
+
+    assert ids("customer:acme amount:>=100") == "a" and ids("region:emea or keywords:città") == "ae"
+    assert ids('!region:"North America" due_back:[2026-11-01 TO *]') == "a"
+
+    # The schema lists them: their label is what the completion shows, their choices what it offers.
+    assert admin.patch("/api/fields/region", json={"label": "Sales region", "description": "Where the customer is"})
+    fields = {f["name"]: f for f in admin.get("/api/query/schema?entity=incidents").json()["entities"][0]["fields"]}
+    assert fields["region"] == {
+        "name": "region",
+        "aliases": ["field.region"],
+        "kind": "keyword",
+        "values": ["EMEA", "North America", "APAC"],
+        "description": "Sales region: Where the customer is",
+        "label": "Sales region",
+        "custom": True,
+    }
+    assert fields["channels"]["values"] == ["mail", "phone", "chat"] and fields["channels"]["kind"] == "tags"
+    assert fields["customer"]["description"] == "customer" and fields["field.number"]["aliases"] == []
+    assert fields["labels"]["custom"] is False and fields["labels"]["label"] == "Tags"
+    assert fields["tlp"]["values"] == ["clear", "green", "amber", "amber+strict", "red"]
+    assert fields["status"]["label"] == "" and "customer" not in fields["status"]["aliases"]
+    listed = admin.get("/api/query/schema").json()["entities"]
+    assert "customer" in [f["name"] for e in listed if e["entity"] == "incidents" for f in e["fields"]]
+
+    assert admin.post("/api/query/check", json={"entity": "incidents", "query": "amount:>=1"}).json()["ok"] is True
+    bad = admin.post("/api/query/check", json={"entity": "incidents", "query": "amount:many"})
+    assert bad.status_code == 422 and bad.json()["query"]["code"] == "bad_value"
+    found = admin.post("/api/query", json={"entity": "incidents", "query": "customer:corp"}).json()
+    assert found["total"] == 1 and found["items"][0]["fields"]["customer"] == "Acme Corp"
+
+    # Counting by them, and measuring one.
+    def counted(**body) -> dict:
+        answer = admin.post("/api/query/aggregate", json={"entity": "incidents", **body})
+        assert answer.status_code == 200, answer.text
+        return answer.json()
+
+    assert counted(groupBy=["region"])["rows"] == [["", 2], ["APAC", 1], ["EMEA", 1], ["North America", 1]]
+    assert counted(groupBy=["confirmed"], query="confirmed:*")["rows"] == [["false", 1], ["true", 1]]
+    assert counted(groupBy=["keywords"], query="keywords:*")["rows"] == [["Phish", 1], ["città", 1], ["wire", 1]]
+    assert counted(groupBy=["due_back@month"], query="due_back:*")["rows"] == [["2025-12", 1], ["2026-11", 2]]
+    assert counted(groupBy=["amount"], query="amount:>0")["rows"] == [["100", 1], ["99.5", 1]]
+    assert counted(groupBy=["region", "handler"], query="handler:*")["rows"] == [
+        ["EMEA", "anna", 1],
+        ["North America", "Bob", 1],
+    ]
+    assert counted(measure="sum:amount")["total"] == 194.5 and counted(measure="max:waited")["total"] == 120
+    assert counted(groupBy=["region"], measure="avg:amount", query="region:*")["rows"] == [
+        ["EMEA", 100.0],
+        ["North America", 99.5],
+        ["APAC", -5.0],
+    ]
+    refused = admin.post("/api/query/aggregate", json={"entity": "incidents", "groupBy": ["contacts"]})
+    assert refused.status_code == 422 and refused.json()["detail"] == (
+        '"contacts" can be searched, not counted or measured'
+    )
+
+    # A field nothing holds is deleted: what named it says so, by the name of the field.
+    with SessionLocal() as db:
+        from app import fields as registry
+
+        registry.create(db, {"name": "scratch", "type": "text", "allTypes": True}, "test")
+        db.commit()
+    assert ids("scratch:*") == ""
+    assert admin.delete("/api/fields/scratch").status_code == 204
+    gone = admin.get("/api/incidents", params={"q": "status:open scratch:*"})
+    assert gone.status_code == 422 and gone.json()["query"] == {
+        "code": "unknown_field",
+        "position": 12,
+        "message": '"scratch" is not a field of incidents',
+    }
+    counted_gone = admin.post("/api/query/aggregate", json={"entity": "incidents", "groupBy": ["scratch"]})
+    assert counted_gone.status_code == 422 and counted_gone.json()["detail"] == '"scratch" is not a field of incidents'

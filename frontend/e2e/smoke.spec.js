@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 import { buildSamplePe, phishingEml } from './helpers.js'
+import { crossings } from '../src/domain/automation/layout.js'
 
 /*
  * Smoke test of the whole stack, as an analyst would use it on a fresh
@@ -14,6 +15,9 @@ const ADMIN = { username: 'admin', password: 'supersecret' }
 // No retries: the steps share one server and one account, so a retry from the
 // first step can only fail ("first run" is over) and hide the real error.
 test.describe.configure({ mode: 'serial', retries: 0 })
+
+// The general section that ends every right-click menu once signed in (each entry with its key).
+const GENERAL_MENU = ['Search…ctrl k', 'Keyboard shortcuts?', 'Backalt ←', 'Copy the address of this page']
 
 let page
 // What the Content-Security-Policy blocked, if anything: the suite ends by checking it is empty.
@@ -135,9 +139,9 @@ test('the tab bar fits the window and every tab keeps its name', async () => {
     await expect(nav.getByRole('button', { name: 'Evidence', exact: true })).toBeVisible()
   }
   await page.setViewportSize(original)
-  // Controls side by side share one height.
+  // Controls side by side share one height (the tags of the incident are chips under its name, not one of them).
   const heights = await page
-    .locator('header button, header div.border')
+    .locator('header button:not([role="group"] *), header div.border')
     .evaluateAll((elements) => [...new Set(elements.filter((e) => e.offsetHeight).map((e) => e.offsetHeight))])
   expect(heights).toEqual([36])
 })
@@ -1230,6 +1234,23 @@ test('Storage shows how full the disk is and what fills it', async () => {
   await expect(settings).toBeHidden()
 })
 
+test('Workers lists every worker of the server and says which are not configured', async () => {
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Workers').click()
+  await expect(page).toHaveURL(/\/settings\/system\/workers$/)
+  const workers = settings.getByRole('list', { name: 'Workers' })
+  await expect(workers.getByRole('listitem')).toHaveCount(7)
+  // The test server runs the playbooks itself: there is no automation worker of its own to watch.
+  await expect(workers.getByRole('listitem').filter({ hasText: 'Automation worker' })).toContainText('not configured')
+  const sandbox = workers.getByRole('listitem').filter({ hasText: 'Script sandbox' })
+  await expect(sandbox).toContainText(/answering|not checked yet|not configured/)
+  await settings.getByRole('button', { name: 'Refresh' }).click()
+  await expect(workers.getByRole('listitem')).toHaveCount(7)
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+})
+
 test('Settings is a page: every section has an address, Back leaves it, a link opens it', async () => {
   const before = new URL(page.url()).pathname
   const gear = page.getByRole('button', { name: 'Open platform settings' })
@@ -1584,7 +1605,7 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   const filter = list.getByRole('combobox', { name: 'Filter incidents' })
   const menu = page.getByRole('menu', { name: 'Saved filters' })
   const headings = table.locator('thead th')
-  const usual = ['#', 'Title', 'Type', 'Severity', 'Status', 'Owner', 'Opened', 'Updated', 'Actions']
+  const usual = ['#', 'Title', 'Tags', 'Type', 'Severity', 'Status', 'Owner', 'Opened', 'Updated', 'Actions']
   const tagged = await page.request.patch('/api/incidents/e2e-list/fields', {
     data: { changes: { category: 'e2e-cat' } },
   })
@@ -1633,6 +1654,7 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   await expect(headings).toHaveText([
     '#',
     'Title',
+    'Tags',
     'Type',
     'Severity',
     'Status',
@@ -1672,6 +1694,262 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   await expect(filter).toHaveValue('')
   expect((await (await page.request.get('/api/filters')).json()).filters).toEqual([])
   expect((await page.request.delete('/api/incidents/e2e-list')).status()).toBe(204)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('incidents have tags: put on from the incident, a column of the list, asked by the Tag chip and by tag:, taken off in the quick view', async () => {
+  const before = page.url()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const table = list.getByRole('table', { name: 'Incidents' })
+  const rows = table.locator('tbody tr')
+  const filter = list.getByRole('combobox', { name: 'Filter incidents' })
+  const menu = page.getByRole('menu')
+  const found = await (await page.request.get('/api/incidents?view=summary&q=host:WKS-FINANCE-01')).json()
+  const incidentId = found.incidents[0].id
+  const tagsOf = async (id) => (await (await page.request.get(`/api/incidents/${id}/fields`)).json()).fields.labels
+  // A second incident that carries one of the two tags: the counts of the chip differ.
+  const made = await page.request.post('/api/incidents', { data: { id: 'e2e-tags', host: 'E2E-TAGS', data: {} } })
+  expect(made.status()).toBe(201)
+
+  // On the page of the incident: "+" opens an input, Enter adds; capitals and spaces are made a tag.
+  await page.goto(`/incident/${incidentId}`)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  const own = page.getByRole('banner').getByRole('group', { name: 'Tags' })
+  await own.getByRole('button', { name: 'Add a tag' }).click()
+  const typing = own.getByRole('combobox', { name: 'New tag' })
+  await expect(typing).toBeFocused()
+  await typing.fill('E2E Phish')
+  await typing.press('Enter')
+  await expect(own).toContainText('#e2e-phish')
+  // What is not a tag is refused where it was typed, with the rule.
+  await typing.fill('no/slash')
+  await typing.press('Enter')
+  await expect(own.getByRole('alert')).toContainText('A tag is a letter or a digit')
+  await typing.fill('e2e-vip')
+  await typing.press('Enter')
+  await expect(own).toContainText('#e2e-vip')
+  await expect(own.getByRole('alert')).toHaveCount(0)
+  await typing.press('Escape')
+  await expect(typing).toHaveCount(0)
+  await expect.poll(() => tagsOf(incidentId)).toEqual(['e2e-phish', 'e2e-vip'])
+  // Each change left the trace a field change leaves.
+  const trace = await (await page.request.get('/api/audit?q=action:incident.field details:Tags')).json()
+  expect(trace.entries[0].details).toBe('Set Tags: ["e2e-phish"] → ["e2e-phish", "e2e-vip"]')
+
+  // The list: a column of chips. The menu of a row tags another incident, offering the tags in use.
+  await openIncidentList()
+  const row = incidentRow('WKS-FINANCE-01')
+  const other = rows.filter({ hasText: 'E2E-TAGS' })
+  await expect(table.locator('thead th').nth(2)).toHaveText('Tags')
+  await expect(row.getByRole('button', { name: 'Filter by the tag e2e-phish' })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Filter by the tag e2e-vip' })).toBeVisible()
+  await other.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Add a tag…' }).click()
+  const tagging = page.getByRole('dialog', { name: /^Tags of #\d+/ })
+  const adding = tagging.getByRole('combobox', { name: 'New tag' })
+  await adding.fill('e2e-p')
+  await expect(tagging.getByRole('option')).toHaveText(['#e2e-phish'])
+  await adding.press('ArrowDown')
+  await adding.press('Enter')
+  await expect(tagging.getByRole('group', { name: 'Tags' })).toContainText('#e2e-phish')
+  // Backspace in the empty input takes the last one off; it is put back for what follows.
+  await adding.fill('e2e-other')
+  await adding.press('Enter')
+  await expect(tagging.getByRole('button', { name: 'Remove the tag e2e-other' })).toBeVisible()
+  await adding.press('Backspace')
+  await expect(tagging.getByRole('button', { name: 'Remove the tag e2e-other' })).toHaveCount(0)
+  await tagging.getByRole('button', { name: 'Done' }).click()
+  await expect(tagging).toHaveCount(0)
+  await expect(other.getByRole('button', { name: 'Filter by the tag e2e-phish' })).toBeVisible()
+  await expect.poll(() => tagsOf('e2e-tags')).toEqual(['e2e-phish'])
+
+  // The Tag chip lists the tags in use with how many incidents carry each, and writes tag:<value>.
+  await list.getByRole('button', { name: 'Tag', exact: true }).click()
+  await expect(menu.getByRole('menuitem', { name: /#e2e-phish/ })).toHaveText(/#e2e-phish\s*2$/)
+  await expect(menu.getByRole('menuitem', { name: /#e2e-vip/ })).toHaveText(/#e2e-vip\s*1$/)
+  await menu.getByRole('menuitem', { name: /#e2e-phish/ }).click()
+  await expect(filter).toHaveValue('tag:e2e-phish')
+  await expect(rows).toHaveCount(2)
+  // A click on a tag of a row adds it: several tags keep the incidents that carry all of them.
+  await row.getByRole('button', { name: 'Filter by the tag e2e-vip' }).click()
+  await expect(filter).toHaveValue('tag:e2e-phish tag:e2e-vip')
+  await expect(rows).toHaveCount(1)
+  await list.getByRole('button', { name: 'Tag: tag:e2e-phish tag:e2e-vip' }).click()
+  await expect(menu.getByRole('menuitem', { name: /#e2e-vip/ })).toContainText('in the query')
+  await menu.getByRole('menuitem', { name: 'Take the tags out of the query' }).click()
+  await expect(filter).toHaveValue('')
+  // Typed: tag: completes with the tags in use; labels: is the same field.
+  await filter.pressSequentially('tag:e2e-v')
+  const suggestions = list.getByRole('listbox', { name: 'Suggestions' })
+  await expect(suggestions.getByRole('option')).toHaveText(['e2e-vip'])
+  await page.keyboard.press('Enter')
+  await expect(filter).toHaveValue('tag:e2e-vip ')
+  await expect(rows).toHaveCount(1)
+  await expect(row).toBeVisible()
+  await filter.fill('labels:E2E-PHISH -tags:e2e-vip')
+  await expect(rows).toHaveCount(1)
+  await expect(other).toBeVisible()
+  await filter.fill('')
+  await expect(rows.nth(1)).toBeVisible()
+
+  // The quick view shows them, and takes one off; the row follows.
+  await row.locator('td').nth(3).click()
+  const quick = page.getByRole('complementary', { name: /^Quick view of incident/ })
+  const quickTags = quick.getByRole('group', { name: 'Tags' })
+  await expect(quickTags).toContainText('#e2e-phish')
+  await quickTags.getByRole('button', { name: 'Remove the tag e2e-vip' }).click()
+  await expect(quickTags).not.toContainText('#e2e-vip')
+  await expect(row.getByRole('button', { name: 'Filter by the tag e2e-vip' })).toHaveCount(0)
+  await expect.poll(() => tagsOf(incidentId)).toEqual(['e2e-phish'])
+  // Escape in the input of a tag closes the input, not the quick view.
+  await quickTags.getByRole('button', { name: 'Add a tag' }).click()
+  await quickTags.getByRole('combobox', { name: 'New tag' }).press('Escape')
+  await expect(quickTags.getByRole('combobox', { name: 'New tag' })).toHaveCount(0)
+  await expect(quick).toBeVisible()
+  await quick.getByRole('button', { name: 'Close the quick view' }).click()
+  await expect(quick).toHaveCount(0)
+
+  // Put back: the incident with no tag, the other one deleted.
+  const cleared = await page.request.patch(`/api/incidents/${incidentId}/fields`, {
+    data: { changes: { labels: null } },
+  })
+  expect(cleared.status()).toBe(200)
+  expect((await page.request.delete('/api/incidents/e2e-tags')).status()).toBe(204)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await expect(page.getByRole('banner').getByRole('group', { name: 'Tags' })).not.toContainText('#e2e-phish')
+})
+
+test('a custom field is asked like any other: the query box, "Field…", a saved filter, a chart of a page', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  const post = async (path, data) => {
+    const answer = await page.request.post(path, { data })
+    expect(answer.status(), await answer.text()).toBe(201)
+    return answer.json()
+  }
+  await post('/api/fields', { name: 'e2e_customer', label: 'Customer of the incident', type: 'text', allTypes: true })
+  await post('/api/incident-types', { name: 'E2E query' })
+  for (const [id, customer] of [
+    ['e2e-q1', 'Acme Corp'],
+    ['e2e-q2', 'Globex'],
+  ]) {
+    await post('/api/incidents', { id, name: id.toUpperCase(), host: id.toUpperCase(), data: {} })
+    const held = await page.request.patch(`/api/incidents/${id}/fields`, {
+      data: { changes: { type: 'e2e-query', e2e_customer: customer } },
+    })
+    expect(held.status(), await held.text()).toBe(200)
+  }
+  const board = await post('/api/dashboards', {
+    name: 'E2E query board',
+    widgets: [{ id: 'all', title: 'All of them', type: 'number', entity: 'incidents' }],
+  })
+  await page.reload() // the registry is read as the app opens: the field was made behind its back
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+
+  // The query box offers the field with what Settings calls it, and the server reads the condition.
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const rows = list.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
+  const filter = list.getByRole('combobox', { name: 'Filter incidents' })
+  const menu = page.getByRole('menu', { name: 'Saved filters' })
+  await openIncidentList()
+  await expect(list.getByRole('button', { name: 'Field…' })).toBeEnabled() // the fields a query can ask were read
+  await filter.fill('')
+  await filter.pressSequentially('e2e_cu')
+  const suggestions = list.getByRole('listbox', { name: 'Suggestions' })
+  await expect(suggestions.getByRole('option')).toHaveCount(1)
+  await expect(suggestions.getByRole('option').first()).toContainText('e2e_customer')
+  await expect(suggestions.getByRole('option').first()).toContainText('Customer of the incident')
+  await page.keyboard.press('Enter')
+  await expect(filter).toHaveValue('e2e_customer:')
+  await filter.pressSequentially('acme')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('E2E-Q1')
+  await filter.fill('e2e_customer:* !e2e_customer:acme')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('E2E-Q2')
+
+  // "Field…" lists it with the operators of a text, and writes the same condition.
+  await filter.fill('')
+  await list.getByRole('button', { name: 'Field…' }).click()
+  const adding = page.getByRole('dialog', { name: 'Add a condition on a field' })
+  await expect(adding.getByLabel('Field').locator('option[value="e2e_customer"]')).toHaveText(
+    'e2e_customer · Customer of the incident',
+  )
+  await adding.getByLabel('Field').selectOption('e2e_customer')
+  await expect(adding.getByLabel('Operator').locator('option')).toHaveText([
+    'contains',
+    'does not contain',
+    'is empty',
+    'holds something',
+  ])
+  await adding.getByLabel('Value').fill('globex')
+  await adding.getByRole('button', { name: 'Add to the query' }).click()
+  await expect(filter).toHaveValue('e2e_customer:globex')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('E2E-Q2')
+
+  // The filter is saved with it.
+  await list.getByRole('button', { name: 'Save the filter…' }).click()
+  const saving = page.getByRole('dialog', { name: 'Save the filter' })
+  await expect(saving).toContainText('e2e_customer:globex')
+  await saving.getByLabel('Name').fill('E2E Globex')
+  await saving.getByRole('button', { name: 'Save the filter' }).click()
+  await expect(saving).toHaveCount(0)
+  const chosen = list.getByRole('button', { name: 'Filter: E2E Globex' })
+  await expect(chosen).toBeVisible()
+  const kept = (await (await page.request.get('/api/filters')).json()).filters
+  expect(kept.map((item) => item.query)).toEqual(['e2e_customer:globex'])
+  await chosen.click()
+  await menu.getByRole('menuitem', { name: /^Manage the filters/ }).click()
+  const managing = page.getByRole('dialog', { name: 'Manage the filters' })
+  await managing.getByRole('button', { name: 'Delete E2E Globex' }).click()
+  await managing.getByRole('button', { name: 'Delete it' }).click()
+  await expect(managing).toContainText('Nothing here yet.')
+  await managing.getByRole('button', { name: 'Done' }).click()
+  await list.getByRole('button', { name: 'Filter: none' }).click()
+  await menu.getByRole('menuitem', { name: 'All incidents (no filter)' }).click()
+  await expect(filter).toHaveValue('')
+
+  // A chart of a page is narrowed by it: the setting lists every field a query can ask.
+  const settings = await openTypePages('E2E query')
+  const arranged = settings.getByRole('region', { name: 'The page' })
+  await arranged.locator('#page-add-kind').selectOption('chart')
+  await arranged.getByRole('button', { name: 'Add', exact: true }).click()
+  await arranged.getByRole('button', { name: 'Edit Chart of a dashboard' }).click()
+  const widget = page.getByRole('dialog', { name: 'Widget: Chart of a dashboard' })
+  await widget.locator('#chart-dashboard').selectOption(board.id)
+  await widget.locator('#chart-widget').selectOption('all')
+  await expect(widget.locator('#chart-field').locator('option[value="e2e_customer"]')).toHaveText(
+    'e2e_customer · Customer of the incident',
+  )
+  await widget.locator('#chart-field').selectOption('e2e_customer')
+  await widget.getByRole('button', { name: 'Done' }).click()
+  await settings.getByRole('button', { name: 'Save the type' }).click()
+  await expect(settings.getByText('not saved')).toHaveCount(0)
+  const narrowed = await (
+    await page.request.get(`/api/incidents/e2e-q1/chart?dashboard=${board.id}&widget=all&field=e2e_customer`)
+  ).json()
+  expect(narrowed.widget.query).toBe('e2e_customer:"Acme Corp"')
+  const counted = await page.request.post('/api/query/aggregate', {
+    data: { entity: 'incidents', query: narrowed.widget.query },
+  })
+  expect((await counted.json()).total).toBe(1)
+  await page.goto('/incident/e2e-q1')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  const summary = page.getByRole('region', { name: 'Summary of the incident' })
+  await expect(summary).toContainText('E2E query board · narrowed to e2e_customer: Acme Corp')
+
+  // Put back: the incidents, the type, the dashboard, then the field nothing holds any more.
+  for (const id of ['e2e-q1', 'e2e-q2']) expect((await page.request.delete(`/api/incidents/${id}`)).status()).toBe(204)
+  expect((await page.request.delete('/api/incident-types/e2e-query')).status()).toBe(204)
+  expect((await page.request.delete(`/api/dashboards/${board.id}`)).ok()).toBe(true)
+  expect((await page.request.delete('/api/fields/e2e_customer')).status()).toBe(204)
+  // The field is gone: a query that names it says so, as for a name that was never one.
+  const gone = await page.request.get('/api/incidents?view=summary&q=e2e_customer:acme')
+  expect(gone.status()).toBe(422)
+  expect((await gone.json()).detail).toContain('"e2e_customer" is not a field of incidents')
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
@@ -2459,21 +2737,30 @@ test('a connector is added from its file, a connection is made, and its commands
   await expect(edit.getByLabel(/^Password/)).toHaveValue('')
   await expect(edit.getByLabel(/^Password/)).toHaveAttribute('placeholder', 'stored: type to replace it')
   // More keys than one: a second key is added, the keys take turns as chosen, and nothing of a key is shown again.
+  // The form has a tab for each of its parts; the keys are one.
+  await edit.getByRole('tab', { name: 'Keys' }).click()
   const keys = edit.getByRole('region', { name: 'Keys' })
   const held = keys.getByRole('list', { name: 'The keys of the instance' }).getByRole('listitem')
   await expect(held).toHaveCount(1)
-  await expect(held.first()).toContainText('The credentials of the instance, set above.')
+  await expect(held.first()).toContainText('The credentials of the instance, set on the Connection tab.')
   await keys.getByRole('button', { name: 'Add a key' }).click()
-  await expect(keys.getByRole('button', { name: 'Save the keys' })).toBeDisabled() // it has no credential yet
-  await expect(keys).toContainText('"Key 2" has no credential yet')
+  // One "Save" for the whole instance: it waits for the new key to have its credential.
+  await expect(edit.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+  await expect(edit.getByRole('button', { name: 'Save', exact: true })).toHaveAttribute(
+    'title',
+    '"Key 2" has no credential yet',
+  )
   await held.nth(1).getByLabel('Name of key 2').fill('lab')
   await held.nth(1).getByLabel('User name').fill('lab')
   await held.nth(1).getByLabel('Password').fill('lab-secret-1')
   await keys.getByRole('radio', { name: /^The same key until it is used up/ }).check()
   await keys.getByLabel('Requests a minute').fill('4')
   await keys.getByLabel('Keep an answer for this many hours').fill('24')
-  await keys.getByRole('button', { name: 'Save the keys' }).click()
-  await expect(keys.getByRole('status')).toContainText('The keys were saved.')
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  // Saved with everything else of the instance; opened again, the key is there and shows nothing of itself.
+  await expect(edit).toHaveCount(0) // the form closes once everything is saved
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  await edit.getByRole('tab', { name: 'Keys' }).click()
   await expect(held).toHaveCount(2)
   await expect(held.nth(1).getByLabel('Password')).toHaveValue('')
   await expect(held.nth(1)).toContainText('stored')
@@ -3610,17 +3897,32 @@ test('lists: one is made and filled in Settings, and a feature is pointed at it'
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
-test('a mapper says how the names of a product become those of Nik, tried on a sample; a classifier chooses the type', async () => {
+test('the mappers and the classifier are set in the instance, tried on a sample, and saved by its one Save', async () => {
   const incidentId = decodeURIComponent(new URL(page.url()).pathname.split('/')[2])
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
-  await settings
-    .getByRole('navigation', { name: 'Settings sections' })
-    .getByText('Classifiers and mappers', { exact: true })
-    .click()
-  await expect(page).toHaveURL(/\/settings\/automation\/classifiers-and-mappers$/)
-  await settings.getByLabel('Connector', { exact: true }).selectOption('acme')
-  await expect(settings.getByText('no mapper yet')).toBeVisible()
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  // Their page left the menu: the address it had opens the connectors, where the instances are.
+  await expect(sections.getByText('Classifiers and mappers', { exact: true })).toHaveCount(0)
+  await page.evaluate(() => {
+    window.history.replaceState({}, '', '/settings/automation/classifiers-and-mappers')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  const row = settings
+    .getByRole('list', { name: 'Instances of Acme Desk' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme test' })
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  const pane = settings.getByRole('complementary', { name: 'Instance Acme test' })
+  const tabs = pane.getByRole('tablist', { name: 'Parts of the instance' })
+  await expect(tabs.getByRole('tab')).toHaveText(['Connection', 'Keys', 'Fetch', 'Classifier', 'Mappers'])
+  await tabs.getByRole('tab', { name: 'Mappers' }).click()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors\/[^/]+\/mappers$/)
+  // The mappers are the connector's: the form says that every instance of it shares them.
+  await expect(pane.getByRole('region', { name: 'Mapper (incoming)' })).toContainText(
+    'Shared by every instance of Acme Desk',
+  )
+  await expect(pane.getByText('no mapper yet')).toBeVisible()
 
   // A sample of what the product sends, and two rules written against it.
   await settings
@@ -3647,18 +3949,22 @@ test('a mapper says how the names of a product become those of Nik, tried on a s
   await expect(severity).toContainText('critical')
   await expect(host).toContainText('WKS-FINANCE-01')
   await expect(rules.getByRole('row').filter({ hasText: 'T-77' })).toHaveCount(1)
-  await settings.getByRole('button', { name: 'Save the mapper' }).click()
-  await expect(settings.getByRole('status').filter({ hasText: 'The mapper is saved.' })).toBeVisible()
-  await expect(settings.getByText('saved', { exact: true })).toBeVisible()
+  // Nothing is saved yet: the mapper is a change of the form, kept while the other tabs are used.
+  await expect(pane.getByText('changed: Save keeps it')).toBeVisible()
+  await expect(pane.getByText('Not saved yet: a mapper.')).toBeVisible()
 
   // What a field refuses is said, and the rest goes on.
   await severity.getByLabel('Severity: its value', { exact: true }).fill('{{ item.title }}')
   await settings.getByRole('button', { name: 'Try on the sample' }).first().click()
   await expect(settings.getByRole('status').filter({ hasText: 'Severity' })).toBeVisible()
   await expect(name).toContainText('Emotet on a laptop')
+  await severity.getByLabel('Severity: its value', { exact: true }).fill("{{ item.priority | severity('inverse') }}")
 
-  // The classifier of the connection: the first rule that holds gives the type.
-  const classifier = settings.getByRole('region', { name: 'Classifier of Acme test' })
+  // The classifier of the instance, on its own tab: the first rule that holds gives the type.
+  // The sample pasted for the mapper is the one it is tried on.
+  await tabs.getByRole('tab', { name: 'Classifier' }).click()
+  const classifier = pane.getByRole('region', { name: 'Classifier of Acme test' })
+  await expect(classifier.getByLabel('A sample item, as JSON')).toHaveValue(/Emotet on a laptop/)
   await classifier.getByRole('button', { name: 'Add a rule' }).click()
   await classifier.getByLabel('Rule 1: what to compare', { exact: true }).fill('{{ item.title }}')
   await classifier.getByLabel('Rule 1: how').selectOption('contains')
@@ -3666,10 +3972,11 @@ test('a mapper says how the names of a product become those of Nik, tried on a s
   await classifier.getByLabel('Rule 1: the type it becomes').selectOption('malware')
   await classifier.getByRole('button', { name: 'Try on the sample' }).click()
   await expect(classifier.getByRole('status').filter({ hasText: 'The sample becomes' })).toContainText('Malware')
-  await classifier.getByRole('button', { name: 'Save the classifier' }).click()
-  await expect(classifier.getByRole('status').filter({ hasText: 'The classifier is saved.' })).toBeVisible()
+  await expect(pane.getByText('Not saved yet: the classifier, a mapper.')).toBeVisible()
 
-  // The other way: what goes to the product for an incident.
+  // The other way: what goes to the product for an incident. The incoming mapper is still as it was left.
+  await tabs.getByRole('tab', { name: 'Mappers' }).click()
+  await expect(pane.getByLabel('Host: its value', { exact: true })).toHaveValue('{{ item.host.name }}')
   await settings.getByRole('group', { name: 'Direction' }).getByRole('button', { name: 'Outgoing' }).click()
   await settings.getByRole('button', { name: 'Add a name' }).click()
   await settings.getByLabel('Name 1', { exact: true }).fill('summary')
@@ -3679,6 +3986,32 @@ test('a mapper says how the names of a product become those of Nik, tried on a s
   await expect(settings.getByRole('table', { name: 'Rules of the outgoing mapper' })).toContainText(
     /WKS-FINANCE-01.*\(/,
   )
+  await expect(pane.getByText('Not saved yet: the classifier, 2 mappers.')).toBeVisible()
+  // It was only tried: what is saved is put back, and nothing of it is kept.
+  await pane.getByRole('button', { name: 'Put back what is saved' }).click()
+  await expect(pane.getByText('Not saved yet: the classifier, a mapper.')).toBeVisible()
+
+  // One Save for the instance, its classifier and the mappers.
+  await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0) // the form closes once everything is saved
+  await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors$/)
+  const kept = await page.evaluate(async () => {
+    const get = async (path) => (await fetch(path, { credentials: 'include' })).json()
+    const instance = (await get('/api/automation/instances')).instances.find((item) => item.name === 'Acme test')
+    return {
+      mappers: (await get('/api/mappers?connector=acme')).mappers.map((item) => [item.direction, item.rules.length]),
+      classifier: (await get(`/api/classifiers/${instance.id}`)).rules.map((rule) => rule.type),
+    }
+  })
+  expect(kept.mappers).toEqual([['incoming', 4]])
+  expect(kept.classifier).toEqual(['malware'])
+  // Opened again, the classifier is the one that was saved.
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  await tabs.getByRole('tab', { name: 'Classifier' }).click()
+  await expect(classifier.getByLabel('Rule 1: with what')).toHaveValue('Emotet')
+  await expect(classifier.getByText('saved', { exact: true })).toBeVisible()
+  await pane.getByRole('button', { name: 'Close the instance' }).click()
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
@@ -3724,36 +4057,92 @@ test('pre-processing rules say what becomes of a fetched item before it is an in
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
 
-test('Fetch status: a connection is told to fetch, says why it fails, and is let go on', async () => {
+test('fetching is set in the instance: how often, the look-back, why it fails, Resume and Reset last run', async () => {
   await page.getByRole('button', { name: 'Open platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
-  await settings
-    .getByRole('navigation', { name: 'Settings sections' })
-    .getByText('Fetch status', { exact: true })
-    .click()
-  await expect(page).toHaveURL(/\/settings\/automation\/fetch-status$/)
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  // Its page left the menu: the address it had opens the connectors, and typing its name finds them.
+  await expect(sections.getByText('Fetch status', { exact: true })).toHaveCount(0)
+  await page.evaluate(() => {
+    window.history.replaceState({}, '', '/settings/automation/fetch-status')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
   const row = settings
-    .getByRole('list', { name: 'Instances that can fetch' })
+    .getByRole('list', { name: 'Instances of Acme Desk' })
     .getByRole('listitem')
     .filter({ hasText: 'Acme test' })
-  await expect(row).toContainText('off')
-  await expect(row).toContainText('It does not fetch.')
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  const pane = settings.getByRole('complementary', { name: 'Instance Acme test' })
+  const tabs = pane.getByRole('tablist', { name: 'Parts of the instance' })
+  await tabs.getByRole('tab', { name: 'Fetch' }).click()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors\/[^/]+\/fetch$/)
+  const fetching = pane.getByRole('region', { name: 'Fetch' })
+  const goes = fetching.getByRole('group', { name: 'How it goes' })
+  await expect(goes).toContainText('off')
+  await expect(goes).toContainText('It does not fetch.')
+  await expect(goes.getByRole('button', { name: 'Fetch now' })).toBeDisabled()
+  // What its connector says is what it starts with.
+  await expect(fetching.getByLabel('How often (seconds)')).toHaveValue('3600')
+  await expect(fetching.getByLabel('First fetch')).toHaveValue('1 days')
+  await expect(fetching.getByLabel('Look-back (minutes)')).toHaveValue('0')
 
-  await row.getByRole('button', { name: 'Turn on' }).click()
-  await expect(settings.getByRole('status')).toContainText('Acme test fetches')
-  await expect(row).toContainText('fetching')
-  // There is no Acme Desk to answer: the cycle fails, and the page says why.
-  await row.getByRole('button', { name: 'Fetch now' }).click()
-  await expect(row).toContainText('failing', { timeout: 30_000 })
-  await expect(row.locator('.text-high-fg').first()).not.toBeEmpty()
-  await row.getByRole('button', { name: 'Let it go on' }).click()
-  await expect(settings.getByRole('status')).toContainText('Acme test goes on.')
+  // Turned on, with its own interval and look-back; what cannot be saved is said, and Save waits.
+  await fetching.getByRole('switch', { name: 'Fetch incidents' }).click()
+  await fetching.getByLabel('How often (seconds)').fill('5')
+  await expect(pane.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+  await expect(pane).toContainText('Fetching: how often is a number of seconds, 30 at the least')
+  await fetching.getByLabel('How often (seconds)').fill('900')
+  await fetching.getByLabel('Look-back (minutes)').fill('10')
+  await expect(fetching).toContainText('Each cycle asks from 10 min before the newest time it has seen.')
+  await expect(goes).toContainText('It fetches once the instance is saved.')
+  // The one Save of the instance keeps them, with the rest.
+  await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0)
+  await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
+  const saved = await page.evaluate(async () => {
+    const found = await (await fetch('/api/automation/instances', { credentials: 'include' })).json()
+    return found.instances.find((item) => item.name === 'Acme test').fetch
+  })
+  expect(saved).toMatchObject({ enabled: true, intervalSeconds: 900, firstFetch: '1 days', lookbackMinutes: 10 })
+
+  // Its row says that it fetches, and leads to this part of its form.
+  await row.getByRole('button', { name: /^Fetching of Acme test: / }).click()
+  await expect(fetching.getByLabel('How often (seconds)')).toHaveValue('900')
+  await expect(fetching.getByLabel('Look-back (minutes)')).toHaveValue('10')
+  // There is no Acme Desk to answer: the cycle fails, and the form says why.
+  await goes.getByRole('button', { name: 'Fetch now' }).click()
+  await expect(goes).toContainText('failing', { timeout: 30_000 })
+  await expect(goes.locator('.text-high-fg').first()).not.toBeEmpty()
+  await goes.getByRole('button', { name: 'Resume' }).click()
+  await expect(goes.getByRole('status')).toContainText('Acme test goes on.')
+
+  // Reset last run asks first, and says what it will do.
+  await goes.getByRole('button', { name: 'Reset last run…' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Reset the last run?' })
+  await expect(confirm).toContainText(
+    'The next cycle reads again from 1 days ago. What was already imported is skipped: no incident is made twice.',
+  )
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await goes.getByRole('button', { name: 'Reset last run…' }).click()
+  await confirm.getByRole('button', { name: 'Reset last run' }).click()
+  await expect(goes.getByRole('status')).toContainText('The last run of Acme test was reset')
+  await expect(goes).toContainText('the first fetch')
+
   // What it fetched lately: nothing yet.
-  await row.getByRole('button', { name: 'Show what Acme test fetched' }).click()
-  await expect(row).toContainText('Nothing fetched yet.')
-  await row.getByRole('button', { name: 'Turn off' }).click()
-  await expect(row).toContainText('It does not fetch.')
-  // Who is told when a connection fails: the bell holds it.
+  await goes.getByRole('button', { name: 'What it fetched…' }).click()
+  const fetched = page.getByRole('dialog', { name: 'What Acme test fetched' })
+  await expect(fetched).toContainText('Nothing fetched yet.')
+  await fetched.getByRole('button', { name: 'Close', exact: true }).last().click()
+
+  // Put back: it does not fetch, and follows its connector again.
+  await fetching.getByRole('switch', { name: 'Fetch incidents' }).click()
+  await fetching.getByLabel('How often (seconds)').fill('3600')
+  await fetching.getByLabel('Look-back (minutes)').fill('0')
+  await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0)
+  await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
+  await expect(row.getByRole('button', { name: /^Fetching of Acme test/ })).toHaveCount(0)
+  // Who is told when a connection fails: the bell holds it, and it leads to the instance.
   await page.getByRole('button', { name: 'Close platform settings' }).click()
   await page.getByRole('button', { name: /^Notifications/ }).click()
   const told = page.getByRole('dialog', { name: 'Notifications' })
@@ -3862,7 +4251,7 @@ test('a dashboard is built from widgets, shows real numbers, and opens what is b
   await expect(page.getByRole('region', { name: 'Dashboards' })).toHaveCount(0)
 })
 
-test('a content pack is inspected, shown with what it would change, installed whole and uninstalled', async () => {
+test('content packs are found, selected, inspected, installed whole, and uninstalled unless in use', async () => {
   // What the catalogue would list (the tests reach no other machine: its answer is given here).
   const entry = (id, name, more) => ({
     id,
@@ -3890,9 +4279,22 @@ test('a content pack is inspected, shown with what it would change, installed wh
     packs: [
       entry('jira-cloud', 'Jira Cloud', {
         category: 'Ticketing',
+        tags: ['ticketing', 'atlassian-cloud'],
+        connectors: ['Jira Cloud'],
         contents: { connectors: 1, commands: 17, mappers: 1 },
       }),
-      entry('later-pack', 'Tomorrow', { version: '2.0.0', contents: { playbooks: 2 }, needsNik: '9.0' }),
+      entry('confluence-cloud', 'Confluence Cloud', {
+        category: 'Code and knowledge',
+        tags: ['wiki', 'atlassian-cloud'],
+        description: 'Pages made and added to.',
+        contents: { connectors: 1, commands: 9 },
+      }),
+      entry('later-pack', 'Tomorrow', {
+        version: '2.0.0',
+        tags: ['siem'],
+        contents: { playbooks: 2 },
+        needsNik: '9.0',
+      }),
     ],
   }
   await page.route('**/api/packs/catalogue', (route) => route.fulfill({ json: listed }))
@@ -3911,84 +4313,175 @@ test('a content pack is inspected, shown with what it would change, installed wh
   const jira = atlassian.getByRole('listitem', { name: 'Jira Cloud' })
   await expect(jira).toContainText('connector (17 commands) · 1 mapper')
   await expect(jira.getByRole('button', { name: 'Install…' })).toBeVisible()
+  const confluence = atlassian.getByRole('listitem', { name: 'Confluence Cloud' })
   const later = atlassian.getByRole('listitem', { name: 'Tomorrow' })
   await expect(later).toContainText('For Nik 9.0 or later.')
   await expect(later.getByRole('button', { name: 'Install…' })).toHaveCount(0)
-  await expect(settings.getByRole('group', { name: 'The catalogue' })).toContainText('2 packs')
-  // The filters and the search narrow what is shown.
+  await expect(settings.getByRole('group', { name: 'The catalogue' })).toContainText('3 packs')
+  // The filters narrow what is shown.
   await settings.getByRole('button', { name: /^Installed \d+$/ }).click()
   await expect(atlassian).toHaveCount(0)
   await settings.getByRole('button', { name: /^All \d+$/ }).click()
-  await settings.getByLabel('Search the packs…').fill('ticketing')
+  // The search box comes first and looks in everything a card says: the tags and the connectors too.
+  const search = settings.getByRole('search', { name: 'Find a pack' }).getByLabel('Search the packs')
+  await search.fill('ticketing')
   await expect(jira).toBeVisible()
   await expect(own).toHaveCount(0)
-  await settings.getByLabel('Search the packs…').fill('')
+  await search.fill('wiki pages')
+  await expect(confluence).toBeVisible()
+  await expect(jira).toHaveCount(0)
+  await settings.getByRole('button', { name: 'Clear the search' }).click()
+  // A tag narrows to the packs that have it, and says how many there are; a second one narrows again.
+  await expect(jira).toContainText('ticketing')
+  const tags = settings.getByRole('group', { name: 'Tags' })
+  await tags.getByRole('button', { name: 'atlassian-cloud 2' }).click()
+  await expect(later).toHaveCount(0)
+  await expect(own).toHaveCount(0)
+  await tags.getByRole('button', { name: 'wiki 1' }).click()
+  await expect(confluence).toBeVisible()
+  await expect(jira).toHaveCount(0)
+  await expect(tags.getByRole('button', { name: /^ticketing/ })).toHaveCount(0)
+  await tags.getByRole('button', { name: 'Clear the tags' }).click()
+  await expect(jira).toBeVisible()
+  // "Hide the installed ones" leaves what there is to install, and is kept in this browser.
+  const hide = settings.getByLabel('Hide the installed ones')
+  await hide.check()
+  await expect(own).toHaveCount(0)
+  await expect(jira).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('nik.packs.hide-installed'))).toBe('1')
+  await settings.getByRole('button', { name: /^Installed \d+$/ }).click()
+  await expect(hide).toBeDisabled()
+  await expect(own).toBeVisible()
+  await settings.getByRole('button', { name: /^All \d+$/ }).click()
+  await hide.uncheck()
+  await expect(own).toBeVisible()
+
+  // Several at once: two are ticked, and the bar offers what the selection allows.
+  await expect(own.getByRole('checkbox')).toHaveCount(0)
+  await expect(later.getByRole('checkbox')).toHaveCount(0)
+  await jira.getByLabel('Select Jira Cloud').check()
+  await confluence.getByLabel('Select Confluence Cloud').check()
+  const bar = settings.getByRole('toolbar', { name: 'The packs that are selected' })
+  await expect(bar).toContainText('2 selected')
+  await expect(bar.getByRole('button', { name: 'Update (0)…' })).toBeDisabled()
+  await expect(bar.getByRole('button', { name: 'Uninstall (0)…' })).toBeDisabled()
+  // The server says what would happen to each, in the order they would be done (its answer is given
+  // here: the tests reach no catalogue). One is left out, with why, and is not counted.
+  await page.route('**/api/packs/bulk/plan', (route) =>
+    route.fulfill({
+      json: {
+        action: 'install',
+        packs: [
+          {
+            id: 'confluence-cloud',
+            name: 'Confluence Cloud',
+            version: '1.0.0',
+            installed: null,
+            ok: true,
+            why: '',
+            token: 'a-token-of-the-test',
+            counts: { add: 1, update: 0, same: 0, conflict: 0 },
+            items: [{ kind: 'connectors', name: 'confluence-cloud', label: 'Connector', action: 'add' }],
+          },
+          {
+            id: 'jira-cloud',
+            name: 'Jira Cloud',
+            version: '1.0.0',
+            installed: null,
+            ok: false,
+            why: '1 of its items is in conflict: install it on its own to leave them out',
+            counts: { add: 1, update: 0, same: 0, conflict: 1 },
+            items: [],
+          },
+        ],
+      },
+    }),
+  )
+  await bar.getByRole('button', { name: 'Install (2)…' }).click()
+  const several = page.getByRole('dialog', { name: 'Install 2 packs' })
+  await expect(several.getByRole('status')).toContainText('1 to install, 1 left out.')
+  const lines = several.getByRole('list', { name: 'The packs' })
+  await expect(lines.getByRole('listitem', { name: 'Jira Cloud' })).toContainText('left out')
+  await expect(lines.getByRole('listitem', { name: 'Jira Cloud' })).toContainText('1 of its items is in conflict')
+  const first = lines.getByRole('listitem', { name: 'Confluence Cloud' })
+  await expect(first).toContainText('1 to add')
+  await first.getByRole('button', { name: 'What Confluence Cloud holds' }).click()
+  await expect(first.getByRole('list', { name: 'The items of Confluence Cloud' })).toContainText('confluence-cloud')
+  await expect(several.getByRole('button', { name: 'Install (1)' })).toBeEnabled()
+  await several.getByRole('button', { name: 'Cancel' }).click()
+  await page.unroute('**/api/packs/bulk/plan')
+  await settings.getByRole('button', { name: 'Select none' }).click()
+  await expect(bar).toHaveCount(0)
+  await settings.getByRole('button', { name: 'Select all shown' }).click()
+  await expect(bar).toContainText(/\d+ selected/)
+  await settings.getByRole('button', { name: 'Select none' }).click()
 
   // A pack made by hand: a list, and a field that clashes with one Nik has.
-  const zip = await page.evaluate(async () => {
-    const files = {
-      'pack.yml': 'id: e2e-pack\nname: E2E pack\nversion: 1.0.0\ndescription: Made by the test.\n',
-      'lists/e2e_vips.json': JSON.stringify({
-        name: 'e2e_vips',
-        label: 'E2E VIPs',
-        kind: 'values',
-        entries: [{ key: 'ceo' }],
-      }),
-      'fields/severity.json': JSON.stringify({ name: 'severity', label: 'Mine', type: 'text' }),
-    }
-    // A zip with stored (uncompressed) entries, built here: the browser has no zip writer.
-    const encoder = new TextEncoder()
-    const table = new Uint32Array(256).map((_, n) => {
-      let c = n
-      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-      return c >>> 0
-    })
-    const crc = (bytes) => {
-      let c = 0xffffffff
-      for (const byte of bytes) c = table[(c ^ byte) & 0xff] ^ (c >>> 8)
-      return (c ^ 0xffffffff) >>> 0
-    }
-    const parts = []
-    const central = []
-    let offset = 0
-    for (const [name, text] of Object.entries(files)) {
-      const nameBytes = encoder.encode(name)
-      const data = encoder.encode(text)
-      const head = new DataView(new ArrayBuffer(30))
-      head.setUint32(0, 0x04034b50, true)
-      head.setUint16(4, 20, true)
-      head.setUint32(14, crc(data), true)
-      head.setUint32(18, data.length, true)
-      head.setUint32(22, data.length, true)
-      head.setUint16(26, nameBytes.length, true)
-      parts.push(new Uint8Array(head.buffer), nameBytes, data)
-      const entry = new DataView(new ArrayBuffer(46))
-      entry.setUint32(0, 0x02014b50, true)
-      entry.setUint16(4, 20, true)
-      entry.setUint16(6, 20, true)
-      entry.setUint32(16, crc(data), true)
-      entry.setUint32(20, data.length, true)
-      entry.setUint32(24, data.length, true)
-      entry.setUint16(28, nameBytes.length, true)
-      entry.setUint32(42, offset, true)
-      central.push(new Uint8Array(entry.buffer), nameBytes)
-      offset += 30 + nameBytes.length + data.length
-    }
-    const size = central.reduce((sum, part) => sum + part.length, 0)
-    const end = new DataView(new ArrayBuffer(22))
-    end.setUint32(0, 0x06054b50, true)
-    end.setUint16(8, Object.keys(files).length, true)
-    end.setUint16(10, Object.keys(files).length, true)
-    end.setUint32(12, size, true)
-    end.setUint32(16, offset, true)
-    const all = [...parts, ...central, new Uint8Array(end.buffer)]
-    const out = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0))
-    let at = 0
-    for (const part of all) {
-      out.set(part, at)
-      at += part.length
-    }
-    return Array.from(out)
+  const zipOf = (entries) =>
+    page.evaluate(async (files) => {
+      // A zip with stored (uncompressed) entries, built here: the browser has no zip writer.
+      const encoder = new TextEncoder()
+      const table = new Uint32Array(256).map((_, n) => {
+        let c = n
+        for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+        return c >>> 0
+      })
+      const crc = (bytes) => {
+        let c = 0xffffffff
+        for (const byte of bytes) c = table[(c ^ byte) & 0xff] ^ (c >>> 8)
+        return (c ^ 0xffffffff) >>> 0
+      }
+      const parts = []
+      const central = []
+      let offset = 0
+      for (const [name, text] of Object.entries(files)) {
+        const nameBytes = encoder.encode(name)
+        const data = encoder.encode(text)
+        const head = new DataView(new ArrayBuffer(30))
+        head.setUint32(0, 0x04034b50, true)
+        head.setUint16(4, 20, true)
+        head.setUint32(14, crc(data), true)
+        head.setUint32(18, data.length, true)
+        head.setUint32(22, data.length, true)
+        head.setUint16(26, nameBytes.length, true)
+        parts.push(new Uint8Array(head.buffer), nameBytes, data)
+        const entry = new DataView(new ArrayBuffer(46))
+        entry.setUint32(0, 0x02014b50, true)
+        entry.setUint16(4, 20, true)
+        entry.setUint16(6, 20, true)
+        entry.setUint32(16, crc(data), true)
+        entry.setUint32(20, data.length, true)
+        entry.setUint32(24, data.length, true)
+        entry.setUint16(28, nameBytes.length, true)
+        entry.setUint32(42, offset, true)
+        central.push(new Uint8Array(entry.buffer), nameBytes)
+        offset += 30 + nameBytes.length + data.length
+      }
+      const size = central.reduce((sum, part) => sum + part.length, 0)
+      const end = new DataView(new ArrayBuffer(22))
+      end.setUint32(0, 0x06054b50, true)
+      end.setUint16(8, Object.keys(files).length, true)
+      end.setUint16(10, Object.keys(files).length, true)
+      end.setUint32(12, size, true)
+      end.setUint32(16, offset, true)
+      const all = [...parts, ...central, new Uint8Array(end.buffer)]
+      const out = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0))
+      let at = 0
+      for (const part of all) {
+        out.set(part, at)
+        at += part.length
+      }
+      return Array.from(out)
+    }, entries)
+  const zip = await zipOf({
+    'pack.yml': 'id: e2e-pack\nname: E2E pack\nversion: 1.0.0\ndescription: Made by the test.\n',
+    'lists/e2e_vips.json': JSON.stringify({
+      name: 'e2e_vips',
+      label: 'E2E VIPs',
+      kind: 'values',
+      entries: [{ key: 'ceo' }],
+    }),
+    'fields/severity.json': JSON.stringify({ name: 'severity', label: 'Mine', type: 'text' }),
   })
   const packFile = { name: 'e2e.nikpack', mimeType: 'application/zip', buffer: Buffer.from(zip) }
   await settings.getByLabel('A pack file').setInputFiles(packFile)
@@ -4047,6 +4540,85 @@ test('a content pack is inspected, shown with what it would change, installed wh
   await expect(settings.getByRole('status').first()).toContainText('E2E pack was uninstalled: 1 removed.')
   await expect(row).toHaveCount(0)
   expect((await page.request.get('/api/lists/e2e_vips')).status()).toBe(404)
+
+  // A pack of which something is in use is not uninstalled. This one gives a connector, and the
+  // connector is given an instance.
+  const desk = [
+    'name: E2E Desk',
+    'id: e2e-desk',
+    'version: 1',
+    'description: Tickets of the test.',
+    'configuration:',
+    '  - { name: url, type: url, required: true }',
+    '  - { name: credentials, type: basic }',
+    'base_url: "{{ config.url }}"',
+    'test:',
+    '  request: { method: GET, path: /me }',
+    'commands:',
+    '  - name: get-ticket',
+    '    arguments: [{ name: number, type: text, required: true }]',
+    '    request: { method: GET, path: "/tickets/{{ args.number }}" }',
+    '    outputs: { state: "{{ response.state }}" }',
+    '',
+  ].join('\n')
+  const deskZip = await zipOf({
+    'pack.yml': 'id: e2e-desk\nname: E2E desk\nversion: 1.0.0\ntags: [ticketing, itsm]\n',
+    'connectors/e2e-desk.yml': desk,
+  })
+  await settings
+    .getByLabel('A pack file')
+    .setInputFiles({ name: 'desk.nikpack', mimeType: 'application/zip', buffer: Buffer.from(deskZip) })
+  await settings
+    .getByRole('region', { name: 'What importing E2E desk would do' })
+    .getByRole('button', { name: 'Install (1 change)' })
+    .click()
+  await expect(settings.getByRole('status').first()).toContainText('E2E desk 1.0.0 is installed')
+  const instance = await page.request.post('/api/automation/instances', {
+    data: {
+      name: 'E2E desk one',
+      connector: 'e2e-desk',
+      config: { url: 'https://desk.example.test/api/' },
+      secrets: { username: 'svc', password: 's3cret-pass' },
+    },
+  })
+  expect(instance.status()).toBe(201)
+  const deskCard = settings.getByRole('region', { name: 'Packs of Other' }).getByRole('listitem', { name: 'E2E desk' })
+  await expect(deskCard).toContainText('itsm')
+  await deskCard.getByRole('button', { name: 'Uninstall E2E desk' }).click()
+  const heldDialog = page.getByRole('dialog', { name: 'Uninstall E2E desk' })
+  await expect(heldDialog.getByRole('status')).toContainText('E2E desk is in use: it cannot be uninstalled yet.')
+  const holders = heldDialog.getByRole('list', { name: 'What holds the pack' })
+  await expect(holders).toContainText('The instance "E2E desk one" of its connector "e2e-desk" is turned on')
+  await expect(holders).toContainText('Delete the instance first')
+  await expect(heldDialog.getByRole('button', { name: 'Uninstall', exact: true })).toHaveCount(0)
+  await heldDialog.getByRole('button', { name: 'Close', exact: true }).last().click()
+  // The server refuses it whoever asks, and says what holds it.
+  const refusal = await page.request.delete('/api/packs/e2e-desk?remove=true')
+  expect(refusal.status()).toBe(409)
+  expect((await refusal.json()).detail.held).toHaveLength(1)
+  // With others it is the one that is left, with why.
+  await deskCard.getByLabel('Select E2E desk').check()
+  const chosen = settings.getByRole('toolbar', { name: 'The packs that are selected' })
+  await chosen.getByRole('button', { name: 'Uninstall (1)…' }).click()
+  const leaving = page.getByRole('dialog', { name: 'Uninstall 1 pack' })
+  await expect(leaving.getByRole('status')).toContainText('0 to uninstall, 1 left out.')
+  await expect(leaving.getByRole('list', { name: 'What holds E2E desk' })).toContainText('E2E desk one')
+  await expect(leaving.getByRole('button', { name: 'Uninstall (0)' })).toBeDisabled()
+  await leaving.getByRole('button', { name: 'Cancel' }).click()
+  // Once the instance is deleted nothing holds it: it is uninstalled.
+  const instanceId = (await instance.json()).id
+  expect((await page.request.delete(`/api/automation/instances/${instanceId}`)).status()).toBe(204)
+  await chosen.getByRole('button', { name: 'Uninstall (1)…' }).click()
+  await expect(leaving.getByRole('status')).toContainText('1 to uninstall, 0 left out.')
+  await leaving.getByRole('button', { name: 'Uninstall (1)' }).click()
+  await expect(leaving.getByRole('status')).toContainText('1 uninstalled, 0 not.')
+  await expect(leaving.getByRole('listitem', { name: 'E2E desk' })).toContainText('uninstalled: 1 removed')
+  await leaving.getByRole('button', { name: 'Close', exact: true }).last().click()
+  await expect(settings.getByRole('status').first()).toContainText('1 pack uninstalled.')
+  await expect(deskCard).toHaveCount(0)
+  await expect(chosen).toHaveCount(0)
+  const still = (await (await page.request.get('/api/packs')).json()).packs
+  expect(still.some((pack) => pack.id === 'e2e-desk')).toBe(false)
   await page.unroute('**/api/packs/catalogue')
   await page.getByRole('button', { name: 'Close platform settings' }).click()
 })
@@ -4189,6 +4761,9 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
     'Copy link',
     'Copy the name',
     'Delete…',
+    // What the page makes, then what every page has.
+    'New playbook…',
+    ...GENERAL_MENU,
   ])
   // Open does what a click on the name does.
   await menu.getByRole('menuitem', { name: 'Open', exact: true }).click()
@@ -4200,6 +4775,8 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
     'Copy link',
     'Copy the name',
     'Delete…',
+    'New script…',
+    ...GENERAL_MENU,
   ])
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)
@@ -4208,12 +4785,17 @@ test('right-click on a playbook, a script and a dashboard offers what they do an
   await page.getByRole('button', { name: 'Dashboards', exact: true }).click()
   const boards = page.getByRole('navigation', { name: 'Your dashboards' })
   await boards.getByRole('listitem').first().click({ button: 'right' })
-  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Open', 'Copy link', 'Copy the name'])
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText([
+    'Open',
+    'Copy link',
+    'Copy the name',
+    ...GENERAL_MENU,
+  ])
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Close dashboards' }).first().click()
 })
 
-test('a connection of the canvas shows an × that removes it, and handles to route it', async () => {
+test('a connection of the canvas shows an × that removes it, and nothing else', async () => {
   await page.getByRole('button', { name: 'Automations', exact: true }).click()
   const area = page.getByRole('region', { name: 'Automations' })
   await area.getByRole('button', { name: 'Note on high' }).click()
@@ -4233,26 +4815,387 @@ test('a connection of the canvas shows an × that removes it, and handles to rou
   await over(edges.first())
   const remove = area.getByRole('button', { name: /^Remove the connection/ })
   await expect(remove).toBeVisible()
-  // A line that draws itself has one handle, to give it its first corner.
-  await expect(area.getByRole('button', { name: 'Drag to make a corner here' })).toHaveCount(1)
-  const handle = area.getByRole('button', { name: 'Drag to make a corner here' })
-  const box = await handle.boundingBox()
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await page.mouse.down()
-  // To the side, clear of the nodes: a corner under a node cannot be reached.
-  await page.mouse.move(box.x + 240, box.y + 4, { steps: 6 })
-  await page.mouse.up()
-  await over(edges.first())
-  await expect(area.getByRole('button', { name: /^Corner 1 of the connection/ })).toHaveCount(1)
-  // Double-click takes the corner away; the × takes the connection.
-  await area.getByRole('button', { name: /^Corner 1 of the connection/ }).dblclick()
-  await expect(area.getByRole('button', { name: /^Corner 1 of the connection/ })).toHaveCount(0)
-  await over(edges.first())
+  // The × is all a line has: nothing on it makes or moves a corner, the canvas routes it.
+  await expect(area.getByTestId('playbook-canvas').getByRole('button', { name: /corner/i })).toHaveCount(0)
+  await expect(area.locator('.react-flow__edgelabel-renderer').getByRole('button')).toHaveCount(1)
   await remove.click()
   await expect(edges).toHaveCount(before - 1)
   // The playbook is left as it was.
-  for (let step = 0; step < 3; step += 1) await area.getByRole('button', { name: 'Undo' }).click()
+  await area.getByRole('button', { name: 'Undo' }).click()
   await expect(edges).toHaveCount(before)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
+test('right-click in the playbook editor: a node is duplicated and deleted, one is added where the click was, a line is deleted', async () => {
+  // A playbook that is only a draft (made through the API: drawing one has its own test).
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Menu on the canvas' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const draft = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      {
+        id: 'note',
+        kind: 'action',
+        name: 'Write it down',
+        position: { x: 40, y: 160 },
+        config: { action: 'nik.add-note', args: { text: 'seen' } },
+      },
+    ],
+    // A line that was given a corner by an earlier release: it loads, and is drawn by the canvas.
+    edges: [{ from: 'start', to: 'note', points: [{ x: 300, y: 100 }] }],
+  }
+  expect((await page.request.put(`/api/automation/playbooks/${playbookId}`, { data: { draft } })).status()).toBe(200)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+  await area
+    .getByRole('row')
+    .filter({ hasText: 'Menu on the canvas' })
+    .getByRole('button', { name: 'Menu on the canvas' })
+    .click()
+  const canvas = area.getByTestId('playbook-canvas')
+  const nodes = canvas.locator('.react-flow__node')
+  const edges = canvas.locator('.react-flow__edge')
+  const menu = page.getByRole('menu')
+  await expect(nodes).toHaveCount(2)
+  await expect(edges).toHaveCount(1)
+
+  // On a node: what is done to a node, each with the key that does the same.
+  await nodes.filter({ hasText: 'Write it down' }).click({ button: 'right' })
+  await expect(menu).toContainText('Write it down')
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Open in the inspectorenter',
+    'Debug, stopping before it…',
+    'Duplicatectrl d',
+    'Copyctrl c',
+    'Cutctrl x',
+    'Disconnect its lines',
+    'Deletedel',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: 'Duplicate' }).click()
+  await expect(nodes).toHaveCount(3)
+  // The copy is what is selected: its menu deletes it.
+  const copy = nodes.filter({ hasText: 'Write it down' }).last()
+  await copy.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Delete' }).click()
+  await expect(nodes).toHaveCount(2)
+
+  // The trigger is never copied or deleted, and the menu says why.
+  await nodes.filter({ hasText: 'by hand' }).click({ button: 'right' })
+  const kept = menu.getByRole('menuitem', { name: 'Delete' })
+  await expect(kept).toHaveAttribute('aria-disabled', 'true')
+  await expect(kept).toHaveAttribute('title', 'A playbook keeps its trigger')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // Without a pointer: Shift+F10 on the node that has the focus.
+  await nodes.filter({ hasText: 'Write it down' }).focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu).toContainText('Write it down')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // On the empty canvas: a node is added where the click was.
+  const frame = await canvas.boundingBox()
+  await canvas.click({ button: 'right', position: { x: 70, y: 50 } })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Add a node here…',
+    'Paste herectrl v',
+    'Select allctrl a',
+    'Fit the view',
+    'Tidy up',
+    'Undoctrl z',
+    'Redoctrl shift z',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: 'Add a node here…' }).click()
+  const add = page.getByRole('dialog', { name: 'Add a node' })
+  await add.getByLabel('Search the nodes to add').fill('finish the run')
+  await expect(add.getByRole('button', { name: /^End/ })).toHaveCount(1)
+  await page.keyboard.press('Enter')
+  await expect(add).toBeHidden()
+  await expect(nodes).toHaveCount(3)
+  const landed = await nodes.filter({ hasText: 'End' }).boundingBox()
+  expect(Math.abs(landed.x - (frame.x + 70))).toBeLessThan(4)
+  expect(Math.abs(landed.y - (frame.y + 50))).toBeLessThan(4)
+
+  // What was copied is pasted where the next click is.
+  await nodes.filter({ hasText: 'Write it down' }).click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ }).click()
+  await canvas.click({ button: 'right', position: { x: 70, y: 150 } })
+  await menu.getByRole('menuitem', { name: 'Paste here' }).click()
+  await expect(nodes).toHaveCount(4)
+
+  // The line that has the focus gives its menu to the keyboard too.
+  await edges.first().focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu.getByRole('menuitem')).toHaveText(['Delete this connectiondel', ...GENERAL_MENU])
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // On a line: it is deleted. (The pointer on its middle: a path of no width is not something to click.)
+  const middle = await edges
+    .first()
+    .locator('.react-flow__edge-interaction')
+    .evaluate((path) => {
+      const at = path.getPointAtLength(path.getTotalLength() / 2)
+      const point = new DOMPoint(at.x, at.y).matrixTransform(path.getScreenCTM())
+      return { x: point.x, y: point.y }
+    })
+  await page.mouse.click(middle.x, middle.y, { button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Delete this connectiondel', ...GENERAL_MENU])
+  await expect(menu).toContainText('Trigger → Write it down')
+  await menu.getByRole('menuitem', { name: 'Delete this connection' }).click()
+  await expect(edges).toHaveCount(0)
+
+  // What was saved holds no corner any more: they went when the graph was next saved.
+  await expect(area.getByText('draft saved')).toBeVisible()
+  const keptDraft = (await (await page.request.get(`/api/automation/playbooks/${playbookId}`)).json()).draft
+  expect(keptDraft.nodes).toHaveLength(4)
+  expect(JSON.stringify(keptDraft)).not.toContain('points')
+
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
+test('Tidy up puts the nodes in order and takes every line round the nodes it does not join', async () => {
+  // A "for each" with two nodes in its body, and "when done" that goes past them: all in one column, as they
+  // would be after being added one under the other.
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Lines and blocks' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const at = (row) => ({ x: 40, y: 40 + row * 118 })
+  const action = (id, name, row, what, args) => ({
+    id,
+    kind: 'action',
+    name,
+    position: at(row),
+    config: { action: what, args },
+  })
+  const draft = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: at(0), config: { manual: true } },
+      {
+        id: 'each',
+        kind: 'for_each',
+        name: 'For each',
+        position: at(1),
+        config: { items: '{{ inputs.rows }}', max: 500 },
+      },
+      action('made', 'Create an incident', 2, 'nik.create-incident', { title: '{{ item }}' }),
+      action('status', 'Set the status', 3, 'nik.set-status', {
+        incident: '{{ made.incident }}',
+        status: 'in_progress',
+      }),
+      { id: 'end', kind: 'end', name: 'End', position: at(4), config: { status: 'done', message: '' } },
+    ],
+    edges: [
+      { from: 'start', to: 'each' },
+      { from: 'each', port: 'each', to: 'made' },
+      { from: 'made', to: 'status' },
+      { from: 'status', to: 'end' },
+      { from: 'each', port: 'done', to: 'end' },
+    ],
+  }
+  expect((await page.request.put(`/api/automation/playbooks/${playbookId}`, { data: { draft } })).status()).toBe(200)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+  await area
+    .getByRole('row')
+    .filter({ hasText: 'Lines and blocks' })
+    .getByRole('button', { name: 'Lines and blocks' })
+    .click()
+  const canvas = area.getByTestId('playbook-canvas')
+  await expect(canvas.locator('.react-flow__node')).toHaveCount(5)
+  await expect(canvas.locator('.react-flow__edge')).toHaveCount(5)
+
+  // What is drawn, read from the page: the box of each node, each line as points along it, the words of the lines.
+  const drawn = () =>
+    canvas.evaluate((root) => {
+      const box = (element) => {
+        const found = element.getBoundingClientRect()
+        return { x: found.x, y: found.y, width: found.width, height: found.height }
+      }
+      const boxes = [...root.querySelectorAll('.react-flow__node')].map((element) => ({
+        id: element.dataset.id,
+        ...box(element),
+      }))
+      const lines = [...root.querySelectorAll('.react-flow__edge')].map((element) => {
+        const [, from, to] = /^From (\S+) to ([^,\s]+)/.exec(element.getAttribute('aria-label'))
+        const path = element.querySelector('.react-flow__edge-path')
+        const matrix = path.getScreenCTM()
+        const length = path.getTotalLength()
+        const points = []
+        for (let along = 0; along <= length; along += 2) {
+          const point = path.getPointAtLength(along).matrixTransform(matrix)
+          points.push({ x: point.x, y: point.y })
+        }
+        return { from, to, points }
+      })
+      const labels = [...root.querySelectorAll('.react-flow__edgelabel-renderer span')].map((element) => ({
+        from: 'the words',
+        to: element.textContent,
+        ...box(element),
+      }))
+      return { boxes, lines, labels }
+    })
+
+  await area.getByRole('button', { name: 'Tidy up' }).click()
+  await expect(area.getByText('draft saved')).toBeVisible()
+  const tidied = await drawn()
+  expect(tidied.boxes).toHaveLength(5)
+  expect(tidied.lines).toHaveLength(5)
+  expect(tidied.labels.map((label) => label.to).sort()).toEqual(['for each item', 'when done'])
+  // No line passes over a node it does not join, and no words sit on a node.
+  expect(crossings(tidied.boxes, tidied.lines, tidied.labels)).toEqual([])
+  // "when done" does not go straight down any more: it has a lane beside the body of the loop.
+  const done = tidied.lines.find((line) => line.from === 'each' && line.to === 'end')
+  const body = tidied.boxes.find((found) => found.id === 'status')
+  const passes = done.points.filter((point) => point.y > body.y && point.y < body.y + body.height)
+  expect(passes.length).toBeGreaterThan(0)
+  expect(passes.every((point) => point.x < body.x || point.x > body.x + body.width)).toBe(true)
+  // The route is the layout's: kept with the draft, with nothing on the line to drag.
+  const kept = (await (await page.request.get(`/api/automation/playbooks/${playbookId}`)).json()).draft
+  expect(kept.edges.every((edge) => edge.route.points.length >= 2)).toBe(true)
+  await expect(canvas.getByRole('button', { name: /corner/i })).toHaveCount(0)
+
+  // A node moved by hand: its lines forget their route and are drawn by the canvas; the others keep theirs.
+  await canvas.locator('.react-flow__node').filter({ hasText: 'Set the status' }).focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ArrowRight')
+  await expect(area.getByText('draft saved')).toBeVisible()
+  await expect
+    .poll(async () => {
+      const now = (await (await page.request.get(`/api/automation/playbooks/${playbookId}`)).json()).draft
+      return now.edges.filter((edge) => edge.route).map((edge) => `${edge.from} ${edge.to}`)
+    })
+    .toEqual(['start each', 'each made', 'each end'])
+
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  await area.getByRole('button', { name: 'Close automations' }).click()
+})
+
+test('typing {{ in a node offers what is inside the incident another node gave, and a field made in Settings; an admin lets attachments and e-mail bodies leave from the screen', async () => {
+  const field = await page.request.post('/api/fields', {
+    data: { name: 'e2e_unit', label: 'E2E unit', type: 'text', allTypes: true },
+  })
+  expect(field.status()).toBe(201)
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Reads an incident' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const action = (id, name, y, what, args) => ({
+    id,
+    kind: 'action',
+    name,
+    position: { x: 40, y },
+    config: { action: what, args },
+  })
+  const draft = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      action('made', 'Open a case', 160, 'nik.create-incident', { title: 'From a playbook' }),
+      action('status', 'Mark it', 280, 'nik.set-status', { status: 'in_progress' }),
+    ],
+    edges: [
+      { from: 'start', to: 'made' },
+      { from: 'made', to: 'status' },
+    ],
+  }
+  expect((await page.request.put(`/api/automation/playbooks/${playbookId}`, { data: { draft } })).status()).toBe(200)
+
+  await page.getByRole('button', { name: 'Automations', exact: true }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByRole('navigation', { name: 'Automations' }).getByRole('button', { name: 'Playbooks' }).click()
+  await area
+    .getByRole('row')
+    .filter({ hasText: 'Reads an incident' })
+    .getByRole('button', { name: 'Reads an incident' })
+    .click()
+  const inspector = area.getByRole('complementary', { name: 'Inspector' })
+  await area.getByTestId('playbook-canvas').locator('.react-flow__node').filter({ hasText: 'Mark it' }).click()
+
+  // "Pick a value" lists the incident the node before gave, and what is inside it.
+  const incident = inspector.getByLabel('incident', { exact: true })
+  await inspector.getByRole('button', { name: 'Pick a value' }).first().click()
+  const picker = page.getByRole('dialog', { name: 'Pick a value' })
+  const given = picker.getByRole('group', { name: 'Open a case' })
+  await expect(given.getByText('made.incident', { exact: true })).toBeVisible()
+  for (const part of ['id', 'name', 'status', 'severity', 'assignee', 'host', 'created']) {
+    await expect(given.getByText(`made.incident.${part}`, { exact: true })).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveCount(0)
+
+  // Typed: the braces open the same values under the field, narrowed by what follows them.
+  await incident.fill('{{ made.incident.')
+  const offered = inspector.getByRole('listbox', { name: 'Values that complete what is typed' })
+  await expect(offered.getByRole('option').first()).toHaveText(/^made\.incident\.id/)
+  await expect(offered.getByRole('option', { name: /^made\.incident\.name/ })).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(incident).toHaveValue('{{ made.incident.id }}')
+  await expect(offered).toHaveCount(0)
+  // The fields of the incident of the run: the registry, with the field made a moment ago.
+  await incident.fill('{{ incident.')
+  await expect(offered.getByRole('option', { name: /^incident\.owner/ })).toBeVisible()
+  await incident.fill('{{ incident.e2e')
+  await expect(offered.getByRole('option')).toHaveCount(1)
+  await offered.getByRole('option', { name: /^incident\.e2e_unit/ }).click()
+  await expect(incident).toHaveValue('{{ incident.e2e_unit }}')
+  await incident.fill('{{ made.incident.id }}')
+
+  // Settings: e-mail bodies, attachments and samples stand apart from the rest; an admin opens one behind the double check.
+  await area.getByRole('radio', { name: 'Settings' }).click()
+  const data = area.getByRole('region', { name: 'Data that may leave' })
+  const files = data.getByRole('list', { name: 'Whole messages and files that may leave' })
+  await expect(files.getByRole('listitem')).toHaveCount(3)
+  await expect(data).toContainText('A sample is live malware.')
+  await expect(data).toContainText('needed by a playbook that forwards mail')
+  // TLP:RED data is never offered.
+  await expect(data).toContainText('TLP:RED data.')
+  await expect(data.getByRole('button', { name: /TLP/ })).toHaveCount(0)
+  await files.getByRole('button', { name: 'Open: Attachments' }).click()
+  const open = page.getByRole('dialog', { name: 'Let attachments leave Nik in this playbook?' })
+  await expect(open).toContainText('leaves Nik whole')
+  const allow = open.getByRole('button', { name: 'Allow attachments' })
+  await expect(allow).toBeDisabled()
+  await open.getByRole('checkbox').check()
+  await open.locator('#data-guard-name').fill('Reads an incident')
+  await allow.click()
+  await expect(open).toBeHidden()
+  await expect(files.getByText('may leave', { exact: true })).toBeVisible()
+  const detail = async () => (await page.request.get(`/api/automation/playbooks/${playbookId}`)).json()
+  expect((await detail()).dataAllow).toEqual(['attachment'])
+  // The text of e-mails, which a playbook that forwards mail needs, is opened the same way.
+  await files.getByRole('button', { name: 'Open: E-mail bodies' }).click()
+  const bodies = page.getByRole('dialog', { name: 'Let e-mail bodies leave Nik in this playbook?' })
+  await bodies.getByRole('checkbox').check()
+  await bodies.locator('#data-guard-name').fill('Reads an incident')
+  await bodies.getByRole('button', { name: 'Allow e-mail bodies' }).click()
+  await expect(bodies).toBeHidden()
+  await expect(files.getByText('may leave', { exact: true })).toHaveCount(2)
+  expect((await detail()).dataAllow).toEqual(['mail_body', 'attachment'])
+  // Each is closed again with one click.
+  await files.getByRole('button', { name: 'Close: Attachments' }).click()
+  await expect(files.getByText('may leave', { exact: true })).toHaveCount(1)
+  await files.getByRole('button', { name: 'Close: E-mail bodies' }).click()
+  await expect(files.getByText('may leave', { exact: true })).toHaveCount(0)
+  expect((await detail()).dataAllow).toEqual([])
+  // Both are in the audit log, with the name of who did it.
+  const audit = await (await page.request.get('/api/audit?q=action:automation.data.*')).json()
+  expect(
+    audit.entries.filter((entry) => entry.details.includes('Reads an incident')).map((entry) => entry.action),
+  ).toEqual(['automation.data.close', 'automation.data.close', 'automation.data.open', 'automation.data.open'])
+
+  await area.getByRole('button', { name: 'All playbooks' }).click()
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  expect((await page.request.delete('/api/fields/e2e_unit')).status()).toBeLessThan(300)
   await area.getByRole('button', { name: 'Close automations' }).click()
 })
 
@@ -4652,6 +5595,359 @@ test('single-key shortcuts can be turned off and on again', async () => {
   await expect(flag).toHaveCount(before ? 0 : 1)
   await page.keyboard.press('f')
   await expect(flag).toHaveCount(before)
+})
+
+/**
+ * The browser's own menu can open nowhere on what `target` shows: a `contextmenu` event sent to every
+ * element comes back refused. Each one asks for Nik's menu; the one left open is closed here.
+ */
+async function nativeMenuNeverOpens(target, where) {
+  const swept = await target.evaluate(() => {
+    const missed = []
+    const all = [...document.querySelectorAll('*')].filter((element) => !element.closest('[data-nik-menu]'))
+    for (const element of all) {
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+      element.dispatchEvent(event)
+      if (!event.defaultPrevented) missed.push(`${element.tagName} ${element.className}`)
+    }
+    return { count: all.length, missed }
+  })
+  expect(swept.missed, where).toEqual([])
+  expect(swept.count, where).toBeGreaterThan(30)
+  await expect(target.getByRole('menu'), where).toBeVisible()
+  await target.keyboard.press('Escape')
+  await expect(target.getByRole('menu'), where).toHaveCount(0)
+}
+
+/**
+ * A right-click on `target` opens Nik's menu: it holds `expected`, and ends with the general section.
+ * The menu is closed again with Escape, which closes nothing else.
+ */
+async function opensNikMenu(target, where, expected = []) {
+  await target.click({ button: 'right' })
+  const entries = page.getByRole('menu').getByRole('menuitem')
+  await expect(entries.first(), where).toBeVisible()
+  const texts = await entries.allTextContents()
+  expect(texts.slice(-GENERAL_MENU.length), where).toEqual(GENERAL_MENU)
+  for (const text of expected) expect(texts, where).toContain(text)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu'), where).toHaveCount(0)
+  return texts
+}
+
+test("right-click opens Nik's menu on the sign-in page, and the browser's own menu nowhere on it", async ({
+  browser,
+}) => {
+  const visitor = await browser.newPage()
+  await visitor.goto('/')
+  await expect(visitor.locator('#login-username')).toBeVisible()
+  const menu = visitor.getByRole('menu')
+
+  // Nobody is signed in: the menu holds what needs nobody.
+  await visitor.mouse.click(3, 3, { button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Backalt ←', 'Copy the address of this page'])
+  await visitor.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // A text field: cut, copy, paste, select all, each enabled as it applies.
+  await visitor.locator('#login-username').click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Cutctrl x',
+    'Copyctrl c',
+    'Pastectrl v',
+    'Select allctrl a',
+    'Backalt ←',
+    'Copy the address of this page',
+  ])
+  const cut = menu.getByRole('menuitem', { name: /^Cut/ })
+  await expect(cut).toHaveAttribute('aria-disabled', 'true')
+  await expect(cut).toHaveAttribute('title', 'Nothing is selected')
+  await expect(menu.getByRole('menuitem', { name: /^Select all/ })).toHaveAttribute('title', 'The field is empty')
+  await visitor.keyboard.press('Escape')
+  await visitor.fill('#login-username', 'somebody')
+  await visitor.locator('#login-username').click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Select all/ }).click()
+  await expect(menu).toHaveCount(0)
+  expect(
+    await visitor
+      .locator('#login-username')
+      .evaluate((input) => input.value.slice(input.selectionStart, input.selectionEnd)),
+  ).toBe('somebody')
+  // On what is selected, Cut can be done.
+  await visitor.locator('#login-username').click({ button: 'right', position: { x: 24, y: 10 } })
+  await expect(menu.getByRole('menuitem', { name: /^Cut/ })).not.toHaveAttribute('aria-disabled', 'true')
+  await visitor.keyboard.press('Escape')
+
+  // A password is not copied.
+  await visitor.fill('#login-password', 'not-a-password')
+  await visitor.locator('#login-password').press('Control+a')
+  await visitor.locator('#login-password').click({ button: 'right' })
+  const copy = menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ })
+  await expect(copy).toHaveAttribute('aria-disabled', 'true')
+  await expect(copy).toHaveAttribute('title', 'A password is not copied')
+  await visitor.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // Shift + right-click is a right-click: no key brings the browser's menu back.
+  await visitor.locator('#login-username').click({ button: 'right', modifiers: ['Shift'] })
+  await expect(menu.getByRole('menuitem', { name: /^Paste/ })).toBeVisible()
+  await visitor.keyboard.press('Escape')
+
+  await nativeMenuNeverOpens(visitor, 'the sign-in page')
+  await visitor.close()
+})
+
+test("right-click opens Nik's menu on every screen: the incident and its tabs, the pages of the rail, Settings", async () => {
+  test.setTimeout(240_000)
+  const menu = page.getByRole('menu')
+  const sections = page.getByRole('navigation', { name: 'Sections' })
+  const main = page.locator('main')
+  /** The edge of the main area, above what it shows. */
+  const emptyArea = async (where) => {
+    await main.click({ button: 'right', position: { x: 160, y: 4 } })
+    const texts = await menu.getByRole('menuitem').allTextContents()
+    expect(texts.slice(-GENERAL_MENU.length), where).toEqual(GENERAL_MENU)
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+  }
+
+  // ---- The incident: every tab, and every kind of evidence ----
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]').getByRole('button')
+  const tabCount = await tabs.count()
+  expect(tabCount).toBeGreaterThan(5)
+  for (let index = 0; index < tabCount; index += 1) {
+    const name = (await tabs.nth(index).getAttribute('aria-label')) ?? (await tabs.nth(index).textContent())
+    await tabs.nth(index).click()
+    await emptyArea(`the tab ${name}`)
+    await nativeMenuNeverOpens(page, `the tab ${name}`)
+  }
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  const kinds = page.getByRole('navigation', { name: 'Evidence' }).getByRole('button')
+  const kindCount = Math.min(await kinds.count(), 14)
+  for (let index = 0; index < kindCount; index += 1) {
+    await kinds.nth(index).click()
+    await nativeMenuNeverOpens(page, `evidence ${index}`)
+  }
+  // The tab bar and the rail are not rows of anything: the general section alone.
+  await opensNikMenu(sections.getByRole('button', { name: 'Open platform settings' }), 'the rail')
+  await openEvidence('Malware Analysis')
+  // An object keeps its own menu, with Shift held down too.
+  const sample = page.getByRole('list', { name: 'Samples' }).locator('li', { hasText: 'dropper.bin' })
+  await sample.click({ button: 'right', modifiers: ['Shift'] })
+  await expect(menu).toContainText('dropper.bin')
+  await expect(menu.getByRole('menuitem').last()).toHaveText('Copy the address of this page')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+
+  // ---- The list of incidents: a row, and what the page adds for itself ----
+  await openIncidentList()
+  const rowMenu = await opensNikMenu(incidentRow(), 'a row of the incident list', ['Open', 'Quick view'])
+  expect(rowMenu.slice(-GENERAL_MENU.length - 2, -GENERAL_MENU.length)).toEqual(['New incident…', 'Columns…'])
+  await nativeMenuNeverOpens(page, 'the incident list')
+  await sections.getByRole('button', { name: 'Hide the incidents' }).click()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+
+  // ---- The pages of the rail ----
+  for (const [open, close] of [
+    [/^My tasks/, 'Close my tasks'],
+    ['Dashboards', 'Close dashboards'],
+    ['Playground', 'Close the playground'],
+  ]) {
+    await sections.getByRole('button', { name: open }).click()
+    await expect(sections.getByRole('button', { name: close })).toBeVisible()
+    await opensNikMenu(sections.getByRole('button', { name: close }), `the page ${close}`)
+    await nativeMenuNeverOpens(page, `the page ${close}`)
+    await sections.getByRole('button', { name: close }).click()
+  }
+  for (const [open, close] of [
+    [/^Indicators/, 'Hide the Indicators page'],
+    ['Artifacts', 'Hide the artifacts'],
+  ]) {
+    await sections.getByRole('button', { name: open }).click()
+    await expect(sections.getByRole('button', { name: close })).toBeVisible()
+    await nativeMenuNeverOpens(page, `the panel ${close}`)
+    await leaveSidePanel()
+  }
+
+  // ---- Automations: the lists, the canvas, the editor of a script ----
+  await sections.getByRole('button', { name: /^Automations/ }).click()
+  const area = page.getByRole('region', { name: 'Automations' })
+  const nav = area.getByRole('navigation', { name: 'Automations' })
+  await expect(area.getByRole('table').first()).toBeVisible()
+  // The page adds what it makes, under the row's own entries.
+  const playbookMenu = await opensNikMenu(area.getByRole('table').first().getByRole('row').nth(1), 'a playbook', [
+    'Open',
+    'New playbook…',
+  ])
+  expect(playbookMenu.indexOf('New playbook…')).toBeGreaterThan(playbookMenu.indexOf('Open'))
+  await nativeMenuNeverOpens(page, 'the playbooks')
+  await area.getByRole('table').first().getByRole('row').nth(1).getByRole('button').first().click()
+  const canvas = area.getByTestId('playbook-canvas')
+  await expect(canvas.locator('.react-flow__node').first()).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the playbook editor')
+  await canvas.locator('.react-flow__pane').click({ button: 'right', position: { x: 6, y: 6 } })
+  await expect(menu.getByRole('menuitem', { name: 'Fit the view' })).toBeVisible()
+  await expect(menu.getByRole('menuitem').last()).toHaveText('Copy the address of this page')
+  await page.keyboard.press('Escape')
+  await nav.getByRole('button', { name: 'Runs' }).click()
+  await nativeMenuNeverOpens(page, 'the runs')
+  await nav.getByRole('button', { name: 'Scripts' }).click()
+  await expect(area.getByRole('table').first()).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the scripts')
+  await area.getByRole('table').first().getByRole('row').nth(1).getByRole('button').first().click()
+  // A code editor is a text field: its own undo, then cut, copy, paste, select all.
+  const code = area.locator('.cm-content').first()
+  await expect(code).toBeVisible()
+  await code.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Undoctrl z',
+    'Redoctrl shift z',
+    'Cutctrl x',
+    'Copyctrl c',
+    'Pastectrl v',
+    'Select allctrl a',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: /^Select all/ }).click()
+  // On what is selected (the first line of the script), Copy can be done.
+  await code.click({ button: 'right', position: { x: 30, y: 14 } })
+  await expect(menu.getByRole('menuitem', { name: /^Copy\s*ctrl c$/ })).not.toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await nativeMenuNeverOpens(page, 'the editor of a script')
+  await sections.getByRole('button', { name: 'Close automations' }).click()
+
+  // ---- Settings: every section ----
+  await sections.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const entries = settings.getByRole('navigation', { name: 'Settings sections' }).getByRole('button')
+  const entryCount = await entries.count()
+  expect(entryCount).toBeGreaterThan(15)
+  for (let index = 0; index < entryCount; index += 1) {
+    await entries.nth(index).click()
+    await nativeMenuNeverOpens(page, `Settings, section ${index}`)
+  }
+  await expect(settings).toBeVisible()
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  await expect(settings).toHaveCount(0)
+})
+
+test('the menu in a dialog, on selected text, in the query box, on a link, and from the keyboard', async () => {
+  const menu = page.getByRole('menu')
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
+
+  // ---- A dialog: the menu opens over it, and Escape closes the menu first ----
+  await page.getByRole('button', { name: 'Keyboard shortcuts' }).click()
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  // The list says the rule, and no longer how to get the browser's menu.
+  await expect(help).toContainText("Nik's menu, on every page")
+  await expect(help).not.toContainText('Shift + right-click')
+  const line = help.getByText('This list', { exact: true })
+  await line.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['Copy this text', ...GENERAL_MENU])
+  await menu.getByRole('menuitem', { name: 'Copy this text' }).click()
+  expect(await clipboard()).toBe('This list')
+  await line.click({ button: 'right' })
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(help).toBeVisible()
+
+  // ---- Selected text: the right-click keeps the selection, and Copy takes it ----
+  await line.selectText()
+  await line.click({ button: 'right', position: { x: 12, y: 8 } })
+  await expect(menu.getByRole('menuitem').first()).toHaveText('Copyctrl c')
+  expect(await page.evaluate(() => window.getSelection().toString())).toBe('This list')
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await menu.getByRole('menuitem').first().click()
+  expect(await clipboard()).toBe('This list')
+  await nativeMenuNeverOpens(page, 'a dialog')
+  await page.keyboard.press('Escape')
+  await expect(help).toHaveCount(0)
+
+  // ---- The query box: cut, copy, paste, select all, then its own helpers ----
+  await openIncidentList()
+  const panel = page.getByRole('region', { name: 'Incidents' })
+  const filter = panel.getByRole('combobox', { name: 'Filter incidents' })
+  await filter.fill('')
+  await page.evaluate(() => navigator.clipboard.writeText('host:wks-*'))
+  await filter.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Cutctrl x',
+    'Copyctrl c',
+    'Pastectrl v',
+    'Select allctrl a',
+    'Suggest what can be written herectrl space',
+    'Build the query from rows',
+    'New incident…',
+    'Columns…',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: /^Paste/ }).click()
+  // The page hears the paste as typing: the list is filtered.
+  await expect(filter).toHaveValue('host:wks-*')
+  await expect(panel.getByRole('table', { name: 'Incidents' })).toContainText('WKS-FINANCE-01')
+  await expect(filter).toBeFocused()
+  await filter.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Select all/ }).click()
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await filter.click({ button: 'right', position: { x: 24, y: 10 } })
+  await menu.getByRole('menuitem', { name: /^Cut/ }).click()
+  await expect(filter).toHaveValue('')
+  expect(await clipboard()).toBe('host:wks-*')
+  await filter.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Suggest/ }).click()
+  await expect(panel.getByRole('listbox', { name: 'Suggestions' }).getByRole('option').first()).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // ---- The keyboard: the menu key and Shift + F10 on what has the focus ----
+  await filter.focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu.getByRole('menuitem', { name: /^Paste/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(filter).toBeFocused()
+  await incidentRow().focus()
+  await page.keyboard.press('ContextMenu')
+  await expect(menu.getByRole('menuitem', { name: 'Quick view' })).toBeVisible()
+  // The arrows and Enter run an entry, as in every menu.
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  const settingsButton = page.getByRole('button', { name: 'Open platform settings' })
+  await settingsButton.focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(menu.getByRole('menuitem')).toHaveText(GENERAL_MENU)
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0)
+
+  // ---- The general section does what it says ----
+  await settingsButton.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: 'Copy the address of this page' }).click()
+  expect(await clipboard()).toBe(page.url())
+  await settingsButton.click({ button: 'right' })
+  await menu.getByRole('menuitem', { name: /^Search…/ }).click()
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await expect(palette).toBeVisible()
+  await nativeMenuNeverOpens(page, 'the search')
+  await page.keyboard.press('Escape')
+  await expect(palette).toHaveCount(0)
+
+  // ---- A link: open, open in a new tab, copy the address ----
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Hide the incidents' }).click()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Indicators', exact: true }).click()
+  const link = page.locator('main a[title^="Download the indicators"]').first()
+  await expect(link).toBeVisible()
+  await link.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem', { name: 'Open in a new tab' })).toBeVisible()
+  const linkMenu = await menu.getByRole('menuitem').allTextContents()
+  expect(linkMenu.slice(0, 3)).toEqual(['Open', 'Open in a new tab', 'Copy the address'])
+  expect(linkMenu.slice(-GENERAL_MENU.length)).toEqual(GENERAL_MENU)
+  await menu.getByRole('menuitem', { name: 'Copy the address', exact: true }).click()
+  expect(await clipboard()).toContain('/api/')
+  await openEvidence('Malware Analysis')
 })
 
 test('an address from the evidence is opened only after asking', async () => {

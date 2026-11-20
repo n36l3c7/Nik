@@ -8,11 +8,21 @@ import {
   keymap,
   lineNumbers,
 } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  redo,
+  redoDepth,
+  undo,
+  undoDepth,
+} from '@codemirror/commands'
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { python } from '@codemirror/lang-python'
 import { json } from '@codemirror/lang-json'
 import { tags } from '@lezer/highlight'
+import { registerEditor } from '../../lib/textField.js'
 
 /*
  * ============================================================================
@@ -22,7 +32,9 @@ import { tags } from '@lezer/highlight'
  * Python for scripts, JSON for their tests. The colours are Nik's tokens
  * (index.css), the font its monospace, the corners square. Line numbers, the
  * usual keys, undo of its own, Tab indents (Escape then Tab leaves the
- * editor, as CodeMirror does for keyboard users).
+ * editor, as CodeMirror does for keyboard users). The right-click menu cuts,
+ * copies, pastes and undoes through what the editor says of itself here
+ * (lib/textField.js).
  *
  * The parent owns the text: `value` is written into the editor when it
  * differs from what the editor holds (a version restored, another script
@@ -129,8 +141,33 @@ export default function CodeEditor({
         }),
       ],
     })
-    view.current = new EditorView({ state, parent: host.current })
+    const made = new EditorView({ state, parent: host.current })
+    view.current = made
+    const selected = () =>
+      made.state.selection.ranges
+        .filter((range) => !range.empty)
+        .map((range) => made.state.sliceDoc(range.from, range.to))
+        .join(made.state.lineBreak)
+    const forget = registerEditor(host.current, {
+      readOnly: () => made.state.readOnly,
+      text: () => made.state.doc.toString(),
+      selected,
+      insert: (text) => {
+        made.dispatch(made.state.replaceSelection(text), { scrollIntoView: true, userEvent: 'input' })
+        made.focus()
+      },
+      selectAll: () => {
+        made.dispatch({ selection: { anchor: 0, head: made.state.doc.length } })
+        made.focus()
+      },
+      focus: () => made.focus(),
+      undo: () => undo(made),
+      redo: () => redo(made),
+      canUndo: () => undoDepth(made.state) > 0,
+      canRedo: () => redoDepth(made.state) > 0,
+    })
     return () => {
+      forget()
       view.current.destroy()
       view.current = null
     }

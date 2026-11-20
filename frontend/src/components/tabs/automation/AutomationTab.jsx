@@ -7,6 +7,8 @@ import { automationPath } from '../../../domain/automationNav.js'
 import { RUN_COLORS, duration, isFinished, triggerLabel } from '../../../domain/automation/runs.js'
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
+import { usePageMenu } from '../../menu/usePageMenu.js'
 import { Badge, Button } from '../../ui/index.js'
 
 /*
@@ -56,12 +58,22 @@ export default function AutomationTab({ incident }) {
     load()
   }, [waitingHere, load])
 
+  const menu = useObjectMenu()
+  const pageMenu = usePageMenu(() => [
+    { label: 'Refresh', icon: RefreshCw, onSelect: load },
+    {
+      label: 'Run a playbook…',
+      icon: Play,
+      onSelect: () => askRun({ incidentId: incident.id, incidentName: incident.name }),
+    },
+  ])
+
   if (!can('automation.run')) {
     return <p className="text-sm text-fg-muted">Your roles do not include running playbooks.</p>
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" onContextMenu={pageMenu}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-fg">Automation</h2>
@@ -116,7 +128,18 @@ export default function AutomationTab({ incident }) {
             </thead>
             <tbody>
               {runs.map((run) => (
-                <tr key={run.id} className="hover:bg-raised/40">
+                <tr
+                  key={run.id}
+                  className="hover:bg-raised/40"
+                  onContextMenu={(event) =>
+                    menu(event, {
+                      title: run.playbook || 'a deleted playbook',
+                      actions: [{ label: 'Open the run', onSelect: () => setPath(automationPath('runs', run.id)) }],
+                      link: automationPath('runs', run.id),
+                      copy: [{ label: 'Copy the id', text: run.id }],
+                    })
+                  }
+                >
                   <th scope="row" className="border-b border-line-soft px-3 py-2 font-normal">
                     <button
                       type="button"

@@ -2,9 +2,10 @@ id: safebrowsing
 name: Google Safe Browsing
 vendor: Google
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, url, domain]
+version: 1.1.0
 description: >-
   Checks URLs and domains against Google's lists of malware, social
   engineering and unwanted software, and reads the lists (API v4 and v5).
 author: Nik
-nik: ">=6.1"
+nik: ">=6.5"

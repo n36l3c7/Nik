@@ -80,6 +80,98 @@ export function limitText(connection) {
 export const needingCare = (connections) =>
   (connections ?? []).filter((connection) => connection.state === 'failing' || connection.state === 'paused')
 
+/* ------------------------------------------------- how an instance fetches */
+
+const UNITS = { minute: 60, hour: 3600, day: 86400 }
+
+/** "3 days" as seconds; null when it is not a length of time (a month at most), as the server reads it. */
+export function firstFetchSeconds(text) {
+  const found = /^\s*(\d{1,4})\s*(minute|hour|day)s?\s*$/.exec(String(text ?? '').toLowerCase())
+  if (!found) return null
+  const seconds = Number(found[1]) * UNITS[found[2]]
+  return seconds > 0 && seconds <= 31 * 86400 ? seconds : null
+}
+
+/** Seconds in words: "30 s", "2 min", "1 h 30 min". */
+export function intervalText(seconds) {
+  const whole = Math.round(Number(seconds))
+  if (!Number.isFinite(whole) || whole <= 0) return ''
+  if (whole < 120 || whole % 60) return `${whole} s`
+  const minutes = whole / 60
+  if (minutes < 60) return `${minutes} min`
+  return minutes % 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes / 60} h`
+}
+
+/**
+ * What the Fetch part of the form of an instance starts with: what the
+ * instance has (`instance.fetch`), or what its connector says for a new one.
+ * The numbers are kept as they are typed.
+ */
+export function fetchForm(connector, instance) {
+  const theirs = connector?.fetch ?? {}
+  const held = instance?.fetch ?? {}
+  return {
+    enabled: Boolean(held.enabled),
+    interval: String(held.intervalSeconds ?? theirs.intervalSeconds ?? 120),
+    firstFetch: String(held.firstFetch ?? theirs.firstFetch ?? '3 days'),
+    lookback: String(held.lookbackMinutes ?? theirs.lookbackMinutes ?? 0),
+  }
+}
+
+const wholeNumber = (typed) => (/^\s*\d+\s*$/.test(String(typed)) ? Number(typed) : null)
+
+/** Why the Fetch part cannot be saved as it stands (a sentence), or null. */
+export function fetchProblem(form, { minInterval = 30, maxLookback = 1440, byTime = true } = {}) {
+  const interval = wholeNumber(form.interval)
+  if (interval === null || interval < minInterval || interval > 86400) {
+    return `Fetching: how often is a number of seconds, ${minInterval} at the least and 86400 at most`
+  }
+  if (firstFetchSeconds(form.firstFetch) === null) {
+    return 'Fetching: the first fetch is a length of time, a month at most: 30 minutes, 12 hours, 3 days'
+  }
+  const lookback = wholeNumber(form.lookback)
+  if (byTime && (lookback === null || lookback > maxLookback)) {
+    return `Fetching: the look-back is a number of minutes, ${maxLookback} at most`
+  }
+  return null
+}
+
+/** What the form sends as `fetch` with the rest of the instance. */
+export function fetchPayload(form, { byTime = true } = {}) {
+  const body = {
+    enabled: Boolean(form.enabled),
+    intervalSeconds: Number(form.interval),
+    firstFetch: String(form.firstFetch).trim().toLowerCase().replace(/\s+/g, ' '),
+  }
+  if (byTime) body.lookbackMinutes = Number(form.lookback)
+  return body
+}
+
+/** Whether the Fetch part differs from what the instance has: only then is it sent. */
+export function fetchChanged(form, connector, instance) {
+  const before = fetchForm(connector, instance)
+  return ['enabled', 'interval', 'firstFetch', 'lookback'].some(
+    (name) => String(form[name]).trim() !== String(before[name]).trim(),
+  )
+}
+
+/** What resetting the last run will do, said before it is done. */
+export function resetText(status) {
+  const first = status?.firstFetch || 'the first fetch'
+  return `The next cycle reads again from ${first} ago. What was already imported is skipped: no incident is made twice.`
+}
+
+/** What the look-back does, under its field. */
+export function lookbackHint(form, { byTime = true } = {}) {
+  if (!byTime)
+    return 'This connector goes on from where it stopped, not from a time: the look-back does not apply to it.'
+  const minutes = wholeNumber(form.lookback)
+  if (!minutes) {
+    return 'Each cycle asks from the newest time it has seen. An item that turns up later with an older time is missed: give it some minutes if the product shows its alerts late.'
+  }
+  return `Each cycle asks from ${minutes} min before the newest time it has seen. What it already has is skipped by its id.`
+}
+
 /* ------------------------------------------------------------------ mirroring */
 
 export const DIRECTIONS = [

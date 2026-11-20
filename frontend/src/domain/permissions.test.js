@@ -41,9 +41,10 @@ test('roles are kept once each, in the order they are shown', () => {
   assert.equal(describeRoles([]), 'No role')
 })
 
-test('an account of a release before 4.0 has its single role', () => {
-  assert.deepEqual(rolesOf({ role: 'admin' }), ['admin'])
-  assert.deepEqual(rolesOf({ role: 'analyst', roles: ['viewer', 'audit'] }), ['viewer', 'audit'])
+test('the roles of an account are its list of roles and nothing else', () => {
+  assert.deepEqual(rolesOf({ roles: ['audit', 'viewer'] }), ['viewer', 'audit'])
+  // The single `role` of releases before 4.0 is not read any more.
+  assert.deepEqual(rolesOf({ role: 'admin' }), [])
   assert.deepEqual(rolesOf(null), [])
 })
 
@@ -52,7 +53,7 @@ test('can() asks the permissions the server sent, or the roles when it sent none
   assert.equal(can(vera, 'read'), true)
   assert.equal(can(vera, 'write'), false)
   assert.equal(can(vera, 'write', 'audit.read'), true) // one of them is enough
-  assert.equal(can({ role: 'admin' }, 'admin'), true)
+  assert.equal(can({ roles: ['admin'] }, 'admin'), true)
   assert.equal(can({ roles: ['rules'] }, 'rules.manage'), true)
   assert.equal(can({ roles: ['rules'] }, 'read'), false)
   assert.equal(can(null, 'read'), false)

@@ -29,7 +29,7 @@ is sent in the `Key` header.
 | `bulk-report` | Report many addresses at once, from a CSV file Nik holds. Changes something at AbuseIPDB. |
 | `clear-address` | Delete your own reports of an address. Changes something at AbuseIPDB. |
 
-The verdict of `check-ip` is the one Nik's own enrichment gives for
+The verdict of `check-ip` is the one Nik's own look-up code gave for
 AbuseIPDB: **harmless** when the address is on one of AbuseIPDB's whitelists,
 **malicious** from a confidence of 75, **suspicious** from 25, **unknown**
 below. Its summary is the same line: `confidence 100 %, 42 reports in 90

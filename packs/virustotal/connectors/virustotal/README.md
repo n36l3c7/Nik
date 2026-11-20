@@ -40,7 +40,7 @@ Code Insights (`analyse-code`) has a limit of its own, 50 requests a day.
 
 `get-file-report`, `get-url-reputation`, `get-domain-report` and `get-ip-report` are the reputation commands
 (`!file`, `!url`, `!domain` and `!ip` in the War Room ask them too). Their `verdict` is derived from
-`last_analysis_stats` as Nik's own enrichment does:
+`last_analysis_stats` as Nik's own look-up code did:
 
 - **malicious**: 3 engines or more say malicious;
 - **suspicious**: 1 or 2 say malicious, or any says suspicious;

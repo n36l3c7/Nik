@@ -10,17 +10,29 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import mapping, pack_build, packs
+from app import lists as named_lists
+from app import mapping, pack_build, packs, preprocess
 from app import pack_catalogue as catalogue
 from app.automation import connector_actions as ca
-from app.automation import scripts as automation_scripts
 from app.core.db import SessionLocal
-from app.core.models import Connector, Pack, PackItem, Playbook, Script
+from app.core.models import (
+    Connection,
+    Connector,
+    IncidentType,
+    Pack,
+    PackItem,
+    Playbook,
+    PlaybookVersion,
+    PreprocessRule,
+    Run,
+    Script,
+    Setting,
+)
 from app.main import app
 from tests import vendor
 from tests.conftest import make_key
 from tests.test_connectors_api import ACME, connect
-from tests.test_packs import MANIFEST, SCRIPT, actions, inspect, node
+from tests.test_packs import LIST, MANIFEST, SCRIPT, actions, inspect, items, node
 
 # A key of the tests: the base64 of 32 bytes.
 PRIVATE = base64.b64encode(bytes(range(32))).decode("ascii")
@@ -99,6 +111,8 @@ def test_the_catalogue_is_read_only_when_its_signature_is_right(admin: TestClien
     )
     assert jira["contents"]["connectors"] == 1 and jira["contents"]["commands"] > 5 and jira["contents"]["mappers"] == 1
     assert jira["needsNik"] == ""
+    # What its pack.yml says of it, and the names of its connectors, came in the signed index.
+    assert jira["tags"] == ["ticketing"] and jira["connectors"] == ["Jira Cloud"]
     # Opening the page again does not go out.
     sent = len(published.requests)
     assert admin.get("/api/packs/catalogue").json()["read"] is True and len(published.requests) == sent
@@ -155,11 +169,11 @@ def test_a_pack_is_installed_from_the_catalogue_then_updated(admin: TestClient, 
     done = admin.post("/api/packs/import", json={"token": found.json()["token"]})
     assert done.status_code == 200, done.text
     installed = done.json()["installed"]
-    assert (installed["source"], installed["vendor"], installed["version"]) == ("catalogue", "ServiceNow", "1.0.0")
+    assert (installed["source"], installed["vendor"], installed["version"]) == ("catalogue", "ServiceNow", "1.0.1")
     assert {item["kind"] for item in installed["items"]} == {"connectors", "mappers", "playbooks"}
     assert not any(item["changed"] for item in installed["items"])
     here = {entry["id"]: entry for entry in admin.get("/api/packs/catalogue").json()["packs"]}
-    assert (here["servicenow"]["installed"], here["servicenow"]["update"]) == ("1.0.0", False)
+    assert (here["servicenow"]["installed"], here["servicenow"]["update"]) == ("1.0.1", False)
     # A new instance starts with the classifier its pack gave.
     with SessionLocal() as db:
         assert "servicenow" in (mapping.state_defaults(db))
@@ -177,8 +191,8 @@ def test_a_pack_is_installed_from_the_catalogue_then_updated(admin: TestClient, 
     # A file that is not the one the index lists is not read.
     published.answer(
         "objects.githubusercontent.com",
-        body=files["jira-cloud-1.0.0.nikpack"] + b"x",
-        path="/x/jira-cloud-1.0.0.nikpack",
+        body=files["jira-cloud-1.0.1.nikpack"] + b"x",
+        path="/x/jira-cloud-1.0.1.nikpack",
     )
     refused = admin.post("/api/packs/catalogue/jira-cloud/inspect")
     assert refused.status_code == 502 and "not the one the catalogue lists" in refused.json()["detail"]
@@ -241,7 +255,7 @@ def install_acme(admin: TestClient) -> None:
 def test_uninstalling_removes_what_the_pack_gave(admin: TestClient):
     install_acme(admin)
     plan = admin.get("/api/packs/acme/uninstall").json()
-    assert {item["action"] for item in plan["items"]} == {"remove"} and plan["instances"] == 0
+    assert {item["action"] for item in plan["items"]} == {"remove"} and plan["held"] == []
     done = admin.delete("/api/packs/acme?remove=true")
     assert done.status_code == 200, done.text
     assert len(done.json()["removed"]) == 3 and done.json()["kept"] == []
@@ -253,57 +267,248 @@ def test_uninstalling_removes_what_the_pack_gave(admin: TestClient):
     assert any(entry["action"] == "pack.uninstall" for entry in admin.get("/api/audit").json()["entries"])
 
 
-def test_what_was_changed_or_is_in_use_stays_and_is_no_packs_any_more(admin: TestClient):
-    install_acme(admin)
-    # A script of the pack is changed here; a playbook of the team uses its connector; the connector has an instance.
-    with SessionLocal() as db:
-        row = db.scalars(select(Script).where(Script.name == "CountWords")).one()
-        ours = automation_scripts.clean({**SCRIPT, "code": SCRIPT["code"].replace("len(", "0 * len(")})
-        automation_scripts.add_version(db, row, ours, {"passed": True}, "admin")
-        db.commit()
-    connect(admin)
-    plan = {f"{item['kind']}/{item['name']}": item for item in admin.get("/api/packs/acme/uninstall").json()["items"]}
-    assert plan["scripts/CountWords"]["action"] == "keep" and plan["scripts/CountWords"]["why"] == "It was changed here"
-    assert plan["connectors/acme"]["action"] == "keep" and plan["connectors/acme"]["why"] == "It has 1 instance"
-    # The playbook of the pack is the only thing that uses them: it goes, and does not hold them.
-    assert plan["playbooks/Acme triage"]["action"] == "remove"
-    assert admin.get("/api/packs/acme/uninstall").json()["instances"] == 1
-    listed = next(row for row in admin.get("/api/packs").json()["packs"] if row["id"] == "acme")
-    assert {item["name"]: item["changed"] for item in listed["items"]}["CountWords"] is True
+def held_by(admin: TestClient, pack_id: str = "acme") -> list[dict]:
+    found = admin.get(f"/api/packs/{pack_id}/uninstall")
+    assert found.status_code == 200, found.text
+    return found.json()["held"]
 
-    # With the instances: the connector goes too, and its instance with it.
-    with_them = {
-        f"{item['kind']}/{item['name']}": item["action"]
-        for item in admin.get("/api/packs/acme/uninstall?instances=true").json()["items"]
-    }
-    assert with_them["connectors/acme"] == "remove"
-    done = admin.delete("/api/packs/acme?remove=true").json()
-    assert [entry["name"] for entry in done["kept"]] == ["CountWords", "acme"] and done["instances"] == 0
+
+def refused(admin: TestClient, pack_id: str = "acme") -> list[str]:
+    """Uninstalling is refused by the server, whatever the page shows: what it says holds the pack."""
+    answer = admin.delete(f"/api/packs/{pack_id}?remove=true")
+    assert answer.status_code == 409, answer.text
+    detail = answer.json()["detail"]
+    assert "is in use and was not uninstalled" in detail["message"]
+    with SessionLocal() as db:
+        assert db.get(Pack, pack_id) is not None  # nothing of it was touched
+    return [entry["what"] for entry in detail["held"]]
+
+
+def test_what_was_only_changed_here_stays_and_is_no_packs_any_more(admin: TestClient):
+    install_acme(admin)
+    # The playbook of the pack is changed here: it is ours now, and it runs the script of the pack.
+    with SessionLocal() as db:
+        row = db.scalars(select(Playbook).where(Playbook.name == "Acme triage")).one()
+        row.description = "Ours now"
+        db.commit()
+    found = admin.get("/api/packs/acme/uninstall").json()
+    plan = {f"{item['kind']}/{item['name']}": item for item in found["items"]}
+    assert found["held"] == []
+    assert (plan["playbooks/Acme triage"]["action"], plan["playbooks/Acme triage"]["why"]) == (
+        "keep",
+        "It was changed here",
+    )
+    # What it needs of the pack stays with it; nothing of this is "in use", so the pack is uninstalled.
+    assert plan["scripts/CountWords"]["action"] == "keep" and plan["connectors/acme"]["action"] == "keep"
+    assert plan["scripts/CountWords"]["why"] == 'The playbook "Acme triage", which stays, needs it'
+    listed = next(row for row in admin.get("/api/packs").json()["packs"] if row["id"] == "acme")
+    assert {item["name"]: item["changed"] for item in listed["items"]}["Acme triage"] is True
+    done = admin.delete("/api/packs/acme?remove=true")
+    assert done.status_code == 200, done.text
+    assert done.json()["removed"] == [] and len(done.json()["kept"]) == 3
     with SessionLocal() as db:
         # What stayed is no pack's any more, and is still here.
         assert db.get(Pack, "acme") is None and db.scalars(select(PackItem)).all() == []
         assert db.get(Connector, "acme") is not None
         assert db.scalars(select(Script).where(Script.name == "CountWords")).first() is not None
-        assert db.scalars(select(Playbook).where(Playbook.name == "Acme triage")).first() is None
+
+
+def test_a_pack_with_an_instance_of_its_connector_is_not_uninstalled(admin: TestClient):
+    install_acme(admin)
+    instance = connect(admin)
+    held = held_by(admin)
+    assert [(entry["kind"], entry["name"]) for entry in held] == [("connectors", "acme")]
+    assert held[0]["what"] == 'The instance "Acme production" of its connector "acme" is turned on'
+    assert held[0]["todo"].startswith("Delete the instance first")
+    assert refused(admin) == [held[0]["what"]]
+    # Turned off it still holds credentials that would go with the connector: it holds the pack all the same.
+    with SessionLocal() as db:
+        db.get(Connection, instance["id"]).enabled = False
+        db.commit()
+    assert refused(admin) == ['The instance "Acme production" of its connector "acme" is turned off']
     assert len(admin.get("/api/automation/instances").json()["instances"]) == 1
+    # No option deletes it for you any more.
+    assert admin.delete("/api/packs/acme?remove=true&instances=true").status_code == 409
+    assert admin.delete(f"/api/automation/instances/{instance['id']}").status_code == 204
+    assert held_by(admin) == []
+    assert admin.delete("/api/packs/acme?remove=true").status_code == 200
+    with SessionLocal() as db:
+        assert db.get(Connector, "acme") is None and db.get(Pack, "acme") is None
+
+
+def test_each_thing_in_use_holds_the_pack_and_says_what_to_do(admin: TestClient):
+    found = inspect(admin, packs.write(MANIFEST, items()))
+    assert admin.post("/api/packs/import", json={"token": found["token"]}).status_code == 200
+    assert held_by(admin, "acme-soc") == []
+
+    def only(change, expected: str, undo) -> None:
+        """One thing is put in the way, the pack is refused for it alone, and it is taken away again."""
+        with SessionLocal() as db:
+            change(db)
+            db.commit()
+        named_lists._cache.clear()
+        assert refused(admin, "acme-soc") == [expected]
+        assert all(entry["todo"] for entry in held_by(admin, "acme-soc"))
+        with SessionLocal() as db:
+            undo(db)
+            db.commit()
+        named_lists._cache.clear()
+        assert held_by(admin, "acme-soc") == []
+
+    def the_playbook(db) -> Playbook:
+        return db.scalars(select(Playbook).where(Playbook.name == "Count the words")).one()
+
+    # A playbook of the pack that is turned on, or has a run in progress.
+    only(
+        lambda db: setattr(the_playbook(db), "enabled", True),
+        'Its playbook "Count the words" is turned on',
+        lambda db: setattr(the_playbook(db), "enabled", False),
+    )
+    only(
+        lambda db: db.add(
+            Run(
+                id="r1", playbook_id=the_playbook(db).id, version=1, status="running", started_at="2026-11-19T10:00:00Z"
+            )
+        ),
+        'A run of its playbook "Count the words" is in progress',
+        lambda db: db.delete(db.get(Run, "r1")),
+    )
+
+    # A playbook of ours that runs its script, its connector, its playbook, or reads its list.
+    def ours(*nodes: dict):
+        def change(db) -> None:
+            stamp = "2026-11-19T10:00:00Z"
+            row = Playbook(id="ours", name="Ours", enabled=False, created_at=stamp, created_by="admin")
+            row.updated_at, row.updated_by = stamp, "admin"
+            db.add(row)
+            db.flush()
+            db.add(
+                PlaybookVersion(
+                    playbook_id="ours",
+                    version=1,
+                    graph={"nodes": list(nodes), "edges": []},
+                    note="",
+                    created_at=stamp,
+                    created_by="admin",
+                )  # fmt: skip
+            )
+            db.get(Playbook, "ours").current_version = 1
+
+        return change
+
+    def no_ours(db) -> None:
+        db.delete(db.get(Playbook, "ours"))
+
+    only(
+        ours(node("count", "script", script="CountWords")),
+        'The playbook "Ours" runs its script "CountWords"',
+        no_ours,
+    )
+    only(
+        ours(node("ask", "action", action="acme.get-ticket", args={})),
+        'The playbook "Ours" uses its connector "acme"',
+        no_ours,
+    )
+    only(
+        ours(node("sub", "playbook", playbook="Count the words")),
+        'The playbook "Ours" runs its playbook "Count the words"',
+        no_ours,
+    )
+    only(
+        ours(node("look", "action", action="list.contains", args={"list": "vip_users", "value": "x"})),
+        'The playbook "Ours" reads its list "vip_users"',
+        no_ours,
+    )
+
+    # A pre-processing rule of ours that runs its script.
+    def rule(db) -> None:
+        preprocess.save(db, {"name": "Count", "action": "run_script", "params": {"script": "CountWords"}}, "admin")
+
+    only(
+        rule,
+        'The pre-processing rule "Count" runs its script "CountWords"',
+        lambda db: db.delete(db.scalars(select(PreprocessRule).where(PreprocessRule.name == "Count")).one()),
+    )
+
+    # A setting that reads its list.
+    def point(to):
+        def change(db) -> None:
+            row = db.get(Setting, 1) or Setting(id=1, doc={})
+            db.add(row)
+            row.doc = {**(row.doc or {}), "iocAllowlist": to}
+
+        return change
+
+    only(
+        point({"list": "vip_users"}),
+        'Its list "vip_users" is read by a setting: Settings → Indicators → Allowlist',
+        point({"list": "ioc_allowlist"}),
+    )
+
+    # A type of ours that lists its field, or has its playbook.
+    def our_type(**more):
+        def change(db) -> None:
+            stamp = "2026-11-19T10:00:00Z"
+            row = IncidentType(id="ourtype", name="Our type", created_at=stamp, updated_at=stamp, fields=[], sla=[])
+            row.close_reasons = ["Done"]
+            for key, value in more.items():
+                setattr(row, key, value(db) if callable(value) else value)
+            db.add(row)
+
+        return change
+
+    def no_type(db) -> None:
+        db.delete(db.get(IncidentType, "ourtype"))
+
+    only(
+        our_type(fields=[{"name": "customer", "required": False, "requiredOnClose": False}]),
+        'The type "Our type" lists its field "customer"',
+        no_type,
+    )
+    only(
+        our_type(default_playbook_id=lambda db: the_playbook(db).id),
+        'Its playbook "Count the words" is the playbook of the type "Our type"',
+        no_type,
+    )
+
+    # Incidents of its type, and one that holds a value of its field.
+    with SessionLocal() as db:
+        type_id = db.scalars(select(IncidentType).where(IncidentType.name == "Customer case")).one().id
+    made = admin.post(
+        "/api/incidents", json={"id": "c1", "name": "A case", "data": {}, "type": type_id, "fields": {"customer": "X"}}
+    )
+    assert made.status_code == 201, made.text
+    assert refused(admin, "acme-soc") == [
+        '1 incident holds a value of its field "customer"',
+        '1 incident is of its type "Customer case"',
+    ]
+    assert admin.delete("/api/incidents/c1").status_code in (200, 204)
+    done = admin.delete("/api/packs/acme-soc?remove=true")
+    assert done.status_code == 200, done.text
+    assert len(done.json()["removed"]) == len(items()) and done.json()["kept"] == []
+
+
+def needing_acme() -> bytes:
+    return packs.write(
+        {**MANIFEST, "id": "acme-extras", "name": "Acme extras", "requires": [{"pack": "acme", "version": "1.0.0"}]},
+        [packs.Item("lists", "acme_queues", {"name": "acme_queues", "label": "Queues", "kind": "values"})],
+    )
 
 
 def test_a_pack_that_another_requires_and_the_pack_of_nik_are_not_uninstalled(admin: TestClient):
     install_acme(admin)
-    needing = packs.write(
-        {**MANIFEST, "id": "acme-extras", "requires": [{"pack": "acme", "version": "1.0.0"}]},
-        [packs.Item("lists", "acme_queues", {"name": "acme_queues", "label": "Queues", "kind": "values"})],
-    )
-    found = inspect(admin, needing)
+    found = inspect(admin, needing_acme())
     assert admin.post("/api/packs/import", json={"token": found["token"]}).status_code == 200
-    refused = admin.delete("/api/packs/acme?remove=true")
-    assert refused.status_code == 409 and "requires it" in refused.json()["detail"]
-    assert admin.get("/api/packs/acme/uninstall").status_code == 409
+    assert refused(admin) == ['The pack "Acme extras" requires it']
+    held = held_by(admin)
+    assert (held[0]["kind"], held[0]["todo"]) == ("packs", "Uninstall that pack first.")
     with SessionLocal() as db:
         packs.register_builtin(db)
         db.commit()
     assert admin.delete("/api/packs/nik?remove=true").status_code == 409
+    assert admin.get("/api/packs/nik/uninstall").status_code == 409
     # Without "remove" a pack is only taken off the list, as before 6.0.
+    assert admin.delete("/api/packs/acme").status_code == 409  # still required
     assert admin.delete("/api/packs/acme-extras").status_code == 204
     assert admin.delete("/api/packs/acme").status_code == 204
     with SessionLocal() as db:
@@ -337,7 +542,7 @@ def test_what_a_nik_older_than_6_held_becomes_the_packs_it_is(admin: TestClient)
         assert {item["action"] for item in found["items"] if item["kind"] == "connectors"} == {"same"}
         packs.apply(db, pack, {}, "admin", source="catalogue")
         db.commit()
-        assert db.get(Connector, "jira-cloud").logo and db.get(Pack, "jira-cloud").version == "1.0.0"
+        assert db.get(Connector, "jira-cloud").logo and db.get(Pack, "jira-cloud").version == "1.0.1"
     # It is uninstalled like one that came from the catalogue.
     assert admin.delete("/api/packs/zscaler-zia?remove=true").status_code == 200
     with SessionLocal() as db:
@@ -391,3 +596,186 @@ def test_the_index_is_built_from_the_folders_and_signed(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     assert pack_build.main([str(empty), str(tmp_path / "out")]) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Tags                                                                        #
+# --------------------------------------------------------------------------- #
+def test_the_tags_of_a_pack_are_checked_and_travel_with_it(admin: TestClient):
+    cleaned = packs.clean_manifest({**MANIFEST, "tags": ["ticketing", "itsm", "ticketing"]})
+    assert cleaned["tags"] == ["ticketing", "itsm"]
+    assert packs.clean_manifest(MANIFEST)["tags"] == []
+    for wrong in ("ticketing", ["Ticketing"], ["two words"], [7], ["x"], [f"tag-{n}" for n in range(9)]):
+        with pytest.raises(packs.PackError):
+            packs.clean_manifest({**MANIFEST, "tags": wrong})
+    # They are written to the file, read back, and kept on the pack that is installed.
+    data = packs.write({**MANIFEST, "tags": ["ticketing", "itsm"]}, [packs.Item("scripts", "CountWords", SCRIPT)])
+    assert packs.read(data).manifest["tags"] == ["ticketing", "itsm"]
+    found = inspect(admin, data)
+    assert admin.post("/api/packs/import", json={"token": found["token"]}).status_code == 200
+    listed = next(row for row in admin.get("/api/packs").json()["packs"] if row["id"] == "acme-soc")
+    assert listed["tags"] == ["ticketing", "itsm"]
+    # An index carries them, and one whose tags are not tags is not an entry.
+    line = {"id": "acme", "name": "Acme", "version": "1.0.0", "file": "acme-1.0.0.nikpack", "sha256": "a" * 64}
+    line.update(size=10, tags=["edr"], connectors=["Acme Desk", 7])
+    kept = catalogue.clean_entry(line)
+    assert kept["tags"] == ["edr"] and kept["connectors"] == ["Acme Desk"]
+    assert catalogue.clean_entry({**line, "tags": ["Not A Tag"]}) is None
+
+
+def test_every_pack_of_the_repository_has_tags_of_a_small_vocabulary():
+    index, _files = pack_build.build(vendor.REPO_PACKS)
+    listed = json.loads(index)["packs"]
+    words: dict[str, int] = {}
+    for entry in listed:
+        assert 1 <= len(entry["tags"]) <= packs.TAGS_MAX, entry["id"]
+        assert entry["connectors"] and all(isinstance(name, str) for name in entry["connectors"]), entry["id"]
+        for tag in entry["tags"]:
+            words[tag] = words.get(tag, 0) + 1
+    assert len(words) <= 20, sorted(words)
+    by_id = {entry["id"]: entry for entry in listed}
+    assert by_id["servicenow"]["tags"] == ["ticketing", "itsm"]
+    assert "threat-intelligence" in by_id["virustotal"]["tags"] and "edr" in by_id["sentinelone"]["tags"]
+
+
+# --------------------------------------------------------------------------- #
+# Several at once                                                             #
+# --------------------------------------------------------------------------- #
+def test_packs_are_put_in_the_order_of_what_they_require():
+    needs = {"extras": ["base"], "base": [], "alone": [], "top": ["extras", "elsewhere"]}
+    assert packs.in_order(needs) == ["alone", "base", "extras", "top"]
+    assert packs.in_order(needs, reverse=True) == ["top", "extras", "base", "alone"]
+    # By name where nothing decides; a circle does not hang.
+    assert packs.in_order({"b": [], "a": []}, {"a": "Zed", "b": "Alpha"}) == ["b", "a"]
+    assert sorted(packs.in_order({"a": ["b"], "b": ["a"], "c": []})) == ["a", "b", "c"]
+    assert packs.in_order({"a": ["b"], "b": ["a"], "c": []})[0] == "c"
+
+
+def bulk(admin: TestClient, step: str, action: str, chosen: list) -> list[dict]:
+    body = {"action": action, "packs": [entry if isinstance(entry, dict) else {"id": entry} for entry in chosen]}
+    answer = admin.post(f"/api/packs/bulk/{step}", json=body)
+    assert answer.status_code == 200, answer.text
+    return answer.json()["packs"]
+
+
+def test_several_packs_are_installed_from_the_catalogue_each_on_its_own(admin: TestClient, published):
+    assert admin.post("/api/packs/catalogue/refresh").status_code == 200
+    # One of them is installed already: it is the one left out.
+    found = admin.post("/api/packs/catalogue/jira-cloud/inspect").json()
+    assert admin.post("/api/packs/import", json={"token": found["token"]}).status_code == 200
+    plan = bulk(admin, "plan", "install", ["servicenow", "jira-cloud", "abuseipdb", "nothing"])
+    assert [line["id"] for line in plan] == ["abuseipdb", "jira-cloud", "servicenow", "nothing"]  # by name
+    by_id = {line["id"]: line for line in plan}
+    assert by_id["abuseipdb"]["ok"] and by_id["abuseipdb"]["counts"]["add"] >= 1 and by_id["abuseipdb"]["token"]
+    assert {item["action"] for item in by_id["servicenow"]["items"]} == {"add"}
+    assert not by_id["jira-cloud"]["ok"] and "is installed already" in by_id["jira-cloud"]["why"]
+    assert not by_id["nothing"]["ok"] and "no pack with this id" in by_id["nothing"]["why"]
+    with SessionLocal() as db:
+        assert db.get(Pack, "servicenow") is None  # a plan installs nothing
+
+    # One that fails does not undo the others: the token of abuseipdb is spoilt, the other two go in or not.
+    chosen = [
+        {"id": "servicenow", "token": by_id["servicenow"]["token"]},
+        {"id": "abuseipdb", "token": "not-the-token-of-anything"},
+        {"id": "jira-cloud", "token": by_id["jira-cloud"]["token"]},
+    ]
+    done = {line["id"]: line for line in bulk(admin, "apply", "install", chosen)}
+    assert done["servicenow"]["ok"] and done["servicenow"]["added"] >= 3
+    assert not done["abuseipdb"]["ok"] and "inspected too long ago" in done["abuseipdb"]["why"]
+    assert not done["jira-cloud"]["ok"] and "installed already" in done["jira-cloud"]["why"]
+    with SessionLocal() as db:
+        assert db.get(Pack, "servicenow").source == "catalogue" and db.get(Pack, "abuseipdb") is None
+        assert db.get(Connector, "servicenow") is not None
+    entries = [entry for entry in admin.get("/api/audit").json()["entries"] if entry["action"] == "pack.import"]
+    assert {entry["target"] for entry in entries} == {"jira-cloud", "servicenow"}
+
+    # Updating: only what is installed and older than the catalogue.
+    with SessionLocal() as db:
+        db.get(Pack, "servicenow").version = "0.9.0"
+        db.commit()
+    plan = {line["id"]: line for line in bulk(admin, "plan", "update", ["servicenow", "jira-cloud", "abuseipdb"])}
+    assert plan["servicenow"]["ok"] and plan["servicenow"]["installed"] == "0.9.0"
+    assert "not newer" in plan["jira-cloud"]["why"] and plan["abuseipdb"]["why"] == "It is not installed"
+    done = bulk(admin, "apply", "update", [{"id": "servicenow", "token": plan["servicenow"]["token"]}])
+    assert done[0]["ok"] and done[0]["same"] >= 2 and done[0]["added"] == 0
+    with SessionLocal() as db:
+        assert db.get(Pack, "servicenow").version == "1.0.1"
+    assert (
+        admin.post("/api/packs/bulk/plan", json={"action": "burn", "packs": [{"id": "servicenow"}]}).status_code == 400
+    )
+    assert admin.post("/api/packs/bulk/plan", json={"action": "install", "packs": []}).status_code == 422
+
+
+def test_a_pack_installed_with_the_pack_it_requires_comes_after_it(admin: TestClient, monkeypatch):
+    files = {"acme": acme_pack(), "acme-extras": needing_acme()}
+    files["acme-clash"] = packs.write(
+        {**MANIFEST, "id": "acme-clash", "name": "Acme clash"},
+        [
+            packs.Item("fields", "severity", {"name": "severity", "label": "Mine", "type": "text"}),
+            packs.Item("lists", "clash_list", {"name": "clash_list", "label": "L", "kind": "values"}),
+        ],
+    )
+    monkeypatch.setattr(catalogue, "download", lambda db, pack_id: files[pack_id])
+    # Asked for in the wrong order: the one that is required goes first, and is not missing for the other.
+    plan = bulk(admin, "plan", "install", ["acme-extras", "acme-clash", "acme"])
+    assert [(line["id"], line["ok"]) for line in plan] == [("acme-clash", False), ("acme", True), ("acme-extras", True)]
+    assert plan[0]["why"] == "1 of its items is in conflict: install it on its own to leave them out"
+    assert plan[0]["counts"] == {"add": 1, "update": 0, "same": 0, "conflict": 1}
+    # Alone, the one that requires is left out, with why.
+    alone = bulk(admin, "plan", "install", ["acme-extras"])
+    assert alone[0]["why"] == 'It requires the pack "acme", which is not installed'
+
+    # The required pack fails (its file is not its own): the one that requires it fails for that, and the
+    # pack in conflict is refused by the server even when asked for.
+    tokens = {line["id"]: line["token"] for line in plan}
+    spoilt = [
+        {"id": "acme-extras", "token": tokens["acme-extras"]},
+        {"id": "acme", "token": tokens["acme-clash"]},
+        {"id": "acme-clash", "token": tokens["acme-clash"]},
+    ]
+    done = {line["id"]: line for line in bulk(admin, "apply", "install", spoilt)}
+    assert "not the pack that was looked at" in done["acme"]["why"]
+    assert done["acme-extras"]["why"] == 'It requires the pack "acme", which is not installed'
+    assert "in conflict" in done["acme-clash"]["why"]
+    with SessionLocal() as db:
+        assert db.scalars(select(Pack)).all() == []
+
+    plan = bulk(admin, "plan", "install", ["acme-extras", "acme"])
+    done = bulk(admin, "apply", "install", [{"id": line["id"], "token": line["token"]} for line in reversed(plan)])
+    assert [(line["id"], line["ok"]) for line in done] == [("acme", True), ("acme-extras", True)]
+
+
+def test_several_packs_are_uninstalled_the_ones_in_use_left_with_why(admin: TestClient):
+    install_acme(admin)
+    for data in (needing_acme(), packs.write(MANIFEST, [packs.Item("lists", "vip_users", LIST)])):
+        found = inspect(admin, data)
+        assert admin.post("/api/packs/import", json={"token": found["token"]}).status_code == 200
+    # Together, the pack that requires goes first and so does not hold the one it requires.
+    plan = bulk(admin, "plan", "uninstall", ["acme", "acme-extras", "nik", "ghost"])
+    assert [(line["id"], line["ok"]) for line in plan[:2]] == [("acme-extras", True), ("acme", True)]
+    assert plan[1]["held"] == [] and plan[1]["counts"] == {"remove": 3, "keep": 0, "gone": 0}
+    assert {line["id"]: line["why"] for line in plan[2:]} == {
+        "nik": "It is not installed",
+        "ghost": "It is not installed",
+    }
+    # Alone, it is held by it.
+    alone = bulk(admin, "plan", "uninstall", ["acme"])[0]
+    assert not alone["ok"] and alone["why"] == "It is in use"
+    assert [entry["what"] for entry in alone["held"]] == ['The pack "Acme extras" requires it']
+
+    # An instance holds one of them: it is left, with what holds it, and the others are uninstalled.
+    connect(admin)
+    done = bulk(admin, "apply", "uninstall", ["acme", "acme-soc", "acme-extras"])
+    assert [(line["id"], line["ok"]) for line in done] == [("acme-soc", True), ("acme-extras", True), ("acme", False)]
+    assert done[2]["held"][0]["what"] == 'The instance "Acme production" of its connector "acme" is turned on'
+    assert (done[0]["removed"], done[0]["kept"]) == (1, 0)
+    with SessionLocal() as db:
+        assert [row.id for row in db.scalars(select(Pack))] == ["acme"]
+        assert db.get(Connector, "acme") is not None
+    entries = [entry for entry in admin.get("/api/audit").json()["entries"] if entry["action"] == "pack.uninstall"]
+    assert {entry["target"] for entry in entries} == {"acme-soc", "acme-extras"}
+    # Who does not manage content does neither.
+    reader = make_key(admin, label="r", roles=["analyst"])
+    body = {"action": "uninstall", "packs": [{"id": "acme"}]}
+    assert TestClient(app).post("/api/packs/bulk/plan", json=body, headers=reader).status_code == 403
+    assert TestClient(app).post("/api/packs/bulk/apply", json=body, headers=reader).status_code == 403

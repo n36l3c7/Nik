@@ -176,3 +176,66 @@ def test_a_chart_of_a_dashboard_is_read_for_an_incident(admin: TestClient):
     shared = admin.put(f"/api/dashboards/{board['id']}/sharing", json={"everyone": True})
     assert shared.status_code == 200, shared.text
     assert chart(admin, headers=viewer, dashboard=board["id"], widget="sev", field="host").status_code == 200
+
+
+def test_a_chart_is_narrowed_by_a_custom_field_of_the_incident(admin: TestClient):
+    from tests.test_fields import field
+
+    field(admin, "sender_domain")
+    field(admin, "amount", "number")
+    field(admin, "confirmed", "bool")
+    field(admin, "keywords", "tags")
+    field(admin, "c2", "indicator")
+    field(admin, "contacts", "list", options={"columns": [{"name": "name", "type": "text"}]})
+    field(admin, "number")  # a name the language had: the field is field.number there
+    held = {
+        "sender_domain": "evil.example", "amount": 250, "confirmed": True, "keywords": ["wire", "ceo fraud"],
+        "c2": {"type": "ip", "value": "185.220.101.47"}, "contacts": [{"name": "Mario"}], "number": "PO-7",
+    }  # fmt: skip
+    incident(admin)
+    assert put(admin, held).status_code == 200
+    incident(admin, "i2")
+    assert (
+        put(admin, {"sender_domain": "evil.example", "keywords": ["wire"], "number": "PO-8"}, "i2").status_code == 200
+    )
+    incident(admin, "i3")
+    assert put(admin, {"sender_domain": "good.example", "confirmed": False}, "i3").status_code == 200
+    board = made(admin, widgets=WIDGETS)
+
+    def narrowed(name: str) -> dict:
+        found = chart(admin, dashboard=board["id"], widget="all", field=name)
+        assert found.status_code == 200, found.text
+        return found.json()
+
+    def total(query: str) -> int:
+        counted = admin.post("/api/query/aggregate", json={"entity": "incidents", "query": query})
+        assert counted.status_code == 200, counted.text
+        return counted.json()["total"]
+
+    shown = narrowed("sender_domain")
+    assert (shown["field"], shown["value"], shown["empty"]) == ("sender_domain", "evil.example", False)
+    assert shown["widget"]["query"] == 'sender_domain:"evil.example"' and total(shown["widget"]["query"]) == 2
+    # Each type of field is written as the query language asks it, and the narrowed query runs.
+    wanted = {
+        "amount": ('amount:"250"', 1),
+        "confirmed": ('confirmed:"true"', 1),
+        "keywords": ('keywords IN ("wire", "ceo fraud")', 2),
+        "c2": ('c2:"185.220.101.47"', 1),
+        "field.number": ('field.number:"PO-7"', 1),
+        "field.sender_domain": ('sender_domain:"evil.example"', 2),
+    }
+    for name, (query, count) in wanted.items():
+        assert narrowed(name)["widget"]["query"] == query, name
+        assert total(query) == count, name
+    # "number" is still the number of the incident; a table has nothing a chart is narrowed by.
+    assert narrowed("number")["widget"]["query"].startswith('number:"')
+    assert narrowed("contacts")["empty"] is True
+    other = admin.get("/api/incidents/i3/chart", params={"dashboard": board["id"], "widget": "all", "field": "amount"})
+    assert other.json()["empty"] is True and other.json()["widget"] is None
+
+    # The field is deleted (nothing holds it any more): the chart says which field it was.
+    field(admin, "scratch")
+    assert narrowed("scratch")["empty"] is True
+    assert admin.delete("/api/fields/scratch").status_code == 204
+    gone = chart(admin, dashboard=board["id"], widget="all", field="scratch")
+    assert gone.status_code == 400 and gone.json()["detail"].startswith('"scratch" is not a field of incidents')

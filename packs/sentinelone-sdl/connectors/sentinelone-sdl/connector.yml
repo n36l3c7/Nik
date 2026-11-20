@@ -13,7 +13,7 @@
 # account or site level (a token of global scope is refused by the Data Lake).
 name: SentinelOne SIEM
 id: sentinelone-sdl
-version: 2
+version: 3
 description: PowerQuery searches in the Singularity Data Lake, and the alerts of the Singularity Operations Center.
 api_version: "SDL long-running query API v2 (/sdl/v2/api/queries); unified alerts GraphQL (/web/api/v2.1/unifiedalerts/graphql)"
 verified: false
@@ -131,6 +131,7 @@ commands:
 fetch:
   interval_seconds: 120
   first_fetch: 1 days
+  lookback_minutes: 5
   request:
     method: POST
     path: /web/api/v2.1/unifiedalerts/graphql
@@ -140,16 +141,12 @@ fetch:
         first: 100
         filters:
           - fieldId: detectedAt
-            dateTimeRange: { start: "{{ state.since_ms }}", startInclusive: true }
+            dateTimeRange: { start: "{{ since.epoch_ms }}", startInclusive: true }
   success: { when: { all: [{ left: "{{ response.errors }}", op: empty }] } }
   error: { message: "{{ response.errors[0].message }}" }
   items: "{{ response.data.alerts.edges }}"
   item_id: "{{ item.node.id }}"
   occurred: "{{ item.node.detectedAt }}"
-  first_state:
-    since_ms: "{{ first.epoch_ms }}"
-  next_state:
-    since_ms: "{{ now.epoch_ms | add(-300000) }}"
 
 schema:
   incoming:

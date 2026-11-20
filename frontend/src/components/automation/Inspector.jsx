@@ -1449,6 +1449,7 @@ function PlaybookSettings({ graph, disabled, onGraph, problems }) {
  *   graph: object,
  *   nodeId: string | null,
  *   catalog: object[],
+ *   shapes?: object | null,           // what is inside an incident, its fields, its context (the catalog's)
  *   events: string[],                 // what a trigger can wait for
  *   connections: Record<string, Array<{ id: string, name: string }>>,  // by connector
  *   playbooks: string[],              // the names a "run another playbook" node can choose
@@ -1467,6 +1468,7 @@ export default function Inspector({
   graph,
   nodeId,
   catalog,
+  shapes = null,
   events,
   playbooks,
   connections,
@@ -1482,7 +1484,7 @@ export default function Inspector({
 }) {
   const node = nodeId ? nodeOf(graph, nodeId) : null
   const entry = useMemo(() => entryOf(node, catalog), [node, catalog])
-  const tree = useMemo(() => (node ? valueTree(graph, node.id, catalog) : []), [graph, node, catalog])
+  const tree = useMemo(() => (node ? valueTree(graph, node.id, catalog, shapes) : []), [graph, node, catalog, shapes])
   const [idDraft, setIdDraft] = useState(null)
   const pane = useResizablePane('automation.inspector', { initial: 300, min: 260, max: 640, edge: 'left' })
   const [idProblem, setIdProblem] = useState(null)

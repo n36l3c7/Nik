@@ -37,6 +37,10 @@ from typing import Any
 ALWAYS = frozenset({"hash", "public_indicator", "verdict", "nik_id"})
 
 # The classes an admin can open, in the order they are shown, with what the double check says.
+# ``sensitive`` ones are not offered beside the others. Three of them are whole messages and whole
+# files (``apart``): the screen of a playbook offers those apart, to an admin, under a warning of
+# their own, because forwarding a message, with or without what is attached to it, needs them.
+# TLP:RED data it never offers.
 CLASSES: dict[str, dict[str, Any]] = {
     "incident_text": {
         "label": "Incident names and tickets",
@@ -75,18 +79,21 @@ CLASSES: dict[str, dict[str, Any]] = {
     },
     "mail_body": {
         "label": "E-mail bodies",
-        "warning": "The full text of e-mails: whatever people wrote to each other.",
+        "warning": "The text of e-mails leaves Nik, whatever was written: needed by a playbook that forwards mail.",
         "sensitive": True,
+        "apart": True,
     },
     "attachment": {
         "label": "Attachments",
         "warning": "The files attached to e-mails, as they are: documents, images, archives.",
         "sensitive": True,
+        "apart": True,
     },
     "sample": {
         "label": "Samples",
         "warning": "Files held as evidence, live malware among them. Whoever receives one receives malware.",
         "sensitive": True,
+        "apart": True,
     },
     "tlp_red": {
         "label": "TLP:RED data",

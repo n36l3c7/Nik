@@ -45,7 +45,6 @@ def system_user(db: OrmSession) -> User:
             username=ACTOR,
             password_hash="!",  # noqa: S106 - not a hash: no password matches it
             roles=["automation"],
-            role="analyst",
             created_at=now_iso(),
             created_by=None,
             disabled=True,
@@ -62,8 +61,17 @@ def signature(call: Call) -> str:
     return f' (playbook "{playbook}", run {call.run.id}{who})'
 
 
+def _wanted(call: Call, given: Any) -> str:
+    """The id of the incident a node names: an id, or the incident another node gave (its ``id``
+    is read, so ``{{ create_incident.incident }}`` works as well as ``….incident.id``). The
+    incident of the run when nothing is given."""
+    if isinstance(given, dict):
+        given = given.get("id")
+    return str(given or call.run.incident_id or "")
+
+
 def _incident(call: Call, incident_id: Any) -> Incident:
-    wanted = str(incident_id or call.run.incident_id or "")
+    wanted = _wanted(call, incident_id)
     row = lock_incident(call.db, wanted) if wanted else None
     if row is None:
         raise ActionError("The incident does not exist" if wanted else "No incident was given", retry=False)
@@ -87,10 +95,15 @@ def _incident_result(row: Incident) -> Result:
 INCIDENT_ARG = {
     "name": "incident",
     "type": "text",
-    "description": "The incident's id; the incident of the run when left empty",
+    "description": "The incident's id, or the incident a node gave; the incident of the run when left empty",
 }
 INCIDENT_OUT = [
-    {"name": "incident", "type": "object", "description": "The incident: id, name, status, severity, assignee, url"}
+    {
+        "name": "incident",
+        "type": "object",
+        "description": "The incident: id, name, status, severity, assignee, url…",
+        "shape": "incident",
+    }
 ]
 
 
@@ -101,16 +114,33 @@ INCIDENT_OUT = [
     "nik.get-incident",
     group="Nik",
     name="Get an incident",
-    description="Read an incident as it is now.",
+    description="Read an incident as it is now: what every incident has, and each of its fields that has a value.",
     arguments=[INCIDENT_ARG],
-    outputs=INCIDENT_OUT,
+    outputs=[
+        *INCIDENT_OUT,
+        {
+            "name": "fields",
+            "type": "object",
+            "description": "Its fields that have a value, by their names in the registry: your own fields too",
+            "shape": "fields",
+        },
+    ],
 )
 def get_incident(call: Call) -> Result:
-    wanted = str(call.args.get("incident") or call.run.incident_id or "")
+    from .. import fields as registry
+    from .. import incident_tags
+
+    wanted = _wanted(call, call.args.get("incident"))
     row = call.db.get(Incident, wanted) if wanted else None
     if row is None:
         raise ActionError("The incident does not exist" if wanted else "No incident was given", retry=False)
-    return _incident_result(row)
+    # The fields carry the classes ``{{ incident.… }}`` gives them: a custom one has none of its own.
+    held = {f"fields.{name}": classes for name, classes in payloads.registry_classes().items()}
+    fields = incident_tags.named(call.db, registry.read(call.db, row))
+    return Result(
+        output={"incident": payloads.incident_data(row), "fields": fields},
+        classes={**payloads.incident_classes(), **held},
+    )
 
 
 @action(
@@ -158,7 +188,7 @@ def _set_field(call: Call, name: str, value: str) -> Result:
             raise ActionError("There is no account with this name to assign the incident to", retry=False)
     if call.dry_run:
         # Nothing is changed; later steps read the incident as it would have been.
-        wanted = str(call.args.get("incident") or call.run.incident_id or "")
+        wanted = _wanted(call, call.args.get("incident"))
         current = call.db.get(Incident, wanted) if wanted else None
         if current is None:
             raise ActionError("The incident does not exist" if wanted else "No incident was given", retry=False)
@@ -227,6 +257,78 @@ def set_incident_field(call: Call) -> Result:
     return _set_field(call, str(call.args.get("field") or ""), str(call.args.get("value") or "").strip())
 
 
+INCIDENT_TAGS_ARG = {
+    "name": "tags",
+    "type": "list",
+    "required": True,
+    "description": "The tags: a list, or words separated by commas",
+}
+INCIDENT_TAGS_OUT = [
+    {"name": "tags", "type": "list", "description": "The tags of the incident afterwards"},
+    {"name": "changed", "type": "bool", "description": "Whether its tags are not what they were"},
+]
+
+
+def _tag_incident(call: Call, change, would: str) -> Result:
+    """Put tags on an incident or take them off (``change`` is which). Doing it twice changes
+    nothing the second time: the incident has the tags already, or no longer has them."""
+    from .. import fields as registry
+    from .. import incident_tags
+
+    wanted = incident_tags.given(call.args.get("tags"))
+    if not wanted:
+        raise ActionError("At least one tag is needed", retry=False)
+    found = _wanted(call, call.args.get("incident"))
+    # A dry run reads the incident and changes nothing, so it does not lock it.
+    row = (call.db.get(Incident, found) if found else None) if call.dry_run else _incident(call, found)
+    if row is None:
+        raise ActionError("The incident does not exist" if found else "No incident was given", retry=False)
+    held = incident_tags.of(row)
+    try:
+        after = change(held, wanted)
+        if after != held and not call.dry_run:
+            registry.update(
+                call.db,
+                row,
+                {incident_tags.FIELD: after or None},
+                ACTOR,
+                f"run:{call.run.id}",
+                signature=signature(call),
+            )
+    except registry.FieldError as error:
+        raise ActionError(error.message, retry=False) from None
+    request = {"would": would, "tags": [str(tag) for tag in wanted][:50]} if call.dry_run else None
+    return Result(output={"tags": after, "changed": after != held}, request=request)
+
+
+@action(
+    "nik.add-incident-tags",
+    group="Nik",
+    name="Tag the incident",
+    description="Add tags to an incident. The tags it has already stay as they are.",
+    arguments=[INCIDENT_ARG, INCIDENT_TAGS_ARG],
+    outputs=INCIDENT_TAGS_OUT,
+)
+def add_incident_tags(call: Call) -> Result:
+    from .. import incident_tags
+
+    return _tag_incident(call, incident_tags.added, "tag the incident")
+
+
+@action(
+    "nik.remove-incident-tags",
+    group="Nik",
+    name="Take tags off the incident",
+    description="Remove tags from an incident. A tag it does not have changes nothing.",
+    arguments=[INCIDENT_ARG, INCIDENT_TAGS_ARG],
+    outputs=INCIDENT_TAGS_OUT,
+)
+def remove_incident_tags(call: Call) -> Result:
+    from .. import incident_tags
+
+    return _tag_incident(call, incident_tags.removed, "take tags off the incident")
+
+
 @action(
     "nik.create-incident",
     group="Nik",
@@ -250,24 +352,43 @@ def create_incident(call: Call) -> Result:
     severity = str(call.args.get("severity") or "")
     if severity not in SEVERITIES:
         raise ActionError("The severity is low, medium, high or critical", retry=False)
-    if call.dry_run:
-        return Result(
-            output={"incident": {"id": "dry-run", "name": title}},
-            request={"would": "create an incident", "title": title},
-        )
     now = now_iso()
     ticket = str(call.args.get("ticketId") or "").strip()[:80]
+    host = str(call.args.get("host") or "").strip()[:200]
+    username = str(call.args.get("username") or "").strip()[:200]
+    name = " · ".join(part for part in (ticket, title) if part)
+    if call.dry_run:
+        # Nothing is made; the steps after read the incident as it would have been.
+        would = {
+            "id": "dry-run",
+            "url": "",
+            "name": name,
+            "ticket": ticket,
+            "status": "open",
+            "severity": severity,
+            "assignee": "",
+            "host": host,
+            "username": username,
+            "os": "",
+            "created": now,
+            "modified": now,
+        }
+        return Result(
+            output={"incident": would},
+            classes=payloads.incident_classes(),
+            request={"would": "create an incident", "title": title},
+        )
     doc = {
         "id": str(uuid.uuid4()),
         "ticketId": ticket,
         "title": title,
-        "host": str(call.args.get("host") or "").strip()[:200],
-        "username": str(call.args.get("username") or "").strip()[:200],
+        "host": host,
+        "username": username,
         "os": "",
         "severity": severity,
         "status": "open",
         "assignee": "",
-        "name": " · ".join(part for part in (ticket, title) if part),
+        "name": name,
         "createdAt": now,
         "updatedAt": now,
         "createdBy": ACTOR,
@@ -429,7 +550,19 @@ def remove_from_list(call: Call) -> Result:
         {"name": "watched", "type": "bool", "default": False, "description": "Only the lists that are watched"},
     ],
     outputs=[
-        {"name": "lists", "type": "list", "description": "Each list: {id, name, description, watched, tlp, count}"},
+        {
+            "name": "lists",
+            "type": "list",
+            "description": "Each list: {id, name, description, watched, tlp, count}",
+            "shape": [
+                {"name": "[0].id", "type": "text", "description": "The id of the first list"},
+                {"name": "[0].name", "type": "text", "description": "Its name"},
+                {"name": "[0].description", "type": "text", "description": "What it is for"},
+                {"name": "[0].watched", "type": "bool", "description": "Whether it is watched"},
+                {"name": "[0].tlp", "type": "text", "description": "Its TLP"},
+                {"name": "[0].count", "type": "number", "description": "How many indicators it holds"},
+            ],
+        },
         {"name": "names", "type": "list", "description": "Their names"},
         {"name": "count", "type": "number", "description": "How many lists"},
     ],
@@ -460,6 +593,12 @@ def get_lists(call: Call) -> Result:
 
 RECHECK_EVERY = 30
 RECHECK_ITEMS = 2000
+# One indicator with its verdict, as "Check a list again" gives it before and after.
+VERDICT_ITEM = [
+    {"name": "[0].type", "type": "text", "description": "The type of the first indicator"},
+    {"name": "[0].value", "type": "text", "description": "The indicator"},
+    {"name": "[0].verdict", "type": "text", "description": "Its verdict"},
+]
 
 
 def _truthy(value: Any) -> bool:
@@ -502,8 +641,13 @@ def _verdicts(db: OrmSession, pairs: list[tuple[str, str]]) -> list[dict[str, An
     ],
     outputs=[
         {"name": "list", "type": "text", "description": "The name of the list"},
-        {"name": "before", "type": "list", "description": "The indicators as they were: [{type, value, verdict}]"},
-        {"name": "after", "type": "list", "description": "The same indicators as they are now"},
+        {
+            "name": "before",
+            "type": "list",
+            "description": "The indicators as they were: [{type, value, verdict}]",
+            "shape": VERDICT_ITEM,
+        },
+        {"name": "after", "type": "list", "description": "The same indicators as they are now", "shape": VERDICT_ITEM},
         {"name": "total", "type": "number", "description": "How many indicators the list has"},
         {"name": "asked", "type": "number", "description": "About how many the sources were asked"},
         {"name": "finished", "type": "bool", "description": "Every answer came in the time given"},
@@ -614,6 +758,8 @@ def recheck_list(call: Call) -> Result:
     ],
     outputs=[
         {"name": "found", "type": "bool", "description": "It is in the library"},
+        {"name": "type", "type": "text", "description": "Its type, as it was given or guessed"},
+        {"name": "value", "type": "text", "description": "The indicator, as Nik writes it"},
         {"name": "verdict", "type": "text", "description": "malicious, suspicious, harmless, unknown or empty"},
         {"name": "score", "type": "number", "description": "The reputation score"},
         {"name": "tags", "type": "list", "description": "Its tags"},
@@ -666,8 +812,27 @@ _HASH = {32: "md5", 40: "sha1", 64: "sha256"}
     outputs=[
         {"name": "verdict", "type": "text", "description": "malicious, suspicious, harmless, unknown or empty"},
         {"name": "score", "type": "number", "description": "0 to 100"},
-        {"name": "sources", "type": "list", "description": "Each source that answered: {source, verdict, summary}"},
-        {"name": "skipped", "type": "list", "description": "The sources that were not asked, and why"},
+        {"name": "kind", "type": "text", "description": "What it was looked up as: ip, domain, url, email, md5…"},
+        {"name": "value", "type": "text", "description": "The indicator, as Nik writes it"},
+        {
+            "name": "sources",
+            "type": "list",
+            "description": "Each source that answered: {source, verdict, summary}",
+            "shape": [
+                {"name": "[0].source", "type": "text", "description": "The first source that answered"},
+                {"name": "[0].verdict", "type": "text", "description": "What it says"},
+                {"name": "[0].summary", "type": "text", "description": "Its answer in a line"},
+            ],
+        },
+        {
+            "name": "skipped",
+            "type": "list",
+            "description": "The sources that were not asked, and why",
+            "shape": [
+                {"name": "[0].source", "type": "text", "description": "The first source that was not asked"},
+                {"name": "[0].reason", "type": "text", "description": "Why"},
+            ],
+        },
     ],
     timeout=120,
 )
@@ -1078,3 +1243,196 @@ def list_set(call: Call) -> Result:
         raise ActionError(error.message, retry=False) from None
     audit.record(call.db, ACTOR, "list.set", f'Set the list "{name}": {count} items' + signature(call), target=name)
     return Result(output={"count": count})
+
+
+# --------------------------------------------------------------------------- #
+# Scanning an address                                                         #
+# --------------------------------------------------------------------------- #
+SCAN_EVERY = 5  # seconds between two looks at a scan that is not finished
+SCAN_WAIT = 300  # the five minutes after which the interface too calls a scan interrupted
+SCAN_INDICATORS = 100
+
+
+def _scan_output(row: UrlScan, scanned: bool, summary: str = "") -> dict[str, Any]:
+    """What the node gives of a scan. Not scanned (a dry run, an address held back), every
+    output is there all the same, empty, with ``summary`` saying why."""
+    from .. import urlscan
+
+    result = (row.result or {}) if scanned else {}
+    final = str(result.get("finalUrl") or row.url)
+    chain = result.get("chain") or []
+    hops = max(0, len(chain) - 1)
+    findings = [str(finding.get("text") or "") for finding in result.get("findings") or []]
+    password = bool(result.get("passwordFields"))
+    if scanned:
+        parts = [f"{row.verdict or 'clean'} (score {row.score or 0}): {urlscan.display(final)}"]
+        if final != row.url:
+            through = f" through {hops} redirects" if hops > 1 else ""
+            parts.append(f"reached from {urlscan.display(row.url)}{through}")
+        if password:
+            parts.append("asks for a password")
+        if findings:
+            parts.append(findings[0])
+        summary = "; ".join(parts)[:500]
+    indicators = [{"type": kind, "value": value} for kind, value in (urlscan.url_iocs(row) if scanned else [])]
+    return {
+        "scanned": scanned,
+        "verdict": (row.verdict or "clean") if scanned else "",
+        "score": int(row.score or 0) if scanned else 0,
+        "url": row.url,
+        "final_url": final,
+        "redirected": final != row.url,
+        "redirects": hops,
+        "title": str(result.get("title") or ""),
+        "password_form": password,
+        "findings": findings,
+        "indicators": indicators[:SCAN_INDICATORS],
+        "scan": row.id,
+        "artifact": f"url-{row.id}",
+        "page": f"/artifact/url-{row.id}",
+        "summary": summary,
+    }
+
+
+_SCAN_IDS = {"scan": ["nik_id"], "artifact": ["nik_id"], "page": ["nik_id"], "scanned": ["verdict"]}
+
+
+def _scan_result(call: Call, row: UrlScan) -> Result:
+    output = _scan_output(row, True)
+    # The address keeps the classes it came in with, and the line that repeats it too; what the
+    # scan says of it is a verdict.
+    came_in = sorted(call.classes)
+    return Result(
+        output=output,
+        classes={**_SCAN_IDS, "verdict": ["verdict"], "score": ["verdict"], "url": came_in, "summary": came_in},
+        context=[("URL", {"Data": row.url, "Verdict": output["verdict"], "Score": output["score"]})],
+        log=output["summary"],
+    )
+
+
+def _not_scanned(call: Call, url: str, why: str, request: dict) -> Result:
+    from .. import urlscan
+
+    row = call.db.get(UrlScan, urlscan.scan_id(url)) or UrlScan(id=urlscan.scan_id(url), url=url, result={})
+    classes = {**_SCAN_IDS, "url": sorted(call.classes), "summary": ["verdict"]}
+    return Result(output=_scan_output(row, False, why), classes=classes, request=request)
+
+
+def _scan_started(row: UrlScan) -> float:
+    from datetime import datetime
+
+    try:
+        started = str((row.result or {}).get("startedAt") or row.created_at)
+        return datetime.fromisoformat(started.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+@action(
+    "nik.scan-url",
+    group="Nik",
+    name="Scan an address",
+    description=(
+        "Visit an address with the isolated browser, as URL Analysis does, and wait for the verdict. "
+        "Nothing is typed, clicked or submitted. The scan is kept as an artifact and put in the incident."
+    ),
+    arguments=[
+        {
+            "name": "url",
+            "type": "text",
+            "required": True,
+            "description": "The address, http or https (defanged text is understood)",
+        },
+        INCIDENT_ARG,
+        {
+            "name": "again",
+            "type": "bool",
+            "default": False,
+            "description": "Visit it again even when Nik holds a scan of it (off: the scan it holds is given)",
+        },
+    ],
+    outputs=[
+        {"name": "scanned", "type": "bool", "description": "The address was visited (false in a dry run)"},
+        {"name": "verdict", "type": "text", "description": "phishing, suspicious or clean"},
+        {"name": "score", "type": "number", "description": "0 to 100"},
+        {"name": "url", "type": "text", "description": "The address, as Nik writes it"},
+        {"name": "final_url", "type": "text", "description": "Where the browser ended"},
+        {"name": "redirected", "type": "bool", "description": "It ended somewhere else than the address given"},
+        {"name": "redirects", "type": "number", "description": "How many redirects led there"},
+        {"name": "title", "type": "text", "description": "The title of the page"},
+        {"name": "password_form", "type": "bool", "description": "The page asks for a password"},
+        {"name": "findings", "type": "list", "description": "The reasons behind the verdict, the strongest first"},
+        {"name": "indicators", "type": "list", "description": "What the scan found: [{type, value}], 100 at most"},
+        {"name": "scan", "type": "text", "description": "The id of the scan"},
+        {"name": "artifact", "type": "text", "description": "The scan as an artifact (url-…)"},
+        {"name": "page", "type": "text", "description": "Its address in Nik"},
+        {"name": "summary", "type": "text", "description": "The verdict and where the address led, in a line"},
+    ],
+)
+def scan_url(call: Call) -> Result:
+    import dataclasses
+
+    from .. import urlscan, urlscan_queue
+    from . import outbound
+
+    state = call.state or {}
+    if state:
+        # Called again. The API process runs the scan (urlscan_queue.py): here it is only looked at.
+        row = call.db.get(UrlScan, str(state.get("scan") or ""))
+        if row is None:
+            raise ActionError("The scan was deleted before it ended", retry=False)
+        if row.status == "done":
+            return _scan_result(call, row)
+        if row.status == "error":
+            message = row.error or "The scan failed"
+            # Without the isolated browser trying again cannot help; a visit that failed may pass.
+            raise ActionError(message, retry="BROWSER_URL" not in message)
+        if call.now < float(state.get("until") or 0):
+            return Result(again_at=call.now + SCAN_EVERY, state=state, log=f"The scan is {row.status}")
+        raise ActionError(
+            f"The scan did not end in {SCAN_WAIT // 60} minutes: see whether the server and the isolated "
+            "browser answer (Settings → System → Workers)",
+            retry=False,
+        )
+
+    try:
+        url = urlscan.normalise(str(call.args.get("url") or ""))
+    except urlscan.UrlError as error:
+        raise ActionError(str(error), retry=False) from None
+    # The address leaves Nik when the browser visits it, so the data guard decides: on the classes
+    # the value came in with, on what it looks like, and on what Nik holds of it as an indicator
+    # (allowlisted, TLP:RED). The hosts a playbook may reach are not asked: the visit is made by the
+    # isolated browser, from its own network, and an address nobody listed is what the node is for.
+    held = set(payloads.indicator_data(call.db, "url", url)[1]) - {"public_indicator"}
+    judged = dataclasses.replace(call, classes=frozenset(call.classes) | frozenset(held))
+    payload, decided = outbound.guarded(judged, {"url": url})
+    if not payload.get("url"):
+        # The node sends without what is held: nothing is left to visit.
+        return _not_scanned(judged, url, "Not scanned: the data guard held the address back", {"held": decided})
+    if call.dry_run:
+        would = {"would": "scan the address", "url": urlscan.display(url), "held": decided}
+        return _not_scanned(call, url, "Dry run: the address was not visited", would)
+
+    incident = _incident(call, call.args.get("incident")) if _wanted(call, call.args.get("incident")) else None
+    known = call.db.get(UrlScan, urlscan.scan_id(url)) is not None
+    row = urlscan.register(call.db, url, ACTOR)
+    if incident is not None:
+        urlscan.attach(call.db, incident, row, ACTOR)
+        triggers.incident_changed(call.db, incident, "incident.updated", ["data"])
+    if row.status == "done" and not _truthy(call.args.get("again")):
+        details = f"Scan of {urlscan.display(url)} (already known)" + signature(call)
+        audit.record(call.db, ACTOR, "url.scan", details, incident, target=urlscan.display(url))
+        return _scan_result(call, row)
+    in_progress = known and row.status in ("queued", "running") and call.now - _scan_started(row) < SCAN_WAIT
+    if not in_progress:
+        # Not being scanned now (or left so by a restart): the API process is asked for a visit.
+        cause = triggers.current_run.get()
+        urlscan_queue.ask(call.db, row, ACTOR, call.run.id, cause[1] if cause else 0)
+    details = f"Scan of {urlscan.display(url)}" + signature(call)
+    audit.record(call.db, ACTOR, "url.scan", details, incident, target=urlscan.display(url))
+    return Result(
+        again_at=call.now + SCAN_EVERY,
+        state={"scan": row.id, "until": call.now + SCAN_WAIT},
+        request={"held": decided},
+        log=f"Scanning {urlscan.display(url)}",
+    )

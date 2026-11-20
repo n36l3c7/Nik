@@ -338,7 +338,7 @@ test('positions: under the lowest node, beside what is in the way, and tidied in
   assert.ok(rows.check.y > rows.start.y && rows.search.y > rows.check.y && rows.report.y > rows.loop.y)
   assert.equal(rows.search.y, rows.stop.y)
   assert.notEqual(rows.search.x, rows.stop.x)
-  const tidied = await tidy(GRAPH)
+  const tidied = (await tidy(GRAPH)).positions
   assert.equal(Object.keys(tidied).length, GRAPH.nodes.length)
   assert.ok(tidied.check.y > tidied.start.y)
 })
@@ -541,4 +541,78 @@ test('the library is in tabs, and its search looks in all of them', async () => 
   assert.deepEqual(found.counts, { commands: 2, scripts: 1, flow: 1 })
   assert.deepEqual(names(libraryOf(entries, 'commands', 'issue')), []) // not offered, so not found
   assert.deepEqual(libraryOf(null).groups, [])
+})
+
+test('an output that says what is inside it is listed with it, from the shapes of the catalog', async () => {
+  const { withSubFields } = await import('./catalog.js')
+  const shapes = {
+    incident: [
+      { name: 'id', type: 'text', description: 'Its id' },
+      { name: 'name', type: 'text', description: 'Its name' },
+    ],
+    fields: [
+      { name: 'owner', type: 'user', description: 'Owner. The analyst who has it.' },
+      { name: 'business_unit', type: 'choice', description: 'Business unit (a field of yours)' },
+      { name: 'effort[0].hours', type: 'number', description: 'Hours, in the first row of Effort' },
+    ],
+    context: { Ticket: ['ID', 'Number'] },
+  }
+  const outputs = [
+    { name: 'incident', type: 'object', description: 'The incident', shape: 'incident' },
+    { name: 'lists', type: 'list', shape: [{ name: '[0].name', type: 'text', description: 'Its name' }] },
+    { name: 'count', type: 'number' },
+    { name: 'unknown', type: 'object', shape: 'nothing-of-the-kind' },
+  ]
+  // The object stays, to be picked whole; what is inside follows it.
+  assert.deepEqual(
+    withSubFields(outputs, null, shapes).map((field) => [field.name, field.type]),
+    [
+      ['incident', 'object'],
+      ['incident.id', 'text'],
+      ['incident.name', 'text'],
+      ['lists', 'list'],
+      ['lists[0].name', 'text'],
+      ['count', 'number'],
+      ['unknown', 'object'],
+    ],
+  )
+  // Without the shapes of the catalog a named one lists nothing, and a written one still does.
+  assert.deepEqual(
+    withSubFields(outputs, null).map((field) => field.name),
+    ['incident', 'lists', 'lists[0].name', 'count', 'unknown'],
+  )
+  // What is declared wins over a sample; a sample still fills the outputs that declare nothing.
+  assert.deepEqual(
+    withSubFields(outputs, { incident: { other: 1 }, count: 3, unknown: { a: 1 } }, shapes).map((field) => field.name),
+    ['incident', 'incident.id', 'incident.name', 'lists', 'lists[0].name', 'count', 'unknown', 'unknown.a'],
+  )
+
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', config: { event: 'incident.created' } },
+      { id: 'made', kind: 'action', name: 'Create an incident', config: { action: 'nik.create-incident', args: {} } },
+      { id: 'say', kind: 'action', name: 'Say', config: { action: 'nik.add-note', args: {} } },
+    ],
+    edges: [
+      { from: 'start', to: 'made' },
+      { from: 'made', to: 'say' },
+    ],
+  }
+  const entries = [
+    { id: 'nik.create-incident', kind: 'action', group: 'Nik', name: 'Create an incident', outputs: [outputs[0]] },
+    { id: 'nik.add-note', kind: 'action', group: 'Nik', name: 'Add a note', outputs: [] },
+  ]
+  const tree = valueTree(graph, 'say', entries, shapes)
+  const paths = (name) => tree.find((root) => root.name === name).fields.map((field) => field.path)
+  // The incident a node gave and the incident of the trigger are listed the same way.
+  assert.deepEqual(paths('made'), ['made.incident', 'made.incident.id', 'made.incident.name'])
+  assert.deepEqual(paths('trigger'), ['trigger.incident.id', 'trigger.incident.name'])
+  // The fields of the registry, those made in Settings among them, with their label and type.
+  assert.deepEqual(paths('incident'), ['incident.owner', 'incident.business_unit', 'incident.effort[0].hours'])
+  assert.equal(tree.find((root) => root.name === 'incident').fields[1].type, 'choice')
+  assert.deepEqual(paths('context'), ['context.Ticket', 'context.Ticket[0].ID', 'context.Ticket[0].Number'])
+  // An event that may come without an incident says so of each of its fields.
+  assert.ok(triggerFields({ manual: true }, shapes).every((field) => field.name === 'actor' || field.optional))
+  // Until the catalog is read, what is written in the editor is listed.
+  assert.equal(valueTree(graph, 'say', entries)[0].fields[0].path, 'trigger.incident.id')
 })

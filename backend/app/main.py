@@ -23,6 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
+from . import urlscan_queue, worker_watch
 from .artifacts import backfill as backfill_artifacts
 
 # Import models so their tables are registered on the shared metadata before
@@ -87,6 +88,7 @@ from .routers import (
     webhooks,
     yara_rules,
 )
+from .routers import workers as worker_status
 
 setup_logging(app_settings.LOG_LEVEL)
 
@@ -149,7 +151,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="6.3.0",
+    version="6.4.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -205,6 +207,12 @@ def on_startup() -> None:
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
+    # The administrators are told when a worker stops answering (one process at a time, see worker_watch.py).
+    if app_settings.API_BACKGROUND:
+        worker_watch.start()
+    # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
+    if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
+        urlscan_queue.start()
     # The scripts and the connectors Nik ships are there (a release may bring new versions),
     # and the playbooks it ships were added once.
     if app_settings.AUTOMATION_WORKER != "off":
@@ -341,3 +349,4 @@ app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
+app.include_router(worker_status.router, prefix="/api")

@@ -26,7 +26,7 @@
 # Not here: the Exploits API (exploits.shodan.io), whose reference could not
 # be read, and the Streaming API (stream.shodan.io), an endless stream.
 #
-# check-ip reads InternetDB and gives the verdict Nik's own enrichment gives
+# check-ip reads InternetDB and gives the verdict Nik's own look-up code gave
 # from it: malicious when the host is tagged malware, c2, compromised or
 # botnet, suspicious when its only such tag is tor, unknown otherwise (Shodan
 # says what a host exposes, not that it is clean). A host InternetDB has

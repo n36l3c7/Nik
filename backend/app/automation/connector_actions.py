@@ -432,9 +432,10 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         try:
             runtime = runtime_for(db, connector, connection, call.playbook, call.now, key=key)
             if connector.native == "mail":
-                # What a message carries is known once it is read: the runtime asks the guard then, and
-                # keeps what it is asked to keep through the store of this run.
-                runtime.judge = lambda found: outbound.guarded_files(call, found, decided)
+                # What a message quotes and carries of another is known once that one is read: the
+                # runtime asks the guard then, and keeps what it is asked to keep through the store
+                # of this run.
+                runtime.judge = lambda quoted, found: outbound.guarded_message(call, quoted, found, decided)
                 runtime.keep = lambda found, message, wanted: mail_evidence.keep_attachments(
                     call, found, message, wanted
                 )

@@ -2,7 +2,8 @@ id: bitbucket-datacenter
 name: Bitbucket Data Center
 vendor: Atlassian
 category: Code and knowledge
-version: 1.0.0
+tags: [code]
+version: 1.0.1
 description: >-
   A file in a Bitbucket Data Center repository, read and written with a commit.
 author: Nik

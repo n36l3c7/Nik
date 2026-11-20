@@ -17,7 +17,7 @@ paste it in the connection. Every command needs it.
 
 `get-ip-reputation`, `get-domain-reputation`, `get-url-reputation` and `get-file-reputation` answer the War
 Room's `!ip`, `!domain`, `!url` and `!file`. They read the `general` section of the indicator. The verdict and
-the summary are the ones Nik's own enrichment gives for OTX, and the rule is written in the file:
+the summary are the ones Nik's own look-up code gave for OTX, and the rule is written in the file:
 
 | What OTX answers | Verdict | Summary |
 | --- | --- | --- |

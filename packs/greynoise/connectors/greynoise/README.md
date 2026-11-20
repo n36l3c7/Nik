@@ -34,7 +34,7 @@ As GreyNoise states it for the Community API:
   iCloud and the like) has no access with an API key.
 
 `get-community-ip` is the command `!ip` asks. Its verdict and its summary
-are the ones Nik's own enrichment gives for GreyNoise, and the rule is
+are the ones Nik's own look-up code gave for GreyNoise, and the rule is
 written in the file:
 
 | What GreyNoise answers | Verdict | Summary |

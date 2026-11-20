@@ -71,6 +71,10 @@ def upgrade() -> None:
             batch.add_column(sa.Column("roles", sa.JSON(), nullable=False, server_default=sa.text("'[]'")))
 
     # Fill the accounts and keys that have no roles yet (a second run finds none).
+    # A database made by the baseline of 6.4 or later never had the old columns
+    # (0044 drops them, and the models no longer name them): nothing to fill from.
+    if "role" not in _columns("users") or not {"role", "scopes"} <= _columns("api_keys"):
+        return
     users = sa.table("users", sa.column("id", sa.String), sa.column("role", sa.String), sa.column("roles", sa.JSON))
     for user_id, role, roles in bind.execute(sa.select(users.c.id, users.c.role, users.c.roles)).all():
         if _empty(roles):

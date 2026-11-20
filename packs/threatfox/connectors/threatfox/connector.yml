@@ -14,8 +14,8 @@
 #
 # ThreatFox drops indicators older than 6 months from its API.
 #
-# The four report commands give a verdict the way Nik's own enrichment
-# does: an indicator ThreatFox holds is malicious (it takes confirmed
+# The four report commands give a verdict the way Nik's own look-up code
+# did: an indicator ThreatFox holds is malicious (it takes confirmed
 # indicators only), anything else is unknown. They search for the exact
 # value; an IP address also finds its "ip:port" entries. Their summary
 # names the first indicator: its malware family, or its threat type when

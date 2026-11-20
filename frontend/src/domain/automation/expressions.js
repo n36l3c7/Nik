@@ -1243,3 +1243,56 @@ export function render(value, scope) {
   if (isObject(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, render(item, scope)]))
   return value
 }
+
+// --------------------------------------------------------------------------- //
+// Completing what is typed                                                    //
+// --------------------------------------------------------------------------- //
+/**
+ * The path being typed at the caret, inside braces that are not closed yet:
+ * `{ start, typed }`, where `start` is where the braces open. Null when the
+ * caret is not in such a place (outside braces, or past the path, in a filter).
+ */
+export function typedAt(template, caret) {
+  const before = String(template ?? '').slice(0, caret)
+  const start = before.lastIndexOf('{{')
+  if (start === -1 || before.includes('}}', start)) return null
+  const found = /^\s*([A-Za-z_][A-Za-z0-9_.[\]*]*)?$/.exec(before.slice(start + 2))
+  return found ? { start, typed: found[1] ?? '' } : null
+}
+
+/**
+ * The values of a tree (catalog.js, `valueTree`) that complete what was typed:
+ * first those whose path starts with it, then those that hold it anywhere, in
+ * the order of the tree. `[{ path, type, description, label }]`, `limit` at most.
+ */
+export function completions(tree, typed, limit = 50) {
+  const wanted = String(typed ?? '').toLowerCase()
+  const starts = []
+  const holds = []
+  for (const root of tree ?? []) {
+    for (const field of root.fields ?? []) {
+      const path = field.path.toLowerCase()
+      const entry = { path: field.path, type: field.type, description: field.description ?? '', label: root.label }
+      if (path.startsWith(wanted)) starts.push(entry)
+      else if (path.includes(wanted)) holds.push(entry)
+    }
+  }
+  return [...starts, ...holds].slice(0, limit)
+}
+
+/**
+ * The text with what was typed at the caret completed to `{{ path }}`:
+ * `{ text, caret }`, the caret after the braces. Braces that already close the
+ * expression after the caret are not written twice.
+ */
+export function complete(template, caret, path) {
+  const text = String(template ?? '')
+  const at = typedAt(text, caret)
+  const start = at ? at.start : caret
+  const closing = /^\s*\}\}/.exec(text.slice(caret))
+  const inserted = `{{ ${path} }}`
+  return {
+    text: text.slice(0, start) + inserted + text.slice(caret + (closing ? closing[0].length : 0)),
+    caret: start + inserted.length,
+  }
+}

@@ -23,7 +23,7 @@ Run again, it finds nothing to do. Going back renames shodan and rdap; the
 answers of the three abuse.ch services stay under their own ids.
 
 Revision ID: 0045_lookups_through_connectors
-Revises: 0041_saved_filters
+Revises: 0044_no_legacy_roles
 Create Date: 2026-11-20
 """
 
@@ -34,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0045_lookups_through_connectors"
-down_revision = "0041_saved_filters"
+down_revision = "0044_no_legacy_roles"
 branch_labels = None
 depends_on = None
 

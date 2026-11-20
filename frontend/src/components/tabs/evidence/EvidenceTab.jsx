@@ -1,12 +1,12 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { FolderOpen, FolderSearch, List } from 'lucide-react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { FolderOpen, FolderSearch, List, Plus } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { normalizeOs } from '../../../config/os.js'
 import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
-import { AsciiSkull, EmptyState, ErrorBoundary } from '../../ui/index.js'
+import { AsciiSkull, Button, EmptyState, ErrorBoundary } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import SystemDialog from './SystemDialog.jsx'
@@ -28,7 +28,8 @@ import SystemDialog from './SystemDialog.jsx'
  *     are added and removed, and, for what was collected on the machine, its
  *     page.
  *
- * A file dropped anywhere in the window is added as before.
+ * A file dropped anywhere in the window is added as before, and "Add a file…"
+ * at the head of the list chooses one from the disk for who cannot drag it.
  *
  * What was collected on the machine (Endpoint, Event logs, Browser, Commands)
  * shows the paths and the commands of one operating system. An incident that
@@ -50,9 +51,11 @@ const ROW =
  *   kinds: object[],                      // the kinds of evidence this incident shows, in order (config/tabs.js)
  *   kind: object | null,                  // the kind on screen; null for the list alone
  *   onKind: (id: string) => void,         // show a kind (the address follows)
+ *   onAddFile?: (file: File) => void,     // a file chosen from the disk; absent for who may not add one
  * }} props
  */
-export default function EvidenceTab({ incident, kinds, kind, onKind }) {
+export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }) {
+  const fileInput = useRef(null)
   const pane = useResizablePane('incident.evidence', { initial: 260, min: 200, max: 480 })
   const [query, setQuery] = useState('')
   const menu = useObjectMenu()
@@ -101,7 +104,32 @@ export default function EvidenceTab({ incident, kinds, kind, onKind }) {
         style={pane.style}
         className="flex max-h-72 w-full shrink-0 flex-col border border-line bg-panel md:max-h-none md:w-[var(--pane-w)] md:self-start"
       >
-        <div className="border-b border-line-soft p-2">
+        <div className="flex flex-col gap-2 border-b border-line-soft p-2">
+          {onAddFile && (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Plus}
+                className="w-full justify-center"
+                title="Choose a file of this incident: Nik proposes where it goes, as for a file dropped on the window"
+                onClick={() => fileInput.current?.click()}
+              >
+                Add a file…
+              </Button>
+              <input
+                ref={fileInput}
+                type="file"
+                className="hidden"
+                aria-label="A file to add to the incident"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) onAddFile(file)
+                }}
+              />
+            </>
+          )}
           <input
             type="search"
             value={query}

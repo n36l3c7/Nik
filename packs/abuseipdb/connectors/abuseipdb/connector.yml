@@ -10,7 +10,7 @@
 # the arguments it changes (the size of the blacklist, its filters, the size
 # of a network and the age of the reports in check-block) and in the README.
 #
-# The verdict of check-ip is the one Nik's own enrichment gives for this
+# The verdict of check-ip is the one Nik's own look-up code gave for this
 # source: harmless when AbuseIPDB has the address on a whitelist, malicious
 # from a confidence of 75, suspicious from 25, unknown below.
 #

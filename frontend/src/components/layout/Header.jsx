@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { getOsById } from '../../config/os.js'
 import { formatRelative } from '../../lib/time.js'
 import { SeverityTag, StatusTag } from '../ui/index.js'
+import IncidentTags from '../incident/IncidentTags.jsx'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
 import ConnectorLogo from '../ui/ConnectorLogo.jsx'
 
@@ -65,6 +66,12 @@ export default function Header({
               <SeverityTag severity={activeIncident.severity} />
               <StatusTag status={activeIncident.status} />
             </h1>
+            {/* Its tags, changed where they are read (the field `labels`; the light row carries them too). */}
+            <IncidentTags
+              incidentId={activeIncident.id}
+              tags={loadedIncident ? loadedIncident.fields?.labels : activeIncident.tags}
+              className="mt-1"
+            />
             <p className="truncate text-xs text-fg-muted">
               {[
                 os?.label,

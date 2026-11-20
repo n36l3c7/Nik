@@ -309,3 +309,24 @@ export const keyUse = (key, policy) =>
 /** How full the day of a key is, 0 to 1 (0 when there is no limit a day). */
 export const keyShare = (key, policy) =>
   Number(policy?.perDay) > 0 ? Math.min(1, (key.usedToday ?? 0) / Number(policy.perDay)) : 0
+
+/* ---------------------------------------------------------------- the form */
+
+/**
+ * The parts of the form of an instance, as its tabs: the connection always;
+ * the keys for a connector that signs in; fetching for one that can fetch;
+ * the classifier and the mappers once the instance exists (a classifier
+ * belongs to an instance, and both are tried on what it fetched). `wide` parts
+ * are tables that need the width of the page.
+ */
+export function instanceTabs(connector, instance) {
+  const fetches = Boolean(connector?.fetch)
+  const exists = Boolean(instance)
+  return [
+    { id: 'connection', label: 'Connection', wide: false },
+    takesKeys(connector) && { id: 'keys', label: 'Keys', wide: false },
+    fetches && { id: 'fetch', label: 'Fetch', wide: false },
+    fetches && exists && { id: 'classifier', label: 'Classifier', wide: true },
+    (fetches || Boolean(connector?.mirror)) && exists && { id: 'mappers', label: 'Mappers', wide: true },
+  ].filter(Boolean)
+}

@@ -269,6 +269,9 @@ function syncUrl(incidentId, { replace = false } = {}) {
   setPath(path, { replace, state: { incidentId: incidentId ?? null } })
 }
 
+/** The tags of an incident as a row holds them: its field `labels`, a list of texts. */
+const tagList = (value) => (Array.isArray(value) ? value.filter((tag) => typeof tag === 'string' && tag) : [])
+
 /** The light listing row of an incident (what `GET /incidents?view=summary` returns). */
 function toSummary(incident) {
   return {
@@ -284,6 +287,7 @@ function toSummary(incident) {
     assignee: incident.assignee ?? '',
     hasMail: (incident.data?.mail?.messages?.length ?? 0) > 0,
     type: incident.type ?? 'unclassified',
+    tags: tagList(incident.fields?.labels),
     source: incident.source ?? null,
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
@@ -311,6 +315,7 @@ function normalizeSummary(raw) {
     assignee: typeof raw.assignee === 'string' ? raw.assignee : '',
     hasMail: raw.hasMail === true,
     type: typeof raw.type === 'string' && raw.type ? raw.type : 'unclassified',
+    tags: tagList(raw.tags),
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
   }

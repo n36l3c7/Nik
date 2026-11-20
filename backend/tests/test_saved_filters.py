@@ -56,6 +56,27 @@ def test_a_query_that_cannot_be_read_is_refused_with_the_reason(admin: TestClien
     assert listed(admin)["filters"][0]["query"] == "status:open"
 
 
+def test_a_filter_on_a_custom_field_is_kept_and_says_so_when_the_field_is_gone(admin: TestClient):
+    from tests.test_fields import field
+
+    field(admin, "customer")
+    field(admin, "region", "choice", options={"choices": ["EMEA", "APAC"]})
+    made = saved(admin, name="Acme", query="customer:acme !region:APAC field.customer:*", columns=["name", "customer"])
+    assert made["query"] == "customer:acme !region:APAC field.customer:*"
+    # It is read as the list reads it: a choice the field does not have is refused when it is saved.
+    wrong = admin.put(f"/api/filters/{made['id']}", json={"query": "region:mars"})
+    assert wrong.status_code == 422 and wrong.json()["detail"] == '"region" is one of: EMEA, APAC'
+    # The field is deleted: the filter is still there, and the list says which field it names.
+    assert admin.delete("/api/fields/customer").status_code == 204
+    assert listed(admin)["filters"][0]["query"] == made["query"]
+    asked = admin.get("/api/incidents", params={"view": "summary", "q": made["query"]})
+    assert asked.status_code == 422 and asked.json()["query"]["code"] == "unknown_field"
+    assert asked.json()["detail"].startswith('"customer" is not a field of incidents')
+    again = admin.put(f"/api/filters/{made['id']}", json={"query": made["query"]})
+    assert again.status_code == 422 and '"customer"' in again.json()["detail"]
+    assert admin.put(f"/api/filters/{made['id']}", json={"query": "!region:APAC"}).status_code == 200
+
+
 def test_what_a_filter_is_made_of_is_checked(admin: TestClient):
     def refused(**body) -> str:
         answer = admin.post("/api/filters", json={"name": "No", **body})

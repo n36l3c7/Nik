@@ -200,12 +200,16 @@
           instance by who manages connectors and reached wherever they are. A message is parsed and never opened
           further: an attachment is described by name, type, size and SHA-256. A value put in an IMAP command is quoted,
           and refused when it holds a quote, a backslash or a line break. A recipient must be in a domain the playbook
-          may reach, and what is said goes through the data guard. An attachment a playbook keeps
-          (<code>get-attachments</code>) and a message the listener keeps go to the store as bytes, under the size limit
-          of an upload, and are analysed as an upload is: never run, never opened by the program they are meant for. An
-          attachment is carried by <code>forward</code> only when it is asked to and the data guard lets it: the file is
-          judged by its class, its name, its size and its hash, and what cannot be judged is not sent. Like every
-          connection, these are opened by the one module that opens connections.
+          may reach, and what is said goes through the data guard. So does what <code>forward</code> and
+          <code>reply</code> take from the message in the mailbox, which no node wrote: it is judged when it is read,
+          the subject as an e-mail subject, the sender and recipients quoted as e-mail addresses, the text as an e-mail
+          body, and a part that is held is not sent. Outside a playbook there is no guard, and neither command sends.
+          The <code>Message-ID</code> a reply names is not judged: it goes back to those who had it. An attachment a
+          playbook keeps (<code>get-attachments</code>) and a message the listener keeps go to the store as bytes, under
+          the size limit of an upload, and are analysed as an upload is: never run, never opened by the program they are
+          meant for. An attachment is carried by <code>forward</code> only when it is asked to and the data guard lets
+          it: the file is judged by its class, its name, its size and its hash, and what cannot be judged is not sent.
+          Like every connection, these are opened by the one module that opens connections.
         </li>
         <li>
           <strong>Files a connector carries.</strong> A command of a connector may download a file (a sample, a capture,
@@ -366,9 +370,11 @@
         <li>
           <strong>What.</strong> Values carry a class from where they are read (an incident's name, an e-mail address, a
           mail body) through filters, texts and scripts to where they would leave. A node sends only when every class in
-          what it holds is one that always leaves, or one an admin opened for that playbook. E-mail bodies, attachments,
-          samples and TLP:RED data cannot be opened. What leaves is also read as text for private addresses, internal
-          names and allowlisted values typed by hand.
+          what it holds is one that always leaves, or one an admin opened for that playbook. E-mail bodies, attachments
+          and samples are whole messages and whole files: the screen of a playbook lists them apart, under a warning of
+          their own, and an admin opens one behind the same double check, for a playbook that must forward them. TLP:RED
+          data is not offered to be opened. What leaves is also read as text for private addresses, internal names and
+          allowlisted values typed by hand.
         </li>
         <li>
           <strong>Expressions.</strong> The <code>{{ }}</code> language compares, counts and chooses, and is still not

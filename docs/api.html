@@ -139,15 +139,18 @@
         what they grant. A role given or taken away takes effect at the account's next request.
       </p>
       <p>
-        <strong>Changed in 4.0.</strong> Before 4.0 an account had one <code>role</code> (<code>admin</code> or
-        <code>analyst</code>) and a key a role plus <code>scopes</code>. Existing accounts and keys were converted
-        (<code>admin</code> → <code>["admin"]</code>, <code>analyst</code> → <code>["analyst"]</code>, an analyst key
-        without the <code>write</code> scope → <code>["viewer"]</code>) and keep working. The API still accepts
-        <code>role</code> (and <code>scopes</code> on a key) when <code>roles</code> is not sent, and still answers with
-        <code>role</code> (the most able of <code>admin</code>, <code>analyst</code>, <code>viewer</code> the caller
-        holds) and <code>scopes</code> next to <code>roles</code>; both old fields go away in 5.0. One thing an analyst
-        could do and no longer can: read the audit log (now <code>audit.read</code>). Give the account the role
-        <code>audit</code> as well if it still should.
+        <strong>Removed in 6.4.</strong> Before 4.0 an account had one <code>role</code> (<code>admin</code> or
+        <code>analyst</code>) and a key a role plus <code>scopes</code>; both were still accepted and answered next to
+        <code>roles</code> until 6.4. They are gone: an answer no longer carries <code>role</code> or
+        <code>scopes</code>, and a request that sends either (to <code>POST /api/users</code>,
+        <code>PATCH /api/users/{id}</code> or <code>POST /api/keys</code>) is refused with <code>400</code> and a
+        sentence that says to send <code>roles</code>. It is refused, not read without them, because a client that asks
+        for a key with <code>scopes: ["read"]</code> would otherwise get a key that writes. What the old values become:
+        <code>role: "admin"</code> → <code>roles: ["admin"]</code>, <code>role: "analyst"</code> →
+        <code>["analyst"]</code>, a key with the <code>read</code> scope alone → <code>["viewer"]</code>. Accounts and
+        keys that exist keep the roles they have. A backup taken before 4.0, which holds the single <code>role</code>,
+        is still restored with the matching roles. The audit log is read with <code>audit.read</code>: an analyst who
+        should read it holds the role <code>audit</code> as well.
       </p>
       <p>
         Every change is recorded in the audit log by the server, whoever makes it: a key appears as
@@ -177,11 +180,12 @@
                 List incidents. Query: <code>q</code> (<a href="#query">the query language</a>:
                 <code>status:open severity:&gt;=high</code>; plain words match name, host, user and ticket),
                 <code>limit</code> / <code>offset</code>, <code>view=summary</code> (light rows without the document
-                body). The older <code>host</code>, <code>username</code>, <code>status</code> and
-                <code>assignee</code> parameters still work and add to <code>q</code>. Total in the
-                <code>X-Total-Count</code> header. With <code>view=summary</code>, <code>fields=a,b</code> (names of
-                fields of the registry, 30 at most) adds to each row <code>fields</code>, the values it holds for those
-                names: what the columns of the incident list are read from.
+                body; each carries <code>tags</code>, the tags of the incident). The older <code>host</code>,
+                <code>username</code>, <code>status</code> and <code>assignee</code> parameters still work and add to
+                <code>q</code>. Total in the <code>X-Total-Count</code> header. With <code>view=summary</code>,
+                <code>fields=a,b</code> (names of fields of the registry, 30 at most) adds to each row
+                <code>fields</code>, the values it holds for those names: what the columns of the incident list are read
+                from.
               </td>
             </tr>
             <tr>
@@ -338,7 +342,8 @@
                 >. First those its field <code>related_incidents</code> names (by id or by number) and those that name
                 it, then those that hold the most indicators it holds too (<code>shared</code>, with the first three);
                 values on the allowlist link nothing · a widget of a dashboard with its query narrowed to what this
-                incident holds for <code>field</code>, a field of the query language for what the widget counts:
+                incident holds for <code>field</code>, a field of the query language for what the widget counts (for
+                incidents, any field of the registry, <a href="#query-fields">custom ones included</a>):
                 <code>{widget, board, field, value, empty}</code>, the widget to be asked of
                 <code>POST /api/query/aggregate</code> like any other. <code>empty</code> is true, with no widget, when
                 the incident holds nothing for the field. <code>404</code> for a dashboard the caller does not see or a
@@ -391,7 +396,9 @@
                 <code>409</code> when <code>ifRev</code> is not the current <code>rev</code>. Answers the fields as they
                 are now, with <code>changed</code>. Setting <code>status</code> to <code>closed</code> is refused while
                 a field the incident's type wants filled before closing is empty, or when <code>close_reason</code> is
-                not one of the type's.
+                not one of the type's. The tags of an incident are its field <code>labels</code> (a list): what is added
+                is kept lower case and held to the rules of a tag (a letter or a digit, then letters, digits and
+                <code>. _ : -</code>, 40 characters; 12 tags at most), what the incident already held is kept as it is.
               </td>
             </tr>
             <tr>
@@ -612,10 +619,11 @@
                 entities the caller may query and their fields. <code>POST /api/query</code> takes
                 <code>{ entity, query, limit, offset }</code> (<code>incidents</code>, <code>artifacts</code>,
                 <code>indicators</code>, <code>audit</code>, <code>runs</code>, <code>approvals</code>,
-                <code>tasks</code>) and returns <code>{ entity, total, items }</code>. <code>check</code> reads
-                <code>{ entity, query }</code> without running it and returns its tree. <code>aggregate</code>
-                <a href="#query-aggregate">counts or measures</a> what a query finds. Any signed-in caller; the
-                permission of the entity is checked.
+                <code>tasks</code>) and returns <code>{ entity, total, items }</code>; an incident carries under
+                <code>fields</code> what it holds for the fields of the registry that are not in the row itself.
+                <code>check</code> reads <code>{ entity, query }</code> without running it and returns its tree.
+                <code>aggregate</code> <a href="#query-aggregate">counts or measures</a> what a query finds. Any
+                signed-in caller; the permission of the entity is checked.
               </td>
             </tr>
             <tr>
@@ -865,6 +873,16 @@
                 <code>waiting</code>, and <code>{ "next": true }</code> goes on with them (the detail has them in
                 <code>pending</code>). <code>dryRun</code> only counts. <code>link</code> puts imported messages in an
                 incident: <code>{ incidentId, seqs }</code>, all of them when <code>seqs</code> is omitted.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/workers</code></td>
+              <td>
+                Admins. The automation worker and the analysis workers, as the server last found them:
+                <code>workers</code>, each with <code>id</code>, <code>label</code>, <code>configured</code>,
+                <code>state</code> (<code>up</code>, <code>failing</code> from its first check without an answer,
+                <code>down</code> once that lasted <code>downAfterSeconds</code> and the administrators were told; empty
+                before its first check and when it is not configured), <code>since</code> and <code>checkedAt</code>.
               </td>
             </tr>
             <tr>
@@ -1337,7 +1355,14 @@
                 <code>{name, connector, config, secrets, enabled}</code>. <code>config</code> is checked against what
                 the connector asks for. On <code>PUT</code> a secret left out stays as it is and an empty one is
                 removed; <code>{enabled: false}</code> turns the instance off: it runs no command, fetches nothing and
-                is not offered for mirroring. A connection a playbook uses is not deleted (<code>409</code>).
+                is not offered for mirroring. A connection a playbook uses is not deleted (<code>409</code>). For a
+                connector that can fetch, <code>PUT</code> also takes
+                <code>fetch: {enabled, intervalSeconds, firstFetch, lookbackMinutes}</code> (6.4): whether the instance
+                fetches, how often (30 to 86400 seconds), how far back the first time (<code>"3 days"</code>, a month at
+                most) and its <a href="automation.html#look-back">look-back</a> (0 to 1440 minutes). A value left out
+                stays as it is; one that is the connector's own is not kept, so the instance goes on following its
+                connector. An instance answers with <code>fetch</code>, what <code>GET /api/fetch</code> says of it
+                (<code>null</code> when its connector cannot fetch).
               </td>
             </tr>
             <tr>
@@ -1513,20 +1538,23 @@
             <tr>
               <td>
                 <code>GET /api/fetch</code> · <code>PUT /api/fetch/{instanceId}</code> · <code>POST …/run</code> ·
-                <code>POST …/resume</code> · <code>GET …/items</code> ·
+                <code>POST …/resume</code> · <code>POST …/reset</code> · <code>GET …/items</code> ·
                 <code>GET …/sample</code>
               </td>
               <td>
-                (<strong>connectors.manage</strong>) The connections whose connector can fetch:
+                (<strong>connectors.manage</strong>) The instances whose connector can fetch:
                 <code
-                  >{connections: [{instanceId, connection, connector, enabled, state, error, pausedWhy, lastAt, nextAt,
-                  last, madeLastHour, limitPerHour, fetchState}]}</code
+                  >{instances: [{instanceId, connection, connector, enabled, intervalSeconds, firstFetch,
+                  lookbackMinutes, defaults, byTime, started, sinceAt, state, error, pausedWhy, lastAt, nextAt, last,
+                  madeLastHour, limitPerHour, fetchState, link}]}</code
                 >, <code>state</code> one of <code>off</code>, <code>ok</code>, <code>failing</code>,
-                <code>paused</code> · tell one to fetch or not, <code>{enabled}</code> · fetch once now (<code
-                  >409</code
-                >
-                when it does not fetch) · let a paused or failing one go on · what it fetched lately with what became of
-                each item (<code>outcome</code>: <code>created</code>, <code>incomplete</code>, <code>dropped</code>,
+                <code>paused</code>; <code>defaults</code> is what the connector says, <code>byTime</code> whether the
+                look-back applies, <code>sinceAt</code> the moment the next cycle asks from. How it fetches is saved
+                with the instance (<code>PUT /api/automation/instances/{id}</code>, <code>fetch</code>) · tell one to
+                fetch or not, <code>{enabled}</code> · fetch once now (<code>409</code> when it does not fetch) · let a
+                paused or failing one go on · reset its last run: the next cycle starts from the first fetch, and what
+                was fetched before is still skipped by its id · what it fetched lately with what became of each item
+                (<code>outcome</code>: <code>created</code>, <code>incomplete</code>, <code>dropped</code>,
                 <code>linked</code>, <code>duplicate</code>; <code>?outcome=</code> narrows) · the last item as it came.
               </td>
             </tr>
@@ -1761,15 +1789,16 @@
                 (<strong>content.manage</strong>) The <a href="automation.html#pack-catalogue">catalogue</a> as it was
                 last read, without going out:
                 <code
-                  >{address, custom, fetchedAt, error, read, packs: [{id, name, vendor, category, version, description,
-                  requires, contents, installed, update, needsNik}]}</code
+                  >{address, custom, fetchedAt, error, read, packs: [{id, name, vendor, category, tags, version,
+                  description, requires, contents, connectors, installed, update, needsNik}]}</code
                 >
-                · read it again from its address (<code>502</code> with why when it cannot be read or its signature is
-                not of the key Nik holds; <code>409</code> when no catalogue is set) · take one pack from it, checked
-                against the signed index, and answer like <code>POST /api/packs/inspect</code>: the
-                <code>token</code> is then given to <code>POST /api/packs/import</code> · its logo ·
-                (<strong>admin</strong>) set where the catalogue is: <code>{address, key}</code>, both empty for Nik's
-                own.
+                (<code>tags</code> are the ones of its <code>pack.yml</code>, <code>connectors</code> the names of its
+                connectors; an installed pack of <code>GET /api/packs</code> has its <code>tags</code> too) · read it
+                again from its address (<code>502</code> with why when it cannot be read or its signature is not of the
+                key Nik holds; <code>409</code> when no catalogue is set) · take one pack from it, checked against the
+                signed index, and answer like <code>POST /api/packs/inspect</code>: the <code>token</code> is then given
+                to <code>POST /api/packs/import</code> · its logo · (<strong>admin</strong>) set where the catalogue is:
+                <code>{address, key}</code>, both empty for Nik's own.
               </td>
             </tr>
             <tr>
@@ -1779,13 +1808,32 @@
               </td>
               <td>
                 (<strong>content.manage</strong>) What uninstalling would do:
-                <code>{items: [{kind, name, label, action, why}], instances}</code>, where <code>action</code> is
-                <code>remove</code>, <code>keep</code> (changed here, or in use: <code>why</code> says which) or
-                <code>gone</code>; <code>?instances=true</code> asks what it would be if the instances of its connectors
-                went too · <a href="automation.html#pack-uninstall">uninstall</a> it:
-                <code>{removed, kept, instances}</code> (<code>&amp;instances=true</code> deletes the instances and
-                their credentials). Without <code>remove</code> the pack is only taken off the list (<code>204</code>).
-                <code>409</code> for a pack another requires, and for Nik's own.
+                <code>{items: [{kind, name, label, action, why}], held: [{kind, name, label, what, todo}]}</code>, where
+                <code>action</code> is <code>remove</code>, <code>keep</code> (changed here, or needed by something of
+                the pack that stays: <code>why</code> says which) or <code>gone</code>, and <code>held</code> is what is
+                in use (an instance of its connector, a playbook that is on or that a playbook of yours runs, incidents
+                of its type, a pack that requires it…), each with what to do first ·
+                <a href="automation.html#pack-uninstall">uninstall</a> it: <code>{removed, kept}</code>. A pack that is
+                held is not uninstalled: <code>409</code> with <code>detail: {message, held}</code>; there is no
+                <code>instances</code> option any more (an instance is deleted by who owns it, first). Without
+                <code>remove</code> the pack is only taken off the list (<code>204</code>). <code>409</code> for Nik's
+                own.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/packs/bulk/plan</code> · <code>POST /api/packs/bulk/apply</code></td>
+              <td>
+                (<strong>content.manage</strong>) <a href="automation.html#pack-several">Several packs at once</a>:
+                <code>{action: "install" | "update" | "uninstall", packs: [{id}]}</code>, 100 at most. The plan answers
+                <code>{action, packs: [{id, name, version, installed, ok, why, counts, items}]}</code> in the order they
+                would be done (a pack after the ones it requires; before them to uninstall), changing nothing:
+                <code>ok</code> is false, with <code>why</code>, for one that would be left out (an item in conflict, a
+                requirement that is missing, installed already, in use: then <code>held</code> lists what holds it). To
+                install or update, each pack is taken from the catalogue and its <code>token</code> is answered · apply:
+                the same body, each pack with its <code>token</code> (<code>packs: [{id, token}]</code>; no token to
+                uninstall). Each pack is done in its own transaction and judged again when its turn comes; always
+                <code>200</code>, with <code>ok</code>, <code>why</code> and <code>added, updated, same</code> or
+                <code>removed, kept</code> for each: one that failed undoes none of the others.
               </td>
             </tr>
             <tr>
@@ -1943,12 +1991,100 @@ action:user.* at:[2026-11-01 TO today]</code></pre>
           </tbody>
         </table>
       </div>
+      <h3 id="query-fields">The fields of the registry</h3>
+      <p>
+        Every field of the registry that an incident can hold is a field of the language, under its name (<code
+          >GET /api/fields</code
+        >), the custom ones included. What a condition means follows the type of the field:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Type of the field</th>
+              <th>In a query</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>text</code>, <code>long_text</code>, <code>url</code></td>
+              <td>Text: contains the value, wildcards match it whole.</td>
+            </tr>
+            <tr>
+              <td><code>user</code>, <code>role</code>, <code>choice</code></td>
+              <td>
+                Keyword: is the value, as <code>owner</code> and <code>status</code> are. A choice takes its choices
+                only; another value is refused with the list of them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>number</code>, <code>timer</code></td>
+              <td>Number, with comparisons and ranges. A timer is the seconds it counted.</td>
+            </tr>
+            <tr>
+              <td><code>date</code></td>
+              <td>Date, as <code>created</code> is: a day, a month, a relative date, comparisons and ranges.</td>
+            </tr>
+            <tr>
+              <td><code>bool</code></td>
+              <td><code>true</code> or <code>false</code>; a field that was never set is not true.</td>
+            </tr>
+            <tr>
+              <td><code>tags</code>, <code>multi_choice</code></td>
+              <td>Holds the value, matched whole; grouped by, a row counts under each value it holds.</td>
+            </tr>
+            <tr>
+              <td><code>indicator</code></td>
+              <td>Text: the value of the indicator.</td>
+            </tr>
+            <tr>
+              <td><code>list</code>, <code>json</code></td>
+              <td>
+                Searched as the text it is kept as: the value is found anywhere in it or not, empty or filled. It takes
+                no comparison and cannot be grouped by.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <pre><code>customer:acme !region:"North America" amount:[1000 TO *]
+labels:vip due:&lt;today sender_domain:""</code></pre>
+      <ul>
+        <li>
+          <strong>Names.</strong> A name the language already uses wins: the fields above keep their names and their
+          other names (<code>number</code>, <code>user</code>, <code>source</code>, <code>updated</code>…). A custom
+          field is also written <code>field.&lt;name&gt;</code>, always, and that is how one whose name was taken is
+          asked; the schema lists it under that name. System fields answer to the name the registry gives them as well
+          (<code>close_reason</code> is <code>closeReason</code>, <code>sla_breached</code> is <code>slaBreached</code>,
+          <code>time_to_close</code> is <code>timeToClose</code>). The tags of an incident, the field
+          <code>labels</code>, are asked as <code>tag:</code> and <code>tags:</code> too, like the tags of an artifact
+          or of an indicator; a custom field that was called <code>tag</code> or <code>tags</code> before 6.4 keeps that
+          name, and the schema says which names <code>labels</code> answers to.
+        </li>
+        <li>
+          <strong>Counting.</strong> <code>groupBy</code> and <code>measure</code> of
+          <a href="#query-aggregate"><code>aggregate</code></a> take them like any other field:
+          <code>"groupBy": ["region"]</code>, <code>"measure": "sum:amount"</code>, <code>due@week</code>.
+        </li>
+        <li>
+          <strong>A field that is gone.</strong> The registry is read when a query is compiled. A query, a saved filter
+          or a widget that names a field deleted since is answered <code>422</code> and the name of the field, like a
+          misspelt one (<code>unknown_field</code> for a condition).
+        </li>
+        <li>
+          <strong>What it costs.</strong> The custom fields are kept in one JSON column of the incident, and a condition
+          on one reads that column for every incident the other conditions leave: no index serves it. Put a condition on
+          a column beside it (<code>status</code>, <code>created</code>) when the table is large. A value that is not of
+          the type of its field, left by an older release, counts as no value.
+        </li>
+      </ul>
       <p>
         <code>GET /api/query/schema</code> lists, for each entity the caller may query, its fields with their kind, the
-        other names they answer to (<code>owner</code> / <code>assignee</code>) and the values a keyword can take. A
-        query that cannot be read is answered <code>422</code> with a fixed sentence in <code>detail</code> and, in
-        <code>query</code>, the <code>position</code> of what is wrong, a <code>code</code> and, for a misspelt field or
-        value, a <code>suggestion</code>:
+        other names they answer to (<code>owner</code> / <code>assignee</code>) and the values a keyword can take; a
+        field of the registry carries its <code>label</code>, and <code>custom: true</code> when it was made in
+        Settings. A query that cannot be read is answered <code>422</code> with a fixed sentence in
+        <code>detail</code> and, in <code>query</code>, the <code>position</code> of what is wrong, a
+        <code>code</code> and, for a misspelt field or value, a <code>suggestion</code>:
       </p>
       <pre><code>{ "detail": "\"stauts\" is not a field of incidents: did you mean \"status\"?",
   "query": { "code": "unknown_field", "position": 16, "suggestion": "status", "message": "…" } }</code></pre>

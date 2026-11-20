@@ -3,7 +3,7 @@
 API keys let external clients drive the platform without the browser (see the
 ``principal`` dependency in ``security.py``). An admin — whether signed in via
 the browser or authenticating with an **admin API key** — creates and revokes
-keys here and sets each key's permissions (role + scopes + optional expiry).
+keys here and sets each key's permissions (roles + optional expiry).
 The plaintext key is returned exactly once, at creation.
 """
 
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import ApiKey
-from ..core.permissions import RoleError, clean_roles, legacy_role, legacy_scopes, roles_from_legacy, stored_roles
+from ..core.permissions import RoleError, clean_roles, stored_roles
 from ..core.schemas import ApiKeyCreate, ApiKeyCreated, ApiKeysEnvelope
 from ..core.security import Principal, admin_principal, generate_api_key, hash_api_key, now_iso
 
@@ -32,8 +32,6 @@ def _to_dict(key: ApiKey) -> dict:
         "label": key.label,
         "prefix": key.prefix,
         "roles": stored_roles(key.roles),
-        "role": legacy_role(stored_roles(key.roles)),
-        "scopes": legacy_scopes(stored_roles(key.roles)),
         "createdAt": key.created_at,
         "createdBy": key.created_by,
         "expiresAt": key.expires_at,
@@ -65,11 +63,7 @@ def create_key(
         raise HTTPException(status_code=400, detail="A label is required")
 
     try:
-        if body.roles is not None:
-            roles = clean_roles(body.roles)
-        else:
-            # A request of a release before 4.0: a role, and scopes for an analyst key.
-            roles = roles_from_legacy(body.role, body.scopes)
+        roles = clean_roles(body.roles) if body.roles is not None else ["analyst"]
     except RoleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -86,8 +80,6 @@ def create_key(
         prefix=prefix,
         key_hash=hash_api_key(token),
         roles=roles,
-        role="admin" if "admin" in roles else "analyst",
-        scopes=",".join(legacy_scopes(roles)),
         created_at=now_iso(),
         created_by=admin.actor,
         expires_at=expires_at,

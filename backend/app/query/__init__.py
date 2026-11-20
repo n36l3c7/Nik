@@ -23,6 +23,7 @@ from sqlalchemy import and_, not_, or_, text, true
 from sqlalchemy.orm import Session as OrmSession
 
 from . import fields as _fields
+from . import incident_fields as _incident_fields
 from .entities import ENTITIES
 from .fields import Context, Entity, suggest
 from .parser import And, Not, Or, QueryError, Range, Term, Text, Value, literal, modern, parse, to_json
@@ -56,12 +57,16 @@ class QueryForbidden(PermissionError):
     """The caller may not query this entity."""
 
 
-def entity_of(name: str) -> Entity:
+def entity_of(name: str, db: OrmSession | None = None) -> Entity:
+    """The entity of this name. With ``db``, the incidents come with the custom fields of the
+    registry as it is now; without, with the fields every installation has."""
     found = ENTITIES.get(str(name or "").lower())
     if found is None:
         raise QueryError(
             "unknown_entity", 0, "Unknown entity: " + ", ".join(sorted(ENTITIES)), suggest(str(name), ENTITIES)
         )
+    if db is not None and found.name == "incidents":
+        return _incident_fields.entity(db, found)
     return found
 
 
@@ -70,9 +75,9 @@ def _allowed(entity: Entity, principal: Any) -> None:
         raise QueryForbidden(entity.name)
 
 
-def schema(name: str, principal: Any = None) -> dict:
+def schema(name: str, principal: Any = None, *, db: OrmSession | None = None) -> dict:
     """The fields of an entity, for the builder and the autocomplete."""
-    entity = entity_of(name)
+    entity = entity_of(name, db)
     _allowed(entity, principal)
     return entity.schema()
 
@@ -123,11 +128,20 @@ def _walk(node, entity: Entity, ctx: Context, leaf, combine):
     return leaf(node)
 
 
-def sql(name: str, query: str | None, principal: Any = None, *, extra=(), now: datetime | None = None) -> list:
+def sql(
+    name: str,
+    query: str | None,
+    principal: Any = None,
+    *,
+    extra=(),
+    now: datetime | None = None,
+    db: OrmSession | None = None,
+) -> list:
     """The conditions of a query on a table entity (an empty list for an empty
     query). ``extra`` are conditions built by code (``condition(...)``), all
-    of which must hold as well."""
-    entity = entity_of(name)
+    of which must hold as well. ``db`` is what lets a query name a custom field
+    (``entity_of``): whoever compiles a query a person wrote passes it."""
+    entity = entity_of(name, db)
     _allowed(entity, principal)
     if entity.model is None:
         raise QueryError("unknown_entity", 0, f"{entity.label} are not searched in the database")

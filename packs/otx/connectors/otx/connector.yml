@@ -15,10 +15,10 @@
 #
 # The reference shows no example for the indicator sections, the details of a
 # pulse and a few others: those commands name only the parts of the answer
-# that Nik's own enrichment or the SDK read, and give the rest as it comes.
+# that Nik's own look-up code or the SDK read, and give the rest as it comes.
 #
-# The verdict of the four reputation commands is the one Nik's own enrichment
-# gives for this source. A value OTX does not know is answered 404, taken
+# The verdict of the four reputation commands is the one Nik's own look-up code
+# gave for this source. A value OTX does not know is answered 404, taken
 # here as an answer: it holds none of the fields, so each is read through
 # first_of or asked by if.
 #

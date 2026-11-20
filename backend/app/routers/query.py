@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import fields as field_registry
 from .. import ioc_library as lib
 from .. import query as ql
 from ..core.db import get_db
@@ -59,25 +60,30 @@ class AggregateIn(BaseModel):
 def schema(
     entity: str | None = Query(None, max_length=40, description="One entity; all the caller may query when left out."),
     caller: Principal = Depends(principal),
+    db: OrmSession = Depends(get_db),
 ) -> dict:
     """The entities and their fields: name, aliases, kind, the values a
-    keyword can take and a line of description."""
+    keyword can take and a line of description. The incidents list every
+    field of the registry: one made in Settings says ``custom`` and carries
+    its ``label``."""
     if entity:
-        return {"entities": [ql.schema(entity, caller)]}
+        return {"entities": [ql.schema(entity, caller, db=db)]}
     return {
-        "entities": [item.schema() for item in ql.ENTITIES.values() if caller.has(item.permission)],
+        "entities": [
+            ql.entity_of(item.name, db).schema() for item in ql.ENTITIES.values() if caller.has(item.permission)
+        ],
     }
 
 
 @router.post("/check")
-def check(body: CheckIn, caller: Principal = Depends(principal)) -> dict:
+def check(body: CheckIn, caller: Principal = Depends(principal), db: OrmSession = Depends(get_db)) -> dict:
     """Read a query without running it: ``{ok: true, tree}``, or 422 with the
     position and the reason."""
-    item = ql.entity_of(body.entity)
+    item = ql.entity_of(body.entity, db)
     if item.model is None:
         ql.rows(item.name, body.query, caller)
     else:
-        ql.sql(item.name, body.query, caller)
+        ql.sql(item.name, body.query, caller, db=db)
     return {"ok": True, "tree": ql.to_json(ql.parse(body.query))}
 
 
@@ -95,6 +101,8 @@ def _incident_row(row: Incident) -> dict[str, Any]:
         "hasMail": bool(row.has_mail),
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
+        # What it holds for the fields that are not above: the columns a table of a dashboard can show.
+        "fields": field_registry.stored_fields(row),
     }
 
 
@@ -178,12 +186,12 @@ def run(body: QueryIn, caller: Principal = Depends(principal), db: OrmSession = 
     """Run a query: ``{entity, total, items}``, newest first (indicators: the
     worst verdict first). The caller needs the permission of the entity
     (``read``; ``audit.read`` for the audit log)."""
-    item = ql.entity_of(body.entity)
+    item = ql.entity_of(body.entity, db)
     if item.model is None:
         keep = ql.rows(item.name, body.query, caller)
         kept = lib.select_rows([row for row in lib.library(db, read_settings(db)) if keep(row)], {})
         return {"entity": item.name, "total": len(kept), "items": kept[body.offset : body.offset + body.limit]}
-    conditions = ql.sql(item.name, body.query, caller)
+    conditions = ql.sql(item.name, body.query, caller, db=db)
     ql.statement_timeout(db)
     if item.name in _NEWEST:
         total = db.scalar(select(func.count()).select_from(item.model).where(*conditions)) or 0

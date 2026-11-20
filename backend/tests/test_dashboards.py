@@ -103,6 +103,74 @@ def test_a_widget_that_cannot_be_asked_is_refused_with_why(admin: TestClient):
     assert table["widgets"][0]["options"] == {"columns": ["playbook", "started", "error"], "limit": 100}
 
 
+def test_a_widget_asks_groups_and_measures_by_a_custom_field(admin: TestClient):
+    from tests.test_fields import field, incident, put
+
+    field(admin, "customer")
+    field(admin, "amount", "number")
+    field(admin, "due_back", "date")
+    field(admin, "contacts", "list", options={"columns": [{"name": "name", "type": "text"}]})
+    for key, customer, amount in (("i1", "Acme", 100), ("i2", "Acme", 50), ("i3", "Globex", 7)):
+        incident(admin, key)
+        changed = put(admin, {"customer": customer, "amount": amount, "due_back": "2026-11-17"}, key)
+        assert changed.status_code == 200, changed.text
+    widgets = [
+        {"id": "by", "type": "bar", "entity": "incidents", "query": "amount:>=10", "groupBy": ["field.customer"]},
+        {"id": "sum", "type": "number", "entity": "incidents", "query": "customer:*", "measure": "sum:amount"},
+        {"id": "due", "type": "trend", "entity": "incidents", "groupBy": ["due_back@day"],
+         "options": {"timeField": "due_back", "ignoreRange": True}},
+        {"id": "rows", "type": "table", "entity": "incidents", "options": {"columns": ["name", "customer", "amount"]}},
+    ]  # fmt: skip
+    board = made(admin, widgets=widgets, filter="customer:acme", filterEntity="incidents", timeRange="all")
+    kept = {widget["id"]: widget for widget in board["widgets"]}
+    # A field is kept under the name the language lists it by, whichever of its names was written.
+    assert kept["by"]["groupBy"] == ["customer"] and kept["sum"]["measure"] == "sum:amount"
+    assert kept["due"]["options"]["timeField"] == "due_back" and kept["due"]["groupBy"] == ["due_back@day"]
+    assert kept["rows"]["options"]["columns"] == ["name", "customer", "amount"] and board["filter"] == "customer:acme"
+
+    def asked(widget: dict) -> dict:
+        body = {key: widget[key] for key in ("entity", "query", "groupBy", "measure")}
+        answer = admin.post("/api/query/aggregate", json=body)
+        assert answer.status_code == 200, answer.text
+        return answer.json()
+
+    assert asked(kept["by"])["rows"] == [["Acme", 2]] and asked(kept["sum"])["total"] == 157
+    assert asked(kept["due"])["rows"] == [["2026-11-17", 3]]
+    report = admin.post(f"/api/dashboards/{board['id']}/report", json={"format": "html"})
+    assert report.status_code == 200 and "Acme" in report.text
+
+    # What a custom field cannot do is said as for any field.
+    base = {"type": "bar", "entity": "incidents"}
+    assert '"contacts" can be searched, not counted or measured' in refused(admin, {**base, "groupBy": ["contacts"]})
+    assert '"customer" is not a number' in refused(admin, {**base, "groupBy": ["status"], "measure": "avg:customer"})
+    assert '"custmer" is not a field of incidents' in refused(admin, {**base, "groupBy": ["custmer"]})
+    assert "A number is expected here" in refused(admin, {**base, "groupBy": ["status"], "query": "amount:lots"})
+    # Without the registry at hand (a file checked on its own), only the fields every installation has are known.
+    assert dashboards.clean_widgets([{**base, "groupBy": ["labels"], "query": "tlp:amber"}])[0]["groupBy"] == ["labels"]
+
+    # A field that is deleted: the dashboard still opens; its widget, and saving it again, name the field.
+    field(admin, "scratch")
+    doomed = made(
+        admin,
+        name="Doomed",
+        timeRange="all",
+        widgets=[{**base, "id": "w", "groupBy": ["scratch"], "query": "scratch:*"}],
+    )
+    assert admin.delete("/api/fields/scratch").status_code == 204
+    opened = admin.get(f"/api/dashboards/{doomed['id']}")
+    assert opened.status_code == 200 and opened.json()["widgets"][0]["groupBy"] == ["scratch"]
+    gone = admin.post(
+        "/api/query/aggregate", json={"entity": "incidents", "query": "scratch:*", "groupBy": ["scratch"]}
+    )
+    assert gone.status_code == 422 and gone.json()["detail"] == '"scratch" is not a field of incidents'
+    asked_gone = admin.post("/api/query/aggregate", json={"entity": "incidents", "query": "scratch:*"})
+    assert asked_gone.status_code == 422 and asked_gone.json()["query"]["code"] == "unknown_field"
+    again = admin.put(f"/api/dashboards/{doomed['id']}", json={"widgets": opened.json()["widgets"]})
+    assert again.status_code == 400 and '"scratch" is not a field of incidents' in again.json()["detail"]
+    told = admin.post(f"/api/dashboards/{doomed['id']}/report", json={"format": "html"})
+    assert told.status_code == 200 and "is not a field of incidents" in told.text  # the widget says why, in its place
+
+
 def test_a_dashboard_is_personal_until_someone_who_may_shares_it(admin: TestClient):
     viewer = make_key(admin, label="v", roles=["viewer"])
     analyst = make_key(admin, label="a", roles=["analyst"])

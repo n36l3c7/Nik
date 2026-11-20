@@ -31,10 +31,17 @@ Rules that hold here:
   attached to Nik's store; ``forward`` when it carries the attachments; and
   the listener, which keeps the message it made an incident from. An
   attachment is bytes from end to end: stored, or attached again, never opened.
-- What ``forward`` carries leaves Nik, so the data guard judges it first
-  (``judge``, given by who runs the command for a playbook). A runtime that
-  was given no judge carries nothing; one that was given no store (``keep``)
-  describes the attachments and keeps none.
+- What ``forward`` and ``reply`` take from the message in the mailbox leaves
+  Nik without having been an argument of the node, so the data guard judges
+  it when it is read (``judge``, given by who runs the command for a
+  playbook): the subject as a subject, the sender and the recipients quoted
+  as e-mail addresses, the text as an e-mail body, the attachments as files.
+  A part that is held is not quoted, and the message says so in its place. A
+  runtime that was given no judge neither forwards nor answers; one that was
+  given no store (``keep``) describes the attachments and keeps none.
+- The ``Message-ID`` a reply names (``In-Reply-To``, ``References``) is not
+  judged: it is what keeps the answer in its conversation, and it goes only
+  to those the message was sent by and to.
 - Deleting marks the message deleted and expunges it; the file says the command
   changes something outside, so a playbook asks for approval by default.
 """
@@ -62,6 +69,10 @@ MAX_FOUND = 200  # messages a search or a fetch reads at most
 MAX_ATTACHMENTS = 50  # attachments of one message that are described, kept or carried
 MAX_CARRIED = 20 * 1024 * 1024  # what a forward carries: base64 adds a third, and most servers stop at 25 MB
 TIMEOUT = 30
+# What a message says where the data guard held back a part of the one it quotes.
+HELD = "(held back)"
+SUBJECT_HELD = "(subject held back)"
+TEXT_HELD = "(The text of the message was held back by the data guard.)"
 _UNSAFE = re.compile(r'["\\\r\n\x00]')
 _TAG = re.compile(r"<[^>]{0,2000}>")
 _UID = re.compile(r"UID (\d+)")
@@ -203,8 +214,10 @@ class MailRuntime:
         self.records: list[dict] = []
         self._imap: Any = None
         self._selected: tuple[str, bool] | None = None
-        # Given by who runs a command for a playbook (connector_actions.py): the data guard for the
-        # files a message would carry, and Nik's store for those it is asked to keep.
+        # Given by who runs a command for a playbook (connector_actions.py): the data guard for what
+        # a message would quote and carry of another (``judge(quoted, files)`` gives the names of
+        # the quoted parts it held and whether the files go), and Nik's store for the files it is
+        # asked to keep.
         self.judge: Any = None
         self.keep: Any = None
         self.classes: dict[str, list] = {}  # of the outputs of the command that ran
@@ -347,13 +360,22 @@ class MailRuntime:
                     f"{domain} is not among the hosts this playbook may reach: list it to write to its addresses"
                 )
 
-    def _carried(self, raw: bytes) -> tuple[list[dict[str, Any]], int]:
-        """The attachments a forward may carry: all of them, or none. What cannot be judged whole
+    def _judged(self) -> Any:
+        """The guard this runtime was given. Without one, nothing read in the mailbox is sent on."""
+        if self.judge is None:
+            raise CommandError(
+                "A message of the mailbox is forwarded or answered only where the data guard judges "
+                "what is taken from it: in a playbook"
+            )
+        return self.judge
+
+    def _carriable(self, raw: bytes) -> list[dict[str, Any]]:
+        """The attachments a forward would carry: all of them, or none. What cannot be judged whole
         (one that could not be read, more than are looked at, more than a server takes) is refused
-        with a sentence, and the guard decides on the rest. Gives them, and how many the guard held back."""
+        with a sentence; the guard decides on the rest."""
         found, more = files_of(email.message_from_bytes(raw, policy=email.policy.default))
         if not found:
-            return [], 0
+            return []
         without = 'forward it with "attachments" off'
         if more:
             raise CommandError(f"The message has more than {MAX_ATTACHMENTS} attachments: {without}")
@@ -364,9 +386,7 @@ class MailRuntime:
                 f"The attachments are more than {MAX_CARRIED // (1024 * 1024)} MB together, "
                 f"more than a mail server takes: {without}"
             )
-        if self.judge is None:
-            raise CommandError("Attachments leave only where the data guard judges them: in a playbook")
-        return (found, 0) if self.judge([_shown(item) for item in found]) else ([], len(found))
+        return found
 
     @staticmethod
     def _attach(message: EmailMessage, item: dict[str, Any]) -> None:
@@ -462,39 +482,60 @@ class MailRuntime:
         return self._send(to, args.get("subject"), args.get("text"))
 
     def _do_reply(self, args: dict[str, Any]) -> dict[str, Any]:
+        judge = self._judged()
         original = self._original(args)
         to = recipients([original["from"], *(original["to"] + original["cc"] if args.get("all") else [])])
         to = [address for address in to if address.lower() != str(self.config.get("sender") or "").lower()] or to
         self._allowed(to)
-        subject = original["subject"]
+        # An answer repeats one thing of the message it answers: its subject.
+        held, _carry = judge({"subject": (original["subject"], ("subject",))}, [])
+        subject = SUBJECT_HELD if "subject" in held else original["subject"]
         subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
         references = " ".join(part for part in (original["references"], original["message_id"]) if part)
-        return self._send(
+        sent = self._send(
             to, subject, args.get("text"), {"In-Reply-To": original["message_id"], "References": references}
         )
+        return {**sent, "quoted_held": list(held)}
 
     def _do_forward(self, args: dict[str, Any]) -> dict[str, Any]:
+        judge = self._judged()
         to = recipients(args.get("to"))
         self._allowed(to)
-        files: list[dict[str, Any]] = []
-        held = 0
+        found: list[dict[str, Any]] = []
         if args.get("attachments"):
             # With what is attached: the message is read whole, and the guard says whether it goes.
             folder, uid = self._folder(args), self._uid(args)
             raw = self._whole(self._select(folder, readonly=True), uid)
             original = describe(raw, uid, folder)
-            files, held = self._carried(raw)
+            found = self._carriable(raw)
         else:
             original = self._original(args)
-        subject = original["subject"]
+        # Everything the new message repeats of the one in the mailbox, with the class it has there.
+        quoted = {
+            "subject": (original["subject"], ("subject",)),
+            "from": (original["from"], ("email_address",)),
+            "to": (original["to"], ("email_address",)),
+            "date": (original["date"], ()),
+            "text": (original["text"], ("mail_body",)),
+        }
+        held, carry = judge(quoted, [_shown(item) for item in found])
+        files = found if carry else []
+        said = {name: HELD if name in held else value for name, (value, _classes) in quoted.items()}
+        subject = SUBJECT_HELD if "subject" in held else original["subject"]
         subject = subject if subject.lower().startswith(("fw:", "fwd:")) else f"Fwd: {subject}"
-        quoted = (
+        recipients_said = said["to"] if isinstance(said["to"], str) else ", ".join(said["to"])
+        text = (
             f"{args.get('text') or ''}\n\n---------- Forwarded message ----------\n"
-            f"From: {original['from']}\nDate: {original['date']}\nSubject: {original['subject']}\n"
-            f"To: {', '.join(original['to'])}\n\n{original['text']}"
+            f"From: {said['from']}\nDate: {said['date']}\nSubject: {said['subject']}\n"
+            f"To: {recipients_said}\n\n{TEXT_HELD if 'text' in held else original['text']}"
         )
-        sent = self._send(to, subject, quoted.strip(), files=files)
-        return {**sent, "attachments": len(files), "attachments_held": held}
+        sent = self._send(to, subject, text.strip(), files=files)
+        return {
+            **sent,
+            "attachments": len(files),
+            "attachments_held": len(found) - len(files),
+            "quoted_held": list(held),
+        }
 
     def _do_search(self, args: dict[str, Any]) -> dict[str, Any]:
         folder = self._folder(args)
@@ -592,7 +633,11 @@ class MailRuntime:
             if to:
                 self._allowed(to)
             host = egress.clean_host(str(self.config.get("smtp_host") or "")) or "(no SMTP server)"
-            return {"method": "SMTP", "host": host, "path": f"{len(to)} recipient(s)", "dry_run": True}
+            would = {"method": "SMTP", "host": host, "path": f"{len(to)} recipient(s)", "dry_run": True}
+            if name != "send":
+                # The mailbox is not read for a dry run, so what would be quoted is not known here.
+                would["note"] = "What it takes from the message is judged by the data guard when the step runs"
+            return would
         host = egress.clean_host(str(self.config.get("imap_host") or "")) or "(no IMAP server)"
         return {"method": "IMAP", "host": host, "path": self._folder(args), "dry_run": True}
 
@@ -643,7 +688,15 @@ class MailRuntime:
         client = self._imap if self._selected == (folder, True) else self._select(folder, readonly=True)
         return f"message-{uid}.eml", self._whole(client, uid)
 
-    def fetch(self, spec: Any, state: dict[str, Any], first: dict[str, Any], now: dict[str, Any], limit: int) -> dict:
+    def fetch(
+        self,
+        spec: Any,
+        state: dict[str, Any],
+        first: dict[str, Any],
+        now: dict[str, Any],
+        limit: int,
+        since: Any = None,
+    ) -> dict:
         """The messages that arrived since the last cycle: those with a uid above ``state.uid``; the
         first time, those since ``first``. ``response.last_uid`` is what the next cycle starts after."""
         folder = self._folder({})

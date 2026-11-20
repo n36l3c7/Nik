@@ -1516,6 +1516,283 @@
      }
     ]
    }
+  },
+  {
+   "query": "customer:acme",
+   "tree": {
+    "field": "customer",
+    "op": "=",
+    "value": {
+     "text": "acme",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "!customer:acme",
+   "tree": {
+    "field": "customer",
+    "op": "!",
+    "value": {
+     "text": "acme",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "customer:\"\"",
+   "tree": {
+    "field": "customer",
+    "op": "=",
+    "value": {
+     "text": "",
+     "quoted": true
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "customer:*",
+   "tree": {
+    "field": "customer",
+    "op": "=",
+    "value": {
+     "text": "*",
+     "quoted": false,
+     "pattern": [
+      {
+       "wild": "*"
+      }
+     ]
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "customer:\"Acme Corp\" amount:>=100",
+   "tree": {
+    "and": [
+     {
+      "field": "customer",
+      "op": "=",
+      "value": {
+       "text": "Acme Corp",
+       "quoted": true
+      },
+      "position": 0
+     },
+     {
+      "field": "amount",
+      "op": ">=",
+      "value": {
+       "text": "100",
+       "quoted": false
+      },
+      "position": 21
+     }
+    ]
+   }
+  },
+  {
+   "query": "amount:[0 TO 99.5]",
+   "tree": {
+    "field": "amount",
+    "range": [
+     {
+      "text": "0",
+      "quoted": false
+     },
+     {
+      "text": "99.5",
+      "quoted": false
+     }
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "amount:-5",
+   "tree": {
+    "field": "amount",
+    "op": "=",
+    "value": {
+     "text": "-5",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "due:[2026-11-01 TO *]",
+   "tree": {
+    "field": "due",
+    "range": [
+     {
+      "text": "2026-11-01",
+      "quoted": false
+     },
+     null
+    ],
+    "position": 0
+   }
+  },
+  {
+   "query": "due_back:>=now-7d",
+   "tree": {
+    "field": "due_back",
+    "op": ">=",
+    "value": {
+     "text": "now-7d",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "tlp:amber+strict",
+   "tree": {
+    "field": "tlp",
+    "op": "=",
+    "value": {
+     "text": "amber+strict",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "region IN (emea, \"north america\")",
+   "tree": {
+    "or": [
+     {
+      "field": "region",
+      "op": "=",
+      "value": {
+       "text": "emea",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "region",
+      "op": "=",
+      "value": {
+       "text": "north america",
+       "quoted": true
+      },
+      "position": 0
+     }
+    ]
+   }
+  },
+  {
+   "query": "!region:EMEA or keywords:citt\u00e0",
+   "tree": {
+    "or": [
+     {
+      "field": "region",
+      "op": "!",
+      "value": {
+       "text": "EMEA",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "keywords",
+      "op": "=",
+      "value": {
+       "text": "citt\u00e0",
+       "quoted": false
+      },
+      "position": 16
+     }
+    ]
+   }
+  },
+  {
+   "query": "field.number:po-7",
+   "tree": {
+    "field": "field.number",
+    "op": "=",
+    "value": {
+     "text": "po-7",
+     "quoted": false
+    },
+    "position": 0
+   }
+  },
+  {
+   "query": "field.customer:*corp -field.number:\"\"",
+   "tree": {
+    "and": [
+     {
+      "field": "field.customer",
+      "op": "=",
+      "value": {
+       "text": "*corp",
+       "quoted": false,
+       "pattern": [
+        {
+         "wild": "*"
+        },
+        "corp"
+       ]
+      },
+      "position": 0
+     },
+     {
+      "not": {
+       "field": "field.number",
+       "op": "=",
+       "value": {
+        "text": "",
+        "quoted": true
+       },
+       "position": 22
+      }
+     }
+    ]
+   }
+  },
+  {
+   "query": "confirmed:true !confirmed:no",
+   "tree": {
+    "and": [
+     {
+      "field": "confirmed",
+      "op": "=",
+      "value": {
+       "text": "true",
+       "quoted": false
+      },
+      "position": 0
+     },
+     {
+      "field": "confirmed",
+      "op": "!",
+      "value": {
+       "text": "no",
+       "quoted": false
+      },
+      "position": 15
+     }
+    ]
+   }
+  },
+  {
+   "query": "portal:https://portal.acme.example/x",
+   "tree": {
+    "field": "portal",
+    "op": "=",
+    "value": {
+     "text": "https://portal.acme.example/x",
+     "quoted": false
+    },
+    "position": 0
+   }
   }
  ]
 }

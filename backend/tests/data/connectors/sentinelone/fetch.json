@@ -1,6 +1,6 @@
 {
-  "state": {
-    "last_time": "2026-11-16T08:00:00Z"
+  "since": {
+    "epoch": 1794816000
   },
   "exchanges": [
     {
@@ -73,16 +73,7 @@
     "2026-11-16T08:30:05.123456Z",
     "2026-11-16T09:10:40.000000Z"
   ],
-  "next_state": {
-    "last_time": "2026-11-16T09:10:40.000000Z"
-  },
-  "first_state_for": {
-    "epoch": 1794816000,
-    "iso": "2026-11-16T08:00:00Z",
-    "state": {
-      "last_time": "2026-11-16T08:00:00Z"
-    }
-  },
+  "reached": "2026-11-16T09:10:40Z",
   "mapped": {
     "fields": {
       "name": "dropper.exe on WKS-FINANCE-01",

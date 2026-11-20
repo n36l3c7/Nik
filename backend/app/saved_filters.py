@@ -54,13 +54,15 @@ def _name(raw: Any) -> str:
     return name
 
 
-def _query(entity: str, raw: Any) -> str:
+def _query(db: OrmSession, entity: str, raw: Any) -> str:
     """The query as it is kept. One that cannot be read raises ``QueryError``, which the API
-    answers with the position and the reason, as the list itself would."""
+    answers with the position and the reason, as the list itself would. It is read with the
+    registry as it is today: a field that is deleted later makes the list refuse the filter
+    then, by the name of the field."""
     text = str(raw or "").strip()
     if len(text) > QUERY_MAX:
         raise FilterError(f"The query is too long ({QUERY_MAX} characters at most)")
-    ql.sql(entity, text)
+    ql.sql(entity, text, db=db)
     return text
 
 
@@ -151,7 +153,7 @@ def create(db: OrmSession, body: dict[str, Any], actor: str) -> SavedFilter:
         owner=actor[:200],
         name=name,
         entity=entity,
-        query=_query(entity, body.get("query")),
+        query=_query(db, entity, body.get("query")),
         sort=_sort(body.get("sort")),
         columns=_columns(body.get("columns")),
         shared=False,
@@ -171,7 +173,7 @@ def change(db: OrmSession, row: SavedFilter, body: dict[str, Any], actor: str) -
             raise FilterError("You have a filter with this name already", 409)
         row.name = name
     if "query" in body:
-        row.query = _query(row.entity, body["query"])
+        row.query = _query(db, row.entity, body["query"])
     if "sort" in body:
         row.sort = _sort(body["sort"])
     if "columns" in body:

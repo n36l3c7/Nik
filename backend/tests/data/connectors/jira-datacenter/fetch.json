@@ -2,8 +2,8 @@
   "config": {
     "fetch_jql": "project = SEC"
   },
-  "state": {
-    "last_time": "2026-11-16 08:00"
+  "since": {
+    "epoch": 1794816059
   },
   "exchanges": [
     {
@@ -87,15 +87,7 @@
     "2026-11-16T08:30:05Z",
     "2026-11-16T09:10:40Z"
   ],
-  "next_state": {
-    "last_time": "2026-11-16 09:10"
-  },
-  "first_state_for": {
-    "epoch": 1794816000,
-    "state": {
-      "last_time": "2026-11-16 08:00"
-    }
-  },
+  "reached": "2026-11-16T09:10:40Z",
   "mapped": {
     "fields": {
       "name": "Phishing: Invoice 2026",

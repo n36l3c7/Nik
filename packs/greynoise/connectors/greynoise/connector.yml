@@ -14,7 +14,7 @@
 # key that may not use an endpoint, and 206 with the fields left out named in
 # "restricted_fields" when the plan gives a part only.
 #
-# The verdict of get-community-ip is the one Nik's own enrichment gives for
+# The verdict of get-community-ip is the one Nik's own look-up code gave for
 # this source: harmless for a common business service (RIOT) and for what
 # GreyNoise classifies as benign, malicious for what it classifies as
 # malicious, unknown for the rest and for an address GreyNoise has not seen

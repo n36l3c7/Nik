@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Plus, SlidersHorizontal, X } from 'lucide-react'
+import { ListFilter, Plus, SlidersHorizontal, X } from 'lucide-react'
+import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { modern, tryParse } from '../../domain/query/parse.js'
 import { tokenize } from '../../domain/query/tokenize.js'
-import { applyCompletion, completions, fieldOf } from '../../domain/query/complete.js'
+import { applyCompletion, completions, fieldCaption, fieldOf, withValues } from '../../domain/query/complete.js'
 import { emptyRow, opLabel, opsFor, toModel, toText } from '../../domain/query/builder.js'
 import { useQuerySchema } from '../../services/querySchema.js'
 
@@ -120,7 +121,7 @@ function Row({ row, schema, onChange, onRemove, label }) {
         {row.field && !spec && <option value={row.field}>{row.field}</option>}
         {(schema?.fields ?? []).map((field) => (
           <option key={field.name} value={field.name} title={field.description}>
-            {field.name}
+            {fieldCaption(field)}
           </option>
         ))}
       </select>
@@ -283,11 +284,22 @@ function Builder({ value, schema, onChange }) {
  *   label: string,                 // the accessible name of the input
  *   placeholder?: string,
  *   error?: { message: string, position?: number } | string | null,   // what the server said of the query
+ *   values?: { [field: string]: string[] },   // values to offer for a field that lists none (the tags in use)
  *   className?: string,
  * }} props
  */
-export default function QueryInput({ entity, value, onChange, label, placeholder = '', error = null, className = '' }) {
-  const schema = useQuerySchema(entity)
+export default function QueryInput({
+  entity,
+  value,
+  onChange,
+  label,
+  placeholder = '',
+  error = null,
+  values = null,
+  className = '',
+}) {
+  const known = useQuerySchema(entity)
+  const schema = useMemo(() => withValues(known, values), [known, values])
   const id = useId()
   const inputRef = useRef(null)
   const layerRef = useRef(null)
@@ -359,6 +371,29 @@ export default function QueryInput({ entity, value, onChange, label, placeholder
     }
   }
 
+  // The helpers of the box, in its right-click menu after cut, copy and paste.
+  const { openMenu } = useContextMenu()
+  const helpers = (event) =>
+    openMenu(event, {
+      items: [
+        {
+          label: 'Suggest what can be written here',
+          hint: 'ctrl space',
+          icon: ListFilter,
+          onSelect: () => {
+            const input = inputRef.current
+            input.focus()
+            suggest(value, input.selectionStart ?? value.length, true)
+          },
+        },
+        {
+          label: builder ? 'Hide the builder' : 'Build the query from rows',
+          icon: SlidersHorizontal,
+          onSelect: () => setBuilder((open) => !open),
+        },
+      ],
+    })
+
   const listId = `${id}-list`
   return (
     <div className={`space-y-1 ${className}`}>
@@ -393,6 +428,7 @@ export default function QueryInput({ entity, value, onChange, label, placeholder
               suggest(event.target.value, event.target.selectionStart ?? event.target.value.length)
             }}
             onKeyDown={onKeyDown}
+            onContextMenu={helpers}
             onScroll={syncScroll}
             onBlur={() => {
               setOffer(null)

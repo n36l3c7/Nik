@@ -297,8 +297,9 @@ def pull(db: OrmSession, incident: Incident, now: float) -> dict[str, Any]:
             kept.append(name)  # a person set it in Nik: it stays
             continue
         try:
-            registry.update(db, incident, {name: value}, source, source)
-            changed.append(name)
+            # A value the registry keeps another way (a tag in lower case) may be what is there already.
+            if registry.update(db, incident, {name: value}, source, source):
+                changed.append(name)
         except registry.FieldError as error:
             problems.append(error.message)
     if mapped.context:

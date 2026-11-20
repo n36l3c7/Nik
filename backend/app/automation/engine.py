@@ -171,11 +171,13 @@ def scope_of(run: Run, shape: dict, node_id: str, index: int | None, db: OrmSess
     if db is not None and run.incident_id:
         from .. import context as incident_context
         from .. import fields as field_registry
+        from .. import incident_tags
         from . import payloads
 
         incident = db.get(Incident, run.incident_id)
         if incident is not None:
-            values["incident"] = field_registry.read(db, incident)
+            # ``incident.tags`` is the field ``labels`` by the name a person knows it by.
+            values["incident"] = incident_tags.named(db, field_registry.read(db, incident))
             classes["incident"] = payloads.registry_classes()
             values["context"] = incident_context.read(db, incident.id)
             classes["context"] = incident_context.classes()

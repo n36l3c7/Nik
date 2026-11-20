@@ -16,6 +16,7 @@ import {
   triggerLabel,
 } from '../../domain/automation/runs.js'
 import { formatDateTime } from '../../lib/time.js'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import ApprovalBanner from './ApprovalBanner.jsx'
 import Canvas from './Canvas.jsx'
@@ -138,6 +139,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
   const { catalog, loadCatalog, refreshApprovals } = useAutomation()
   const { incidents } = useIncidents()
   const { showToast } = useToast()
+  const menu = useObjectMenu()
   const [run, setRun] = useState(null)
   const stepsPane = useResizablePane('automation.run-steps', { initial: 380, min: 300, max: 720, edge: 'left' })
   const [error, setError] = useState(null)
@@ -346,7 +348,19 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
                 const node = nodeOf(graph, item.node)
                 const on = item.id === stepId
                 return (
-                  <li key={item.id}>
+                  <li
+                    key={item.id}
+                    onContextMenu={(event) =>
+                      menu(event, {
+                        title: node?.name || item.node,
+                        actions: [{ label: 'Show what this step did', onSelect: () => selectStep(item) }],
+                        copy: [
+                          { label: 'Copy the name of the node', text: node?.name || item.node },
+                          { label: 'Copy the error', text: item.error },
+                        ],
+                      })
+                    }
+                  >
                     <button
                       type="button"
                       aria-pressed={on}

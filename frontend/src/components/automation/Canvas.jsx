@@ -16,7 +16,6 @@ import { asksApproval, entryOf, headingOf, summaryOf } from '../../domain/automa
 import {
   KIND_LABELS,
   portLabel,
-  portsOf,
   connect,
   connectProblem,
   disconnect,
@@ -26,9 +25,8 @@ import {
   removeNodes,
 } from '../../domain/automation/graph.js'
 import { SIGNS } from '../../domain/automation/compare.js'
-import { NODE_WIDTH } from '../../domain/automation/layout.js'
-import { setEdgePoints } from '../../domain/automation/routing.js'
-import RoutedEdge from './RoutedEdge.jsx'
+import { NODE_WIDTH, handlePlaces } from '../../domain/automation/layout.js'
+import CanvasEdge from './CanvasEdge.jsx'
 
 /*
  * ============================================================================
@@ -44,6 +42,12 @@ import RoutedEdge from './RoutedEdge.jsx'
  * one, the arrow keys move it, Delete removes it; edges are drawn from the
  * inspector ("Goes to"), and the node list under the canvas shows the same
  * playbook as a table.
+ *
+ * A right-click, on a node, on several selected ones, on a line or on the
+ * empty canvas, is told to the page (`onMenu`), which opens the menu; so are
+ * the menu key and Shift+F10 on what has the focus. A node that is
+ * right-clicked becomes the selection, unless it is one of several selected:
+ * then the menu is about all of them.
  *
  * `readOnly` with `statuses` draws a run: the same nodes, coloured by what
  * happened to each. `readOnly` with `marks` draws one side of a comparison:
@@ -93,16 +97,6 @@ const MARK_LINES = {
 }
 
 const HANDLE = '!h-2.5 !w-2.5 !rounded-none !border !border-line !bg-raised'
-
-/** Where the handles of a node sit along its lower edge: `error` leaves from the right side. */
-function handlePlaces(node) {
-  const ports = portsOf(node)
-  const below = ports.filter((port) => port !== 'error')
-  return {
-    below: below.map((port, index) => ({ port, left: `${((index + 1) / (below.length + 1)) * 100}%` })),
-    side: ports.includes('error'),
-  }
-}
 
 const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
   const { node, entry, problems, status, approval, readOnly, plain, mark } = data
@@ -158,7 +152,8 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
           id={port}
           type="source"
           position={Position.Bottom}
-          style={{ left }}
+          // Where the layout is told the port is (layout.js): a line arrives where it was routed to.
+          style={{ left: `${left * 100}%` }}
           className={HANDLE}
           isConnectable={!readOnly}
           title={portLabel(node, port) || 'then'}
@@ -181,7 +176,7 @@ const PlaybookNode = memo(function PlaybookNode({ data, selected }) {
 const NODE_TYPES = { playbook: PlaybookNode }
 const FIT = { maxZoom: 1, padding: 0.2 }
 
-const EDGE_TYPES = { routed: RoutedEdge }
+const EDGE_TYPES = { line: CanvasEdge }
 
 const edgeId = (edge, graph) => `${edge.from}\u0000${portOf(edge, graph)}\u0000${edge.to}`
 const edgeParts = (id) => {
@@ -207,6 +202,7 @@ function Flow({
   onChange,
   onDropEntry,
   onRefused,
+  onMenu,
 }) {
   const flow = useReactFlow()
   const [chosen, setChosen] = useState({ nodes: new Set(), edges: new Set() })
@@ -265,22 +261,21 @@ function Flow({
         const failing = port === 'error'
         const mark = marks?.edges[id] ?? null
         const stroke = mark ? MARK_LINES[mark].stroke : failing ? '#f85149' : '#6e7681'
-        const same = (other) => other.from === edge.from && other.to === edge.to && portOf(other, graph) === port
         return {
           id,
           source: edge.from,
           target: edge.to,
           sourceHandle: port,
-          // Drawn by RoutedEdge: by itself, or through the corners somebody gave it.
-          type: 'routed',
+          // Drawn by CanvasEdge: along the route "Tidy up" gave it, or as a stepped line; with an × to remove it.
+          type: 'line',
           selected: chosen.edges.has(id),
           data: {
-            points: edge.points,
+            // While one of its nodes is dragged the route is not the line's any more.
+            route: dragged?.[edge.from] || dragged?.[edge.to] ? null : (edge.route ?? null),
             label: label || '',
             labelColor: LABEL_COLORS[port] ?? '#9da7b3',
             name: `from ${edge.from} to ${edge.to}`,
             editable: !readOnly,
-            onPoints: (points) => onChange?.(setEdgePoints(graph, same, points)),
             onRemove: () => onChange?.(disconnect(graph, edge.from, port, edge.to)),
           },
           style: mark ? MARK_LINES[mark] : { stroke, strokeWidth: 1.5, strokeDasharray: failing ? '4 3' : undefined },
@@ -288,7 +283,7 @@ function Flow({
           ariaLabel: `From ${edge.from} to ${edge.to}${label ? `, ${label}` : ''}${mark ? `, ${mark}` : ''}`,
         }
       }),
-    [graph, chosen.edges, readOnly, onChange, marks],
+    [graph, chosen.edges, readOnly, onChange, marks, dragged],
   )
 
   const commitDrag = useCallback(() => {
@@ -410,7 +405,64 @@ function Flow({
     [flow, onDropEntry],
   )
 
-  return (
+  // ---- The menu: a right-click, or the menu key on what has the focus ---------------
+  const view = useMemo(() => ({ fit: () => flow.fitView(FIT) }), [flow])
+  const menuOfNode = useCallback(
+    (event, id) => {
+      const among = chosen.nodes.has(id) && chosen.nodes.size > 1
+      if (!among) setChosen({ nodes: new Set([id]), edges: new Set() })
+      onMenu(event, among ? { kind: 'selection', ids: [...chosen.nodes] } : { kind: 'node', id }, view)
+    },
+    [chosen.nodes, onMenu, view],
+  )
+  const menuOfEdge = useCallback(
+    (event, id) => {
+      setChosen({ nodes: new Set(), edges: new Set([id]) })
+      onMenu(event, { kind: 'edge', ...edgeParts(id) }, view)
+    },
+    [onMenu, view],
+  )
+  const menuOfPane = useCallback(
+    (event) => {
+      const position = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      onMenu(event, { kind: 'pane', position }, view)
+    },
+    [flow, onMenu, view],
+  )
+  const onMenuKey = useCallback(
+    (event) => {
+      if (!(event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) return
+      const element = event.target.closest?.('.react-flow__node, .react-flow__edge') ?? event.currentTarget
+      const box = element.getBoundingClientRect()
+      // What a right-click in the middle of it would have said.
+      const asked = {
+        clientX: box.left + box.width / 2,
+        clientY: box.top + box.height / 2,
+        shiftKey: false,
+        target: element,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      }
+      event.preventDefault()
+      const id = element.getAttribute('data-id')
+      if (id && element.classList.contains('react-flow__node')) menuOfNode(asked, id)
+      else if (id && element.classList.contains('react-flow__edge')) menuOfEdge(asked, id)
+      else if (chosen.nodes.size > 1) onMenu(asked, { kind: 'selection', ids: [...chosen.nodes] }, view)
+      else menuOfPane(asked)
+    },
+    [chosen.nodes, menuOfEdge, menuOfNode, menuOfPane, onMenu, view],
+  )
+  const menus = onMenu
+    ? {
+        onNodeContextMenu: (event, node) => menuOfNode(event, node.id),
+        onEdgeContextMenu: (event, edge) => menuOfEdge(event, edge.id),
+        onPaneContextMenu: (event) => menuOfPane(event),
+        onSelectionContextMenu: (event, picked) =>
+          onMenu(event, { kind: 'selection', ids: picked.map((node) => node.id) }, view),
+      }
+    : null
+
+  const drawn = (
     <ReactFlow
       nodes={nodes}
       edges={edges}
@@ -440,6 +492,7 @@ function Flow({
         event.dataTransfer.dropEffect = 'copy'
       }}
       onDrop={readOnly ? undefined : onDrop}
+      {...menus}
       ariaLabelConfig={{
         'node.a11yDescription.default':
           'Press Enter to select the node; then the arrow keys move it and Delete removes it.',
@@ -450,6 +503,13 @@ function Flow({
       {/* Two canvases side by side have no room for a map each. */}
       {!viewport && <PlaybookMap />}
     </ReactFlow>
+  )
+  return onMenu ? (
+    <div className="h-full w-full" onKeyDown={onMenuKey}>
+      {drawn}
+    </div>
+  ) : (
+    drawn
   )
 }
 
@@ -486,6 +546,9 @@ function PlaybookMap() {
  *   onChange?: (graph: object) => void,
  *   onDropEntry?: (entryId: string, position: { x: number, y: number }) => void,
  *   onRefused?: (why: string) => void,               // an edge that cannot be drawn
+ *   onMenu?: (event: object, target: object, view: { fit: () => void }) => void,
+ *       // a right-click (or the menu key): target is { kind: 'node', id }, { kind: 'selection', ids },
+ *       // { kind: 'edge', from, port, to } or { kind: 'pane', position }; without it, the browser's menu
  * }} props
  */
 export default function Canvas(props) {

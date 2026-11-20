@@ -169,12 +169,21 @@
           <strong>The playbook</strong>, in the middle. Drag from the square under a node to another node to draw an
           edge; a condition has two squares (<em>yes</em>, <em>no</em>), an approval two (<em>approved</em>,
           <em>refused</em>), and the nodes that can fail have one on their right side for the <em>on error</em> line.
-          <strong>Tidy up</strong> puts the nodes in order; the minimap and the zoom buttons are in the corners. A
-          connection under the pointer (or selected) shows an <strong>×</strong> that removes it, and small squares to
-          <strong>route it by hand</strong>: drag the hollow one in the middle of a straight part and it becomes a
-          corner; drag a corner to move it (the arrow keys move it too); double-click it, or press <kbd>Delete</kbd> on
-          it, to take it away. A connection has twenty corners at most; with none it draws itself again. The corners are
-          saved with the playbook, so everybody sees the same drawing.
+          The minimap and the zoom buttons are in the corners. A connection under the pointer (or selected) shows an
+          <strong>×</strong> that removes it, and nothing else: there is no corner to make or to drag. (From 5.2 to 6.3
+          a line could be given corners by hand. A playbook that has some still opens; the corners are not drawn, and
+          are gone from it the next time it is saved.)
+        </li>
+        <li>
+          <strong>Tidy up</strong> puts the nodes in order, top to bottom, and takes every line round the nodes it does
+          not join: no line runs over a node. A line that skips a row, such as the <em>when done</em> of a
+          <em>For each</em> that goes past the body of the loop, or an <em>on error</em> that goes far down, gets a lane
+          of its own beside the column, and the words of a line are put where no node is. The way a line takes is the
+          layout's: it is saved with the playbook, so everybody sees the same drawing, and <em>Tidy up</em> works it out
+          again each time. When you move a node by hand afterwards, the lines of that node are drawn by the canvas
+          again, as a line you have just drawn is (a stepped line from one node to the other, which may pass over
+          another node); the lines of the nodes you did not move keep their way. <em>Tidy up</em> puts everything back
+          in order.
         </li>
         <li>
           <strong>The inspector</strong>, on the right: the settings of the selected node, where it goes next, what it
@@ -189,11 +198,43 @@
           >2 to fix</em
         >) and, in words, in the inspector. Undo and redo are <kbd>Ctrl</kbd>+<kbd>Z</kbd> and
         <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>; <kbd>Ctrl</kbd>+<kbd>C</kbd> and <kbd>Ctrl</kbd>+<kbd>V</kbd>
-        copy and paste the selected nodes with the edges between them.
+        copy and paste the selected nodes with the edges between them, <kbd>Ctrl</kbd>+<kbd>X</kbd> cuts them,
+        <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicates them and <kbd>Ctrl</kbd>+<kbd>A</kbd> selects every node.
+      </p>
+      <p>
+        <strong>The right-click menu.</strong> The same things are in a menu, where the pointer is, each with the key
+        that does it:
+      </p>
+      <ul>
+        <li>
+          on a <strong>node</strong>: <em>Open in the inspector</em>, <em>Debug, stopping before it…</em> (for who may
+          debug: the <a href="#debugger">debug run</a> is asked with this node as the place to stop),
+          <em>Duplicate</em>, <em>Copy</em>, <em>Cut</em>, <em>Disconnect its lines</em>, <em>Delete</em>. A node that
+          is right-clicked becomes the selected one;
+        </li>
+        <li>
+          on <strong>several selected nodes</strong> (right-click one of them): the same, for all of them. The trigger
+          among them is left out of what is copied and deleted;
+        </li>
+        <li>on a <strong>line</strong>: <em>Delete this connection</em>;</li>
+        <li>
+          on the <strong>empty canvas</strong>: <em>Add a node here…</em> opens the library as a search, and the node
+          you choose lands where you clicked (<kbd>Enter</kbd> takes the first one listed); <em>Paste here</em> puts
+          what was copied at that place; <em>Select all</em>, <em>Fit the view</em>, <em>Tidy up</em>, <em>Undo</em>,
+          <em>Redo</em>.
+        </li>
+      </ul>
+      <p>
+        An entry that cannot be done stays in the menu, greyed, and says why when the pointer is on it: the trigger is
+        never copied or deleted, there is nothing to paste yet, the branch is somebody else's. On a canvas you may only
+        read, the menu still opens with what changes nothing (open, copy, select all, fit the view). The menu ends, as
+        every menu of Nik, with what is true on every page (search, the shortcuts, back, the address of the page); the
+        browser's own menu never opens, with <kbd>Shift</kbd> held down either.
       </p>
       <p>
         <strong>Without a pointer.</strong> <kbd>Tab</kbd> moves through the nodes, <kbd>Enter</kbd> selects one, the
-        arrow keys move it, <kbd>Delete</kbd> removes it. Edges are drawn in the inspector, under <em>Goes to</em>:
+        arrow keys move it, <kbd>Delete</kbd> removes it, and the menu key (or <kbd>Shift</kbd>+<kbd>F10</kbd>) opens
+        the menu of the node or the line that has the focus. Edges are drawn in the inspector, under <em>Goes to</em>:
         choose the node an edge leads to, port by port. <strong>Node list</strong> shows the same playbook as a table:
         each node, where it goes, what is to fix.
       </p>
@@ -636,7 +677,10 @@ Content-Type: application/json
             <tr>
               <td>Get an incident</td>
               <td><code>incident</code> (its id; the run's incident when empty)</td>
-              <td><code>incident</code>: id, name, status, severity, assignee, url</td>
+              <td>
+                <code>incident</code>: id, url, name, ticket, status, severity, assignee, host, username, os, created,
+                modified; <code>fields</code>: each of its fields that has a value, by its name in the registry
+              </td>
             </tr>
             <tr>
               <td>Add a note</td>
@@ -660,6 +704,19 @@ Content-Type: application/json
                 assignee), <code>value</code>
               </td>
               <td><code>incident</code></td>
+            </tr>
+            <tr>
+              <td>Tag the incident · Take tags off the incident</td>
+              <td>
+                <code>incident</code> (the run's incident when empty), <code>tags</code> (a list, or words separated by
+                commas)
+              </td>
+              <td>
+                <code>tags</code>: the tags of the incident afterwards; <code>changed</code>: whether they are not what
+                they were. Done twice, it changes nothing the second time: a tag the incident has is not added again,
+                one it does not have is not missed. A tag is held to the
+                <a href="guide.html#incident-tags">rules of a tag</a>; one that is not a tag fails the step.
+              </td>
             </tr>
             <tr>
               <td>Create an incident</td>
@@ -725,6 +782,21 @@ Content-Type: application/json
               <td><code>linked</code></td>
             </tr>
             <tr>
+              <td>Scan an address</td>
+              <td>
+                <code>url</code> (http or https; defanged text is understood), <code>incident</code>,
+                <code>again</code> (visit it even when Nik holds a scan of it; off by default)
+              </td>
+              <td>
+                <code>scanned</code>, <code>verdict</code> (<code>phishing</code>, <code>suspicious</code>,
+                <code>clean</code>), <code>score</code>, <code>url</code>, <code>final_url</code>,
+                <code>redirected</code>, <code>redirects</code>, <code>title</code>, <code>password_form</code>,
+                <code>findings</code>, <code>indicators</code> (each <code>{type, value}</code>), <code>scan</code>,
+                <code>artifact</code> (<code>url-…</code>), <code>page</code>, <code>summary</code>. The step waits for
+                the visit without holding a worker.
+              </td>
+            </tr>
+            <tr>
               <td>Start a timer · Pause a timer · Stop a timer</td>
               <td>
                 <code>timer</code> (<code>time_to_assign</code>, <code>time_to_contain</code>,
@@ -736,6 +808,39 @@ Content-Type: application/json
           </tbody>
         </table>
       </div>
+      <p id="scan-an-address">
+        <strong>Scan an address.</strong> The node does what <em>URL Analysis</em> does when an analyst pastes an
+        address: the isolated browser visits it, types, clicks and submits nothing, and Nik keeps the screenshot, the
+        redirects, the forms, the scripts and the network log, weighed into a verdict. The scan is an artifact like any
+        other and is put in the incident the run works on (or in the one the node names); with no incident it stays on
+        its own. An address Nik already scanned is given as it is, in one step, unless <code>again</code> is on. The
+        automation worker does not visit anything itself: it asks, the backend (the only container that reaches the
+        isolated browser) makes the visit, and the step looks again every five seconds, for five minutes at most.
+      </p>
+      <ul>
+        <li>
+          <strong>What is not scanned.</strong> Only http and https; never a private or reserved address or an internal
+          name. The address leaves Nik when it is visited, so the data guard decides as for every node that sends
+          something out: an address that holds an e-mail address, one that is on the IoC allowlist or under your own
+          domains is held unless an admin opened that class for the playbook, and one classified TLP:RED is always held.
+          Held, the step fails and says what was held; with <code>held: drop</code> on the node it goes on with
+          <code>scanned</code> false. The list of hosts the playbook may reach is not asked: the visit is made by the
+          isolated browser, from its own network.
+        </li>
+        <li>
+          <strong>When it cannot be done.</strong> Without the isolated browser (<code>BROWSER_URL</code> not set on the
+          backend) the step fails with a sentence that says so. A visit that fails is tried again like any failure; a
+          scan nobody took in five minutes fails the step.
+        </li>
+        <li>
+          <strong>A dry run</strong> scans nothing: the step shows the address it would visit and gives every output
+          empty, with <code>scanned</code> false.
+        </li>
+        <li>
+          The <em>address analysed</em> event the scan sets off says which run caused it, so a playbook that waits for
+          that event does not start again on its own scan.
+        </li>
+      </ul>
       <p id="lists">
         <strong>Lists.</strong> A list is what a playbook reads by a name: the VIP users, the hosts that are yours, the
         addresses a campaign used. Lists are made and filled in <em>Settings → Lists</em>; what Nik used to keep in its
@@ -790,10 +895,33 @@ Content-Type: application/json
       <p>
         Every text field of a node takes values from the run with <code>{{ }}</code>. Type them, or use
         <strong>Pick a value</strong> (the <code>{ }</code> button beside the field), which lists what this node can
-        read and writes the expression where the caret is. The list goes into what a block gives: after
-        <code>get_message.</code> it offers <code>from</code>, <code>subject</code>, <code>attachments[*].name</code>
-        and the rest, taken from the outputs the command declares and, for a command of a connector, from the
-        <code>sample</code> answer in its file.
+        read and writes the expression where the caret is. Typing <code>{{</code> offers the same values under the
+        field, and what you type after the braces narrows them: the arrow keys move in the list, <kbd>Enter</kbd> or
+        <kbd>Tab</kbd> takes one, <kbd>Esc</kbd> closes it.
+      </p>
+      <p>
+        The list goes into what a value holds. After <code>get_message.</code> it offers <code>from</code>,
+        <code>subject</code>, <code>attachments[0].name</code> and the rest, taken from the outputs the command declares
+        and, for a command of a connector, from the <code>sample</code> answer in its file. An
+        <strong>incident a node gives</strong> (<em>Create an incident</em>, <em>Get an incident</em>,
+        <em>Set the status</em>, <em>Assign the incident</em>, <em>Set a field of the incident</em>) is listed whole and
+        part by part, exactly as the incident of the trigger is: <code>create_incident.incident</code>, then
+        <code>.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>, <code>.status</code>,
+        <code>.severity</code>, <code>.assignee</code>, <code>.host</code>, <code>.username</code>, <code>.os</code>,
+        <code>.created</code>, <code>.modified</code>. An argument called <code>incident</code> takes the id, and takes
+        the whole incident as well: <code>{{ create_incident.incident }}</code> and
+        <code>{{ create_incident.incident.id }}</code> name the same incident. <em>Get an incident</em> also gives
+        <code>fields</code>: every field of that incident that has a value, by its name in the registry, your own fields
+        among them (<code>get_incident.fields.business_unit</code>). The lists some nodes give are listed by their first
+        item (<code>get_ioc_lists.lists[0].name</code>, <code>reputation.sources[0].verdict</code>).
+      </p>
+      <p>
+        Under <code>incident</code> the list has <strong>every field of the registry</strong> that is of incidents, the
+        ones made in <em>Settings → Fields</em> too, each with its label and its type; a field made a moment ago is
+        there the next time the editor is opened. Under <code>context</code> it has each entity of the common schema and
+        its keys (<code>context.Ticket[0].Number</code>). What is listed is what a run can read; a field of the incident
+        that has no value, and an entity nothing was written to, are not there when the step runs: add
+        <code>| default("")</code> where that may happen.
       </p>
       <pre><code>{{ trigger.incident.name }}
 {{ search.recipients[*].office | unique | join(", ") }}
@@ -1325,8 +1453,15 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               <td>Closed; an admin can open each for a playbook</td>
             </tr>
             <tr>
-              <td>E-mail bodies · attachments · samples · TLP:RED data</td>
-              <td>Never leave, in any playbook</td>
+              <td>E-mail bodies · attachments · samples</td>
+              <td>
+                Closed. They are whole messages and whole files: an admin can open each for one playbook, in its
+                <em>Settings</em> tab, apart from the classes above and under a warning of their own (below)
+              </td>
+            </tr>
+            <tr>
+              <td>TLP:RED data</td>
+              <td>Never leaves, in any playbook: it is not offered to be opened</td>
             </tr>
           </tbody>
         </table>
@@ -1351,12 +1486,26 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         attachment a message carries is: by what it is, its name, its size and its hash, never by opening it. It is an
         <em>attachment</em>, its name is a <em>file name</em> (and is read as text), a file Nik holds as a sample is a
         <em>sample</em>, and one whose hash is on the allowlist is an <em>allowlisted indicator</em>. Every one of those
-        classes must be open for the playbook, which for <em>attachments</em> and <em>samples</em> an admin does through
-        the API (<code>PUT /api/automation/playbooks/{id}/data-allow</code>, with the same double check). Otherwise the
+        classes must be open for the playbook, which for <em>attachments</em> and <em>samples</em> an admin does in the
+        settings of the playbook (below). Otherwise the
         step fails and says what was held. A node set to send without what is held sends
         <strong>nothing at all</strong> then: a submission without its file is no submission, so the command is not
         sent, the step ends with empty outputs and says that the file was held back. The step shows what was judged (how
         many files, how many bytes, which classes) and, when the file went, its name, size and SHA-256.
+      </p>
+      <p>
+        <strong>E-mail bodies, attachments and samples</strong> are opened in the same place, the <em>Settings</em> tab
+        of the playbook, under <em>Data that may leave</em>, by an admin. They stand apart from the other classes, under
+        their own heading (<em>Whole messages and files</em>) and a warning: what is opened there leaves Nik whole, as
+        it is, the text of an e-mail, an attachment as it was sent, a sample as it is held, and a sample is live
+        malware. <em>E-mail bodies</em> is what a playbook that forwards mail needs, since the text of the message
+        leaves with it; <em>attachments</em> and <em>samples</em> are what it needs to forward the files too. Each is
+        closed until it is opened, and <em>Open…</em> asks what every opening asks, twice: a box to tick that says the
+        systems that will receive it are yours or are made to receive it, and the name of the playbook typed as it is
+        written. The dialog names the hosts the playbook may reach, which is where it could go. Opening and closing are
+        written in the audit log (<code>automation.data.open</code>, <code>automation.data.close</code>) with who did it
+        and those hosts. An account that is not an admin sees the three classes and whether each may leave, without the
+        buttons. <strong>TLP:RED data</strong> is in no list to open: it never leaves.
       </p>
 
       <h2 id="scripts">Scripts</h2>
@@ -1525,9 +1674,9 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <li>
           <code>{{ incident.… }}</code>: the fields of the incident by the names of the
           <a href="guide.html#settings">registry</a>: <code>incident.severity</code>, <code>incident.owner</code>,
-          <code>incident.ticket</code>, a field of your own as <code>incident.business_unit</code>. (<code
-            >{{ trigger.incident.… }}</code
-          >
+          <code>incident.ticket</code>, a field of your own as <code>incident.business_unit</code>. Its tags are
+          <code>incident.tags</code>, a list (the field is named <code>labels</code>, and
+          <code>incident.labels</code> reads the same list). (<code>{{ trigger.incident.… }}</code>
           is the incident as it was when the run started.)
         </li>
         <li>
@@ -1844,20 +1993,27 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <strong>Instances</strong> are listed under their connector. <em>Add instance</em> opens a form built from
           what the connector asks for. <em>Test</em> sends the connector's test request with the credentials and says
           what came back. Credentials are stored encrypted with the vault key and are never shown again, in the screen
-          or in the API: to change one, type it again.
+          or in the API: to change one, type it again. The form has a tab for each of its parts: <em>Connection</em>,
+          <em>Keys</em> for a connector that signs in and, for one that brings alerts in,
+          <a href="#fetch-status"><em>Fetch</em></a
+          >, <a href="#mappers"><em>Classifier</em> and <em>Mappers</em></a> (the last two once the instance is made).
+          There is one <em>Save</em> for all of them: going from a tab to another loses nothing, and what cannot be
+          saved yet is said beside the button, whichever tab it is on. The address names the instance and the tab, so a
+          link opens the form there.
         </li>
         <li id="instance-keys">
           <strong>Several keys for one instance.</strong> A source that is asked a lot with a free key runs out of it.
-          An instance may hold <strong>more keys than one</strong>: the first is its credentials; <em>Add a key</em>,
-          under the form of an instance, adds another set, which is named, moved up or down and removed there. The keys
-          take turns in one of four ways: <em>one request each</em>; <em>the same key until it is used up</em>, then the
-          next; <em>the one with most left</em> today; or <em>the first key only, the others in reserve</em>. A key is
-          used up when it reached the limit you set (requests a minute, requests a day, for each key), or when the
-          vendor answers 429: it is then left alone, for fifteen minutes when the vendor said so, and the next key is
-          tried for the same request. When every key is used up the command <strong>waits</strong> for the first to come
-          back (the step waits, no worker is held) or <strong>fails</strong>, as the instance says. The page shows what
-          each key was used for today and whether it is in use, waiting or used up; <em>Test every key</em> sends the
-          connector's test request with each. What is counted is by UTC day.
+          An instance may hold <strong>more keys than one</strong>: the first is its credentials; <em>Add a key</em>, in
+          the form of the instance, adds another set, which is named, moved up or down and removed there, and is saved
+          with the rest of the form by its one <em>Save</em>. The keys take turns in one of four ways:
+          <em>one request each</em>; <em>the same key until it is used up</em>, then the next;
+          <em>the one with most left</em> today; or <em>the first key only, the others in reserve</em>. A key is used up
+          when it reached the limit you set (requests a minute, requests a day, for each key), or when the vendor
+          answers 429: it is then left alone, for fifteen minutes when the vendor said so, and the next key is tried for
+          the same request. When every key is used up the command <strong>waits</strong> for the first to come back (the
+          step waits, no worker is held) or <strong>fails</strong>, as the instance says. The page shows what each key
+          was used for today and whether it is in use, waiting or used up; <em>Test every key</em> sends the connector's
+          test request with each. What is counted is by UTC day.
         </li>
         <li id="kept-answers">
           <strong>Answers that are kept.</strong> An instance may keep an answer for some hours and give it back without
@@ -1937,30 +2093,47 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         </li>
       </ul>
       <p>
-        They are edited in <em>Settings → Automation → Classifiers and mappers</em>. Choose the connector, the direction
-        and the type of incident: the table has one row for each field of Nik, those the type needs first, then those
-        that are mapped, then the rest folded away. Each row has the expression that gives the field its value, with a
-        <strong>+</strong> that puts in a field of the product (those its connector names in <code>schema</code>, or
-        those of the sample when it names none), the value on the sample, and <em>Wins over edits</em>.
-        <em>Add a context path</em> adds a row that writes to the context (<code>Alert(val.ID == obj.ID)</code>, an
-        <code>ext</code> field of the connector). Paste one item as the product sends it and <em>Try on the sample</em>:
-        every row shows the value the incident would get, with what a field refused and what the type needs that nothing
-        gave. Nothing is written until the mapper is saved, and trying never writes to an incident. The classifier of
-        each instance of the connector is the small table under it.
+        They are set in the instance: <em>Settings → Automation → Connectors</em>, the pencil of an instance, then its
+        tabs <em>Classifier</em> and <em>Mappers</em> (an instance of a connector that fetches or mirrors has them). On
+        these two tabs the form takes the width of the page.
+      </p>
+      <p>
+        <strong>Classifier</strong> is the table of the rules of this instance: what to compare, how, with what, and the
+        type the item becomes; under them, the type when no rule holds.
+      </p>
+      <p>
+        <strong>Mappers</strong>: choose the direction and the type of incident. The table has one row for each field of
+        Nik, those the type needs first, then those that are mapped, then the rest folded away. Each row has the
+        expression that gives the field its value, with a <strong>+</strong> that puts in a field of the product (those
+        its connector names in <code>schema</code>, or those of the sample when it names none), the value on the sample,
+        and <em>Wins over edits</em>. <em>Add a context path</em> adds a row that writes to the context (<code
+          >Alert(val.ID == obj.ID)</code
+        >, an <code>ext</code> field of the connector). The mappers belong to the connector:
+        <strong>every instance of it uses the same ones</strong>, and the tab says so; what is changed in one instance
+        changes for all of them.
+      </p>
+      <p>
+        Paste one item as the product sends it, or take the last one the instance fetched (<em
+          >Use the last item it fetched</em
+        >), and <em>Try on the sample</em>: every row of a mapper shows the value the incident would get, with what a
+        field refused and what the type needs that nothing gave; the classifier says the type the sample becomes. Trying
+        never writes to an incident. What is changed on these tabs is kept while the other tabs are used, marked
+        <em>changed</em>, and listed beside the buttons as not saved yet; the one <strong>Save</strong> of the instance
+        saves it with everything else. <em>Put back what is saved</em> gives a mapper up.
       </p>
 
       <h3 id="fetching">Fetching: alerts that become incidents</h3>
       <p>
         An instance whose connector has a <a href="#connector-fetch"><code>fetch</code></a> can bring alerts in. It does
-        nothing until it is told to (<em>Settings → Automation → Fetch status</em>, or
-        <code>PUT /api/fetch/{connection}</code>); then the automation worker reads it every
-        <code>interval_seconds</code>. One cycle:
+        nothing until it is told to (the switch <em>Fetch incidents</em> on the <a href="#fetch-status">Fetch tab</a> of
+        the instance, or <code>PUT /api/fetch/{connection}</code>); then the automation worker reads it at the interval
+        of the instance. One cycle:
       </p>
       <ol>
         <li>
-          the request is sent with the <code>state</code> the cycle before left (before the first one, what
-          <code>first_state</code> says of the moment <code>first_fetch</code> ago), and its pages are read: 200 items a
-          cycle at most;
+          the request is sent, asking from the moment Nik works out (see <a href="#look-back">the look-back</a>), or
+          with the <code>state</code> the cycle before left for a connector that goes on from a cursor, and its pages
+          are read: 200 items a cycle at most;
         </li>
         <li>
           each item is told apart by its <code>item_id</code>. One this instance has fetched before is skipped: an alert
@@ -1977,8 +2150,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       <p>
         An item its mapper cannot make whole still becomes an incident: with no mapper it has a name made of the
         connector and the id of the item; a field the registry refuses is left empty; a field the type needs and nothing
-        gave is missing. Fetch status lists it as <em>incomplete</em> with what was wrong, so that the mapper is
-        corrected rather than alerts lost.
+        gave is missing. <em>What it fetched…</em>, on the Fetch tab of the instance, lists it as <em>incomplete</em>
+        with what was wrong, so that the mapper is corrected rather than alerts lost.
       </p>
       <p>
         A fetch reaches the host of its own instance and nothing else, with its credentials; the data guard is not
@@ -1990,12 +2163,66 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       </p>
 
       <p id="fetch-status">
-        <strong>Fetch status</strong> (<em>Settings → Automation → Fetch status</em>) lists the instances that can
-        fetch: whether each does, when it last fetched and will next, what its last cycle found, and why it is failing
-        or paused. An instance is turned on and off there, made to fetch now, and let go on. Opened, an instance shows
-        what it fetched lately and what became of each item: an incident, an <em>incomplete</em> one with what its
-        mapper could not give, an item dropped, linked or closed as a duplicate by a rule. In the mapper editor,
-        <em>Use the last item fetched</em> takes the last item of an instance as the sample.
+        <strong>Fetching is set in the instance</strong>: <em>Settings → Automation → Connectors</em>, the pencil of an
+        instance, then its tab <em>Fetch</em>. What is set there is saved by the one <strong>Save</strong> of the
+        instance, with the rest of it:
+      </p>
+      <ul>
+        <li><strong>Fetch incidents</strong>: whether the instance fetches;</li>
+        <li>
+          <strong>How often</strong>, in seconds: what its connector says until it is changed, 30 at the least and once
+          a day at most;
+        </li>
+        <li>
+          <strong>First fetch</strong>: how far back the first cycle reads, written as <code>30 minutes</code>,
+          <code>12 hours</code> or <code>3 days</code> (a month at most). Changed later, it counts from the next time
+          the last run is reset;
+        </li>
+        <li><strong>Look-back</strong>, in minutes: see below.</li>
+      </ul>
+      <p>
+        Under them, <em>How it goes</em>: fetching, failing or paused and why, when it last fetched and will next, what
+        its last cycle found, and the moment the next cycle asks from. These are done at once and are not part of the
+        save: <strong>Fetch now</strong>; <strong>Resume</strong>, for an instance that is failing or paused;
+        <strong>Reset last run…</strong>; and <strong>What it fetched…</strong>, the items it fetched lately with what
+        became of each (an incident, an <em>incomplete</em> one with what its mapper could not give, an item dropped,
+        linked or closed as a duplicate by a rule) and the last item as it came. In the list of connectors, an instance
+        that fetches has a mark that says how it goes and opens this tab; the notification that an instance is failing
+        or paused opens it too.
+      </p>
+      <p id="look-back">
+        <strong>The look-back.</strong> For a connector that asks its product "from when", Nik works the moment out. It
+        keeps how far the cycles <em>reached</em>: the first-fetch moment when the first cycle starts, then the newest
+        time it has seen on an item. A cycle that finds nothing leaves it where it is, and a time later than the cycle
+        itself is not believed. Each cycle asks from that moment <strong>less the look-back</strong>, the moment itself
+        included, and what it already has is skipped by its id. So:
+      </p>
+      <ul>
+        <li>
+          with a look-back of <strong>0</strong>, a cycle asks from the newest time it has seen. An item with that very
+          time is caught; an item the product shows later with an <em>older</em> time (an alert that took minutes to be
+          indexed, a ticket made with a time in the past) is <strong>missed</strong>;
+        </li>
+        <li>
+          with a look-back of <em>N</em> minutes, such an item is caught as long as its time is not more than
+          <em>N</em> minutes older than the newest one seen when it turns up. The price is that the same items are read
+          again at every cycle and skipped;
+        </li>
+        <li>
+          a cycle that was cut at its 200 items goes on from where it stopped, without the look-back, until one cycle
+          has read everything: a long look-back does not keep a busy instance from catching up;
+        </li>
+        <li>
+          a connector that goes on from a cursor (the Mail connector goes on from the last message it read) asks for
+          nothing by time: the look-back does not apply to it, and the tab says so.
+        </li>
+      </ul>
+      <p id="reset-last-run">
+        <strong>Reset last run</strong> forgets where the last run stopped: the next cycle reads again from as far back
+        as the first fetch says. It asks first and says what it will do. What was already imported is still known by its
+        id and is skipped, so no incident is made twice; there is no way to forget those ids. It is written in the audit
+        log. Use it after changing the first fetch, or when a product was unreachable for longer than the look-back
+        covers.
       </p>
 
       <h4 id="preprocessing">Before an item becomes an incident</h4>
@@ -2051,8 +2278,9 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <li>
           <strong>Out.</strong> When a field the <a href="#mappers">outgoing mapper</a> reads changes in Nik, the
           incident is sent as that mapper writes it; a note tagged <code>mirror</code> is sent as a comment. Sending is
-          done by the worker from a queue: one that fails is tried again later and later, eight times, and is listed in
-          <em>Fetch status</em> with why, where it can be sent again.
+          done by the worker from a queue: one that fails is tried again later and later, eight times, and is listed
+          under the connectors (<em>Settings → Automation → Connectors</em>, <em>Mirroring: what waits to be sent</em>)
+          with why, where it can be sent again.
         </li>
       </ul>
       <p>
@@ -2082,6 +2310,25 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <code>attachments</code> is on (below).
         </li>
         <li>
+          <strong>What is taken from the mailbox.</strong> <code>forward</code> reads the message again and quotes its
+          subject, its sender, its recipients, its date and its text; <code>reply</code> repeats its subject (<code
+            >Re: …</code
+          >). None of that is written in the node, so the <a href="#data-guard">data guard</a> judges it when the
+          message is read, each part by what it is: the subject is an <em>e-mail subject</em>, the sender and the
+          recipients are <em>e-mail addresses</em>, the text is an <em>e-mail body</em>, and each is also read as text
+          (a private address in the text is an internal address). A playbook forwards a message only when those classes
+          are open for it, and answers one only when <em>e-mail subjects</em> is; <em>e-mail bodies</em> is opened by an
+          admin in the playbook's <em>Settings</em> tab, under <em>Data that may leave</em>, with the same double check.
+          Otherwise the step fails, nothing is sent, and the step says what was held. A node set to send without what is
+          held sends the message without the held parts: a quoted line says <code>(held back)</code>, the subject
+          becomes <code>Fwd: (subject held back)</code> or <code>Re: (subject held back)</code>, the text is replaced by
+          one line saying the data guard held it back, and the output <code>quoted_held</code> names what stayed
+          (<code>subject</code>, <code>from</code>, <code>to</code>, <code>text</code>). The <code>Message-ID</code> a
+          reply names to stay in its conversation is not judged: it goes back only to the people the message was sent by
+          and to. A dry run does not read the mailbox: its step says that what is taken from the message is judged when
+          the step runs.
+        </li>
+        <li>
           <strong>Reading</strong> (<code>search</code>, <code>get-message</code>, <code>list-folders</code>): a message
           is named by its <code>uid</code> in its folder. An attachment is described (name, type, size, SHA-256) and
           never opened. The first 2 MB of a message are read.
@@ -2103,16 +2350,16 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <li>
           <strong>Forwarding with the attachments.</strong> <code>attachments</code> is off by default, because a file
           that leaves Nik is judged by the <a href="#data-guard">data guard</a> like anything else that leaves, and
-          <em>attachments</em> is a class the screen of a playbook does not offer to open. The guard judges each file by
-          what it is, its name, its size and its hash, without opening it: it is an attachment, its name is a file name
-          (and is read as text: an address in it is an address), a file Nik holds as a sample is a sample, and one whose
-          hash is on the allowlist is an allowlisted indicator. Every one of those classes must be open for the
-          playbook, which for <em>attachments</em> and <em>samples</em> an admin does through the API (<code
-            >PUT /api/automation/playbooks/{id}/data-allow</code
-          >, with the same double check). Otherwise the step fails and says what was held; a node set to send without
-          what is held sends the text alone, and its output says how many files stayed (<code>attachments_held</code>).
-          What cannot be judged whole is refused whatever is open: an attachment that could not be read, more than fifty
-          of them, more than 20 MB together.
+          <em>attachments</em> is a class that is closed until an admin opens it for the playbook. The guard judges each
+          file by what it is, its name, its size and its hash, without opening it: it is an attachment, its name is a
+          file name (and is read as text: an address in it is an address), a file Nik holds as a sample is a sample, and
+          one whose hash is on the allowlist is an allowlisted indicator. Every one of those classes must be open for
+          the playbook, which for <em>attachments</em> and <em>samples</em> an admin does in the playbook's
+          <em>Settings</em> tab, under <em>Data that may leave</em> (<a href="#data-guard">above</a>; the API has it as
+          <code>PUT /api/automation/playbooks/{id}/data-allow</code>, with the same double check). Otherwise the step
+          fails and says what was held; a node set to send without what is held sends the message without its files, and
+          its output says how many stayed (<code>attachments_held</code>). What cannot be judged whole is refused
+          whatever is open: an attachment that could not be read, more than fifty of them, more than 20 MB together.
         </li>
         <li>
           <strong>Changing the mailbox</strong> (<code>move</code>, <code>mark-read</code>, <code>mark-unread</code>,
@@ -2129,8 +2376,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           incident. A message Nik holds already is not analysed twice. Nothing is kept for a message a
           <a href="#preprocessing">pre-processing rule</a> dropped; one a rule linked to an incident there was becomes
           evidence of that incident. A message above the size limit of an upload, or one that cannot be read as a
-          message, still becomes an incident: Fetch status lists the item as <em>incomplete</em> and says the message
-          was not kept.
+          message, still becomes an incident: <em>What it fetched…</em> lists the item as <em>incomplete</em> and says
+          the message was not kept.
         </li>
       </ul>
       <p>
@@ -2389,7 +2636,7 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
             </tr>
             <tr>
               <td><code>commands</code> (required)</td>
-              <td>The commands (below): at least one, 100 at most.</td>
+              <td>The commands (below): at least one, 400 at most.</td>
             </tr>
             <tr>
               <td><code>fetch</code></td>
@@ -2980,12 +3227,31 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       </p>
       <ul>
         <li>
-          <code>interval_seconds</code> (120 by default, 30 at least) and <code>first_fetch</code>: how far back the
-          first cycle looks, as <code>30 minutes</code>, <code>12 hours</code> or <code>3 days</code> (a month at most);
+          <code>interval_seconds</code> (120 by default, 30 at least), <code>first_fetch</code>: how far back the first
+          cycle looks, as <code>30 minutes</code>, <code>12 hours</code> or <code>3 days</code> (a month at most), and
+          <code>lookback_minutes</code> (0 by default). These three are what an instance starts with: each is changed in
+          <a href="#fetch-status">the instance</a>;
         </li>
         <li>
           <code>request</code>, with <code>success</code> and <code>error</code> as in a command. Its templates read
-          <code>config</code>, <code>secret</code> and <code>state</code>, never an argument: nobody gives a fetch any;
+          <code>config</code>, <code>secret</code>, <code>since</code> and <code>state</code>, never an argument: nobody
+          gives a fetch any;
+        </li>
+        <li>
+          <code>since</code> is the moment to ask from, for a product that is asked "from when":
+          <code>since.iso</code> (<code>2026-11-16T08:00:00Z</code>), <code>since.epoch</code> and
+          <code>since.epoch_ms</code>, written another way with the <code>date</code> filter (<code
+            >"{{ since.epoch | date('%Y-%m-%d %H:%M:%S') }}"</code
+          >). Nik works it out, with <a href="#look-back">the look-back</a> of the instance, so the file does no
+          arithmetic on dates and keeps no state for it. Compare so that the moment itself is included
+          (<code>&gt;=</code>, not <code>&gt;</code>): a strict comparison on a time in seconds loses what was made in
+          the same second as the last item, and what comes back a second time is skipped by its id anyway. Ask for the
+          oldest first, so that a cycle cut at its limit goes on from where it stopped;
+        </li>
+        <li>
+          <code>item_time</code>: the time of an alert that the request filters on, when it is not
+          <code>occurred</code> (<code>"{{ item.sys_created_on }}"</code>). Nik reads it to know how far a cycle
+          reached: an ISO date, a date and a time taken as UTC, or seconds or milliseconds since 1970;
         </li>
         <li>
           <code>pagination</code> (as in a command), or <code>items</code> when the answer is one page: where the alerts
@@ -2997,7 +3263,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <code>"{{ item.createdAt }}"</code>;
         </li>
         <li>
-          <code>first_state</code> and <code>next_state</code>: the <code>state</code> the request reads. Before the
+          <code>first_state</code> and <code>next_state</code>, for a product that is not asked by time but from a
+          cursor: the <code>state</code> the request reads (its names do not start with <code>_</code>). Before the
           first cycle it is what <code>first_state</code> says, which reads <code>first</code>, the moment
           <code>first_fetch</code> ago (<code>first.iso</code>, <code>first.epoch</code>, <code>first.epoch_ms</code>);
           after each cycle it is what <code>next_state</code> says, which reads the answer and <code>items</code>, every
@@ -3509,9 +3776,30 @@ commands:
         The page is a catalogue: the packs there are, by vendor, beside the ones that are installed. A card says what
         the pack holds (<em>connector (17 commands) · 1 mapper · 1 playbook</em>) and what is true of it here:
         <em>installed</em>, <em>update 1.3.0</em> when the catalogue has a newer version, or
-        <em>for Nik 6.1 or later</em>. <em>All</em>, <em>Installed</em> and <em>Updates</em> narrow the cards, and so
-        does the search box.
+        <em>for Nik 6.1 or later</em>. Under it are its <strong>tags</strong>: what the product is
+        (<code>ticketing</code>, <code>edr</code>, <code>siem</code>, <code>firewall</code>,
+        <code>threat-intelligence</code>…) and what it is used on (<code>ip</code>, <code>domain</code>,
+        <code>url</code>, <code>file</code>).
       </p>
+      <p id="pack-find">A pack is looked for from the top of the page:</p>
+      <ul>
+        <li>
+          the <strong>search box</strong> comes first and is as wide as the page. It looks in the name, the vendor, the
+          category, the tags, the description and the names of the pack's connectors; every word typed must be found
+          somewhere in the card (<em>atlassian wiki</em>);
+        </li>
+        <li>
+          <em>All</em>, <em>Installed</em> and <em>Updates</em> narrow the cards, and
+          <em>Hide the installed ones</em> leaves in <em>All</em> only what there is to install. The box stays ticked
+          the next time, in this browser; it does nothing to <em>Installed</em> and <em>Updates</em>, which are about
+          installed packs;
+        </li>
+        <li>
+          the <strong>tags</strong> there are among the cards shown, each with how many packs have it. Several can be
+          chosen: a pack must have <strong>every</strong> tag chosen (<code>threat-intelligence</code> and
+          <code>url</code>: the sources that judge a URL), so each choice narrows, like everything else here.
+        </li>
+      </ul>
       <ul>
         <li>
           The packs are <strong>not inside Nik</strong>. They are published from the folder <code>packs/</code> of Nik's
@@ -3587,6 +3875,37 @@ commands:
         installed after it; one written for a later Nik is not offered. <em>Open</em> shows what an installed pack gave,
         and marks what is <em>changed here</em> since or <em>no longer here</em>.
       </p>
+      <h3 id="pack-several">Several at once</h3>
+      <p>
+        Each card has a box to tick; <em>Select all shown</em> ticks every card the filters leave, and
+        <em>Select none</em> empties the selection. A bar then offers what the selection allows:
+        <em>Install (n)…</em> for the packs that are not installed, <em>Update (n)…</em> for the ones with a newer
+        version in the catalogue, <em>Uninstall (n)…</em> for the ones that are installed. <em>Nik built-in</em> and a
+        pack for a later Nik cannot be ticked.
+      </p>
+      <ul>
+        <li>
+          One confirmation shows <strong>the whole plan</strong>, pack by pack, in the order they will be done: a pack
+          is installed <strong>after</strong> the packs it requires and uninstalled <strong>before</strong> them. Each
+          line has the counts (<em>3 to add, 1 to update</em>) and opens on its items.
+        </li>
+        <li>
+          A pack that cannot be done is marked <em>left out</em>, with why, and the others go on: one with an item in
+          <strong>conflict</strong> (install it on its own, where an item can be left out), one that requires a pack
+          that is neither installed nor in the selection, one that is installed already, and, to uninstall, one that is
+          <a href="#pack-uninstall">in use</a>, with each thing that holds it.
+        </li>
+        <li>
+          The packs are then done one after the other, <strong>each in its own transaction</strong>: one that fails does
+          not undo the others, and stops only the ones that require it. The dialog ends with what happened to each:
+          <em>installed: 3 added, 1 updated</em>, or <em>not installed</em> and why.
+        </li>
+        <li>
+          It is the server that orders the packs and decides for each, twice: for the plan, and again when its turn
+          comes, against what is there by then. The files taken from the catalogue for the plan are the ones that are
+          installed.
+        </li>
+      </ul>
       <p>
         A playbook from a pack arrives <strong>off</strong>, reaching only listed hosts and sending no class of data, as
         one imported alone does. A new instance of a connector starts with the classifier its pack gives. Never an
@@ -3595,25 +3914,59 @@ commands:
       <h3 id="pack-uninstall">Uninstalling</h3>
       <p>
         <em>Uninstall…</em> shows what would happen first, item by item, and then removes
-        <strong>what the pack gave</strong>. Two things stay, each with its reason, and are no pack's any more:
+        <strong>what the pack gave</strong>. A pack is <strong>not uninstalled while something of it is in use</strong>:
+        the dialog then lists each thing that holds it, with what to do first, and offers no <em>Uninstall</em>. The
+        server refuses it the same way (<code>409</code>, with the list), whoever asks.
       </p>
-      <ul>
-        <li>
-          what was <strong>changed here</strong> since the pack gave it (a script edited, a mapper rewritten): it is
-          yours now;
-        </li>
-        <li>
-          what is <strong>in use</strong> by something that stays: a connector with an instance, a connector or a script
-          a playbook of yours uses, a playbook that is the playbook of a type or that another playbook runs, a type with
-          incidents, a field a type lists or an incident holds a value of. What only the pack itself uses does not hold:
-          it goes with it.
-        </li>
-      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>What holds a pack</th>
+              <th>What to do first</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>An <strong>instance</strong> of its connector, turned on or off (the dialog says which)</td>
+              <td>Delete the instance. It holds credentials that are yours: uninstalling never deletes one for you.</td>
+            </tr>
+            <tr>
+              <td>A playbook of the pack that is <strong>turned on</strong>, or has a run in progress</td>
+              <td>Turn the playbook off; wait for the run to end, or stop it.</td>
+            </tr>
+            <tr>
+              <td>
+                A playbook <strong>of yours</strong> that uses its connector, runs its script or its playbook, or reads
+                its list; a pre-processing rule that runs its script
+              </td>
+              <td>Take it out of the playbook or the rule, or delete them.</td>
+            </tr>
+            <tr>
+              <td>Incidents of its <strong>type</strong>; a type of yours that has its playbook</td>
+              <td>Give the incidents another type or delete them; give the type another playbook.</td>
+            </tr>
+            <tr>
+              <td>Its <strong>field</strong>, listed by a type of yours or holding a value on an incident</td>
+              <td>Take the field off the type; empty it on the incidents.</td>
+            </tr>
+            <tr>
+              <td>Its <strong>list</strong>, read by a setting</td>
+              <td>Point the setting to another list.</td>
+            </tr>
+            <tr>
+              <td>Another installed pack that <strong>requires</strong> it</td>
+              <td>Uninstall that pack first (several at once: it goes first by itself).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p>
-        Instances and their credentials are never deleted unless you tick
-        <em>Also delete its instances, with the credentials they hold</em>. <em>Only take it off the list</em> removes
-        nothing: the pack leaves the list and everything it gave stays. A pack another installed pack requires is not
-        uninstalled before that one, and <em>Nik built-in</em> never.
+        What only the pack itself uses does not hold it: its playbook that runs its script goes with the script. What
+        was <strong>changed here</strong> since the pack gave it (a script edited, a mapper rewritten) is not in use for
+        that: it is yours now, so it <strong>stays</strong>, with what it needs of the pack, and is no pack's any more.
+        The dialog says so beside each (<em>keep</em>, and why). <em>Only take it off the list</em> removes nothing: the
+        pack leaves the list and everything it gave stays. <em>Nik built-in</em> is never uninstalled.
       </p>
       <h3 id="pack-format">The file</h3>
       <p>
@@ -3636,6 +3989,7 @@ id: acme-desk              # a lower-case letter, then lower-case letters, digit
 name: Acme Desk
 vendor: Acme               # the cards are grouped by it
 category: Ticketing
+tags: [ticketing, itsm]    # lower-case words, 8 at most: what the product is, what it is used on
 version: 1.2.0             # three numbers
 description: Tickets of Acme Desk as incidents, kept in step both ways.
 author: Acme
@@ -3724,8 +4078,7 @@ nik: "&gt;=6.0"                # the oldest Nik it is for</code></pre>
         </li>
         <li>
           The debugger goes forward: it does not undo what a node did, and a loop is debugged one item at a time as its
-          steps come. A pack is imported whole or not at all; there is no "uninstall" that takes back what a pack
-          brought.
+          steps come. A pack is imported whole or not at all.
         </li>
       </ul>
     </main>

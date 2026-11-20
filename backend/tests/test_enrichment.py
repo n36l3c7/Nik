@@ -800,7 +800,7 @@ def test_the_keys_kept_before_6_5_become_keys_of_instances_when_the_connectors_a
         assert [row.hint for row in db.scalars(select(IntegrationKey))] == ["0003"]
 
     # What could not be moved is the administrator's to remove.
-    analyst = make_key(admin, role="analyst")
+    analyst = make_key(admin, roles=["analyst"])
     assert admin.delete(f"/api/enrichment/old-keys/{refused}", headers=analyst).status_code == 403
     assert admin.delete(f"/api/enrichment/old-keys/{refused}").status_code == 204
     assert admin.delete(f"/api/enrichment/old-keys/{refused}").status_code == 404

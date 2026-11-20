@@ -8,6 +8,15 @@ looked up by ``<connector>.<command>``).
 
     @action("nik.add-note", group="Nik", name="Add a note", arguments=[…], outputs=[…])
     def add_note(call: Call) -> Result: …
+
+An output that is an object or a list says what is inside it with ``shape``, so
+the editor can offer ``create_incident.incident.id`` and not only the object:
+either the name of a shape the catalog carries once (``"incident"``,
+``"fields"``: see ``catalog.shapes``) or a list of ``{name, type, description}``
+whose names are paths under the output (``verdict``, ``[0].value``). A shape
+is a promise: every path in it is there whenever the action succeeds, in a dry
+run too (tests/test_automation_shapes.py holds each action to it; the first
+item of a list is there when the list has one).
 """
 
 from __future__ import annotations

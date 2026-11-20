@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  INSTANCE_TABS,
   SETTINGS_GROUPS,
   filterSettings,
+  instanceFromPath,
+  instancePath,
   isSettingsPath,
   resolveSection,
   settingsFromPath,
@@ -89,8 +92,6 @@ test('the search box narrows the sections by label, group and keywords', () => {
   assert.deepEqual(ids(filterSettings(all, 'automation')), [
     'contentPacks',
     'connectors',
-    'mappers',
-    'fetchStatus',
     'automationNetwork',
     'automationSwitch',
   ])
@@ -100,4 +101,46 @@ test('the search box narrows the sections by label, group and keywords', () => {
   // The group alone opens its first section: the packs, which bring the rest.
   assert.deepEqual(settingsFromPath('/settings/automation'), { id: 'contentPacks' })
   assert.deepEqual(filterSettings(all, 'zzz'), [])
+})
+
+test('fetching, the classifier and the mappers are set in the instance: their pages are gone and their addresses open Connectors', () => {
+  const all = ids(SETTINGS_GROUPS)
+  assert.equal(all.includes('mappers'), false)
+  assert.equal(all.includes('fetchStatus'), false)
+  // The addresses those pages had, in a bookmark or a notification of an older release.
+  assert.deepEqual(settingsFromPath('/settings/automation/fetch-status'), { id: 'connectors' })
+  assert.deepEqual(settingsFromPath('/settings/automation/classifiers-and-mappers'), { id: 'connectors' })
+  assert.equal(instanceFromPath('/settings/automation/fetch-status'), null)
+  // What used to find them in the search box finds Connectors.
+  const shown = visibleSettings(() => true)
+  for (const typed of ['fetch status', 'classifier', 'mappers', 'look-back', 'reset last run', 'paused']) {
+    assert.deepEqual(ids(filterSettings(shown, typed)).includes('connectors'), true, typed)
+  }
+  assert.deepEqual(ids(filterSettings(shown, 'mappers')), ['connectors'])
+})
+
+test('an address names an instance and the part of its form', () => {
+  assert.equal(instancePath('abc123'), '/settings/automation/connectors/abc123')
+  assert.equal(instancePath('abc123', 'connection'), '/settings/automation/connectors/abc123')
+  assert.equal(instancePath('abc123', 'fetch'), '/settings/automation/connectors/abc123/fetch')
+  assert.equal(instancePath('abc123', 'nope'), '/settings/automation/connectors/abc123')
+  assert.equal(instancePath('a b'), '/settings/automation/connectors/a%20b')
+  for (const tab of INSTANCE_TABS) {
+    assert.deepEqual(instanceFromPath(instancePath('abc123', tab)), { instanceId: 'abc123', tab })
+  }
+  assert.deepEqual(instanceFromPath('/settings/automation/connectors/a%20b/mappers/'), {
+    instanceId: 'a b',
+    tab: 'mappers',
+  })
+  assert.deepEqual(instanceFromPath('/settings/automation/connectors/abc123/nope'), {
+    instanceId: 'abc123',
+    tab: 'connection',
+  })
+  // The page alone, another section, another page: no instance.
+  assert.equal(instanceFromPath('/settings/automation/connectors'), null)
+  assert.equal(instanceFromPath('/settings/automation/connectors/'), null)
+  assert.equal(instanceFromPath('/settings/automation/content-packs/abc123'), null)
+  assert.equal(instanceFromPath('/incident/abc123'), null)
+  // The address of an instance is still the Connectors section.
+  assert.deepEqual(settingsFromPath('/settings/automation/connectors/abc123/fetch'), { id: 'connectors' })
 })

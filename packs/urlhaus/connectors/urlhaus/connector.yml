@@ -9,7 +9,7 @@
 # answers 200 and says what happened in "query_status" (ok, no_results,
 # invalid_url…): every command gives it as an output.
 #
-# The verdicts are those Nik's own enrichment gives: a URL that URLhaus
+# The verdicts are those Nik's own look-up code gave: a URL that URLhaus
 # tracks is malicious; a host on which it saw malware URLs is suspicious
 # (the host may be a compromised site); anything else is unknown. For a
 # file, URLhaus itself says that not every payload it collected is

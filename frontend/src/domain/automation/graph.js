@@ -4,7 +4,12 @@
  * as a version):
  *
  *   { nodes: [{ id, kind, name, position: { x, y }, config }],
- *     edges: [{ from, port?, to }], inputs: [...], outputs: [...] }
+ *     edges: [{ from, port?, to, route? }], inputs: [...], outputs: [...] }
+ *
+ * `route` is the way "Tidy up" gave a line between the nodes (layout.js):
+ * `{ points: [{ x, y }], label?: { x, y } }`. It belongs to the positions the
+ * layout gave: moving one of the two nodes of a line forgets it, and nobody
+ * edits it. The engine does not read it.
  *
  * Everything here is pure: an edit returns a new graph and leaves the old one
  * as it was, which is what undo and redo rely on.
@@ -158,7 +163,15 @@ export const emptyGraph = () => ({ nodes: [], edges: [] })
 
 const list = (value) => (Array.isArray(value) ? value : [])
 
-/** A graph with the parts the canvas relies on: lists, and a position for every node. */
+/**
+ * A graph with the parts the canvas relies on: lists, and a position for every node.
+ *
+ * An edge keeps what it joins, and the route the layout gave it when it has one. From 5.2 to
+ * 6.3 a line could be given corners by hand, kept in `edges[].points`; nobody draws corners any
+ * more (6.4), so those a stored graph still holds are left behind here, and are gone from the
+ * graph the next time it is saved. Nothing else ever read them: the engine does not, and a
+ * comparison of two graphs ignores them.
+ */
 export function normalise(graph) {
   const source = graph && typeof graph === 'object' ? graph : {}
   return {
@@ -173,9 +186,32 @@ export function normalise(graph) {
             ? node.position
             : { x: 40, y: 40 + index * 110 },
       })),
-    edges: list(source.edges).filter((edge) => edge && typeof edge.from === 'string' && typeof edge.to === 'string'),
+    edges: list(source.edges)
+      .filter((edge) => edge && typeof edge.from === 'string' && typeof edge.to === 'string')
+      .map(({ points: _corners, route, ...edge }) => {
+        const kept = cleanRoute(route)
+        return kept ? { ...edge, route: kept } : edge
+      }),
   }
 }
+
+export const MAX_ROUTE_POINTS = 60
+const isPoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y)
+
+/** A route as it is kept: its points (two at least) and where its words go; null for anything else. */
+export function cleanRoute(route) {
+  const points = route?.points
+  if (!Array.isArray(points) || points.length < 2 || points.length > MAX_ROUTE_POINTS || !points.every(isPoint)) {
+    return null
+  }
+  const whole = ({ x, y }) => ({ x: Math.round(x), y: Math.round(y) })
+  return { points: points.map(whole), ...(isPoint(route.label) ? { label: whole(route.label) } : {}) }
+}
+
+/** What tells a line apart: where it leaves, by which port, where it arrives. */
+export const lineKey = (from, port, to) => `${from}\u0000${port}\u0000${to}`
+
+const withoutRoute = ({ route: _route, ...edge }) => edge
 
 export const nodesOf = (graph) => new Map(list(graph?.nodes).map((node) => [node.id, node]))
 export const nodeOf = (graph, id) => list(graph?.nodes).find((node) => node.id === id) ?? null
@@ -369,16 +405,40 @@ export function removeNodes(graph, ids) {
   }
 }
 
-/** New positions for some nodes: `{ id: { x, y } }`. The same graph when nothing moved. */
+/**
+ * New positions for some nodes: `{ id: { x, y } }`. The same graph when nothing moved. A line
+ * of a node that moved forgets the route the layout gave it: the route was for where the node was.
+ */
 export function moveNodes(graph, positions) {
-  let moved = false
+  const moved = new Set()
   const nodes = graph.nodes.map((node) => {
     const next = positions[node.id]
     if (!next || (next.x === node.position?.x && next.y === node.position?.y)) return node
-    moved = true
+    moved.add(node.id)
     return { ...node, position: { x: Math.round(next.x), y: Math.round(next.y) } }
   })
-  return moved ? { ...graph, nodes } : graph
+  if (moved.size === 0) return graph
+  const stale = (edge) => edge.route && (moved.has(edge.from) || moved.has(edge.to))
+  return {
+    ...graph,
+    nodes,
+    edges: graph.edges.some(stale) ? graph.edges.map((edge) => (stale(edge) ? withoutRoute(edge) : edge)) : graph.edges,
+  }
+}
+
+/**
+ * Put a layout in the graph (layout.js, `tidy`): each node where it says, each line with the
+ * route it gives, and no route for a line it gives none. The same graph when that changes nothing.
+ */
+export function arrange(graph, { positions, routes = {} }) {
+  const placed = moveNodes(graph, positions)
+  const edges = placed.edges.map((edge) => {
+    const route = cleanRoute(routes[lineKey(edge.from, portOf(edge, graph), edge.to)])
+    return route ? { ...withoutRoute(edge), route } : withoutRoute(edge)
+  })
+  return JSON.stringify(edges) === JSON.stringify(graph.edges) && placed.nodes === graph.nodes
+    ? graph
+    : { ...placed, edges }
 }
 
 /** Why an edge cannot be drawn, or null. */
@@ -407,6 +467,19 @@ export function connect(graph, from, port, to) {
 export function disconnect(graph, from, port, to) {
   const edges = graph.edges.filter((edge) => !(edge.from === from && edge.to === to && portOf(edge, graph) === port))
   return edges.length === graph.edges.length ? graph : { ...graph, edges }
+}
+
+/** The graph without any line that arrives at, or leaves, one of these nodes. The same graph when there is none. */
+export function disconnectNodes(graph, ids) {
+  const chosen = new Set(ids)
+  const edges = graph.edges.filter((edge) => !chosen.has(edge.from) && !chosen.has(edge.to))
+  return edges.length === graph.edges.length ? graph : { ...graph, edges }
+}
+
+/** How many lines arrive at, or leave, one of these nodes. */
+export function linesOf(graph, ids) {
+  const chosen = new Set(ids)
+  return list(graph?.edges).filter((edge) => chosen.has(edge.from) || chosen.has(edge.to)).length
 }
 
 /**
@@ -443,7 +516,8 @@ export function copyOf(graph, ids) {
     nodes: graph.nodes.filter((node) => chosen.has(node.id)),
     edges: graph.edges
       .filter((edge) => chosen.has(edge.from) && chosen.has(edge.to))
-      .map((edge) => ({ ...edge, port: portOf(edge, graph) })),
+      // A copy is pasted somewhere else: the route of a line is not copied with it.
+      .map((edge) => ({ ...withoutRoute(edge), port: portOf(edge, graph) })),
   }
 }
 
@@ -485,6 +559,23 @@ export function paste(graph, copied, offset = { x: 40, y: 40 }) {
     ],
   }
   return { graph: next, ids: nodes.map((node) => node.id) }
+}
+
+/**
+ * Paste what was copied so that it lands at `position`: the node that was highest, and of those
+ * the leftmost, is put there, and the others keep their places around it. `{ graph, ids }`.
+ */
+export function pasteAt(graph, copied, position) {
+  const nodes = list(copied?.nodes)
+  if (nodes.length === 0) return { graph, ids: [] }
+  const first = nodes.reduce((found, node) => {
+    const [a, b] = [node.position ?? { x: 0, y: 0 }, found.position ?? { x: 0, y: 0 }]
+    return a.y < b.y || (a.y === b.y && a.x < b.x) ? node : found
+  })
+  return paste(graph, copied, {
+    x: Math.round(position.x - (first.position?.x ?? 0)),
+    y: Math.round(position.y - (first.position?.y ?? 0)),
+  })
 }
 
 /** True when two graphs are the same playbook (what decides "draft changed"). */

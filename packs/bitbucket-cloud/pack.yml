@@ -2,7 +2,8 @@ id: bitbucket-cloud
 name: Bitbucket Cloud
 vendor: Atlassian
 category: Code and knowledge
-version: 1.0.0
+tags: [code]
+version: 1.0.1
 description: >-
   Block lists kept as a file in a Bitbucket Cloud repository: the connector, and the playbook that adds a malicious indicator to the list with a commit.
 author: Nik

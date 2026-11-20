@@ -2,9 +2,10 @@ id: abuseipdb
 name: AbuseIPDB
 vendor: AbuseIPDB
 category: Threat intelligence
-version: 1.0.0
+tags: [threat-intelligence, ip]
+version: 1.1.0
 description: >-
   What AbuseIPDB's users reported of an IP address or a network, the blacklist
   of the most reported addresses, and reporting an address.
 author: Nik
-nik: ">=6.1"
+nik: ">=6.5"

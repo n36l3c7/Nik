@@ -17,8 +17,8 @@
 # request over it is answered 429, which is tried again; a poll waits as long
 # as a Retry-After header says.
 #
-# The verdict of the two reputation commands is the one Nik's own enrichment
-# gives for this source. A result counts as judged malicious when its
+# The verdict of the two reputation commands is the one Nik's own look-up code
+# gave for this source. A result counts as judged malicious when its
 # verdicts.malicious is set (what the search documents) or its
 # verdicts.overall.malicious is (the shape of the result API, which older
 # answers of the search had). One with both counts once: the results where

@@ -11,6 +11,7 @@ import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, SeverityTag, StatusTag } from '../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import LayoutWidget from '../tabs/summary/LayoutWidgets.jsx'
+import IncidentTags from '../incident/IncidentTags.jsx'
 
 /*
  * ============================================================================
@@ -140,9 +141,10 @@ function Linked({ incidentId, onOpen }) {
  *   type: object | null,              // its type of incident
  *   onClose: () => void,
  *   onOpen: (incidentId: string) => void,
+ *   onTag?: (tag: string) => void,    // a click on a tag: the list is filtered by it
  * }} props
  */
-export default function QuickView({ row, type, onClose, onOpen }) {
+export default function QuickView({ row, type, onClose, onOpen, onTag }) {
   const { currentUser, can } = useAuth()
   const { setIncidentTriage, askClose } = useIncidents()
   const pane = useResizablePane('incidents.quick', { initial: 440, min: 340, max: 720, edge: 'left' })
@@ -224,6 +226,7 @@ export default function QuickView({ row, type, onClose, onOpen }) {
               </Badge>
             )}
           </div>
+          <IncidentTags incidentId={row.id} tags={row.tags} onPick={onTag} />
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">

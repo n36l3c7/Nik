@@ -68,7 +68,7 @@ Nothing here needs a paid plan.
 
 `get-domain` and `get-ip` are the reputation commands for a domain and an
 address. They inform; they do not judge, with one exception, the one Nik's
-own enrichment makes: a domain registered less than 30 days ago is
+own look-up code made: a domain registered less than 30 days ago is
 *suspicious*. `get-domain` gives the age in whole days (`age_days`) and says
 it in its summary: `registered 16 days ago (2026-12-30), Example Registrar`
 for a young domain, `registered 1995-08-14, Example Registrar` otherwise.

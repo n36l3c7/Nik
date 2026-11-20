@@ -70,9 +70,6 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 # The roles an admin can give, in the order they are shown.
 ROLES: tuple[str, ...] = ("viewer", "analyst", "playbooks", "connectors", "rules", "audit", "dashboards", "admin")
 
-# The value of the single ``role`` field of releases before 4.0, most able first.
-_LEGACY_ORDER = ("admin", "analyst", "viewer")
-
 
 class RoleError(ValueError):
     """A list of roles that cannot be stored; the message is safe to show."""
@@ -105,34 +102,3 @@ def stored_roles(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [role for role in value if isinstance(role, str) and role in ROLE_PERMISSIONS]
-
-
-def roles_from_legacy(role: str | None, scopes: Iterable[str] | None = None) -> list[str]:
-    """The roles of an account of a release before 4.0.
-
-    ``role`` was 'admin' or 'analyst'; an API key also had scopes, and an
-    analyst key without the write scope could only read.
-    """
-    if role == "admin":
-        return ["admin"]
-    if role == "viewer":
-        return ["viewer"]
-    if scopes is not None and "write" not in {s.strip() for s in scopes}:
-        return ["viewer"]
-    return ["analyst"]
-
-
-def legacy_role(roles: Iterable[str] | None) -> str:
-    """The single ``role`` older API clients read: the most able of the three
-    they know, or the first role when the account has none of them."""
-    held = list(roles or ())
-    for name in _LEGACY_ORDER:
-        if name in held:
-            return name
-    return held[0] if held else "viewer"
-
-
-def legacy_scopes(roles: Iterable[str] | None) -> list[str]:
-    """The scopes older API clients read on a key, from what its roles grant."""
-    granted = permissions_of(roles)
-    return [scope for scope in (READ, WRITE, ADMIN) if scope in granted]

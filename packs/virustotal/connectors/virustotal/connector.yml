@@ -12,7 +12,7 @@
 # VT Monitor, group administration): the API refuses a key that
 # lacks the privilege.
 #
-# Verdicts are derived as Nik's own enrichment does: 3 engines or more that
+# Verdicts are derived as Nik's own look-up code did: 3 engines or more that
 # say malicious make it malicious; fewer, or any that says suspicious, make
 # it suspicious; otherwise harmless when an engine says so, unknown when
 # VirusTotal does not have the indicator.

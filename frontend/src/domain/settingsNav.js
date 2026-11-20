@@ -69,7 +69,7 @@ export const SETTINGS_GROUPS = [
         slug: 'threat-intelligence',
         label: 'Threat intelligence',
         permission: 'admin',
-        keywords: 'providers api keys virustotal abuseipdb reputation lookups retention automatic enrichment',
+        keywords: 'sources connectors instances reputation lookups retention automatic enrichment keys virustotal',
       },
     ],
   },
@@ -165,22 +165,11 @@ export const SETTINGS_GROUPS = [
         slug: 'connectors',
         label: 'Connectors',
         permission: 'connectors.manage',
+        // Fetching, the classifier and the mappers are set in the instance (6.4): their words lead here.
         keywords:
-          'integrations yaml file commands products servicenow jira upload samples instances connections credentials address token test systems',
-      },
-      {
-        id: 'mappers',
-        slug: 'classifiers-and-mappers',
-        label: 'Classifiers and mappers',
-        permission: 'connectors.manage',
-        keywords: 'mapping fields vendor incoming outgoing fetch alerts type classify sample expression',
-      },
-      {
-        id: 'fetchStatus',
-        slug: 'fetch-status',
-        label: 'Fetch status',
-        permission: 'connectors.manage',
-        keywords: 'alerts incoming polling failing paused items incomplete mirror queue turn on',
+          'integrations yaml file commands products servicenow jira upload samples instances connections credentials address token test systems ' +
+          'fetch status alerts incoming polling interval how often first fetch look-back lookback reset last run failing paused items incomplete ' +
+          'classifiers classify type mappers mapping fields vendor outgoing sample expression mirror queue',
       },
       {
         id: 'automationNetwork',
@@ -231,6 +220,13 @@ export const SETTINGS_GROUPS = [
         keywords: 'disk space free largest files mailboxes captures',
       },
       {
+        id: 'workers',
+        slug: 'workers',
+        label: 'Workers',
+        permission: 'admin',
+        keywords: 'health status down answering analyzer capa browser sandbox pcap document containers notifications',
+      },
+      {
         id: 'backup',
         slug: 'backup',
         label: 'Backup',
@@ -262,6 +258,35 @@ export function settingsPath(id) {
 
 export const isSettingsPath = (pathname) => /^\/settings(\/|$)/.test(String(pathname ?? ''))
 
+const MOVED_TO_CONNECTORS = new Set(['connections', 'fetch-status', 'classifiers-and-mappers'])
+
+/** The parts of the form of an instance, in the order of its tabs. */
+export const INSTANCE_TABS = ['connection', 'keys', 'fetch', 'classifier', 'mappers']
+
+/** The address that opens an instance on Connectors, on one part of its form. */
+export function instancePath(instanceId, tab = '') {
+  const base = `${settingsPath('connectors')}/${encodeURIComponent(instanceId)}`
+  return INSTANCE_TABS.includes(tab) && tab !== 'connection' ? `${base}/${tab}` : base
+}
+
+/**
+ * The instance an address of Connectors names, and the part of its form:
+ * `{ instanceId, tab }`, or null when it names none (the page alone, or another section).
+ */
+export function instanceFromPath(pathname) {
+  const path = String(pathname ?? '').split('?')[0]
+  if (settingsFromPath(path)?.id !== 'connectors') return null
+  const [, , , slug, instanceId, tab] = path.replace(/\/+$/, '').split('/')
+  if (slug !== 'connectors' || !instanceId) return null
+  let id = instanceId
+  try {
+    id = decodeURIComponent(instanceId)
+  } catch {
+    // A stray % in the address: taken as it is written.
+  }
+  return { instanceId: id, tab: INSTANCE_TABS.includes(tab) ? tab : 'connection' }
+}
+
 /**
  * What a path asks for: null when it is not the Settings page; otherwise
  * `{ id }` with the section's id, or `{ id: null }` for /settings alone or an
@@ -273,8 +298,9 @@ export function settingsFromPath(pathname) {
   const [, , group, slug] = path.replace(/\/+$/, '').split('/')
   const section = SECTIONS.find((candidate) => candidate.group === group && candidate.slug === slug)
   if (section) return { id: section.id }
-  // An address of 4.x: the connections are the instances of the connectors now.
-  if (group === 'automation' && slug === 'connections') return { id: 'connectors' }
+  // An address of 4.x: the connections are the instances of the connectors now. And the pages that
+  // 6.4 moved into the instance: fetching, the classifier and the mappers are set there.
+  if (group === 'automation' && MOVED_TO_CONNECTORS.has(slug)) return { id: 'connectors' }
   // /settings/<group>: its first section. An id of an older link (/settings/audit) is understood too.
   const first = SECTIONS.find((candidate) => candidate.group === group)
   return { id: first?.id ?? (BY_ID.has(group) ? group : null) }

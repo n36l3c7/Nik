@@ -7,15 +7,20 @@ import {
   capabilities,
   connectorRows,
   instancesText,
+  instanceTabs,
   problemLines,
 } from '../../../domain/automation/instances.js'
+import { stateBadge } from '../../../domain/fetch.js'
+import { instanceFromPath, instancePath, settingsPath } from '../../../domain/settingsNav.js'
 import { formatRelative } from '../../../lib/time.js'
-import { setPath } from '../../../lib/location.js'
+import { onLocationChange, setPath } from '../../../lib/location.js'
 import { PLAYGROUND_ROOT, leaveLine, tryLine } from '../../../domain/playground.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
 import InstancePane from './InstancePane.jsx'
+import MirrorQueue from './MirrorQueue.jsx'
+import Switch from './Switch.jsx'
 
 /*
  * Automation → Connectors (the role Connectors, or an admin).
@@ -29,35 +34,14 @@ import InstancePane from './InstancePane.jsx'
  *
  * Adding a file checks it first: what is wrong is listed with the line it is
  * on, and nothing is installed until the file is right.
+ *
+ * An instance is opened beside the list, in a form with tabs (InstancePane.jsx):
+ * its connection and its keys and, for a connector that fetches, how it
+ * fetches, its classifier and its mappers. The address names the instance and
+ * the tab (/settings/automation/connectors/<instance>/<tab>), so a link, such
+ * as the one of a notification that an instance is failing, opens it there. On
+ * the tabs that are tables the form takes the width of the page.
  */
-
-function Switch({ checked, onChange, label, disabled = false }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      title={checked ? 'On: click to turn it off' : 'Off: click to turn it on'}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={[
-        'relative h-4 w-8 shrink-0 border transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        'disabled:cursor-not-allowed disabled:opacity-60',
-        checked ? 'border-accent bg-accent-soft' : 'border-line bg-sunken',
-      ].join(' ')}
-    >
-      <span
-        aria-hidden="true"
-        className={[
-          'absolute top-px h-3 w-3 transition-all',
-          checked ? 'left-[17px] bg-accent' : 'left-px bg-fg-subtle',
-        ].join(' ')}
-      />
-    </button>
-  )
-}
 
 /** The place of a connector's logo: one size for all, empty until the connector brings one. */
 function LogoSlot({ connector }) {
@@ -88,7 +72,9 @@ export default function ConnectorsSection() {
   const [upload, setUpload] = useState(null) // { fileName, source, problems, connector }
   const [shown, setShown] = useState(null) // a connector with its source
   const [removing, setRemoving] = useState(null)
-  const [editing, setEditing] = useState(null) // { connector, instance: object | null }
+  const [editing, setEditing] = useState(null) // { connector, instance: object | null, tab }
+  // The instance and the tab the address names: a link opens the form there.
+  const [asked, setAsked] = useState(() => instanceFromPath(window.location.pathname))
   const [deleting, setDeleting] = useState(null)
   const [testing, setTesting] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -115,6 +101,30 @@ export default function ConnectorsSection() {
     () => connectorRows(connectors, instances, { query, filter }),
     [connectors, instances, query, filter],
   )
+
+  useEffect(() => onLocationChange(() => setAsked(instanceFromPath(window.location.pathname))), [])
+  useEffect(() => {
+    if (!asked || !connectors || !instances) return
+    const instance = instances.find((item) => item.id === asked.instanceId)
+    const connector = instance && connectors.find((item) => item.id === instance.connector)
+    if (!connector) return
+    setEditing((current) =>
+      current?.instance?.id === instance.id
+        ? current.tab === asked.tab
+          ? current
+          : { ...current, tab: asked.tab }
+        : { connector, instance, tab: asked.tab },
+    )
+  }, [asked, connectors, instances])
+
+  /** Open the form of an instance on a tab (a new one when `instance` is null), or close it (`null`). */
+  const edit = (next) => {
+    setEditing(next ? { tab: 'connection', ...next } : null)
+    setPath(next?.instance ? instancePath(next.instance.id, next.tab) : settingsPath('connectors'), { replace: true })
+  }
+  const wide =
+    editing !== null &&
+    Boolean(instanceTabs(editing.connector, editing.instance).find((item) => item.id === editing.tab)?.wide)
 
   const said = (message) => {
     setError(null)
@@ -185,7 +195,7 @@ export default function ConnectorsSection() {
       said(`${removing.name} was removed, with its instances.`)
       setRemoving(null)
       setShown(null)
-      setEditing(null)
+      edit(null)
       load()
     } catch (failure) {
       setRemoving(null)
@@ -230,7 +240,7 @@ export default function ConnectorsSection() {
     try {
       await api.del(`/automation/instances/${encodeURIComponent(deleting.id)}`)
       said(`${deleting.name} was deleted.`)
-      setEditing(null)
+      edit(null)
       load()
     } catch (failure) {
       setError(failure.message)
@@ -243,7 +253,7 @@ export default function ConnectorsSection() {
 
   return (
     <section className="flex flex-col gap-0 lg:flex-row lg:items-start">
-      <div className="min-w-0 flex-1 space-y-5 lg:pr-5">
+      <div className={`min-w-0 flex-1 space-y-5 lg:pr-5 ${wide ? 'hidden' : ''}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -345,7 +355,7 @@ export default function ConnectorsSection() {
                     connector.readable && {
                       label: 'Add instance',
                       icon: Plus,
-                      onSelect: () => setEditing({ connector, instance: null }),
+                      onSelect: () => edit({ connector, instance: null }),
                     },
                   ],
                   copy: [{ label: 'Copy the id', text: connector.id }],
@@ -392,7 +402,7 @@ export default function ConnectorsSection() {
                   icon={Plus}
                   disabled={!connector.readable}
                   aria-label={`Add an instance of ${connector.name}`}
-                  onClick={() => setEditing({ connector, instance: null })}
+                  onClick={() => edit({ connector, instance: null })}
                 >
                   Add instance
                 </Button>
@@ -413,7 +423,7 @@ export default function ConnectorsSection() {
                             {
                               label: 'Edit',
                               icon: Pencil,
-                              onSelect: () => setEditing({ connector, instance }),
+                              onSelect: () => edit({ connector, instance }),
                             },
                             { label: 'Test the instance', icon: Zap, onSelect: () => test(instance) },
                             {
@@ -443,6 +453,17 @@ export default function ConnectorsSection() {
                         {instance.host ?? '—'}
                       </span>
                       <LastTest test={instance.lastTest} />
+                      {instance.fetch?.enabled && (
+                        <button
+                          type="button"
+                          aria-label={`Fetching of ${instance.name}: ${stateBadge(instance.fetch).label}`}
+                          title="How it fetches, and how it goes"
+                          onClick={() => edit({ connector, instance, tab: 'fetch' })}
+                          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                          <Badge color={stateBadge(instance.fetch).color}>{stateBadge(instance.fetch).label}</Badge>
+                        </button>
+                      )}
                       <span className="flex gap-1">
                         <Button
                           variant="secondary"
@@ -459,7 +480,7 @@ export default function ConnectorsSection() {
                           size="xs"
                           icon={Pencil}
                           aria-label={`Edit ${instance.name}`}
-                          onClick={() => setEditing({ connector, instance })}
+                          onClick={() => edit({ connector, instance })}
                         />
                       </span>
                       {instance.lastTest && !instance.lastTest.ok && (
@@ -472,6 +493,7 @@ export default function ConnectorsSection() {
             </li>
           ))}
         </ul>
+        <MirrorQueue />
       </div>
 
       {editing && (
@@ -480,16 +502,14 @@ export default function ConnectorsSection() {
           connector={editing.connector}
           instance={editing.instance}
           testing={testing !== null}
-          onClose={() => setEditing(null)}
+          tab={editing.tab}
+          onTab={(tab) => edit({ ...editing, tab })}
+          wide={wide}
+          onClose={() => edit(null)}
           onTest={test}
           onDelete={setDeleting}
-          onKeys={(saved) => {
-            // Its keys were saved: the pane stays on the instance, with what the server says of it now.
-            setEditing((open) => (open ? { ...open, instance: saved } : open))
-            load()
-          }}
           onSaved={(saved) => {
-            setEditing(null)
+            edit(null)
             said(`${saved.name} is saved. Test it to see that ${saved.connectorName} answers.`)
             load()
           }}

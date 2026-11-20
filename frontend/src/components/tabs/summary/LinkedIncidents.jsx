@@ -3,6 +3,7 @@ import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatNumber } from '../../../domain/incidentName.js'
 import { linkedWhy } from '../../../domain/linked.js'
 import { api } from '../../../services/api.js'
+import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { SeverityTag, StatusTag } from '../../ui/index.js'
 
 /*
@@ -28,6 +29,7 @@ import { SeverityTag, StatusTag } from '../../ui/index.js'
  */
 export default function LinkedIncidents({ incidentId, onOpen = null, compact = false }) {
   const { selectIncident } = useIncidents()
+  const menu = useObjectMenu()
   const [state, setState] = useState({ id: null, found: null, error: null })
 
   useEffect(() => {
@@ -54,7 +56,21 @@ export default function LinkedIncidents({ incidentId, onOpen = null, compact = f
     <div className="flex h-full flex-col gap-1">
       <ul aria-label="Linked incidents" className="min-h-0 flex-1 overflow-y-auto">
         {incidents.map((item) => (
-          <li key={item.id} className="border-b border-line-soft last:border-b-0">
+          <li
+            key={item.id}
+            className="border-b border-line-soft last:border-b-0"
+            onContextMenu={(event) =>
+              menu(event, {
+                title: item.name,
+                actions: [{ label: 'Open', onSelect: () => open(item.id) }],
+                link: `/incident/${encodeURIComponent(item.id)}`,
+                copy: [
+                  { label: 'Copy the name', text: item.name },
+                  { label: 'Copy the number', text: formatNumber(item.number) },
+                ],
+              })
+            }
+          >
             <button
               type="button"
               onClick={() => open(item.id)}

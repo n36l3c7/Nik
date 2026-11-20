@@ -23,7 +23,7 @@ def _incident(client, key, incident_id):
 
 
 def test_file_analysed_on_its_own_then_linked(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     data = fake_pe(payload=STRINGS_PAYLOAD)
     sha = hashlib.sha256(data).hexdigest()
 
@@ -74,7 +74,7 @@ def test_file_analysed_on_its_own_then_linked(admin: TestClient):
 
 
 def test_tags_are_normalised_and_searchable(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     artifact = admin.post("/api/artifacts/files", headers=key, files={"file": ("a.bin", b"plain text file")}).json()
     r = admin.put(
         f"/api/artifacts/{artifact['id']}/tags", headers=key, json={"tags": ["Emotet", "campaign:q4", "emotet", "no!"]}
@@ -87,7 +87,7 @@ def test_tags_are_normalised_and_searchable(admin: TestClient):
 
 
 def test_mail_attachment_becomes_a_related_file(admin: TestClient, no_dns):  # noqa: F811
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     r = admin.post("/api/artifacts/mails", headers=key, files={"file": ("phish.eml", phishing_message())})
     assert r.status_code == 201, r.text
     mail = r.json()
@@ -156,7 +156,7 @@ def test_deleting_an_incident_keeps_the_artifacts_another_one_references(admin: 
 
 
 def test_artifacts_need_a_write_key_and_a_known_id(admin: TestClient):
-    read_only = make_key(admin, scopes=["read"])
+    read_only = make_key(admin, roles=["viewer"])
     assert admin.post("/api/artifacts/files", headers=read_only, files={"file": ("a", b"x")}).status_code == 403
     assert admin.get("/api/artifacts", headers=read_only).status_code == 200
     key = make_key(admin)

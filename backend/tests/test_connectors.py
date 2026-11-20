@@ -337,7 +337,8 @@ def test_a_connector_says_how_it_brings_alerts_in_and_keeps_an_object_in_step():
         "mirror.comments.add",
     ]
     shown = cn.summary(connector)
-    assert shown["fetch"] == {"intervalSeconds": 120, "firstFetch": "3 days"}
+    # What an instance starts with; this one goes on from what it kept, not from a time.
+    assert shown["fetch"] == {"intervalSeconds": 120, "firstFetch": "3 days", "lookbackMinutes": 0, "byTime": False}
     assert shown["mirror"] == {"intervalSeconds": 300, "out": True, "comments": True, "commentsOut": True}
     assert shown["schema"]["incoming"][1] == {
         "name": "sys_created_on",
@@ -353,13 +354,51 @@ def test_a_connector_says_how_it_brings_alerts_in_and_keeps_an_object_in_step():
     assert cn.first_fetch_seconds("soon") is None and cn.first_fetch_seconds("90 days") is None
 
 
+def test_a_fetch_by_time_asks_from_the_moment_nik_works_out():
+    # A request that reads "since" is a fetch by time: the look-back of an instance applies to it.
+    by_time = (
+        FETCHING.replace("sys_created_on>{{ state.last_time }}", "sys_created_on>={{ since.iso }}")
+        .replace('  first_state:\n    last_time: "{{ first.iso }}"\n', "")
+        .replace("  next_state:\n    last_time: \"{{ items | last | get('sys_created_on') }}\"\n", "")
+        .replace("  first_fetch: 3 days\n", "  first_fetch: 3 days\n  lookback_minutes: 5\n", 1)
+        .replace('  occurred: "{{ item.sys_created_on }}"\n', '  item_time: "{{ item.sys_created_on }}"\n')
+    )
+    fetch = cn.load(by_time).fetch
+    assert (fetch.by_time, fetch.lookback_minutes, fetch.item_time) == (True, 5, "{{ item.sys_created_on }}")
+    assert (fetch.first_state, fetch.next_state) == ({}, {})
+    said = cn.summary(cn.load(by_time))["fetch"]
+    assert said == {"intervalSeconds": 120, "firstFetch": "3 days", "lookbackMinutes": 5, "byTime": True}
+    # One that goes on from what it kept is not, and starts with no look-back.
+    kept = cn.load(FETCHING).fetch
+    assert (kept.by_time, kept.lookback_minutes, kept.item_time) == (False, 0, None)
+
+    def messages(text: str) -> list[str]:
+        return [problem.message for problem in _raised(text)]
+
+    assert any(
+        "less than or equal to 1440" in message
+        for message in messages(by_time.replace("minutes: 5\n", "minutes: 5000\n"))
+    )
+    # The time of an item is read from the item; a name of the state that starts with _ is kept for Nik.
+    assert any(
+        '"response" cannot be read' in message
+        for message in messages(by_time.replace("{{ item.sys_created_on }}", "{{ response.x }}"))
+    )
+    assert any(
+        "a name of the state does not start with _" in message
+        for message in messages(FETCHING.replace("  next_state:\n    last_time:", "  next_state:\n    _since:"))
+    )
+
+
 def test_what_is_wrong_with_a_fetch_or_a_mirror_is_said():
     def messages(text: str) -> list[str]:
         return [problem.message for problem in _raised(text)]
 
     # The request of a fetch reads the state and the first moment, never an answer or an argument.
     early = FETCHING.replace("{{ state.last_time }}", "{{ response.x }}")
-    assert messages(early) == ['"response" cannot be read in what is sent: only config, first, now, secret, state']
+    assert messages(early) == [
+        '"response" cannot be read in what is sent: only config, first, now, secret, since, state'
+    ]
     assert any(
         '"state" cannot be read' in message
         for message in messages(FETCHING.replace('last_time: "{{ first.iso }}"', 'last_time: "{{ state.x }}"'))
