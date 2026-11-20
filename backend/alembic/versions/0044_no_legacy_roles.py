@@ -11,7 +11,7 @@ the upgrade able to do nothing. Columns are dropped only where they exist.
 A downgrade puts the columns back and fills them from the roles.
 
 Revision ID: 0044_no_legacy_roles
-Revises: 0041_saved_filters
+Revises: 0043_instance_fetch
 Create Date: 2026-11-20
 """
 
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0044_no_legacy_roles"
-down_revision = "0041_saved_filters"
+down_revision = "0043_instance_fetch"
 branch_labels = None
 depends_on = None
 

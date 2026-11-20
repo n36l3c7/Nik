@@ -264,6 +264,47 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-64">Upgrading to 6.4</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. Migrations
+        <code>0043_instance_fetch</code> (one column) and <code>0044_no_legacy_roles</code> (three columns dropped) run
+        at start.
+      </p>
+      <ul>
+        <li>
+          <strong>Before updating: <code>role</code> and <code>scopes</code> are gone.</strong> Change any script or
+          integration that creates accounts or keys with <code>role</code> or <code>scopes</code> to send
+          <code>roles</code> (<code>role: admin</code> becomes <code>["admin"]</code>, <code>analyst</code> becomes
+          <code>["analyst"]</code>, a key with only the <code>read</code> scope becomes <code>["viewer"]</code>), and
+          any that reads them to read <code>roles</code> or <code>permissions</code>. A request that still sends one is
+          refused with 400. Existing accounts and keys keep their roles. A backup exported by 6.4 no longer carries
+          <code>role</code>; a backup made before 4.0 is still restored;
+        </li>
+        <li>
+          a playbook that uses <code>forward</code> or <code>reply</code> of the Mail connector needs
+          <em>E-mail bodies</em>, <em>E-mail addresses</em> and <em>Subjects</em> opened for it by an administrator, in
+          the settings of the playbook; until then the step says what was held;
+        </li>
+        <li>
+          the first cycle of every instance of ServiceNow, Jira and SentinelOne reads again from its first fetch (3
+          days; 1 for SentinelOne SIEM). What was imported already is skipped: nothing is to be set again;
+        </li>
+        <li>
+          <em>Fetch status</em> and <em>Classifiers and mappers</em> are tabs of an instance now (<em
+            >Settings → Automation → Connectors</em
+          >); their old addresses open that page;
+        </li>
+        <li>
+          a pack is not uninstalled while an instance of it is enabled, a playbook of it is on or incidents have a type
+          of it: turn those off first;
+        </li>
+        <li>
+          Shift + right-click no longer shows the browser's menu. Inside the isolated previews (the body of an e-mail, a
+          response, a report) the browser still answers the right button: those frames are closed to the page on
+          purpose;
+        </li>
+        <li>people who chose their own columns for the list of incidents add <em>Tags</em> from <em>Columns…</em>.</li>
+      </ul>
       <h4 id="upgrading-to-63">Upgrading to 6.3</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. No migration. A mailbox that is listened to

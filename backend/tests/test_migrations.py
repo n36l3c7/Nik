@@ -1002,18 +1002,18 @@ def test_migration_0044_drops_the_single_role_and_the_scopes_once_every_row_has_
         with engine.connect() as conn:
             return {c["name"] for c in sa.inspect(conn).get_columns(table)}
 
-    command.stamp(cfg, "0041_saved_filters")
+    command.stamp(cfg, "0043_instance_fetch")
     command.upgrade(cfg, "0044_no_legacy_roles")
     assert "role" not in columns("users") and {"role", "scopes"}.isdisjoint(columns("api_keys"))
     assert roles("users", "username") == {"root": ["admin"], "anna": ["viewer", "audit"], "late": ["admin"]}
     assert roles("api_keys", "label") == {"adm": ["admin"], "rw": ["analyst"], "ro": ["viewer"], "late": ["viewer"]}
 
-    command.stamp(cfg, "0041_saved_filters")
+    command.stamp(cfg, "0043_instance_fetch")
     command.upgrade(cfg, "0044_no_legacy_roles")  # again: the columns are gone, nothing to do
     assert roles("users", "username")["anna"] == ["viewer", "audit"]
 
     # A downgrade puts the old columns back, filled from the roles.
-    command.downgrade(cfg, "0041_saved_filters")
+    command.downgrade(cfg, "0043_instance_fetch")
     with engine.connect() as conn:
         assert dict(conn.execute(sa.text("SELECT username, role FROM users")).all()) == {
             "root": "admin",

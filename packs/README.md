@@ -10,6 +10,9 @@ The workflow *Packs* publishes these folders as the catalogue a Nik reads
 signature). A change to a pack raises the `version` of its `pack.yml`: a Nik
 offers an update only for a higher version.
 
+`tags` in `pack.yml` (lower case words: what the product is, what it works on)
+are what the page of the packs filters by, beside the category.
+
 Every connector here was written from what its vendor publishes about its
 API and is tested against recorded exchanges
 (`backend/tests/data/connectors/<id>/`), not against a real system: each says

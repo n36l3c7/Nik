@@ -40,6 +40,50 @@
       </p>
 
       <section class="release">
+        <h3>6.4.0 <span class="date">2026-11-20</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Incidents have tags</strong>: chips under the name and in the
+            quick view, a column and a chip in the list, <code>tag:</code> in queries, two playbook actions (<a
+              href="guide.html#incident-tags"
+              >Tags</a
+            >). <strong>Every field of an incident can be queried</strong>, the custom ones too.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Nik's menu on every page</strong>: the right button opens it
+            everywhere and the browser's own does not appear; cut, copy and paste in text fields, the actions of what is
+            under the pointer, and a general section.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The playbook editor</strong> has a right-click menu and lists
+            the fields inside what a node gives; <em>Tidy up</em> never draws a line over a node.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Fetching is set in the instance</strong>: how often, the first
+            fetch, a look-back and <em>Reset last run</em>, with the classifier and the mappers as tabs of the same form
+            (<a href="automation.html#fetching">Fetching</a>).
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Content packs in bulk</strong>, with a filter by tag; a pack in
+            use is not uninstalled.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Administrators are told when a worker is down</strong> and when
+            it is back; a playbook node <strong>scans an address</strong> with the isolated browser (<a
+              href="automation.html#scan-an-address"
+              >Scan an address</a
+            >).
+          </li>
+          <li>
+            <span class="tag changed">changed</span> <strong>Breaking:</strong> the old <code>role</code> and
+            <code>scopes</code> of accounts and API keys are removed; <code>forward</code> and <code>reply</code> of the
+            Mail connector are judged by the data guard (<a href="deployment.html#upgrading-to-64">Upgrading to 6.4</a
+            >).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.3.0 <span class="date">2026-11-19</span></h3>
         <ul>
           <li>

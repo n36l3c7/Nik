@@ -7,6 +7,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.4.0] - 2026-11-20
+
+The playbook editor, the fields and tags of an incident, and an instance
+that holds everything about its connector: its keys, how it fetches, its
+classifier and its mappers. Nik's own menu answers the right button on
+every page.
+
+### Added
+
+- **Incidents have tags.** The field that was called Labels is Tags: chips
+  under the name of the incident and in the quick view, changed where they
+  are read ("+" offers the tags in use, Enter adds, Backspace removes the
+  last, × removes one) and saved at once with the usual trace. A tag
+  follows the rules it has on indicators and artifacts (lower case, 40
+  characters, 12 on an incident); the field is still named `labels` in the
+  API, types, mappers and packs, and labels written before stay as they
+  are. The list has a *Tags* column by default and a *Tag* chip that lists
+  the tags in use with how many incidents carry each (several tags keep
+  the incidents that carry all of them); a click on a tag filters by it,
+  and a row's menu has *Add a tag…*. `tag:` and `tags:` work in queries as
+  `labels:` does and complete with the tags in use. Two playbook actions,
+  *Tag the incident* and *Take tags off the incident*, and
+  `{{ incident.tags }}` in expressions; the rows of
+  `GET /api/incidents?view=summary` carry `tags`.
+- **Every field of an incident can be queried**, the custom ones too, by
+  its name or as `field.<name>`, in the list, in saved filters and in the
+  widgets of a dashboard.
+- **Nik's menu on every page.** A right-click opens Nik's menu everywhere
+  and the browser's own does not appear, with Shift held down too. The
+  menu holds what is under the pointer (the actions of the object; cut,
+  copy, paste and select all in a text field, with undo and redo in a code
+  editor; copy and look-up of selected text; the address of a link; a cell
+  or a row of a table), then what the page offers, then *Search*,
+  *Keyboard shortcuts*, *Back* and *Copy the address of this page*. The
+  menu key and Shift+F10 open it for what has the focus. More objects have
+  a menu of their own: notifications, linked incidents, runs and their
+  steps, saved filters, rows and lists of indicators, the cards of packs,
+  mail attachments, the objects exported from a capture, the fields of a
+  packet.
+- **The playbook editor has a right-click menu** for a node, a line and
+  the empty canvas, with a dialog that adds a node where the pointer is.
+  The value picker lists the fields inside what a node gives (the `id`,
+  `name` and the other fields of the incident `create-incident` made),
+  from shapes the server declares.
+- **Fetching is set in the instance.** The form of an instance has the
+  tabs *Connection*, *Keys*, *Fetch*, *Classifier* and *Mappers*, with one
+  *Save*. *Fetch* holds the switch, how often, how far back the first
+  time, and a **look-back**: each cycle asks from the newest time it saw
+  less the look-back, and what Nik already has is skipped by its id. It
+  shows the state, *Fetch now*, *Resume*, *What it fetched…* and **Reset
+  last run…**, which makes the next cycle start from the first fetch again
+  without making anything twice (`POST /api/fetch/{id}/reset`). The
+  connectors ServiceNow, Jira Cloud and Data Center (version 4) and
+  SentinelOne EDR and SIEM (version 3) ask by the time the engine gives
+  them (`since`).
+- **Content packs in bulk.** Packs are chosen with checkboxes and
+  installed, updated or uninstalled together, after one plan that says
+  what each will do. The page has a larger search, a filter by tag (`tags`
+  in `pack.yml`) and a box that hides what is installed.
+- **Administrators are told when a worker is down.** When the automation
+  worker or an analysis worker has not answered for two minutes, every
+  administrator gets one notification saying which and since when, and one
+  more when it answers again, with how long it was down. *Settings →
+  System → Workers* (`GET /api/workers`) shows the state of each. The new
+  setting `API_BACKGROUND` (on by default) turns the background work of
+  the API process off.
+- **A playbook can scan an address.** The node *Scan an address*
+  (`nik.scan-url`) has the isolated browser visit it as URL Analysis does,
+  waits without holding a worker, puts the scan in the incident of the run
+  and gives the verdict, where the address led, the indicators found and a
+  line of summary. What leaves is decided by the data guard.
+- *Add a file…* in the Evidence tab of an incident.
+- An administrator can open *E-mail bodies*, *Attachments* and *Samples*
+  for a playbook from its settings; before, two of them could be opened
+  only through the API.
+
+### Changed
+
+- **The old `role` and `scopes` are removed (breaking).** The single
+  `role` of an account and the `role` and `scopes` of an API key, kept
+  since 4.0 beside `roles`, are gone: the API no longer returns them, and
+  a request that sends either is refused with 400 and told to send
+  `roles`. Migration `0044_no_legacy_roles` drops the three columns. A
+  backup made before 4.0 is still restored with the roles its accounts
+  stood for.
+- **`forward` and `reply` of the Mail connector are judged by the data
+  guard**: the body they quote, the addresses and the subject leave only
+  from a playbook for which those classes are open. The Mail connector is
+  at version 3.
+- **Tidy up never draws a line over a node.** The layout routes the lines
+  itself, around the nodes. A line has only its ×: the handle that made
+  corners by hand is gone.
+- **A pack is not uninstalled while something of it is in use**: an
+  instance that is enabled, a playbook that is on, a type that incidents
+  have. The answer says what holds it (409).
+- *Fetch status* and *Classifiers and mappers* are no longer entries of
+  Settings: they are tabs of the instance, and their old addresses open
+  *Connectors*. The classifier belongs to the instance; the mappers are
+  still shared by every instance of a connector, and the tab says so.
+- Shift + right-click no longer shows the browser's menu. In the tree of
+  a packet a right-click opens a menu whose first entry is *Apply as
+  filter*, instead of applying it at once.
+- The form of an instance is one form with one *Save*: the keys are no
+  longer saved apart, and what was typed in a secret field is cleared
+  once it is saved.
+- Every pack is at version 1.0.1 (the tags).
+
+### Fixed
+
+- `-tag:x` and `not labels:x` left out the incidents that have no tags at
+  all when the list was filtered by the database.
+- A right-click on the backdrop of a dialog closed it.
+- Focus goes back to where it was when a menu closes.
+- A field the mirror did not change was listed as changed at every sync
+  when the remote value differed only in how it was written.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migrations `0043_instance_fetch` (one column) and
+  `0044_no_legacy_roles` (three columns dropped) run at start.
+- **Before updating**, change any script or integration that creates
+  accounts or keys with `role` or `scopes` to send `roles`
+  (`role: admin` → `["admin"]`, `analyst` → `["analyst"]`, a key with only
+  the `read` scope → `["viewer"]`), and any that reads `role` or `scopes`
+  to read `roles` or `permissions`. Existing accounts and keys keep their
+  roles.
+- A playbook that uses `forward` or `reply` of the Mail connector needs
+  *E-mail bodies*, *E-mail addresses* and *Subjects* opened for it by an
+  administrator (the settings of the playbook); until then the step says
+  what was held.
+- The first cycle of every instance of ServiceNow, Jira and SentinelOne
+  reads again from its first fetch (3 days; 1 for SentinelOne SIEM). What
+  was imported already is skipped.
+- People who chose their own columns for the list of incidents add *Tags*
+  from *Columns…*.
+- A fetch mapper that writes a label a tag cannot hold (a `/`, for one)
+  has its `labels` refused for that item, with the reason among the
+  item's problems; the other fields are kept.
+
 ## [6.3.0] - 2026-11-19
 
 Playbook branches and the Mail connector, and the 6.x work read against
@@ -3046,7 +3186,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.3.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.4.0...HEAD
+[6.4.0]: https://github.com/n36l3c7/Nik/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/n36l3c7/Nik/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/n36l3c7/Nik/compare/v6.1.0...v6.2.0
 [6.1.0]: https://github.com/n36l3c7/Nik/compare/v6.0.0...v6.1.0
