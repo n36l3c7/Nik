@@ -94,11 +94,9 @@ export function cleanRoles(roles) {
   return ORDER.filter((id) => held.has(id))
 }
 
-/** The roles of a user or key as the API returns it (a release before 4.0 sent one `role`). */
+/** The roles of a user or key as the API returns it. */
 export function rolesOf(subject) {
-  if (!subject) return []
-  if (Array.isArray(subject.roles)) return cleanRoles(subject.roles)
-  return cleanRoles([subject.role])
+  return cleanRoles(subject?.roles)
 }
 
 /** Everything the roles grant together. */

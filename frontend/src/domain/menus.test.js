@@ -51,7 +51,7 @@ test('the menu of an object: what it offers, what to copy, then what destroys', 
     ['name', 'Reset passwords'],
     ['JSON', '{\n  "id": "t1"\n}'],
   ])
-  // Nothing to offer: no items, and the browser's own menu opens.
+  // Nothing to offer: no items, and the menu holds what the page and the general section give.
   assert.deepEqual(objectMenuItems({}, context), [])
   assert.deepEqual(objectMenuItems({ actions: [open] }, context), [open])
 })

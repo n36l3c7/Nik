@@ -48,6 +48,7 @@
           <li><a href="#upgrading-to-42">Upgrading to 4.2</a></li>
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
           <li><a href="#automation-containers">The automation containers</a></li>
+          <li><a href="#worker-watch">When a worker is down</a></li>
           <li><a href="#upgrading-to-30">Upgrading to 3.0</a></li>
           <li><a href="#upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18</a></li>
           <li><a href="#manual-deployment-on-rhel">Manual deployment on RHEL</a></li>
@@ -262,6 +263,47 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
           write the ticket they open to the context of the incident. A connector you changed and installed with a higher
           version is left as it is.
         </li>
+      </ul>
+      <h4 id="upgrading-to-64">Upgrading to 6.4</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. Migrations
+        <code>0043_instance_fetch</code> (one column) and <code>0044_no_legacy_roles</code> (three columns dropped) run
+        at start.
+      </p>
+      <ul>
+        <li>
+          <strong>Before updating: <code>role</code> and <code>scopes</code> are gone.</strong> Change any script or
+          integration that creates accounts or keys with <code>role</code> or <code>scopes</code> to send
+          <code>roles</code> (<code>role: admin</code> becomes <code>["admin"]</code>, <code>analyst</code> becomes
+          <code>["analyst"]</code>, a key with only the <code>read</code> scope becomes <code>["viewer"]</code>), and
+          any that reads them to read <code>roles</code> or <code>permissions</code>. A request that still sends one is
+          refused with 400. Existing accounts and keys keep their roles. A backup exported by 6.4 no longer carries
+          <code>role</code>; a backup made before 4.0 is still restored;
+        </li>
+        <li>
+          a playbook that uses <code>forward</code> or <code>reply</code> of the Mail connector needs
+          <em>E-mail bodies</em>, <em>E-mail addresses</em> and <em>Subjects</em> opened for it by an administrator, in
+          the settings of the playbook; until then the step says what was held;
+        </li>
+        <li>
+          the first cycle of every instance of ServiceNow, Jira and SentinelOne reads again from its first fetch (3
+          days; 1 for SentinelOne SIEM). What was imported already is skipped: nothing is to be set again;
+        </li>
+        <li>
+          <em>Fetch status</em> and <em>Classifiers and mappers</em> are tabs of an instance now (<em
+            >Settings → Automation → Connectors</em
+          >); their old addresses open that page;
+        </li>
+        <li>
+          a pack is not uninstalled while an instance of it is enabled, a playbook of it is on or incidents have a type
+          of it: turn those off first;
+        </li>
+        <li>
+          Shift + right-click no longer shows the browser's menu. Inside the isolated previews (the body of an e-mail, a
+          response, a report) the browser still answers the right button: those frames are closed to the page on
+          purpose;
+        </li>
+        <li>people who chose their own columns for the list of incidents add <em>Tags</em> from <em>Columns…</em>.</li>
       </ul>
       <h4 id="upgrading-to-63">Upgrading to 6.3</h4>
       <p>
@@ -490,10 +532,11 @@ podman compose up -d --build    # rebuild images, recreate containers, keep data
       <ul>
         <li>
           <strong>nothing is fetched until you say so.</strong> A connection of ServiceNow, Jira or SentinelOne can
-          bring alerts in as incidents, and it is turned on, one connection at a time, in
-          <em>Settings → Automation → Fetch status</em>. Before that, look at its mapper in
-          <em>Classifiers and mappers</em> and try it on a sample; for Jira, set <em>Issues to fetch</em> in the
-          connection, or every issue the account can see comes in;
+          bring alerts in as incidents, and it is turned on, one connection at a time, in the instance (<em
+            >Settings → Automation → Connectors</em
+          >, its tab <em>Fetch</em>; a page of its own, <em>Fetch status</em>, until 6.4). Before that, look at its
+          mapper on the tab <em>Mappers</em> of the instance and try it on a sample; for Jira, set
+          <em>Issues to fetch</em> in the connection, or every issue the account can see comes in;
         </li>
         <li>
           the shipped connectors of ServiceNow, Jira and SentinelOne are replaced by their new version, as at every
@@ -593,6 +636,33 @@ podman compose up -d --build
         <li>
           Without playbooks the two containers idle. To run without them, set <code>AUTOMATION_WORKER=off</code> and
           stop the two services: the Automations area then says that the worker is not answering.
+        </li>
+      </ul>
+      <h4 id="worker-watch">When a worker is down</h4>
+      <p>
+        The backend checks the workers it is configured with every 30 seconds: each analysis worker whose
+        <code>*_URL</code> is set (analyzer, capa, document viewer, isolated browser, packet capture, script sandbox) by
+        its <code>GET /health</code>, and the <code>automation</code> container by its heartbeat. A worker that has not
+        answered for <strong>two minutes</strong> without a break is down: every account with the Admin role gets one
+        notification that names it, says since when and what waits meanwhile. One more follows when it answers again,
+        with how long it was down. Nothing is sent in between, and a container that restarts for an update is back well
+        within the two minutes, so it tells nobody.
+      </p>
+      <ul>
+        <li>
+          The check runs in the backend, not in the automation worker, so that it still runs when that worker is the one
+          that is down. With several backend processes one of them checks at a time, and what was found is kept in the
+          database: a restart of the backend, or a second process, does not send a notice twice.
+        </li>
+        <li>
+          A worker that is not configured is not watched: an install without the analysis workers, or with
+          <code>AUTOMATION_WORKER=off</code> (or <code>inline</code>, where the loop is a thread of the backend itself),
+          gets no notice about them.
+        </li>
+        <li>
+          <strong>Settings → System → Workers</strong> shows every worker and its state at any time; the notifications
+          lead there. Then look at the container: <code>podman compose ps</code>,
+          <code>podman compose logs -f &lt;service&gt;</code>.
         </li>
       </ul>
       <h4 id="upgrading-to-30">Upgrading to 3.0</h4>
@@ -1024,7 +1094,7 @@ sudo systemctl restart nik-api.service
   &quot;version&quot;: 1,
   &quot;exportedAt&quot;: &quot;2026-07-08T09:00:00.000Z&quot;,
   &quot;users&quot;:     [ { &quot;id&quot;: &quot;…&quot;, &quot;username&quot;: &quot;…&quot;, &quot;passwordHash&quot;: &quot;…&quot;,
-                   &quot;role&quot;: &quot;admin&quot;, &quot;createdAt&quot;: &quot;…&quot;, &quot;createdBy&quot;: null } ],
+                   &quot;roles&quot;: [&quot;admin&quot;], &quot;createdAt&quot;: &quot;…&quot;, &quot;createdBy&quot;: null } ],
   &quot;incidents&quot;: [ { &quot;…full incident documents, artifacts included…&quot;: &quot;&quot; } ],
   &quot;audit&quot;:     [ { &quot;id&quot;: &quot;…&quot;, &quot;at&quot;: &quot;…&quot;, &quot;actor&quot;: &quot;…&quot;, &quot;action&quot;: &quot;…&quot; } ],
   &quot;settings&quot;:  { &quot;keywords&quot;: [ ], &quot;businessHours&quot;: { } }

@@ -1112,6 +1112,8 @@ def get_catalog(
     return {
         "commands": command_line.catalog(db),
         "nodes": catalog.entries(db),
+        # What is inside an incident, its fields and its context: what "pick a value" lists under them.
+        "shapes": catalog.shapes(db),
         # The connections there are, by connector: what a node of a connector chooses from.
         "instances": catalog.connections(db),
         "events": list(graph.EVENTS),

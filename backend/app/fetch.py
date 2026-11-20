@@ -1,18 +1,42 @@
 """Fetching: a connection brings alerts in, and each becomes an incident.
 
 A connection whose connector has a ``fetch`` and that was told to fetch is
-read by the automation worker every ``interval_seconds``. One cycle:
+read by the automation worker at its interval. How often, how far back the
+first cycle reads and the look-back are the instance's own
+(``connections.fetch_settings``); what it does not set is its connector's.
+One cycle:
 
-1. the request is rendered with the ``state`` the last cycle left (before the
-   first, what ``first_state`` says of the moment ``first_fetch`` ago), and
-   its pages are read, 200 items at most;
+1. the request is rendered with ``since``, the moment to ask from, and with
+   the ``state`` the last cycle left (before the first, what ``first_state``
+   says of the moment the first fetch reads back to), and its pages are read,
+   200 items at most;
 2. each item is told apart by ``item_id``: one already in ``fetched_items``
    for this connection is skipped;
 3. a new one is classified (its type), mapped (its fields and context),
    passed through the pre-processing rules, and then, in one transaction,
    becomes an incident with its context, a line of its War Room that holds
    the item as it came, and a row of ``fetched_items``;
-4. ``next_state`` is saved when the whole cycle was read.
+4. ``next_state`` is saved when the whole cycle was read, and with it how far
+   the cycle reached.
+
+``since`` is worked out here, for every connector whose request filters by
+time. Nik keeps *reached*: the first-fetch moment when the first cycle
+starts, then the newest time it saw on an item (a time later than the start
+of the cycle that saw it is not believed; a cycle that finds nothing leaves
+it where it is).
+A connector that gives no time to its items has the start of each whole cycle
+instead. ``since`` is *reached* less the look-back of the instance. So an
+item is asked for again as long as its time is not older than the newest one
+seen less the look-back, and is made once, because its id is remembered. A
+look-back of 0 still asks from the newest time seen, that moment included:
+it catches what has the same time as the last item, and misses what turns up
+later with an older time. A cycle that was cut at its 200 items goes on from
+where it stopped, without the look-back, until one cycle reads everything.
+
+*reached* is kept in ``fetch_state`` under ``_since``, beside what the
+connector keeps there. Resetting the last run empties ``fetch_state``: the
+next cycle starts from the first fetch again, and ``fetched_items`` stays, so
+nothing is made twice.
 
 A connector that can give what an item was made of gives it once the item has
 an incident, and it is kept as evidence of that incident: the Mail connector
@@ -32,7 +56,9 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -45,7 +71,14 @@ from . import mapping, timers, war_room
 from .automation import connector_actions as store
 from .automation import expressions as ex
 from .automation.connector_runtime import CommandError
-from .automation.connectors import ConnectorFile
+from .automation.connectors import (
+    FETCH_MAX_INTERVAL,
+    FETCH_MIN_INTERVAL,
+    LOOKBACK_MAX_MINUTES,
+    ConnectorFile,
+    FetchSpec,
+    first_fetch_seconds,
+)
 from .core import audit
 from .core.models import Connection, Connector, FetchedItem, Incident, User
 from .core.permissions import CONNECTORS_MANAGE, permissions_of
@@ -58,6 +91,8 @@ INCIDENTS_PER_HOUR = 500
 BACKOFF_MAX = 3600
 ITEM_SHOWN = 20_000  # characters of an item kept as it came (the War Room line, the sample)
 ITEM_ID_MAX = 300
+# Where the engine keeps its own part of ``fetch_state``: {"reached": seconds since 1970, "cut": bool}.
+ENGINE = "_since"
 
 
 class FetchError(ValueError):
@@ -95,6 +130,140 @@ def status_of(connection: Connection) -> dict[str, Any]:
 def _keep_status(connection: Connection, **changes: Any) -> None:
     connection.fetch_status = {**status_of(connection), **changes}
     flag_modified(connection, "fetch_status")
+
+
+# --------------------------------------------------------------------------- #
+# How an instance fetches                                                     #
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class Settings:
+    """How an instance fetches: its own values, and its connector's where it sets none."""
+
+    interval: int  # seconds between two cycles
+    first_fetch: str  # "3 days": how far back the first cycle reads
+    lookback: int  # minutes
+
+    @property
+    def first_seconds(self) -> int:
+        return first_fetch_seconds(self.first_fetch) or 0
+
+    def out(self) -> dict[str, Any]:
+        return {"intervalSeconds": self.interval, "firstFetch": self.first_fetch, "lookbackMinutes": self.lookback}
+
+
+def settings_of(connection: Connection, spec: FetchSpec) -> Settings:
+    held = connection.fetch_settings if isinstance(connection.fetch_settings, dict) else {}
+    interval = held.get("intervalSeconds")
+    first = held.get("firstFetch")
+    lookback = held.get("lookbackMinutes")
+    return Settings(
+        interval=interval if _whole_number(interval) and interval >= FETCH_MIN_INTERVAL else spec.interval_seconds,
+        first_fetch=str(first) if first and first_fetch_seconds(str(first)) else spec.first_fetch,
+        lookback=lookback if _whole_number(lookback) is not None and lookback >= 0 else spec.lookback_minutes,
+    )
+
+
+def _whole_number(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def set_settings(db: OrmSession, connection: Connection, given: dict[str, Any], now: float) -> list[str]:
+    """Change how an instance fetches (the caller commits): ``intervalSeconds``, ``firstFetch``,
+    ``lookbackMinutes``, each kept when it is left out. A value that is its connector's is not kept,
+    so the instance goes on following its connector. Gives what changed, in words."""
+    connector = connector_of(db, connection)
+    if connector is None or connector.fetch is None:
+        raise FetchError("The connector of this instance does not say how to fetch")
+    spec = connector.fetch
+    before = settings_of(connection, spec)
+    held = dict(connection.fetch_settings) if isinstance(connection.fetch_settings, dict) else {}
+    if given.get("intervalSeconds") is not None:
+        interval = _whole_number(given["intervalSeconds"])
+        if interval is None or not FETCH_MIN_INTERVAL <= interval <= FETCH_MAX_INTERVAL:
+            raise FetchError(f"An instance fetches every {FETCH_MIN_INTERVAL} seconds at the least, once a day at most")
+        held["intervalSeconds"] = interval
+    if given.get("firstFetch") is not None:
+        first = " ".join(str(given["firstFetch"]).lower().split())
+        if first_fetch_seconds(first) is None:
+            raise FetchError("The first fetch is a length of time, a month at most: 30 minutes, 12 hours, 3 days")
+        held["firstFetch"] = first
+    if given.get("lookbackMinutes") is not None:
+        lookback = _whole_number(given["lookbackMinutes"])
+        if lookback is None or not 0 <= lookback <= LOOKBACK_MAX_MINUTES:
+            raise FetchError(f"The look-back is a number of minutes, {LOOKBACK_MAX_MINUTES} at most")
+        held["lookbackMinutes"] = lookback
+    theirs = {
+        "intervalSeconds": spec.interval_seconds,
+        "firstFetch": spec.first_fetch,
+        "lookbackMinutes": spec.lookback_minutes,
+    }
+    kept = {name: value for name, value in held.items() if name in theirs and value != theirs[name]}
+    connection.fetch_settings = kept or None
+    after = settings_of(connection, spec)
+    changes = []
+    if after.interval != before.interval:
+        changes.append(f"every {after.interval} s")
+        # A shorter interval is not made to wait for the turn the longer one had set.
+        status = status_of(connection)
+        if status.get("state", "ok") == "ok" and float(status.get("nextAt") or 0) > now + after.interval:
+            _keep_status(connection, nextAt=now + after.interval)
+    if after.first_fetch != before.first_fetch:
+        changes.append(f"first fetch {after.first_fetch}")
+    if after.lookback != before.lookback:
+        changes.append(f"look-back {after.lookback} min")
+    return changes
+
+
+def _epoch_of(value: Any) -> float | None:
+    """The time a connector gives of an item, as seconds since 1970: a number (seconds, or
+    milliseconds when it is that large), an ISO date, or the date of a message. None when it is none."""
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        text = str(value).strip()
+        try:
+            number = float(text)
+        except ValueError:
+            try:
+                moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                try:
+                    moment = parsedate_to_datetime(text)
+                except (TypeError, ValueError):
+                    return None
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+            return moment.timestamp()
+    if number <= 0 or number != number:
+        return None
+    return number / 1000 if number > 1e11 else number
+
+
+def _engine_of(connection: Connection) -> dict[str, Any]:
+    """The engine's own part of the state a cycle left."""
+    held = connection.fetch_state if isinstance(connection.fetch_state, dict) else {}
+    part = held.get(ENGINE)
+    return dict(part) if isinstance(part, dict) else {}
+
+
+def since_of(connection: Connection, settings: Settings, now: float) -> float:
+    """The moment the next cycle asks from: how far the cycles reached, less the look-back. Before
+    the first cycle, and for a state an older release left, the moment the first fetch reads back to."""
+    part = _engine_of(connection)
+    reached = part.get("reached")
+    if isinstance(reached, bool) or not isinstance(reached, (int, float)):
+        return now - settings.first_seconds
+    return float(reached) - (0 if part.get("cut") else settings.lookback * 60)
+
+
+def reset(db: OrmSession, connection: Connection) -> None:
+    """Forget where the last run stopped (the caller commits): the next cycle starts from the first
+    fetch. What was fetched before stays in ``fetched_items``, so none of it is made twice."""
+    connection.fetch_state = None
+    flag_modified(connection, "fetch_state")
+    _keep_status(connection, truncated=False)
 
 
 def enable(db: OrmSession, connection: Connection, enabled: bool, now: float) -> None:
@@ -145,12 +314,17 @@ def _made_lately(db: OrmSession, connection_id: str, now: float, since_iso: str 
     )
 
 
-def _tell_managers(db: OrmSession, kind: str, text: str) -> None:
+def instance_link(connection_id: str) -> str:
+    """Where the fetching of an instance is seen and set: its form, on Connectors."""
+    return f"/settings/automation/connectors/{connection_id}/fetch"
+
+
+def _tell_managers(db: OrmSession, kind: str, text: str, connection: Connection) -> None:
     from . import tasks
 
     for user in db.scalars(select(User).where(User.disabled.is_(False))):
         if CONNECTORS_MANAGE in permissions_of(user.roles or []):
-            tasks.notify(db, user.username, kind, text, "/settings/automation/fetch-status")
+            tasks.notify(db, user.username, kind, text, instance_link(connection.id))
 
 
 # --------------------------------------------------------------------------- #
@@ -342,24 +516,39 @@ def cycle(db: OrmSession, connection: Connection, now: float | None = None) -> d
     if connector is None or connector.fetch is None:
         raise FetchError("The connector of this instance does not say how to fetch")
     spec = connector.fetch
+    settings = settings_of(connection, spec)
     counts = {"fetched": 0, "new": 0, "created": 0, "incomplete": 0, "dropped": 0, "linked": 0, "duplicate": 0}
-    first = _moment(now - spec.first_seconds)
+    first = _moment(now - settings.first_seconds)
+    since = since_of(connection, settings, now)
     try:
         runtime = store.runtime_for(db, connector, connection)
-        state = connection.fetch_state
-        if not isinstance(state, dict):
+        if isinstance(connection.fetch_state, dict):
+            # The connector's part: what the engine keeps beside it is not the connector's to read.
+            state = {key: value for key, value in connection.fetch_state.items() if key != ENGINE}
+        else:
             scope = ex.Scope(values={"config": runtime.config, "first": first, "now": _moment(now)})
             state = ex.render(spec.first_state, scope).data if spec.first_state else {}
         try:
-            found = runtime.fetch(spec, state, first, _moment(now), ITEMS_PER_CYCLE)
+            found = runtime.fetch(spec, state, first, _moment(now), ITEMS_PER_CYCLE, since=_moment(since))
         finally:
             runtime.close()
     except (CommandError, ex.ExpressionError) as error:
-        return _failed(db, connection, spec.interval_seconds, getattr(error, "message", str(error)), now, counts)
+        return _failed(db, connection, settings.interval, getattr(error, "message", str(error)), now, counts)
     try:
-        return _made(db, connection, connector, runtime, found, state, first, now, counts)
+        return _made(db, connection, connector, runtime, found, state, first, since, now, counts)
     finally:
         runtime.close()  # it may have been opened again, for what is kept as evidence
+
+
+def _time_of(spec: FetchSpec, item: Any, state: dict[str, Any]) -> float | None:
+    """The time of an item the request filters on, as seconds since 1970; None when it gives none."""
+    template = spec.item_time or spec.occurred
+    if not template:
+        return None
+    try:
+        return _epoch_of(ex.render_text(template, ex.Scope(values={"item": item, "config": {}, "state": state})).data)
+    except ex.ExpressionError:
+        return None
 
 
 def _made(
@@ -370,11 +559,14 @@ def _made(
     found: dict[str, Any],
     state: dict[str, Any],
     first: dict[str, Any],
+    since: float,
     now: float,
     counts: dict[str, int],
 ) -> dict[str, Any]:
     """The second half of a cycle: what was fetched is made into incidents, and the state moves."""
     spec = connector.fetch
+    settings = settings_of(connection, spec)
+    before = _engine_of(connection)
     items = found["items"]
     counts["fetched"] = len(items)
     seen_now: set[str] = set()
@@ -423,6 +615,7 @@ def _made(
 
     connection = db.get(Connection, connection.id)
     whole = len(processed) == len(items)
+    next_state = dict(state)
     if items and (whole or processed):
         # The state moves only as far as what was read and dealt with.
         scope = ex.Scope(
@@ -431,13 +624,13 @@ def _made(
                 "state": state,
                 "first": first,
                 "now": _moment(now),
+                "since": _moment(since),
                 "response": found.get("response"),
                 "status": found.get("status"),
                 "headers": found.get("headers"),
                 "items": processed,
             }
         )
-        next_state = dict(state)
         for key, template in spec.next_state.items():
             try:
                 value = ex.render(template, scope).data
@@ -445,18 +638,28 @@ def _made(
                 continue  # nothing to move this value by: it stays
             if value not in (None, ""):
                 next_state[key] = value
-        connection.fetch_state = next_state
-        flag_modified(connection, "fetch_state")
-    elif not isinstance(connection.fetch_state, dict):
-        connection.fetch_state = state  # the first cycle found nothing: the next starts from the same moment
-        flag_modified(connection, "fetch_state")
+    if spec.by_time:
+        # How far the cycles reached. It starts at the first-fetch moment and never goes back; a
+        # time later than the start of this cycle is a clock that is wrong, and is not believed.
+        held = before.get("reached")
+        reached = float(held) if isinstance(held, (int, float)) and not isinstance(held, bool) else since
+        cut = bool(found.get("truncated")) or not whole
+        if spec.item_time or spec.occurred:
+            times = [_time_of(spec, item, state) for item in processed]
+            reached = max([reached, *(moment for moment in times if moment is not None and moment <= now)])
+        elif not cut:
+            reached = now  # its items have no time: what is known is when everything was read
+        next_state[ENGINE] = {"reached": reached, "cut": cut}
+    # The first cycle, even when it found nothing: the next starts from the same moment.
+    connection.fetch_state = next_state
+    flag_modified(connection, "fetch_state")
     changes: dict[str, Any] = {
         "state": "paused" if paused else "ok",
         "error": "",
         "fails": 0,
         "pausedWhy": paused,
         "lastAt": now_iso(),
-        "nextAt": now + spec.interval_seconds,
+        "nextAt": now + settings.interval,
         "last": counts,
         "truncated": bool(found.get("truncated")),
     }
@@ -464,7 +667,7 @@ def _made(
         changes["sample"] = _cut(items[-1])
     _keep_status(connection, **changes)
     if paused:
-        _tell_managers(db, "fetch.paused", f"Fetching from {connection.name} is paused: too many incidents")
+        _tell_managers(db, "fetch.paused", f"Fetching from {connection.name} is paused: too many incidents", connection)
         audit.record(
             db, "nik", "fetch.paused", f"Fetching from {connection.name} was paused: {paused}", target=connection.name
         )
@@ -479,7 +682,7 @@ def _failed(db: OrmSession, connection: Connection, interval: int, message: str,
     was_ok = status.get("state") != "failing"
     _keep_status(connection, state="failing", error=message[:500], fails=fails, lastAt=now_iso(), nextAt=now + wait)
     if was_ok:
-        _tell_managers(db, "fetch.failing", f"Fetching from {connection.name} fails: {message[:200]}")
+        _tell_managers(db, "fetch.failing", f"Fetching from {connection.name} fails: {message[:200]}", connection)
     db.commit()
     return {"state": "failing", "error": message[:500], **counts}
 
@@ -514,6 +717,9 @@ def out(db: OrmSession, connection: Connection) -> dict[str, Any]:
     connector = connector_of(db, connection)
     status = status_of(connection)
     spec = connector.fetch if connector is not None else None
+    settings = settings_of(connection, spec) if spec is not None else None
+    by_time = spec is not None and spec.by_time
+    started = isinstance(connection.fetch_state, dict)
     return {
         "instanceId": connection.id,
         "connection": connection.name,
@@ -521,7 +727,30 @@ def out(db: OrmSession, connection: Connection) -> dict[str, Any]:
         "connector": connector.name if connector is not None else connection.connector_id,
         "canFetch": spec is not None,
         "enabled": bool(connection.fetch_enabled),
-        "intervalSeconds": spec.interval_seconds if spec is not None else None,
+        # How it fetches (its own values, or its connector's), and what its connector says.
+        "intervalSeconds": settings.interval if settings is not None else None,
+        "firstFetch": settings.first_fetch if settings is not None else None,
+        "lookbackMinutes": settings.lookback if settings is not None else None,
+        "defaults": (
+            {
+                "intervalSeconds": spec.interval_seconds,
+                "firstFetch": spec.first_fetch,
+                "lookbackMinutes": spec.lookback_minutes,
+            }
+            if spec is not None
+            else None
+        ),
+        "minIntervalSeconds": FETCH_MIN_INTERVAL,
+        "maxLookbackMinutes": LOOKBACK_MAX_MINUTES,
+        # Whether its request asks from a moment: the look-back applies only then.
+        "byTime": by_time,
+        # Whether a cycle ran since the last reset, and the moment the next one asks from.
+        "started": started,
+        "sinceAt": (
+            _moment(since_of(connection, settings, time.time()))["iso"]
+            if by_time and settings is not None and (started or connection.fetch_enabled)
+            else None
+        ),
         "state": (status.get("state") or "ok") if connection.fetch_enabled else "off",
         "error": status.get("error") or "",
         "pausedWhy": status.get("pausedWhy") or "",
@@ -533,6 +762,7 @@ def out(db: OrmSession, connection: Connection) -> dict[str, Any]:
         "limitPerHour": INCIDENTS_PER_HOUR,
         "hasSample": "sample" in status,
         "fetchState": connection.fetch_state if isinstance(connection.fetch_state, dict) else None,
+        "link": instance_link(connection.id),
     }
 
 

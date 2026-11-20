@@ -8,6 +8,7 @@ import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, Modal } from '../ui/index.js'
 import { Field, TextInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
 
 /*
@@ -114,8 +115,10 @@ export default function ScriptsPage({ onOpen }) {
     }
   }
 
+  const pageMenu = usePageMenu(() => [{ label: 'New script…', icon: Plus, onSelect: () => setCreateOpen(true) }])
+
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4 p-6" onContextMenu={pageMenu}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-prose text-sm text-fg-muted">
           A script is a piece of Python written once, with named arguments and outputs, and used as a node in any

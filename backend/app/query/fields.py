@@ -22,6 +22,7 @@ every kind.
 from __future__ import annotations
 
 import difflib
+import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -115,6 +116,8 @@ class FieldSpec:
     nullable: bool = False
     sql: Callable[[str, Value, "Context"], Any] | None = None
     test: Callable[[str, Value, "Context"], Callable[[dict], bool]] | None = None
+    label: str = ""  # what the registry calls it, for a field that comes from there
+    custom: bool = False  # made in Settings, not one Nik always had
 
 
 @dataclass(frozen=True)
@@ -152,6 +155,8 @@ class Entity:
                     "kind": spec.kind,
                     "values": list(spec.values),
                     "description": spec.description,
+                    "label": spec.label,
+                    "custom": spec.custom,
                 }
                 for spec in self.fields
             ],
@@ -230,9 +235,10 @@ def _day(stamp: str) -> tuple[str, str]:
 
 
 def _keyword_value(spec: FieldSpec, value: Value, position: int) -> str:
-    """The value of a keyword field, checked against what it can be."""
+    """The value of a keyword field, checked against what it can be (the choices of a field of
+    the registry are written as their author wrote them: case does not matter here either)."""
     word = value.text.lower()
-    if spec.values and not value.wildcard and word not in spec.values:
+    if spec.values and not value.wildcard and word not in {known.lower() for known in spec.values}:
         hint = suggest(word, spec.values)
         raise _bad(
             "bad_value",
@@ -259,6 +265,27 @@ def _tag_like(value: Value) -> str:
     inner = like_pattern(value, contains=False).lower()
     # The value between the quotes of one item; a quote typed by the user cannot close it.
     return '%"' + inner.replace('"', '\\\\"') + '"%'
+
+
+def _as_json_writes(value: Value) -> Value:
+    """The value with each character outside ASCII as the escape JSON may write it with (u and its number)."""
+    parts = tuple(
+        part
+        if isinstance(part, Wild)
+        else "".join(ch if ord(ch) < 128 else json.dumps(ch)[1:-1] for ch in part.lower())
+        for part in value.parts
+    )
+    return Value(text=value.text, quoted=value.quoted, parts=parts)
+
+
+def _tags_match(spec: FieldSpec, value: Value):
+    """One item of the list is the value. The list is searched as the JSON text it is kept as,
+    and that text holds a character outside ASCII either as itself or as its escape, by the
+    database and by who wrote it: both writings are looked for."""
+    text = _tags_text(spec)
+    plain, escaped = _tag_like(value), _tag_like(_as_json_writes(value))
+    match = text.like(plain, escape="\\")
+    return match if escaped == plain else or_(match, text.like(escaped, escape="\\"))
 
 
 def sql_condition(spec: FieldSpec, op: str, value: Value, position: int, ctx: Context):
@@ -354,8 +381,10 @@ def sql_condition(spec: FieldSpec, op: str, value: Value, position: int, ctx: Co
         return column.is_(True) if wanted else or_(column.is_(False), column.is_(None))
 
     if kind == "tags":
-        match = _tags_text(spec).like(_tag_like(value), escape="\\")
-        return match if op == "=" else or_(not_(match), column.is_(None))
+        # No list at all holds no tag, and that is said outright: "not" of it is then true, as it
+        # is on a row, where the database would otherwise call it unknown and leave the row out.
+        match = and_(column.is_not(None), _tags_match(spec, value))
+        return match if op == "=" else not_(match)
 
     raise _bad("bad_operator", position, "This field cannot be searched")
 
@@ -381,7 +410,7 @@ def sql_text(entity: Entity, value: Value, position: int):
         spec = entity.field(name)
         if spec.kind == "tags":
             contains = Value(text=value.text, quoted=value.quoted, parts=(Wild(ANY), *value.parts, Wild(ANY)))
-            conditions.append(_tags_text(spec).like(_tag_like(contains), escape="\\"))
+            conditions.append(_tags_match(spec, contains))
         else:
             pattern = like_pattern(value, contains=True).lower()
             conditions.append(func.lower(_text_column(spec)).like(pattern, escape="\\"))

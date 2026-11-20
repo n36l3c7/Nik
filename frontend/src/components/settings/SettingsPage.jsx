@@ -1,9 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeftRight,
   Clock,
   DatabaseBackup,
-  DownloadCloud,
   FileCode2,
   PackageOpen,
   FileSearch,
@@ -22,6 +20,7 @@ import {
   Timer,
   Radar,
   ScrollText,
+  ServerCog,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -46,8 +45,6 @@ import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
 import PreprocessSection from './sections/PreprocessSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
-import MappersSection from './sections/MappersSection.jsx'
-import FetchStatusSection from './sections/FetchStatusSection.jsx'
 import ContentPacksSection from './sections/ContentPacksSection.jsx'
 import ScriptSignaturesSection from './sections/ScriptSignaturesSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
@@ -57,6 +54,7 @@ import MailSettingsSection from './sections/MailSettingsSection.jsx'
 import MyAccountSection from './sections/MyAccountSection.jsx'
 import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
 import StorageSection from './sections/StorageSection.jsx'
+import WorkersSection from './sections/WorkersSection.jsx'
 import ThreatIntelSection from './sections/ThreatIntelSection.jsx'
 import YaraRulesSection from './sections/YaraRulesSection.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
@@ -93,8 +91,6 @@ const SECTION_VIEWS = {
   preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
-  mappers: { icon: ArrowLeftRight, Component: MappersSection },
-  fetchStatus: { icon: DownloadCloud, Component: FetchStatusSection },
   contentPacks: { icon: PackageOpen, Component: ContentPacksSection },
   scriptSignatures: { icon: FileCode2, Component: ScriptSignaturesSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },
@@ -103,6 +99,7 @@ const SECTION_VIEWS = {
   accounts: { icon: Users, Component: AccountsSection },
   apikeys: { icon: KeyRound, Component: ApiKeysSection },
   storage: { icon: HardDrive, Component: StorageSection },
+  workers: { icon: ServerCog, Component: WorkersSection },
   backup: { icon: DatabaseBackup, Component: BackupSection },
   audit: { icon: ScrollText, Component: AuditLogSection },
 }

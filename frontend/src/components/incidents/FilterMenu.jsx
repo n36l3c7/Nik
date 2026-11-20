@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { groupFilters, menuLabel } from '../../domain/savedFilters.js'
 import { useLayer } from '../../lib/layers.js'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { Badge } from '../ui/index.js'
 
 /*
@@ -24,6 +25,7 @@ function Menu({ filters, defaultId, chosenId, onChoose, onDefault, onManage, onC
   // Escape closes the menu and nothing under it; the focus returns to its button.
   useLayer(ref, { open: true, onClose, trap: false })
   const { mine, shared } = groupFilters(filters)
+  const menu = useObjectMenu()
 
   // The arrows go from one line of the menu to the next, as in every menu of the app.
   const onKeyDown = (event) => {
@@ -36,7 +38,25 @@ function Menu({ filters, defaultId, chosenId, onChoose, onDefault, onManage, onC
   }
 
   const row = (filter, note = null) => (
-    <li key={filter.id} role="none" className={`flex items-center ${filter.id === chosenId ? 'bg-raised' : ''}`}>
+    <li
+      key={filter.id}
+      role="none"
+      className={`flex items-center ${filter.id === chosenId ? 'bg-raised' : ''}`}
+      onContextMenu={(event) =>
+        menu(event, {
+          title: filter.name,
+          actions: [
+            { label: 'Show the list with this filter', onSelect: () => onChoose(filter) },
+            filter.id !== defaultId && { label: 'Set as default', onSelect: () => onDefault(filter.id) },
+            { label: 'Manage the filters…', onSelect: onManage },
+          ],
+          copy: [
+            { label: 'Copy the name', text: filter.name },
+            { label: 'Copy the query', text: filter.query },
+          ],
+        })
+      }
+    >
       <button
         type="button"
         role="menuitem"

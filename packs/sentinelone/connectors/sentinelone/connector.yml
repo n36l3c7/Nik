@@ -14,7 +14,7 @@
 # (createdAt__gt, sortBy and sortOrder, as the two integrations send them).
 name: SentinelOne EDR
 id: sentinelone
-version: 2
+version: 3
 description: Agents, threats, the blocklist and Deep Visibility in the SentinelOne console.
 api_version: "Management API v2.1 (/web/api/v2.1)"
 verified: false
@@ -230,7 +230,9 @@ fetch:
     method: GET
     path: /threats
     query:
-      createdAt__gt: "{{ state.last_time }}"
+      # Strictly after the moment. Nik gives it in whole seconds and SentinelOne keeps microseconds,
+      # so what was made in the same second as the last threat is still asked for.
+      createdAt__gt: "{{ since.iso }}"
       sortBy: createdAt
       sortOrder: asc
   error: { message: "{{ response.errors[0].detail }}" }
@@ -244,10 +246,6 @@ fetch:
     max_pages: 2
   item_id: "{{ item.id }}"
   occurred: "{{ item.threatInfo.createdAt }}"
-  first_state:
-    last_time: "{{ first.iso }}"
-  next_state:
-    last_time: "{{ items | last | get('threatInfo.createdAt') }}"
 
 schema:
   incoming:

@@ -17,6 +17,13 @@ export const TRIGGER_ENTRY = {
   outputs: [],
 }
 
+/*
+ * What is inside the values an expression reads comes from the server
+ * (`shapes` of the catalog): the incident an event carries and a node gives,
+ * the fields of the registry (those made in Settings among them), the keys of
+ * the context. The lists written here are what is shown until the catalog has
+ * been read.
+ */
 const INCIDENT_FIELDS = [
   ['id', 'text', 'Its id'],
   ['url', 'text', 'Its address in Nik'],
@@ -84,7 +91,12 @@ const IOC_FIELDS = fieldsOf('ioc', [
   ['allowlisted', 'bool', 'It is in the allowlist'],
 ])
 
-const INCIDENT_OPTIONAL = [...INCIDENT_FIELDS.map((field) => ({ ...field, optional: true }))]
+/** The incident of an event, as `incident.…` fields: the server's list when it is known. */
+function incidentFields(shapes) {
+  const known = list(shapes?.incident)
+  if (known.length === 0) return INCIDENT_FIELDS
+  return known.map((field) => ({ ...field, name: `incident.${field.name}` }))
+}
 
 /** The events a trigger can wait for: what each is called, what it is about, a filter to start from. */
 export const EVENTS = {
@@ -143,7 +155,9 @@ const NAMES = {
 /** "an e-mail", for what a playbook runs on. */
 export const objectName = (about) => NAMES[about] ?? 'nothing'
 
-function eventFields(event) {
+function eventFields(event, shapes) {
+  const INCIDENT_FIELDS = incidentFields(shapes)
+  const INCIDENT_OPTIONAL = INCIDENT_FIELDS.map((field) => ({ ...field, optional: true }))
   switch (event) {
     case 'incident.created':
       return INCIDENT_FIELDS
@@ -208,13 +222,13 @@ function eventFields(event) {
   }
 }
 
-/** What `{{ trigger.… }}` holds, by what starts the playbook. */
-export function triggerFields(config = {}) {
+/** What `{{ trigger.… }}` holds, by what starts the playbook. `shapes` are the catalog's. */
+export function triggerFields(config = {}, shapes = null) {
   const fields = []
-  if (config.event) fields.push(...eventFields(config.event))
+  if (config.event) fields.push(...eventFields(config.event, shapes))
   if (config.manual) {
     fields.push({ name: 'actor', type: 'text', description: 'Who started the run' })
-    if (!config.event) fields.push(...INCIDENT_OPTIONAL)
+    if (!config.event) fields.push(...incidentFields(shapes).map((field) => ({ ...field, optional: true })))
   }
   if (config.webhook) {
     fields.push({ name: 'body', type: 'any', description: 'What was sent: an object when it is JSON, text otherwise' })
@@ -501,27 +515,67 @@ export function subFields(name, value, depth = SUB_DEPTH) {
   return found
 }
 
+/** `incident` + `id` is `incident.id`; `lists` + `[0].name` is `lists[0].name`. */
+const under = (name, inside) => (inside.startsWith('[') ? `${name}${inside}` : `${name}.${inside}`)
+
 /**
- * The outputs of a block, each followed by what is inside it when the block
- * says what an answer looks like (`sample`, from the connector's file).
+ * What an output says is inside it (`shape`): a list of `{ name, type,
+ * description }`, or the name of one the catalog carries once ("incident", the
+ * incident a node gives; "fields", the fields of the registry).
  */
-export function withSubFields(outputs, sample) {
-  if (!sample || typeof sample !== 'object' || Array.isArray(sample)) return outputs
+function shapeOf(output, shapes) {
+  const found = typeof output?.shape === 'string' ? shapes?.[output.shape] : output?.shape
+  return list(found).filter((field) => field && typeof field.name === 'string')
+}
+
+/**
+ * The outputs of a block, each followed by what is inside it: what the output
+ * itself declares (`shape`, the actions of Nik), else what an answer looks
+ * like when the block says so (`sample`, from a connector's file). The output
+ * stays in the list: the whole object can be picked as well as a part of it.
+ */
+export function withSubFields(outputs, sample, shapes = null) {
+  const sampled = sample && typeof sample === 'object' && !Array.isArray(sample) ? sample : null
+  if (!sampled && !outputs.some((output) => shapeOf(output, shapes).length)) return outputs
   const out = []
+  // What is read from a sample is cut short; what is declared is listed whole.
+  let read = 0
   for (const output of outputs) {
     out.push(output)
-    if (output.name in sample) out.push(...subFields(output.name, sample[output.name]))
-    if (out.length >= SUB_MAX) break
+    const declared = shapeOf(output, shapes)
+    if (declared.length) {
+      out.push(...declared.map((field) => ({ ...field, name: under(output.name, field.name) })))
+    } else if (sampled && output.name in sampled && read < SUB_MAX) {
+      const inside = subFields(output.name, sampled[output.name]).slice(0, SUB_MAX - read)
+      read += inside.length
+      out.push(...inside)
+    }
   }
-  return out.slice(0, SUB_MAX)
+  return out
+}
+
+/** The entities of the context, each followed by its keys in the first item there is. */
+function contextFields(shapes) {
+  const keys = shapes?.context
+  if (!keys || typeof keys !== 'object') return CONTEXT_FIELDS
+  const said = new Map(CONTEXT_FIELDS.map((field) => [field.name, field.description]))
+  return Object.entries(keys).flatMap(([entity, names]) => [
+    { name: entity, type: 'list', description: said.get(entity) ?? '' },
+    ...list(names).map((key) => ({
+      name: `${entity}[0].${key}`,
+      type: 'any',
+      description: `${key} of the first ${entity} there is`,
+    })),
+  ])
 }
 
 /**
  * The values the expressions of a node can pick, as a tree:
  * `[{ name, label, fields: [{ path, type, description }] }]`. `path` is what
- * goes between the braces.
+ * goes between the braces. `shapes` are the catalog's: what is inside an
+ * incident, its fields and its context.
  */
-export function valueTree(graph, id, entries) {
+export function valueTree(graph, id, entries, shapes = null) {
   const { nodes, loop, poll } = readable(graph, id)
   const trigger = triggerOf(graph)
   const roots = []
@@ -531,12 +585,12 @@ export function valueTree(graph, id, entries) {
       label,
       fields: fields.map((field) => ({ ...field, path: field.name ? `${name}.${field.name}` : name })),
     })
-  if (trigger) push('trigger', 'What started the run', triggerFields(trigger.config))
+  if (trigger) push('trigger', 'What started the run', triggerFields(trigger.config, shapes))
   for (const other of nodes) {
     const node = nodeOf(graph, other)
     if (!node || node.kind === 'trigger' || node.kind === 'end') continue
     const entry = entryOf(node, entries)
-    const outputs = withSubFields(list(entry?.outputs), entry?.sample)
+    const outputs = withSubFields(list(entry?.outputs), entry?.sample, shapes)
     push(
       node.id,
       node.name || node.id,
@@ -559,8 +613,9 @@ export function valueTree(graph, id, entries) {
   }
   push('run', 'This run', RUN_FIELDS)
   // The incident the run works on, as it is when the step runs, and what is known of it.
-  push('incident', 'The incident, now', REGISTRY_FIELDS)
-  push('context', 'The context of the incident', CONTEXT_FIELDS)
+  // Every field of the registry, those made in Settings too; one without a value leads nowhere.
+  push('incident', 'The incident, now', list(shapes?.fields).length ? shapes.fields : REGISTRY_FIELDS)
+  push('context', 'The context of the incident', contextFields(shapes))
   return roots
 }
 

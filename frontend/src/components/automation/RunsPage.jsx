@@ -7,6 +7,7 @@ import { formatDateTime } from '../../lib/time.js'
 import { Badge, Button } from '../ui/index.js'
 import { SelectInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { setPath } from '../../lib/location.js'
 
@@ -61,8 +62,10 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
     return () => clearInterval(timer)
   }, [active, load])
 
+  const pageMenu = usePageMenu(() => [{ label: 'Refresh', icon: RefreshCw, onSelect: load }])
+
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4 p-6" onContextMenu={pageMenu}>
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-fg-muted">
           Status

@@ -465,13 +465,22 @@ class Runtime:
             MAX_ITEMS,
         )
 
-    def fetch(self, spec: Any, state: dict[str, Any], first: dict[str, Any], now: dict[str, Any], limit: int) -> dict:
+    def fetch(
+        self,
+        spec: Any,
+        state: dict[str, Any],
+        first: dict[str, Any],
+        now: dict[str, Any],
+        limit: int,
+        since: dict[str, Any] | None = None,
+    ) -> dict:
         """Read the items of one cycle of a fetch: ``{"items", "truncated", "response", "status", "headers"}``.
 
-        The request reads ``state`` (and ``first``, ``now``); nobody gives it arguments. With
-        ``pagination`` the pages are read to the end or to ``limit`` items; without, ``items`` says
-        where they are in the one answer."""
-        base = {"config": self.config, "state": state, "first": first, "now": now}
+        The request reads ``since`` (the moment to ask from, which the engine works out) or
+        ``state`` (and ``first``, ``now``); nobody gives it arguments. With ``pagination`` the pages
+        are read to the end or to ``limit`` items; without, ``items`` says where they are in the
+        one answer."""
+        base = {"config": self.config, "state": state, "first": first, "now": now, "since": since or first}
 
         def sent() -> ex.Scope:
             return ex.Scope(values={**base, "secret": self.secrets})

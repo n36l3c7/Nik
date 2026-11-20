@@ -131,7 +131,7 @@ def test_build_html_sections_language_and_escaping():
 
 
 def test_report_endpoint_html_pdf_and_branding(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     assert admin.post("/api/incidents", headers=key, json=DOC).status_code == 201
     settings = admin.get("/api/settings").json()
     settings["report"] = {"orgName": "ACME SOC", "logo": LOGO}

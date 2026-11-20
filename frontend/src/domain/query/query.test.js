@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { MESSAGES, modern, parse, tryParse } from './parse.js'
 import { tokenAt, tokenize } from './tokenize.js'
-import { applyCompletion, completions, fieldOf, writeValue } from './complete.js'
+import { applyCompletion, completions, fieldCaption, fieldOf, writeValue } from './complete.js'
 import { conditionOn, isComplete, opLabel, opsFor, toModel, toText, withCondition } from './builder.js'
 
 // The parser's vectors, shared with the backend (tests/test_query.py reads the same file).
@@ -357,4 +357,111 @@ test('a filter writes its condition into the query, and reads it back', () => {
     conditionOn(withCondition('x', 'severity', 'severity:>=high', SCHEMA), 'severity', SCHEMA),
     'severity:>=high',
   )
+})
+
+// The incidents as the server lists them once Settings has custom fields: each is a field like another.
+const custom = (name, kind, label, more = {}) => ({
+  name,
+  aliases: name.startsWith('field.') ? [] : [`field.${name}`],
+  kind,
+  values: [],
+  description: label,
+  label,
+  custom: true,
+  ...more,
+})
+const REGISTRY = {
+  entity: 'incidents',
+  fields: [
+    ...SCHEMA.fields.map((field) => ({ ...field, label: '', custom: false })),
+    { name: 'number', aliases: ['no'], kind: 'number', values: [], description: '', label: '', custom: false },
+    custom('customer', 'text', 'Customer'),
+    custom('amount', 'number', 'Amount at stake'),
+    custom('due_back', 'date', 'Due back'),
+    custom('confirmed', 'bool', 'Confirmed by the customer'),
+    custom('region', 'keyword', 'Sales region', { values: ['EMEA', 'North America', 'APAC'] }),
+    custom('channels', 'tags', 'Channels', { values: ['mail', 'phone'] }),
+    custom('field.number', 'text', 'Order number'),
+  ],
+}
+
+test('a custom field is completed, built and written like a field Nik always had', () => {
+  const offered = (text, options) => completions(text, text.length, REGISTRY, options)?.items ?? []
+  // Its name is offered with what Settings calls it; its other name lists the custom fields.
+  assert.deepEqual(
+    offered('cu').map((item) => [item.label, item.insert, item.detail]),
+    [['customer', 'customer:', 'Customer']],
+  )
+  assert.deepEqual(
+    offered('field.').map((item) => item.label),
+    [
+      'field.customer',
+      'field.amount',
+      'field.due_back',
+      'field.confirmed',
+      'field.region',
+      'field.channels',
+      'field.number',
+    ],
+  )
+  assert.deepEqual(
+    offered('num').map((item) => item.label),
+    ['number', 'field.number'],
+  )
+  // The values of a closed set, quoted when they need it; true and false; the dates the language knows.
+  assert.deepEqual(
+    offered('region:').map((item) => item.insert),
+    ['EMEA', '"North America"', 'APAC'],
+  )
+  assert.deepEqual(
+    offered('region:n').map((item) => item.label),
+    ['North America'],
+  )
+  assert.deepEqual(
+    offered('!channels:').map((item) => item.label),
+    ['mail', 'phone'],
+  )
+  assert.deepEqual(
+    offered('confirmed:').map((item) => item.label),
+    ['true', 'false'],
+  )
+  assert.equal(offered('due_back:>=')[0].label, 'today')
+  assert.deepEqual(offered('customer:'), [])
+  assert.equal(fieldOf(REGISTRY, 'field.customer').name, 'customer')
+  assert.equal(fieldOf(REGISTRY, 'FIELD.NUMBER').label, 'Order number')
+
+  // The operators follow the kind, whoever made the field.
+  const ids = (name) => opsFor(fieldOf(REGISTRY, name).kind).map((op) => op.id)
+  assert.deepEqual(ids('customer'), ['=', '!', 'empty', 'filled'])
+  assert.deepEqual(ids('amount'), ['=', '!', '>', '>=', '<', '<=', 'between', 'empty', 'filled'])
+  assert.deepEqual(ids('due_back'), ids('created'))
+  assert.deepEqual(ids('confirmed'), ['=', '!'])
+  assert.deepEqual(ids('region'), ids('status'))
+  assert.deepEqual(ids('channels'), ids('tags'))
+
+  // Rows of the builder and conditions of the filters, the name with a dot included.
+  const text = 'customer:acme !region:"North America" amount:[100 TO *] field.number:"" due_back:>=now-7d'
+  assert.deepEqual(
+    toModel(text).rows.map((row) => [row.field, row.op, row.value]),
+    [
+      ['customer', '=', 'acme'],
+      ['region', '!', 'North America'],
+      ['amount', 'between', '100'],
+      ['field.number', 'empty', ''],
+      ['due_back', '>=', 'now-7d'],
+    ],
+  )
+  assert.equal(toText(toModel(text)), text)
+  assert.equal(conditionOn(text, 'field.number', REGISTRY), 'field.number:""')
+  assert.equal(conditionOn('field.customer:acme', 'customer', REGISTRY), 'field.customer:acme') // by its other name
+  assert.equal(withCondition('field.customer:acme x', 'customer', 'customer:*', REGISTRY), 'x customer:*')
+  assert.equal(withCondition('number:7', 'field.number', 'field.number:po-7', REGISTRY), 'number:7 field.number:po-7')
+
+  // Where a field is chosen: its name, and its label when that says more.
+  assert.equal(fieldCaption(fieldOf(REGISTRY, 'customer')), 'customer')
+  assert.equal(fieldCaption(fieldOf(REGISTRY, 'due_back')), 'due_back')
+  assert.equal(fieldCaption(fieldOf(REGISTRY, 'amount')), 'amount · Amount at stake')
+  assert.equal(fieldCaption(fieldOf(REGISTRY, 'field.number')), 'field.number · Order number')
+  assert.equal(fieldCaption(fieldOf(REGISTRY, 'status')), 'status')
+  assert.equal(fieldCaption(null), '')
 })

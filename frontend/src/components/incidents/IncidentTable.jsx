@@ -2,9 +2,10 @@ import { useRef } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, Download, Mail, Trash2 } from 'lucide-react'
 import { getOsById } from '../../config/os.js'
 import { cellText, cleanSort, neighbour } from '../../domain/incidentList.js'
+import { fitTags } from '../../domain/incidentTags.js'
 import { numberedName } from '../../domain/incidentName.js'
 import { formatRelative } from '../../lib/time.js'
-import { MicroSkull, SeverityTag, StatusTag } from '../ui/index.js'
+import { Chip, MicroSkull, SeverityTag, StatusTag } from '../ui/index.js'
 import ConnectorLogo from '../ui/ConnectorLogo.jsx'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
 
@@ -15,7 +16,7 @@ import IncidentNumber from '../ui/IncidentNumber.jsx'
  * A click on a row shows it in the quick view; a double click, or Enter on a
  * row, opens the incident. The arrows go to the row above and below, and the
  * quick view follows when it is open. The right-click menu of a row is the
- * one the side panel had.
+ * one the side panel had. A click on a tag of a row filters the list by it.
  */
 
 const EMPTY = <span className="text-fg-subtle">—</span>
@@ -40,9 +41,33 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
   )
 }
 
-function Cell({ row, column, types }) {
+function Cell({ row, column, types, onTag }) {
   const text = cellText(row, column, { types })
   switch (column.key) {
+    case 'labels': {
+      // The tags the cell has room for; a click on one asks the list for it.
+      const { shown, more } = fitTags(row.tags)
+      if (shown.length === 0) return EMPTY
+      return (
+        <span className="flex items-center gap-1">
+          {shown.map((tag) => (
+            <Chip
+              key={tag}
+              onClick={() => onTag(tag)}
+              label={`Filter by the tag ${tag}`}
+              title={`Filter by the tag ${tag}`}
+            >
+              #{tag}
+            </Chip>
+          ))}
+          {more > 0 && (
+            <span className="font-mono text-xs text-fg-muted" title={row.tags.slice(shown.length).join(', ')}>
+              +{more}
+            </span>
+          )}
+        </span>
+      )
+    }
     case 'number':
       return row.number ? <IncidentNumber number={row.number} className="text-xs" /> : EMPTY
     case 'name': {
@@ -102,6 +127,7 @@ function Cell({ row, column, types }) {
  *   onOpen: (id: string) => void,      // a double click, Enter
  *   onMove: (id: string) => void,      // the arrows went to another row
  *   onMenu: (event: MouseEvent, row: object) => void,
+ *   onTag: (tag: string) => void,      // a click on a tag of a row
  *   canWrite: boolean,
  *   exportingId: string | null,
  *   onExport: (row: object) => void,
@@ -119,6 +145,7 @@ export default function IncidentTable({
   onOpen,
   onMove,
   onMenu,
+  onTag,
   canWrite,
   exportingId,
   onExport,
@@ -208,7 +235,7 @@ export default function IncidentTable({
             >
               {columns.map((column) => (
                 <td key={column.key} className="whitespace-nowrap px-3 py-2 align-middle text-fg">
-                  <Cell row={row} column={column} types={types} />
+                  <Cell row={row} column={column} types={types} onTag={onTag} />
                 </td>
               ))}
               <td className="px-2 py-1 align-middle">

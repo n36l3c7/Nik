@@ -125,14 +125,14 @@ def _upload(client: TestClient, key: dict, incident_id: str, payload: bytes) -> 
 
 
 def test_not_configured(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "c0", minimal_pe(b"\x90\xc3"))
     assert admin.get(f"/api/samples/{sha}/code", headers=key).json() == {"configured": False, "status": "none"}
     assert admin.post(f"/api/samples/{sha}/code", headers=key).status_code == 503
 
 
 def test_upload_queues_the_disassembly_and_stores_the_result(admin: TestClient, worker):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "c1", minimal_pe(b"\x55\x89\xe5\xc3"))
     assert worker == [sha]  # the background job ran once after the upload
 
@@ -153,7 +153,7 @@ def test_upload_queues_the_disassembly_and_stores_the_result(admin: TestClient, 
     # Running it again on demand is audited; read-only keys cannot start it.
     assert admin.post(f"/api/samples/{sha}/code", headers=key).status_code == 202
     assert worker == [sha, sha]
-    read_only = make_key(admin, role="analyst", scopes=["read"])
+    read_only = make_key(admin, roles=["viewer"])
     assert admin.post(f"/api/samples/{sha}/code", headers=read_only).status_code == 403
     actions = {e["action"] for e in admin.get("/api/audit").json()["entries"]}
     assert "sample.disassemble" in actions
@@ -164,7 +164,7 @@ def test_worker_errors_are_stored(admin: TestClient, monkeypatch, worker):
         raise analyzer.AnalyzerError("rizin did not finish within 600 seconds")
 
     monkeypatch.setattr(analyzer, "request_code_analysis", failing)
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "c2", minimal_pe(b"\xeb\xfe"))
     state = admin.get(f"/api/samples/{sha}/code", headers=key).json()
     assert state["status"] == "error" and "600 seconds" in state["error"]
@@ -172,7 +172,7 @@ def test_worker_errors_are_stored(admin: TestClient, monkeypatch, worker):
 
 
 def test_decompiled_code_is_stored_or_fetched_once_on_demand(admin: TestClient, worker):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "c3", minimal_pe(b"\x55\x89\xe5\xc3"))
     url = f"/api/samples/{sha}/code/functions/{{}}/decompiled"
 
@@ -192,7 +192,7 @@ def test_decompiled_code_is_stored_or_fetched_once_on_demand(admin: TestClient, 
 
 
 def test_decompile_errors(admin: TestClient, monkeypatch, worker):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "c4", minimal_pe(b"\x31\xc0\xc3"))
     url = f"/api/samples/{sha}/code/functions/{0x40100F}/decompiled"
 

@@ -487,10 +487,11 @@ def _call_cycle(name: str | None, graph: dict, library: Library) -> bool:
 
 
 MAX_EDGE_POINTS = 20
+MAX_ROUTE_POINTS = 60
 
 
-def _points_ok(points: Any) -> bool:
-    if not isinstance(points, list) or len(points) > MAX_EDGE_POINTS:
+def _points_ok(points: Any, most: int = MAX_EDGE_POINTS) -> bool:
+    if not isinstance(points, list) or len(points) > most:
         return False
     for point in points:
         if not isinstance(point, dict) or set(point) != {"x", "y"}:
@@ -499,6 +500,16 @@ def _points_ok(points: Any) -> bool:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or abs(value) > 1_000_000:
                 return False
     return True
+
+
+def _route_ok(route: Any) -> bool:
+    """The way "Tidy up" gave a line: its points, and where its words go."""
+    if not isinstance(route, dict) or not set(route) <= {"points", "label"}:
+        return False
+    points = route.get("points")
+    if not _points_ok(points, MAX_ROUTE_POINTS) or len(points) < 2:
+        return False
+    return "label" not in route or _points_ok([route["label"]])
 
 
 def validate(graph: Any, library: Library, name: str | None = None) -> list[Problem]:
@@ -555,11 +566,21 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
         if (edge["from"], port, edge["to"]) in pairs:
             problems.append(Problem("The same edge is drawn twice", source["id"]))
         pairs.add((edge["from"], port, edge["to"]))
-        # The corners somebody gave the line (5.2): a drawing, which the engine never reads.
+        # The corners somebody gave the line (5.2 to 6.3): a drawing, which the engine never reads.
+        # The editor draws none any more and leaves them behind; the versions that have them stay valid.
         points = edge.get("points")
         if points is not None and not _points_ok(points):
             problems.append(
                 Problem(f"The corners of an edge are at most {MAX_EDGE_POINTS} points with x and y", source["id"])
+            )
+        # The way "Tidy up" routed the line round the nodes (6.4): a drawing as well.
+        route = edge.get("route")
+        if route is not None and not _route_ok(route):
+            problems.append(
+                Problem(
+                    f"The route of an edge is 2 to {MAX_ROUTE_POINTS} points with x and y, and where its words go",
+                    source["id"],
+                )
             )
 
     order = topological(graph)

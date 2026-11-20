@@ -8,12 +8,35 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from fastapi import HTTPException
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
 # Auth / users
 # ---------------------------------------------------------------------------
+class RolesBody(BaseModel):
+    """A request body that says what an account or a key may do with ``roles``.
+
+    Releases before 4.0 took one ``role``, and ``scopes`` on a key. A body that
+    still sends one is refused rather than read without it: a client asking for
+    a key with ``scopes: ["read"]`` would otherwise be handed a key that writes.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_what_roles_replaced(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for name in ("role", "scopes"):
+                if name in data:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f'"{name}" is no longer accepted: send "roles", a list of role names '
+                        '(for example ["viewer"] for an account or a key that only reads)',
+                    )
+        return data
+
+
 class LoginIn(BaseModel):
     """Login request body."""
 
@@ -21,27 +44,23 @@ class LoginIn(BaseModel):
     password: str
 
 
-class UserCreate(BaseModel):
+class UserCreate(RolesBody):
     """User creation request body.
 
     ``roles`` is the list of role names of the account (``analyst`` when left
-    out); on first run it is ignored and the account is an admin. ``role`` is
-    the single role of releases before 4.0, still accepted when ``roles`` is
-    not sent.
+    out); on first run it is ignored and the account is an admin.
     """
 
     username: str
     password: str
     roles: Optional[list[str]] = Field(default=None, max_length=16)
-    role: Optional[str] = None
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(RolesBody):
     """Changes to an account, made by an admin. A field left out is kept."""
 
     username: Optional[str] = None
     roles: Optional[list[str]] = Field(default=None, max_length=16)
-    role: Optional[str] = None
     password: Optional[str] = None
     disabled: Optional[bool] = None
 
@@ -59,8 +78,6 @@ class UserOut(BaseModel):
     id: str
     username: str
     roles: list[str] = []
-    # The single role of releases before 4.0: the most able of the account's roles.
-    role: str
     # Everything the roles grant together.
     permissions: list[str] = []
     createdAt: str
@@ -208,20 +225,16 @@ class SettingsOut(BaseModel):
 # ---------------------------------------------------------------------------
 # API keys
 # ---------------------------------------------------------------------------
-class ApiKeyCreate(BaseModel):
+class ApiKeyCreate(RolesBody):
     """Request body to create an API key.
 
     The admin creating the key sets what it may do with ``roles``, the same
     role names an account takes (``["viewer"]`` for a read-only key,
-    ``["analyst"]`` when left out). ``role`` and ``scopes`` are what releases
-    before 4.0 took, still accepted when ``roles`` is not sent.
-    ``expiresInDays`` optionally sets an expiry.
+    ``["analyst"]`` when left out). ``expiresInDays`` optionally sets an expiry.
     """
 
     label: str
     roles: Optional[list[str]] = Field(default=None, max_length=16)
-    role: Optional[str] = None
-    scopes: Optional[list[str]] = None
     expiresInDays: Optional[int] = None
 
 
@@ -232,9 +245,6 @@ class ApiKeyOut(BaseModel):
     label: str
     prefix: str
     roles: list[str] = []
-    # What releases before 4.0 answered, worked out from the roles.
-    role: str
-    scopes: list[str]
     createdAt: str
     createdBy: Optional[str] = None
     expiresAt: Optional[str] = None

@@ -6,6 +6,7 @@ import { automationPath } from '../../domain/automationNav.js'
 import { RUN_COLORS, artifactTarget, isFinished } from '../../domain/automation/runs.js'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { Badge, Button } from '../ui/index.js'
 
 /*
@@ -28,6 +29,7 @@ export default function ArtifactRuns({ artifact }) {
   const target = allowed ? artifactTarget(artifact) : null
   const [runs, setRuns] = useState(null)
   const [total, setTotal] = useState(0)
+  const menu = useObjectMenu()
 
   const id = target?.id
   const load = useCallback(async () => {
@@ -63,6 +65,14 @@ export default function ArtifactRuns({ artifact }) {
           type="button"
           title={`Started ${formatDateTime(Date.parse(run.startedAt))} by ${run.startedBy || 'nik'}`}
           onClick={() => setPath(automationPath('runs', run.id))}
+          onContextMenu={(event) =>
+            menu(event, {
+              title: run.playbook || 'A playbook',
+              actions: [{ label: 'Open the run', onSelect: () => setPath(automationPath('runs', run.id)) }],
+              link: automationPath('runs', run.id),
+              copy: [{ label: 'Copy the id', text: run.id }],
+            })
+          }
           className="inline-flex items-center gap-1.5 border border-line bg-canvas px-2 py-0.5 text-xs text-fg hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <span className="max-w-[220px] truncate">{run.playbook || 'A playbook'}</span>

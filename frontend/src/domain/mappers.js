@@ -311,3 +311,42 @@ export function moved(ids, id, by) {
   next.splice(to, 0, id)
   return next
 }
+
+/* ------------------------------------------- edited in the form of an instance */
+
+/**
+ * The classifier and the mappers are edited in the form of an instance and
+ * saved by its one "Save". What was changed and not yet saved is a draft, held
+ * by the form: the rows as they are edited, by direction and type of incident
+ * for a mapper, so that choosing another type does not lose them.
+ */
+export const mapperKey = (direction, typeId) => `${direction}:${typeId || ANY_TYPE}`
+
+/** What PUT /api/mappers takes for each mapper that was changed: one body for each draft. */
+export function mapperBodies(connectorId, drafts) {
+  return Object.entries(drafts ?? {}).map(([key, draft]) => {
+    const at = key.indexOf(':')
+    const direction = key.slice(0, at)
+    return {
+      connectorId,
+      direction,
+      incidentType: key.slice(at + 1),
+      rules: direction === 'incoming' ? incomingRules(draft.rows, draft.extras) : outgoingRules(draft.outRows),
+    }
+  })
+}
+
+/** What PUT /api/classifiers/<id> takes, from the draft of a classifier `{ rows, fallback }`. */
+export const classifierBody = (draft) => ({
+  rules: classifierRules(draft?.rows),
+  defaultType: draft?.fallback || null,
+})
+
+/** What is not saved yet, in words for the tab and the footer: "the classifier, 2 mappers", or ''. */
+export function unsavedText(classifierDraft, mapperDrafts) {
+  const count = Object.keys(mapperDrafts ?? {}).length
+  const parts = []
+  if (classifierDraft) parts.push('the classifier')
+  if (count) parts.push(count === 1 ? 'a mapper' : `${count} mappers`)
+  return parts.join(', ')
+}

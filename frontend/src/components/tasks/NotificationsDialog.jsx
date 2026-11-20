@@ -2,6 +2,7 @@ import { useTasks } from '../../context/TasksContext.jsx'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
 import { notificationKind, safeLink } from '../../domain/timers.js'
+import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { Badge, Button, Modal } from '../ui/index.js'
 
 /*
@@ -15,6 +16,7 @@ const COLORS = { overdue: 'red', SLA: 'red', approval: 'amber', task: 'cyan', re
 /** @param {{ onClose: () => void }} props */
 export default function NotificationsDialog({ onClose }) {
   const { notifications, unread, readNotifications } = useTasks()
+  const menu = useObjectMenu()
 
   const open = (item) => {
     readNotifications([item.id])
@@ -45,7 +47,17 @@ export default function NotificationsDialog({ onClose }) {
           {notifications.map((item) => {
             const kind = notificationKind(item.kind)
             return (
-              <li key={item.id}>
+              <li
+                key={item.id}
+                onContextMenu={(event) =>
+                  menu(event, {
+                    title: item.text,
+                    actions: [{ label: 'Open', onSelect: () => open(item) }],
+                    link: safeLink(item.link),
+                    copy: [{ label: 'Copy the text', text: item.text }],
+                  })
+                }
+              >
                 <button
                   type="button"
                   onClick={() => open(item)}

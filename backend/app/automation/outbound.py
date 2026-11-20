@@ -51,23 +51,14 @@ def guarded(call: Call, payload: dict[str, Any], argument_names: dict[str, str] 
     raise ActionError(decision.sentence(), retry=False, request={"held": decision.as_dict()})
 
 
-def guarded_files(call: Call, found: list[dict[str, Any]], decided: dict) -> bool:
-    """Whether the files a message is about to carry may leave, each given as ``{name, size, sha256}``.
+def _files_decision(call: Call, found: list[dict[str, Any]], context: guard.Context, opened: frozenset):
+    """What the guard says of the files a message would carry, each given as ``{name, size, sha256}``.
 
     A file is judged by what it is, never by opening it: it is an attachment and its name is a file
     name; one whose hash Nik holds as a sample is a sample, one whose hash is on the allowlist is an
-    allowlisted indicator; and its name is read as any text that leaves is. The playbook sends them
-    only when every one of those classes was opened for it.
-
-    Held, the step fails with what was held; with ``held: drop`` on the node the message goes without
-    its files (False). ``decided`` is what the guard said of the arguments: what it says of the files
-    is added to it, for the step to show."""
-    if not found:
-        return True
+    allowlisted indicator; and its name is read as any text that leaves is."""
     from ..core.models import Sample
 
-    context = guard.context_from(call.db)
-    opened = frozenset(call.playbook.data_allow or [])
     hashes = [str(item.get("sha256") or "") for item in found]
     known = call.db.scalars(select(Sample.sha256).where(Sample.sha256.in_(hashes))).all()
     listed = [value for value in hashes if context.allowlisted and context.allowlisted("sha256", value)]
@@ -81,16 +72,64 @@ def guarded_files(call: Call, found: list[dict[str, Any]], decided: dict) -> boo
         counts["allowlisted"] = len(listed)
     decision = guard.check([str(item.get("name") or "") for item in found], frozenset(classes), opened, context)
     decision.counts = {**counts, **decision.counts}
-    decided["classes"] = sorted({*decided.get("classes", ()), *decision.classes})
-    decided["held"] = sorted({*decided.get("held", ()), *decision.held})
-    decided["counts"] = {**decided.get("counts", {}), **decision.counts}
-    decided["files"] = {"count": len(found), "bytes": sum(int(item.get("size") or 0) for item in found)}
-    if decision.allowed:
-        return True
+    return decision
+
+
+def guarded_message(
+    call: Call, quoted: dict[str, tuple[Any, tuple[str, ...]]], files: list[dict[str, Any]], decided: dict
+) -> tuple[list[str], bool]:
+    """Decide on what a message is about to carry that no argument of the node holds: what it quotes
+    from a message read in a mailbox, and the files attached to that message.
+
+    ``quoted`` is name → (the value, the classes it has by where it was read): the subject of the
+    message is a subject, its sender and recipients are e-mail addresses, its text is an e-mail body.
+    Each part is judged on its own, by those classes and by what the scan finds in it, so that a held
+    part can be left out and the others still go. The files are judged as ``_files_decision`` says,
+    all together: they are carried only when every one of their classes was opened for the playbook.
+
+    Returns the names of the quoted parts that were held, and whether the files may be carried.
+    Held, the step fails with one sentence for everything that was held; with ``held: drop`` on the
+    node the message goes without the held parts and without its files. ``decided`` is what the guard
+    said of the arguments: what it says here is added to it, for the step to show."""
+    context = guard.context_from(call.db)
+    opened = frozenset(call.playbook.data_allow or [])
+    classes: set[str] = set()
+    counts: dict[str, int] = {}
+    judged: list[str] = []
+    held_parts: list[str] = []
+    for name, (value, tagged) in quoted.items():
+        if value in (None, "", [], ()):
+            continue  # the message had none: nothing of it is quoted
+        judged.append(name)
+        decision = guard.check(value, frozenset(tagged), opened, context)
+        many = len(value) if isinstance(value, (list, tuple)) else 1
+        for found in decision.classes:
+            # An address is counted once, whether it is known by where it was read or by its look.
+            counts[found] = counts.get(found, 0) + max(many if found in tagged else 0, decision.counts.get(found, 0))
+        classes |= decision.classes
+        if not decision.allowed:
+            held_parts.append(name)
+    carried = True
+    if files:
+        decision = _files_decision(call, files, context, opened)
+        for found, count in decision.counts.items():
+            counts[found] = counts.get(found, 0) + count
+        classes |= decision.classes
+        carried = decision.allowed
+        decided["files"] = {"count": len(files), "bytes": sum(int(item.get("size") or 0) for item in files)}
+    total = guard.Decision(classes=frozenset(classes), held=frozenset(classes) - (guard.ALWAYS | opened), counts=counts)
+    before = decided.get("counts", {})
+    decided["classes"] = sorted({*decided.get("classes", ()), *total.classes})
+    decided["held"] = sorted({*decided.get("held", ()), *total.held})
+    decided["counts"] = {**before, **{name: before.get(name, 0) + count for name, count in counts.items()}}
+    if judged:
+        decided["quoted"] = {"parts": judged, "held": held_parts}
+    if total.allowed:
+        return [], True
     if call.held == "drop":
         decided["dropped"] = True
-        return False
-    raise ActionError(decision.sentence(), retry=False, request={"held": decided})
+        return held_parts, carried
+    raise ActionError(total.sentence(), retry=False, request={"held": decided})
 
 
 def _fail(error: egress.EgressError) -> ActionError:

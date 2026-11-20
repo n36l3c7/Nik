@@ -949,3 +949,96 @@ def test_migration_0041_adds_the_saved_filters(tmp_path, monkeypatch):
     command.downgrade(cfg, "0040_instance_keys")
     with engine.connect() as conn:
         assert not set(SAVED_FILTER_TABLES) & set(sa.inspect(conn).get_table_names())
+
+
+def test_migration_0043_adds_how_an_instance_fetches(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE connections (id VARCHAR(32) PRIMARY KEY, name VARCHAR(80))"))
+        conn.execute(sa.text("INSERT INTO connections (id, name) VALUES ('c1', 'Mine')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0041_saved_filters")
+    command.upgrade(cfg, "0043_instance_fetch")
+    with engine.begin() as conn:
+        # An instance that was there fetches as its connector says: nothing is set for it.
+        assert conn.execute(sa.text("SELECT name, fetch_settings FROM connections")).one() == ("Mine", None)
+        conn.execute(sa.text("UPDATE connections SET fetch_settings = '{\"lookbackMinutes\": 5}'"))
+    command.stamp(cfg, "0041_saved_filters")
+    command.upgrade(cfg, "0043_instance_fetch")  # again: nothing to do, and what was set is still there
+    with engine.connect() as conn:
+        assert "lookbackMinutes" in conn.execute(sa.text("SELECT fetch_settings FROM connections")).scalar()
+    command.downgrade(cfg, "0041_saved_filters")
+    with engine.connect() as conn:
+        assert {c["name"] for c in sa.inspect(conn).get_columns("connections")} == {"id", "name"}
+
+
+def test_migration_0044_drops_the_single_role_and_the_scopes_once_every_row_has_roles(tmp_path, monkeypatch):
+    engine = _database_before_roles(tmp_path, monkeypatch)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0024_mailboxes")
+    command.upgrade(cfg, "0025_roles")
+    with engine.begin() as conn:
+        # Roles given since 4.0 are what counts, whatever the old columns still say.
+        conn.execute(sa.text("UPDATE users SET roles = '[\"viewer\", \"audit\"]' WHERE username = 'anna'"))
+        # Rows that something wrote without roles: they get what their old columns stand for.
+        conn.execute(sa.text("INSERT INTO users VALUES ('late', 'late', 'h', 'admin', 't', NULL, 0, 0, NULL, '[]', 0)"))
+        conn.execute(
+            sa.text(
+                "INSERT INTO api_keys VALUES"
+                " ('late', 'late', 'nik_', 'h', 'analyst', 'read', 't', NULL, NULL, NULL, NULL, '[]')"
+            )
+        )
+
+    def roles(table: str, key: str) -> dict:
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text(f"SELECT {key}, roles FROM {table}")).all()  # noqa: S608 (fixed names)
+        return {row[0]: json.loads(row[1]) if isinstance(row[1], str) else row[1] for row in rows}
+
+    def columns(table: str) -> set:
+        with engine.connect() as conn:
+            return {c["name"] for c in sa.inspect(conn).get_columns(table)}
+
+    command.stamp(cfg, "0043_instance_fetch")
+    command.upgrade(cfg, "0044_no_legacy_roles")
+    assert "role" not in columns("users") and {"role", "scopes"}.isdisjoint(columns("api_keys"))
+    assert roles("users", "username") == {"root": ["admin"], "anna": ["viewer", "audit"], "late": ["admin"]}
+    assert roles("api_keys", "label") == {"adm": ["admin"], "rw": ["analyst"], "ro": ["viewer"], "late": ["viewer"]}
+
+    command.stamp(cfg, "0043_instance_fetch")
+    command.upgrade(cfg, "0044_no_legacy_roles")  # again: the columns are gone, nothing to do
+    assert roles("users", "username")["anna"] == ["viewer", "audit"]
+
+    # A downgrade puts the old columns back, filled from the roles.
+    command.downgrade(cfg, "0043_instance_fetch")
+    with engine.connect() as conn:
+        assert dict(conn.execute(sa.text("SELECT username, role FROM users")).all()) == {
+            "root": "admin",
+            "anna": "analyst",
+            "late": "admin",
+        }
+        assert {
+            row[0]: (row[1], row[2]) for row in conn.execute(sa.text("SELECT label, role, scopes FROM api_keys"))
+        } == {
+            "adm": ("admin", "read,write,admin"),
+            "rw": ("analyst", "read,write"),
+            "ro": ("analyst", "read"),
+            "late": ("analyst", "read"),
+        }
+
+
+def test_migration_0025_has_nothing_to_fill_on_a_database_that_never_had_the_single_role(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "new.db").replace("\\", "/"))
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    # The baseline makes the tables as the models are now: with roles, without the old columns.
+    command.upgrade(cfg, "0025_roles")
+    with engine.connect() as conn:
+        names = {c["name"] for c in sa.inspect(conn).get_columns("users")}
+    assert "roles" in names and "role" not in names
+    command.upgrade(cfg, "0044_no_legacy_roles")

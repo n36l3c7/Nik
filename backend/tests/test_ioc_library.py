@@ -256,7 +256,7 @@ def test_a_list_is_a_feed_for_machines(admin: TestClient):
         json={"text": f"{IP}\nevil.example.org\nold.example.org", "list": {"name": "Blocklist"}},
     ).json()["list"]
     admin.patch("/api/iocs/item", json={"type": "domain", "value": "old.example.org", "expires": "2020-01-01"})
-    key = make_key(admin, scopes=["read"])
+    key = make_key(admin, roles=["viewer"])
     url = f"/api/iocs/lists/{listed['id']}/feed"
 
     anonymous = TestClient(admin.app)
@@ -363,8 +363,8 @@ def test_an_incidents_indicators_become_a_list(admin: TestClient):
 
 def test_only_the_author_or_an_admin_removes_a_list_and_read_keys_cannot_write(admin: TestClient):
     listed = admin.post("/api/iocs", json={"text": IP, "list": {"name": "Mine"}}).json()["list"]
-    reader = make_key(admin, scopes=["read"])
-    writer = make_key(admin, label="writer", scopes=["read", "write"])
+    reader = make_key(admin, roles=["viewer"])
+    writer = make_key(admin, label="writer", roles=["analyst"])
     other = TestClient(admin.app)
     assert other.get("/api/iocs", headers=reader).status_code == 200
     assert other.post("/api/iocs", headers=reader, json={"text": IP}).status_code == 403

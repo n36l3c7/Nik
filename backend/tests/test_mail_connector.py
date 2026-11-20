@@ -196,6 +196,14 @@ def run(name: str, **args):
     return runtime().run(name, args).outputs
 
 
+def trusted(**more):
+    """A runtime whose guard lets everything leave: what the commands do with a message, apart from
+    what a playbook may send."""
+    mailbox = runtime(**more)
+    mailbox.judge = lambda quoted, found: ([], True)
+    return mailbox
+
+
 # --------------------------------------------------------------------------- #
 # The file                                                                    #
 # --------------------------------------------------------------------------- #
@@ -209,7 +217,7 @@ def test_the_mail_connector_is_native_and_names_only_commands_nik_has():
     assert changing == {"send", "reply", "forward", "move", "mark-read", "mark-unread", "delete"}
     # A forward carries the attachments only when it is asked to.
     carried = next(a for a in MAIL.command("forward").arguments if a.name == "attachments")
-    assert carried.type == "bool" and carried.default is False and MAIL.version == 2
+    assert carried.type == "bool" and carried.default is False and MAIL.version == 3
     # It ships as a package, with its README, and without a logo: it belongs to no product.
     assert set(ca.shipped_extras()["mail"]) == {"readme"}
     assert ca.host_of(MAIL, CONFIG) == "imap.acme.example"
@@ -330,24 +338,37 @@ def test_a_message_is_sent_only_to_addresses_the_playbook_may_reach(box):
 
 
 def test_a_reply_stays_in_its_conversation_and_a_forward_quotes_the_message(box):
-    run("reply", uid=4, text="Paid yesterday.")
+    answered = trusted().run("reply", {"uid": 4, "text": "Paid yesterday."}).outputs
+    assert answered["sent"] is True and answered["quoted_held"] == []
     reply = Smtp.sent[-1]
     assert reply["To"] == "anna@partner.example" and reply["Subject"] == "Re: Invoice overdue"
     assert reply["In-Reply-To"] == "<m4@partner.example>" and reply["References"] == "<m4@partner.example>"
-    run("reply", uid=7, text="Thanks.", all=True)
+    trusted().run("reply", {"uid": 7, "text": "Thanks.", "all": True})
     everyone = Smtp.sent[-1]
     # Everyone it was sent to, but not the mailbox itself; "Re:" is not written twice.
     assert everyone["To"] == "bruno@acme.example" and everyone["Subject"] == "Re: your ticket"
 
-    run("forward", uid=4, to=["bruno@acme.example"], text="See below.")
+    trusted().run("forward", {"uid": 4, "to": ["bruno@acme.example"], "text": "See below."})
     forwarded = Smtp.sent[-1]
     assert forwarded["Subject"] == "Fwd: Invoice overdue"
     body = forwarded.get_content()
     assert body.startswith("See below.") and "From: anna@partner.example" in body and "Please pay." in body
     # The sender of the message answered is a recipient like any other.
     with pytest.raises(CommandError) as caught:
-        runtime(hosts=("acme.example",)).run("reply", {"uid": 4, "text": "x"})
+        trusted(hosts=("acme.example",)).run("reply", {"uid": 4, "text": "x"})
     assert "partner.example is not among the hosts" in caught.value.message
+    # With no guard to judge what is taken from the mailbox, nothing of it is sent on, and it is not read.
+    sent, calls = len(Smtp.sent), len(box.calls)
+    for name, args in (("reply", {"uid": 4, "text": "x"}), ("forward", {"uid": 4, "to": "bruno@acme.example"})):
+        with pytest.raises(CommandError) as caught:
+            runtime().run(name, args)
+        assert "only where the data guard judges what is taken from it" in caught.value.message
+    assert (len(Smtp.sent), len(box.calls)) == (sent, calls)
+    # A dry run does not read the mailbox: it says that what is quoted is judged when the step runs.
+    for name in ("reply", "forward"):
+        would = runtime().would_send(name, {"uid": 4, "to": "bruno@acme.example"})
+        assert "judged by the data guard when the step runs" in would["note"] and would["dry_run"] is True
+    assert len(box.calls) == calls and "note" not in runtime().would_send("send", {"to": "bruno@acme.example"})
 
 
 # --------------------------------------------------------------------------- #
@@ -385,6 +406,10 @@ def desk(admin, box):
         db.get(Playbook, playbook_id).egress_hosts = ["acme.example"]
         db.commit()
     return SimpleNamespace(admin=admin, box=box, playbook=playbook_id)
+
+
+# The classes of what a forward quotes of a message: its sender and recipients, its subject, its text.
+QUOTED = ("email_address", "subject", "mail_body")
 
 
 def step(desk, name: str, opened=(), incident: str | None = None, **more) -> actions.Result:
@@ -502,9 +527,10 @@ def test_the_attachments_of_a_message_are_kept_as_files_of_the_incident(desk, mo
 def test_a_forward_carries_the_attachments_only_when_the_data_guard_lets_them_leave(desk, monkeypatch):
     box = desk.box
     forward = {"uid": 4, "to": "bruno@acme.example", "text": "See below."}
+    quoted = list(QUOTED)  # what a forward quotes is open here: this is about the files
 
     # As before: asked for nothing more, a forward quotes the text and carries nothing.
-    plain = step(desk, "forward", args=forward)
+    plain = step(desk, "forward", args=forward, opened=quoted)
     assert (plain.output["sent"], plain.output["attachments"], plain.output["attachments_held"]) == (True, 0, 0)
     assert list(Smtp.sent[-1].iter_attachments()) == []
 
@@ -513,26 +539,27 @@ def test_a_forward_carries_the_attachments_only_when_the_data_guard_lets_them_le
     dry = step(desk, "forward", args={**forward, "attachments": True}, dry_run=True)
     assert dry.output == MAIL.command("forward").sample and len(Smtp.sent) == 1 and len(box.calls) == calls
 
-    # A playbook that sends no class of data: the attachment stays, and the step says what was held.
+    # A playbook that may send no file: the attachment stays, and the step says what was held.
     with pytest.raises(actions.ActionError) as caught:
-        step(desk, "forward", args={**forward, "attachments": True})
+        step(desk, "forward", args={**forward, "attachments": True}, opened=quoted)
     assert caught.value.message.startswith("Held back: 1 × file and attachment names, 1 × attachments.")
     assert caught.value.retry is False and len(Smtp.sent) == 1
     held = caught.value.request["held"]
     assert held["held"] == ["attachment", "attachment_name"] and held["files"] == {"count": 1, "bytes": 4}
     # The names alone are not the files.
     with pytest.raises(actions.ActionError) as caught:
-        step(desk, "forward", args={**forward, "attachments": True}, opened=["attachment_name"])
+        step(desk, "forward", args={**forward, "attachments": True}, opened=[*quoted, "attachment_name"])
     assert caught.value.message.startswith("Held back: 1 × attachments.") and len(Smtp.sent) == 1
 
     # A node told to send without what is held sends the text alone, and says how many stayed.
-    without = step(desk, "forward", args={**forward, "attachments": True}, held="drop")
+    without = step(desk, "forward", args={**forward, "attachments": True}, held="drop", opened=quoted)
     assert (without.output["attachments"], without.output["attachments_held"]) == (0, 1)
+    assert without.output["quoted_held"] == []
     assert without.request["held"]["dropped"] is True and "attachments" not in without.request
     assert list(Smtp.sent[-1].iter_attachments()) == [] and "Please pay." in Smtp.sent[-1].get_body().get_content()
 
     # Opened for the playbook, the file goes as the bytes it is, under its name.
-    opened = ["attachment_name", "attachment"]
+    opened = [*quoted, "attachment_name", "attachment"]
     carried = step(desk, "forward", args={**forward, "attachments": True}, opened=opened)
     assert (carried.output["attachments"], carried.output["attachments_held"]) == (1, 0)
     assert carried.request["attachments"] == 1 and carried.request["held"]["held"] == []
@@ -544,14 +571,15 @@ def test_a_forward_carries_the_attachments_only_when_the_data_guard_lets_them_le
         body.startswith("See below.") and "Please pay." in body and Smtp.sent[-1]["Subject"] == "Fwd: Invoice overdue"
     )
     # A message with nothing attached has nothing to judge.
-    assert step(desk, "forward", args={**forward, "uid": 9, "attachments": True}).output["attachments"] == 0
+    nothing = step(desk, "forward", args={**forward, "uid": 9, "attachments": True}, opened=quoted)
+    assert nothing.output["attachments"] == 0 and "files" not in nothing.request["held"]
     sent = len(Smtp.sent)
 
-    # A name is read as any text that leaves is: an address in it is an address.
-    box.folders["INBOX"][5] = [message(5, "Named", more=(("for anna@partner.example.txt", NOTE),)), set()]
+    # A name is read as any text that leaves is: a private address in it is an internal address.
+    box.folders["INBOX"][5] = [message(5, "Named", more=(("backup of 10.0.0.5 today.txt", NOTE),)), set()]
     with pytest.raises(actions.ActionError) as caught:
         step(desk, "forward", args={**forward, "uid": 5, "attachments": True}, opened=opened)
-    assert caught.value.message.startswith("Held back: 1 × e-mail addresses.")
+    assert caught.value.message.startswith("Held back: 1 × internal names and addresses.")
     # A file Nik holds as a sample is a sample, by its hash: it leaves only where samples do.
     step(desk, "get-attachments", args={"uid": 4})
     with pytest.raises(actions.ActionError) as caught:
@@ -573,12 +601,119 @@ def test_a_forward_carries_the_attachments_only_when_the_data_guard_lets_them_le
     assert "more than 50 attachments" in caught.value.message
     with pytest.raises(CommandError) as caught:
         runtime().run("forward", {**forward, "attachments": True})
-    assert "only where the data guard judges them" in caught.value.message
+    assert "only where the data guard judges what is taken from it" in caught.value.message
     assert len(Smtp.sent) == sent
     # A recipient is still a destination.
     with pytest.raises(actions.ActionError) as caught:
         step(desk, "forward", args={**forward, "to": "eve@elsewhere.example", "attachments": True}, opened=opened)
     assert "elsewhere.example is not among the hosts" in caught.value.message
+
+
+def test_what_a_forward_and_a_reply_take_from_the_mailbox_is_judged_by_the_data_guard(desk):
+    box = desk.box
+    forward = {"uid": 4, "to": "bruno@acme.example", "text": "See below."}
+    everything = "Held back: 3 × e-mail addresses, 1 × e-mail subjects, 1 × e-mail bodies."
+
+    # A playbook that sends no class of data: the message is read, judged, and nothing is sent.
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args=forward)
+    assert caught.value.message.startswith(everything) and caught.value.retry is False
+    held = caught.value.request["held"]
+    assert held["held"] == ["email_address", "mail_body", "subject"]
+    assert held["quoted"] == {
+        "parts": ["subject", "from", "to", "date", "text"],
+        "held": ["subject", "from", "to", "text"],
+    }
+    assert Smtp.sent == []
+    # The text is not open because its sender and its subject are, nor the other way round.
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args=forward, opened=["email_address", "subject"])
+    assert caught.value.message.startswith("Held back: 1 × e-mail bodies.")
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args=forward, opened=["mail_body"])
+    assert caught.value.message.startswith("Held back: 3 × e-mail addresses, 1 × e-mail subjects.")
+    # With the attachments, one sentence names all that was held, quoted and attached.
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "attachments": True})
+    assert caught.value.message.startswith(
+        "Held back: 3 × e-mail addresses, 1 × e-mail subjects, 1 × file and attachment names, "
+        "1 × e-mail bodies, 1 × attachments."
+    )
+    assert Smtp.sent == []
+
+    # A dry run reads no mailbox: its step says the quoted message is judged when it runs.
+    calls = len(box.calls)
+    dry = step(desk, "forward", args=forward, dry_run=True)
+    assert dry.output == MAIL.command("forward").sample and dry.output["quoted_held"] == []
+    assert "judged by the data guard when the step runs" in dry.request["note"]
+    assert len(box.calls) == calls and Smtp.sent == []
+
+    # Opened for the playbook, it goes as it always did.
+    whole = step(desk, "forward", args=forward, opened=QUOTED)
+    assert whole.output["sent"] is True and whole.output["quoted_held"] == []
+    assert whole.request["held"]["held"] == [] and "dropped" not in whole.request["held"]
+    body = Smtp.sent[-1].get_content()
+    assert Smtp.sent[-1]["Subject"] == "Fwd: Invoice overdue" and body.startswith("See below.")
+    for line in (
+        "From: anna@partner.example",
+        "Subject: Invoice overdue",
+        "To: soc@acme.example, bruno@acme.example",
+        "Please pay.",
+    ):
+        assert line in body, line
+
+    # A node told to send without what is held sends what it says itself, and says what stayed.
+    without = step(desk, "forward", args=forward, held="drop")
+    assert without.output["sent"] is True and without.output["quoted_held"] == ["subject", "from", "to", "text"]
+    assert without.request["held"]["dropped"] is True
+    made = Smtp.sent[-1]
+    body = made.get_content()
+    assert made["Subject"] == "Fwd: (subject held back)" and body.startswith("See below.")
+    for line in ("From: (held back)", "Subject: (held back)", "To: (held back)", mail_runtime.TEXT_HELD):
+        assert line in body, line
+    assert "Date: 2026-11-19T08:30:00+00:00" in body
+    for kept_back in ("Please pay.", "anna@partner.example", "Invoice overdue", "soc@acme.example"):
+        assert kept_back not in body and kept_back not in str(made["Subject"])
+    # Each part is judged on its own: the header lines go where they may, the text stays.
+    partly = step(desk, "forward", args=forward, held="drop", opened=["email_address", "subject"])
+    assert partly.output["quoted_held"] == ["text"]
+    body = Smtp.sent[-1].get_content()
+    assert "From: anna@partner.example" in body and mail_runtime.TEXT_HELD in body and "Please pay." not in body
+    # With the files asked for, a held text does not take them along, nor the other way round.
+    opened = ["email_address", "subject", "attachment_name", "attachment"]
+    files = step(desk, "forward", args={**forward, "attachments": True}, held="drop", opened=opened)
+    assert (files.output["quoted_held"], files.output["attachments"]) == (["text"], 1)
+    texts = step(desk, "forward", args={**forward, "attachments": True}, held="drop", opened=QUOTED)
+    assert (texts.output["quoted_held"], texts.output["attachments"], texts.output["attachments_held"]) == ([], 0, 1)
+
+    # The text is read as any text that leaves is: a private address in it is an internal address.
+    box.folders["INBOX"][10] = [message(10, "Where it is", text="The server is at 10.0.0.5 since Monday."), set()]
+    sent = len(Smtp.sent)
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "forward", args={**forward, "uid": 10}, opened=QUOTED)
+    assert caught.value.message.startswith("Held back: 1 × internal names and addresses.")
+    assert caught.value.request["held"]["quoted"]["held"] == ["text"] and len(Smtp.sent) == sent
+    assert step(desk, "forward", args={**forward, "uid": 10}, opened=[*QUOTED, "private_value"]).output["sent"]
+    sent += 1
+
+    # An answer repeats the subject of the message it answers, and that is a subject.
+    reply = {"uid": 7, "text": "Thanks."}
+    with pytest.raises(actions.ActionError) as caught:
+        step(desk, "reply", args=reply)
+    assert caught.value.message.startswith("Held back: 1 × e-mail subjects.") and len(Smtp.sent) == sent
+    assert caught.value.request["held"]["quoted"] == {"parts": ["subject"], "held": ["subject"]}
+    answered = step(desk, "reply", args=reply, opened=["subject"])
+    assert answered.output["sent"] is True and answered.output["quoted_held"] == []
+    assert (Smtp.sent[-1]["Subject"], Smtp.sent[-1]["To"]) == ("Re: your ticket", "bruno@acme.example")
+    silent = step(desk, "reply", args=reply, held="drop")
+    assert silent.output["quoted_held"] == ["subject"] and silent.request["held"]["dropped"] is True
+    made = Smtp.sent[-1]
+    # It stays in its conversation, which is told by the Message-ID and not by the subject.
+    assert made["Subject"] == "Re: (subject held back)" and made["In-Reply-To"] == "<m7@partner.example>"
+    assert made.get_content().strip() == "Thanks."
+    dry = step(desk, "reply", args=reply, dry_run=True)
+    assert dry.output == MAIL.command("reply").sample and "when the step runs" in dry.request["note"]
+    assert len(Smtp.sent) == sent + 2
 
 
 def test_an_attached_message_and_a_name_that_breaks_a_header_are_carried_as_bytes(box):
@@ -595,7 +730,7 @@ def test_an_attached_message_and_a_name_that_breaks_a_header_are_carried_as_byte
 
     judged = []
     mailbox = runtime()
-    mailbox.judge = lambda found: judged.append(found) or True
+    mailbox.judge = lambda quoted, found: judged.append(found) or ([], True)
     assert (
         mailbox.run("forward", {"uid": 5, "to": "bruno@acme.example", "attachments": True}).outputs["attachments"] == 2
     )

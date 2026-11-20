@@ -13,6 +13,8 @@ import {
   ruleProblem,
   ruleText,
 } from '../../../domain/mappers.js'
+import { instancePath } from '../../../domain/settingsNav.js'
+import { setPath } from '../../../lib/location.js'
 import { Badge, Button, Modal } from '../../ui/index.js'
 
 /*
@@ -400,6 +402,12 @@ export default function PreprocessSection() {
               <Button variant="secondary" size="sm" disabled={!sample.item || !instanceId} onClick={tryIt}>
                 Try
               </Button>
+              {/* The type and the fields the sample gets are those of the instance: they are set in its form. */}
+              {instanceId && (
+                <Button variant="ghost" size="sm" onClick={() => setPath(instancePath(instanceId, 'classifier'))}>
+                  Its classifier and its mappers
+                </Button>
+              )}
               {tried && (
                 <span role="status" className="text-sm text-fg">
                   {tried.decision.rule ? (

@@ -18,6 +18,8 @@ import {
   widgetQuery,
 } from '../../domain/dashboards.js'
 import { stateBadge, lastText } from '../../domain/fetch.js'
+import { instancePath } from '../../domain/settingsNav.js'
+import { setPath } from '../../lib/location.js'
 import { ask } from '../../services/widgetData.js'
 import { Badge } from '../ui/index.js'
 import Markdown from '../tasks/Markdown.jsx'
@@ -126,13 +128,19 @@ function FetchHealth({ data }) {
     <ul className="h-full space-y-1.5 overflow-y-auto text-xs">
       {connections.map((connection) => {
         const badge = stateBadge(connection)
+        // Its name leads to the instance, where its fetching is seen and set.
         return (
-          <li key={connection.id} className="flex items-center gap-2">
+          <li key={connection.instanceId} className="flex items-center gap-2">
             <Badge color={badge.color}>{badge.label}</Badge>
-            <span className="min-w-0 flex-1 truncate text-fg" title={connection.name}>
-              {connection.name}
-            </span>
-            <span className="truncate text-fg-muted">{lastText(connection) || connection.connectorName}</span>
+            <button
+              type="button"
+              title={`${connection.connection}: how it fetches`}
+              onClick={() => setPath(instancePath(connection.instanceId, 'fetch'))}
+              className="min-w-0 flex-1 truncate text-left text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {connection.connection}
+            </button>
+            <span className="truncate text-fg-muted">{lastText(connection) || connection.connector}</span>
           </li>
         )
       })}
@@ -144,8 +152,17 @@ function FetchHealth({ data }) {
 function Rows({ widget, data, onOpenIncident }) {
   const columns = widget.options?.columns?.length ? widget.options.columns : ['name']
   const read = (item, name) => {
-    const value = item[name] ?? item[`${name}At`] ?? item[`${name}Id`] ?? (name === 'owner' ? item.assignee : null)
-    if (Array.isArray(value)) return value.join(', ')
+    const value =
+      item[name] ??
+      item[`${name}At`] ??
+      item[`${name}Id`] ??
+      (name === 'owner' ? item.assignee : null) ??
+      // A field of the registry that is not a column of the list: what the incident holds for it.
+      item.fields?.[name.replace(/^field\./, '')] ??
+      null
+    if (Array.isArray(value))
+      return value.map((part) => (typeof part === 'object' ? JSON.stringify(part) : part)).join(', ')
+    if (value && typeof value === 'object') return typeof value.value === 'string' ? value.value : JSON.stringify(value)
     if (typeof value === 'boolean') return value ? 'yes' : 'no'
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 16).replace('T', ' ')
     return value == null || value === '' ? '—' : String(value)

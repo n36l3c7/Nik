@@ -41,5 +41,5 @@ def test_storage_says_how_full_the_disk_is_and_with_what(admin: TestClient, monk
 
 
 def test_storage_is_for_admins(admin: TestClient):
-    reader = make_key(admin, scopes=["read"])
+    reader = make_key(admin, roles=["viewer"])
     assert TestClient(admin.app).get("/api/storage", headers=reader).status_code == 403

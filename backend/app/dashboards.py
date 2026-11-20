@@ -88,18 +88,18 @@ def _whole(value: Any, low: int, high: int, default: int) -> int:
     return max(low, min(high, int(value)))
 
 
-def _asked(what: str, raw: dict, out: dict) -> None:
+def _asked(what: str, raw: dict, out: dict, db: OrmSession | None = None) -> None:
     """The question of a widget, checked as the query language checks it (for nobody in particular:
-    who may ask is decided when someone looks)."""
+    who may ask is decided when someone looks). With ``db`` it may name a custom field."""
     try:
-        entity = ql.entity_of(str(raw.get("entity") or ""))
+        entity = ql.entity_of(str(raw.get("entity") or ""), db)
         query = str(raw.get("query") or "").strip()
         if len(query) > ql.parser.MAX_LENGTH - 400:
             raise DashboardError(f"{what}: the query is too long")
         if entity.model is None:
             ql.rows(entity.name, query)
         else:
-            ql.sql(entity.name, query)
+            ql.sql(entity.name, query, db=db)
         groups = raw.get("groupBy") or []
         if not isinstance(groups, list):
             raise DashboardError(f"{what}: groupBy is a list of fields")
@@ -120,7 +120,7 @@ def _asked(what: str, raw: dict, out: dict) -> None:
     out.update(entity=entity.name, query=query, groupBy=[group.label for group in found], measure=measure.label)
 
 
-def _options(what: str, raw: Any, out: dict) -> dict[str, Any]:
+def _options(what: str, raw: Any, out: dict, db: OrmSession | None = None) -> dict[str, Any]:
     given = raw if isinstance(raw, dict) else {}
     kind = out["type"]
     kept: dict[str, Any] = {}
@@ -129,7 +129,7 @@ def _options(what: str, raw: Any, out: dict) -> dict[str, Any]:
         return kept
     if kind not in ASKING:
         return kept
-    entity = ql.entity_of(out["entity"])
+    entity = ql.entity_of(out["entity"], db)
     if given.get("timeField"):
         spec = entity.field(str(given["timeField"]))
         if spec is None or spec.kind != "date":
@@ -165,7 +165,7 @@ def _options(what: str, raw: Any, out: dict) -> dict[str, Any]:
     return kept
 
 
-def clean_widget(raw: Any, index: int) -> dict[str, Any]:
+def clean_widget(raw: Any, index: int, db: OrmSession | None = None) -> dict[str, Any]:
     what = f"Widget {index}"
     if not isinstance(raw, dict):
         raise DashboardError(f"{what} is not a widget")
@@ -181,8 +181,8 @@ def clean_widget(raw: Any, index: int) -> dict[str, Any]:
     title = out["title"] or kind
     what = f'Widget {index} ("{title}")'
     if kind in ASKING:
-        _asked(what, raw, out)
-    out["options"] = _options(what, raw.get("options"), out)
+        _asked(what, raw, out, db)
+    out["options"] = _options(what, raw.get("options"), out, db)
     if len(json.dumps(out["options"])) > OPTIONS_MAX:
         raise DashboardError(f"{what}: its options are too large")
     width, height = DEFAULT_SIZE.get(kind, (6, 3))
@@ -215,10 +215,12 @@ def compact(widgets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return placed
 
 
-def clean_widgets(raw: Any) -> list[dict[str, Any]]:
+def clean_widgets(raw: Any, db: OrmSession | None = None) -> list[dict[str, Any]]:
+    """The widgets as they are kept. ``db`` is what lets one of them name a custom field of the
+    incidents; without it they are checked against the fields every installation has."""
     if not isinstance(raw, list) or len(raw) > WIDGETS_MAX:
         raise DashboardError(f"A dashboard holds {WIDGETS_MAX} widgets at most")
-    widgets = [clean_widget(item, index) for index, item in enumerate(raw, start=1)]
+    widgets = [clean_widget(item, index, db) for index, item in enumerate(raw, start=1)]
     seen: set[str] = set()
     for widget in widgets:
         if widget["id"] in seen:
@@ -244,7 +246,7 @@ def _refresh(value: Any) -> int:
     return 0 if seconds == 0 else max(30, seconds)
 
 
-def _filter(body: dict) -> tuple[str, str]:
+def _filter(body: dict, db: OrmSession | None = None) -> tuple[str, str]:
     """The filter of the whole dashboard: a query, and the entity it is written for."""
     query = str(body.get("filter") or "").strip()
     try:
@@ -254,7 +256,7 @@ def _filter(body: dict) -> tuple[str, str]:
         if entity.model is None:
             ql.rows(entity.name, query)
         else:
-            ql.sql(entity.name, query)
+            ql.sql(entity.name, query, db=db)
     except ql.QueryError as error:
         raise DashboardError(f"The filter: {error.message}") from None
     return query, entity.name
@@ -327,7 +329,7 @@ def get(db: OrmSession, dashboard_id: str, principal: Any) -> Dashboard:
     return row
 
 
-def _apply(row: Dashboard, body: dict, actor: str) -> None:
+def _apply(row: Dashboard, body: dict, actor: str, db: OrmSession | None = None) -> None:
     if "name" in body or not row.name:
         name = str(body.get("name") or "").strip()[:120]
         if not name:
@@ -336,14 +338,14 @@ def _apply(row: Dashboard, body: dict, actor: str) -> None:
     if "description" in body:
         row.description = str(body.get("description") or "")[:1000]
     if "widgets" in body:
-        row.layout = clean_widgets(body.get("widgets"))
+        row.layout = clean_widgets(body.get("widgets"), db)
     if "timeRange" in body:
         row.time_range = _time_range(body.get("timeRange"))
     if "refreshSeconds" in body:
         row.refresh_seconds = _refresh(body.get("refreshSeconds"))
     if "filter" in body or "filterEntity" in body:
         merged = {"filter": row.filter_query, "filterEntity": row.filter_entity, **body}
-        row.filter_query, row.filter_entity = _filter(merged)
+        row.filter_query, row.filter_entity = _filter(merged, db)
     row.updated_at, row.updated_by = now_iso(), actor[:200]
 
 
@@ -362,7 +364,7 @@ def create(db: OrmSession, body: dict, actor: str, *, builtin: bool = False) -> 
         builtin=builtin,
         created_at=now_iso(),
     )
-    _apply(row, body, actor)
+    _apply(row, body, actor, db)
     db.add(row)
     return row
 
@@ -372,7 +374,7 @@ def update(db: OrmSession, row: Dashboard, body: dict, principal: Any) -> Dashbo
         raise DashboardError(
             "A dashboard Nik ships is not changed: duplicate it" if row.builtin else "This dashboard is not yours", 403
         )
-    _apply(row, body, principal.actor)
+    _apply(row, body, principal.actor, db)
     return row
 
 

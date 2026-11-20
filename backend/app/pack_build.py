@@ -3,8 +3,9 @@
     python -m app.pack_build <folder of packs> <folder to write>
 
 Each folder with a ``pack.yml`` becomes ``<id>-<version>.nikpack``, read back
-and checked like a file someone uploads; ``index.json`` lists them with their
-size and SHA-256, and ``index.json.sig`` is its signature, made with the
+and checked like a file someone uploads; ``index.json`` lists them with what
+their ``pack.yml`` says (the vendor, the category, the tags), what they hold,
+their size and SHA-256, and ``index.json.sig`` is its signature, made with the
 Ed25519 private key in ``PACKS_SIGNING_KEY`` (base64 of its 32 bytes). Without
 the key the index is written unsigned, which is enough to look at it: Nik
 reads only a signed one.
@@ -69,6 +70,8 @@ def entry(folder: Path) -> tuple[dict[str, Any], str, bytes]:
         "sha256": hashlib.sha256(data).hexdigest(),
         "size": len(data),
         "contents": contents(pack),
+        # The names of its connectors: what someone who looks for a pack types.
+        "connectors": [load_connector(item.data).name for item in pack.items if item.kind == "connectors"],
     }
     # The logo of the pack, or the one of its first connector that has one.
     logo = pack.logo or next((item.extras["logo"] for item in pack.items if item.extras.get("logo")), None)

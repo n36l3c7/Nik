@@ -9,7 +9,7 @@ from tests.test_malware import fake_pe
 
 
 def test_search_groups(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     for incident_id, host in (("s1", "WKS-FINANCE-01"), ("s2", "SRV-FILE-01")):
         doc = {
             "id": incident_id,

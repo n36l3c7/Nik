@@ -26,6 +26,34 @@ export function fieldOf(schema, name) {
   )
 }
 
+/**
+ * How a field is listed where one is chosen: its name, which is what the query
+ * holds, and for a field made in Settings what it is called there when that
+ * says more than the name.
+ */
+export function fieldCaption(field) {
+  const name = String(field?.name ?? '')
+  const label = String(field?.label ?? '').trim()
+  const plain = name.replace(/^field\./, '').replace(/_/g, ' ')
+  if (!field?.custom || !label || label.toLowerCase() === plain.toLowerCase()) return name
+  return `${name} · ${label}`
+}
+
+/**
+ * The schema with values to offer for fields that list none of their own
+ * (`{ labels: ['phish', 'vip'] }`: the tags in use). They are only offered:
+ * the server still takes any value.
+ */
+export function withValues(schema, values) {
+  if (!schema || !values) return schema
+  return {
+    ...schema,
+    fields: schema.fields.map((field) =>
+      Array.isArray(values[field.name]) && field.values.length === 0 ? { ...field, values: values[field.name] } : field,
+    ),
+  }
+}
+
 /** Candidates that start with the prefix first, then those that hold it. */
 function rank(items, prefix, key) {
   const wanted = prefix.toLowerCase()

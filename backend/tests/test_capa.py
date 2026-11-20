@@ -52,14 +52,14 @@ def capa_worker(monkeypatch):
 
 
 def test_not_configured(admin: TestClient):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "k0", minimal_pe(b"\xc3"))
     assert admin.get(f"/api/samples/{sha}/capabilities", headers=key).json() == {"configured": False, "status": "none"}
     assert admin.post(f"/api/samples/{sha}/capabilities", headers=key).status_code == 503
 
 
 def test_upload_runs_capa_and_stores_the_capabilities(admin: TestClient, capa_worker):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "k1", minimal_pe(b"\x55\x89\xe5\xc3"))
     assert capa_worker == [sha]  # the background job ran once after the upload
 
@@ -72,7 +72,7 @@ def test_upload_runs_capa_and_stores_the_capabilities(admin: TestClient, capa_wo
     assert admin.post(f"/api/samples/{sha}/reanalyse", headers=key).status_code == 200
     assert admin.post(f"/api/samples/{sha}/capabilities", headers=key).status_code == 202
     assert capa_worker == [sha, sha, sha]
-    read_only = make_key(admin, role="analyst", scopes=["read"])
+    read_only = make_key(admin, roles=["viewer"])
     assert admin.post(f"/api/samples/{sha}/capabilities", headers=read_only).status_code == 403
     actions = {e["action"] for e in admin.get("/api/audit").json()["entries"]}
     assert "sample.capabilities" in actions
@@ -84,7 +84,7 @@ def test_upload_runs_capa_and_stores_the_capabilities(admin: TestClient, capa_wo
 
 
 def test_file_types_capa_does_not_read_are_unsupported(admin: TestClient, capa_worker):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     sha = _upload(admin, key, "k2", b"just a text file, not an executable")
     assert capa_worker == []  # never sent to the worker
     assert admin.get(f"/api/samples/{sha}/capabilities", headers=key).json()["status"] == "unsupported"
@@ -92,7 +92,7 @@ def test_file_types_capa_does_not_read_are_unsupported(admin: TestClient, capa_w
 
 
 def test_worker_errors_are_stored_and_a_busy_worker_is_waited_for(admin: TestClient, capa_worker, monkeypatch):
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     answers = [WorkerBusy("capa is busy"), WorkerBusy("capa is busy"), RESULT]
 
     def busy_then_done(sha256, rules):
@@ -133,7 +133,7 @@ def test_admin_capa_rules_are_checked_stored_and_used(admin: TestClient, capa_wo
     from app.malware import capa_rules
 
     monkeypatch.setattr(capa_rules, "post_worker", lambda url, token, path, payload, timeout: _verdict(path, payload))
-    analyst = make_key(admin, role="analyst")
+    analyst = make_key(admin, roles=["analyst"])
 
     first = admin.post("/api/capa-rules", json={"source": _rule("team mutex")})
     assert first.status_code == 201, first.text

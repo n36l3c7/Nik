@@ -1,24 +1,19 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Plus, Trash2, Zap } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import {
-  KEY_MODES,
-  KEY_POLICY_DEFAULTS,
-  editableKeys,
-  keyFields,
-  keyShare,
-  keyUse,
-  keysPayload,
-  keysProblem,
-  newKey,
-} from '../../../domain/automation/instances.js'
+import { KEY_MODES, keyFields, keyShare, keyUse, newKey } from '../../../domain/automation/instances.js'
 import { Badge, Button } from '../../ui/index.js'
 
 /*
  * The keys of an instance (6.1): more credentials than one for the same
  * product, and how they take turns. The first key is the credentials of the
- * instance, edited above; the others are added, named, ordered and removed
+ * instance, edited on its Connection tab; the others are added, named, ordered and removed
  * here. A key is never shown again after it is saved.
+ *
+ * It is a part of the form of the instance (InstancePane.jsx), which holds
+ * what is edited here and saves it with everything else: there is one "Save".
+ * Only what is not a change of the instance is done from here: testing every
+ * key, and forgetting the answers that are kept.
  *
  * Below the keys: how they take turns, the limits each is held to, what a
  * command does when every key is used up, and whether the instance keeps the
@@ -30,18 +25,22 @@ const INPUT =
 const STATE_COLOR = { 'in use': 'emerald', 'used up': 'amber', waiting: 'slate', new: 'cyan' }
 
 /**
- * @param {{ connector: object, instance: object, onSaved: (saved: object) => void }} props
+ * @param {{
+ *   connector: object,
+ *   instance: object | null,              // null: an instance that is being made (nothing to test yet)
+ *   keys: object[],                       // as `editableKeys` gives them, edited here
+ *   onKeys: (keys: object[]) => void,
+ *   policy: object,
+ *   onPolicy: (policy: object) => void,
+ * }} props
  */
-export default function InstanceKeys({ connector, instance, onSaved }) {
-  const [keys, setKeys] = useState(() => editableKeys(instance))
-  const [policy, setPolicy] = useState(() => ({ ...KEY_POLICY_DEFAULTS, ...(instance.keyPolicy ?? {}) }))
+export default function InstanceKeys({ connector, instance, keys, onKeys: setKeys, policy, onPolicy: setPolicy }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState(null)
   const [said, setSaid] = useState('')
   const [tested, setTested] = useState(null) // id → { ok, message }
   const fields = keyFields(connector)
-  const problem = keysProblem(connector, keys, policy)
-  const path = `/automation/instances/${encodeURIComponent(instance.id)}`
+  const path = instance ? `/automation/instances/${encodeURIComponent(instance.id)}` : null
 
   const change = (index, patch) => setKeys(keys.map((key, at) => (at === index ? { ...key, ...patch } : key)))
   const move = (index, by) => {
@@ -58,17 +57,6 @@ export default function InstanceKeys({ connector, instance, onSaved }) {
       .then(done, (failure) => setError(failure.message))
       .finally(() => setBusy(''))
   }
-  const save = () =>
-    run(
-      'save',
-      () => api.put(path, keysPayload(keys, policy)),
-      (saved) => {
-        setKeys(editableKeys(saved))
-        setPolicy({ ...KEY_POLICY_DEFAULTS, ...(saved.keyPolicy ?? {}) })
-        setSaid('The keys were saved.')
-        onSaved(saved)
-      },
-    )
   const test = () =>
     run(
       'test',
@@ -87,7 +75,7 @@ export default function InstanceKeys({ connector, instance, onSaved }) {
     )
 
   return (
-    <section aria-label="Keys" className="flex flex-col gap-3 border-t border-line-soft p-4 text-sm">
+    <section aria-label="Keys" className="flex flex-col gap-3 border-t border-line-soft pt-3 text-sm">
       <div className="flex items-center gap-2">
         <h4 className="flex-1 font-mono text-[11px] uppercase tracking-wider text-fg-muted">Keys</h4>
         <Button
@@ -148,7 +136,7 @@ export default function InstanceKeys({ connector, instance, onSaved }) {
                 )}
               </div>
               {first ? (
-                <p className="text-xs text-fg-muted">The credentials of the instance, set above.</p>
+                <p className="text-xs text-fg-muted">The credentials of the instance, set on the Connection tab.</p>
               ) : (
                 fields.map((field) => (
                   <label key={field.name} className="flex flex-col gap-0.5 text-xs text-fg-muted">
@@ -275,20 +263,25 @@ export default function InstanceKeys({ connector, instance, onSaved }) {
           {error}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={Boolean(busy) || Boolean(problem)} title={problem ?? undefined} onClick={save}>
-          {busy === 'save' ? 'Saving…' : 'Save the keys'}
-        </Button>
-        <Button size="sm" variant="secondary" icon={Zap} disabled={Boolean(busy)} onClick={test}>
-          {busy === 'test' ? 'Testing…' : 'Test every key'}
-        </Button>
-        {Number(instance.keyPolicy?.cacheHours) > 0 && (
-          <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={forget}>
-            Forget the kept answers
+      {instance && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={Zap}
+            disabled={Boolean(busy)}
+            title="Sends the connector's test request with each key as it is saved: save a new key first"
+            onClick={test}
+          >
+            {busy === 'test' ? 'Testing…' : 'Test every key'}
           </Button>
-        )}
-        {problem && <span className="text-xs text-fg-muted">{problem}</span>}
-      </div>
+          {Number(instance.keyPolicy?.cacheHours) > 0 && (
+            <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={forget}>
+              Forget the kept answers
+            </Button>
+          )}
+        </div>
+      )}
     </section>
   )
 }

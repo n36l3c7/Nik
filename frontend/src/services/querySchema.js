@@ -6,9 +6,14 @@ import { api } from './api.js'
  * fetched once per sign-in and shared by every query input. Without it an
  * input still works as plain text: it only loses colours for unknown fields,
  * the autocomplete and the builder's pickers.
+ *
+ * The incidents list the fields of the registry, the custom ones included, so
+ * the schema is read again when the registry is (`refreshQuerySchema`): a
+ * field made in Settings is offered by the query box at once.
  */
 
 let pending = null
+const watchers = new Set()
 
 function load() {
   pending ??= api
@@ -26,16 +31,26 @@ export function resetQuerySchema() {
   pending = null
 }
 
+/** Read the schema again and give it to every input that shows one (the registry of fields changed). */
+export function refreshQuerySchema() {
+  pending = null
+  for (const watcher of watchers) watcher()
+}
+
 /** The schema of an entity, or null while it loads or when the account may not query it. */
 export function useQuerySchema(entity) {
   const [schema, setSchema] = useState(null)
   useEffect(() => {
     let cancelled = false
-    load().then((entities) => {
-      if (!cancelled) setSchema(entities.get(entity) ?? null)
-    })
+    const read = () =>
+      load().then((entities) => {
+        if (!cancelled) setSchema(entities.get(entity) ?? null)
+      })
+    read()
+    watchers.add(read)
     return () => {
       cancelled = true
+      watchers.delete(read)
     }
   }, [entity])
   return schema

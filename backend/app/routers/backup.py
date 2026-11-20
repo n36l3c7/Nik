@@ -36,7 +36,7 @@ from ..core.config import settings as app_settings
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, IocEntry, Setting, User
 from ..core.models import Session as SessionModel
-from ..core.permissions import RoleError, clean_roles, legacy_role, roles_from_legacy, stored_roles
+from ..core.permissions import RoleError, clean_roles, stored_roles
 from ..core.security import Principal, admin_principal, now_iso
 from ..iocs import reindex_all
 from .incidents import _sync_columns
@@ -65,12 +65,14 @@ def _log(db: OrmSession, actor: str, action: str, details: str) -> None:
 
 
 def _backup_roles(user: dict) -> list[str]:
-    """The roles of an account in a backup: its ``roles``, or the single
-    ``role`` a backup of a release before 4.0 holds."""
+    """The roles of an account in a backup: its ``roles``, or what the single
+    ``role`` of a backup taken before 4.0 stands for. Such a file can still be
+    restored, and every account in it must come out able to do what it could."""
     try:
         return clean_roles(user.get("roles"))
     except RoleError:
-        return roles_from_legacy(user.get("role"))
+        role = user.get("role")
+        return [role] if role in ("admin", "viewer") else ["analyst"]
 
 
 @router.get("/export")
@@ -102,8 +104,6 @@ def export_backup(caller: Principal = Depends(admin_principal), db: OrmSession =
                 "username": u.username,
                 "passwordHash": u.password_hash,
                 "roles": stored_roles(u.roles),
-                # Read by a release before 4.0 restoring this backup.
-                "role": "admin" if "admin" in stored_roles(u.roles) else "analyst",
                 "createdAt": u.created_at,
                 "createdBy": u.created_by,
             }
@@ -220,7 +220,6 @@ def import_backup(
                 username=str(u["username"]),
                 password_hash=str(u["passwordHash"]),
                 roles=_backup_roles(u),
-                role=legacy_role(_backup_roles(u)),
                 created_at=str(u.get("createdAt") or now_iso()),
                 created_by=u.get("createdBy"),
             )
@@ -243,7 +242,6 @@ def import_backup(
                     username=keep_admin["username"],
                     password_hash=keep_admin["password_hash"],
                     roles=["admin"],
-                    role="admin",
                     created_at=keep_admin["created_at"],
                     created_by=keep_admin["created_by"],
                 )
@@ -251,7 +249,6 @@ def import_backup(
             elif "admin" not in stored_roles(session_user.roles):
                 # The backup holds their account without the admin role: they keep it.
                 session_user.roles = clean_roles([*stored_roles(session_user.roles), "admin"])
-                session_user.role = "admin"
 
             # 4. Re-attach the current session token to the surviving account so
             #    the cookie keeps working after the restore (fresh expiry). Flush

@@ -2,7 +2,15 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   directionText,
+  fetchChanged,
+  fetchForm,
+  fetchPayload,
+  fetchProblem,
+  firstFetchSeconds,
+  intervalText,
   jobText,
+  lookbackHint,
+  resetText,
   lastText,
   limitText,
   mirrorProblem,
@@ -96,5 +104,67 @@ test('mirroring: which way, why it cannot start, what waits to be sent', () => {
   assert.equal(
     jobText({ kind: 'update', status: 'failed', attempts: 8 }, NOW),
     'the fields that changed: given up after 8 tries',
+  )
+})
+
+test('how an instance fetches: what the form starts with, refuses and sends', () => {
+  const connector = { fetch: { intervalSeconds: 120, firstFetch: '3 days', lookbackMinutes: 5, byTime: true } }
+  // A new instance starts with what its connector says, and does not fetch.
+  assert.deepEqual(fetchForm(connector, null), { enabled: false, interval: '120', firstFetch: '3 days', lookback: '5' })
+  const instance = { fetch: { enabled: true, intervalSeconds: 600, firstFetch: '12 hours', lookbackMinutes: 0 } }
+  const form = fetchForm(connector, instance)
+  assert.deepEqual(form, { enabled: true, interval: '600', firstFetch: '12 hours', lookback: '0' })
+  assert.deepEqual(fetchForm({}, null), { enabled: false, interval: '120', firstFetch: '3 days', lookback: '0' })
+
+  assert.equal(fetchProblem(form), null)
+  assert.match(fetchProblem({ ...form, interval: '5' }), /how often is a number of seconds, 30 at the least/)
+  assert.match(fetchProblem({ ...form, interval: '' }), /how often/)
+  assert.match(fetchProblem({ ...form, interval: '1.5' }), /how often/)
+  assert.equal(fetchProblem({ ...form, interval: '60' }, { minInterval: 60 }), null)
+  assert.match(fetchProblem({ ...form, firstFetch: 'soon' }), /the first fetch is a length of time/)
+  assert.match(fetchProblem({ ...form, firstFetch: '40 days' }), /a month at most/)
+  assert.match(fetchProblem({ ...form, lookback: '-1' }), /the look-back is a number of minutes, 1440 at most/)
+  assert.match(fetchProblem({ ...form, lookback: '2000' }), /the look-back/)
+  // A connector that goes on from a cursor has no look-back to get wrong.
+  assert.equal(fetchProblem({ ...form, lookback: '' }, { byTime: false }), null)
+
+  assert.deepEqual(fetchPayload({ enabled: true, interval: '90', firstFetch: ' 12  Hours ', lookback: '10' }), {
+    enabled: true,
+    intervalSeconds: 90,
+    firstFetch: '12 hours',
+    lookbackMinutes: 10,
+  })
+  assert.equal('lookbackMinutes' in fetchPayload(form, { byTime: false }), false)
+
+  // Only what was changed is sent with the instance.
+  assert.equal(fetchChanged(form, connector, instance), false)
+  assert.equal(fetchChanged({ ...form, lookback: '10' }, connector, instance), true)
+  assert.equal(fetchChanged({ ...form, enabled: false }, connector, instance), true)
+  assert.equal(fetchChanged(fetchForm(connector, null), connector, null), false)
+})
+
+test('lengths of time, as they are typed and as they are said', () => {
+  assert.equal(firstFetchSeconds('3 days'), 259200)
+  assert.equal(firstFetchSeconds(' 30 Minutes '), 1800)
+  assert.equal(firstFetchSeconds('1 hour'), 3600)
+  assert.equal(firstFetchSeconds('0 days'), null)
+  assert.equal(firstFetchSeconds('32 days'), null)
+  assert.equal(firstFetchSeconds('a while'), null)
+  assert.equal(intervalText(30), '30 s')
+  assert.equal(intervalText(90), '90 s')
+  assert.equal(intervalText(120), '2 min')
+  assert.equal(intervalText('600'), '10 min')
+  assert.equal(intervalText(3600), '1 h')
+  assert.equal(intervalText(5400), '1 h 30 min')
+  assert.equal(intervalText(''), '')
+})
+
+test('what the look-back and the reset do is said before they are used', () => {
+  assert.match(lookbackHint({ lookback: '0' }), /asks from the newest time it has seen.*missed/)
+  assert.match(lookbackHint({ lookback: '5' }), /asks from 5 min before the newest time it has seen.*skipped by its id/)
+  assert.match(lookbackHint({ lookback: '5' }, { byTime: false }), /does not apply/)
+  assert.equal(
+    resetText({ firstFetch: '3 days' }),
+    'The next cycle reads again from 3 days ago. What was already imported is skipped: no incident is made twice.',
   )
 })

@@ -18,7 +18,7 @@ import { api } from '../../services/api.js'
 import { copyText } from '../../lib/download.js'
 import { formatRelative } from '../../lib/time.js'
 import { useIocLibrary } from '../../context/IocLibraryContext.jsx'
-import { IocValue } from '../../context/IocLookupContext.jsx'
+import { IocValue, useIocLookup } from '../../context/IocLookupContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { analysisColor, analysisLabel, verdictMeta } from '../../domain/enrichment.js'
@@ -277,6 +277,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
     }
   }, [listId, version])
   const changed = useMemo(() => changesByKey(history), [history])
+  // A right-click anywhere on a row is the menu of its indicator.
+  const { iocMenu } = useIocLookup()
 
   const rows = useMemo(() => data?.iocs ?? [], [data])
   const total = data?.total ?? 0
@@ -663,6 +665,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
                   <tr
                     key={key(row)}
                     className={`border-t border-line-soft ${verdictRowClass(row.verdict)} ${picked ? 'outline outline-1 -outline-offset-1 outline-accent/60' : ''}`}
+                    onContextMenu={(event) => iocMenu(event, row.type, row.value)}
                   >
                     <td className="px-2 py-1.5">
                       <input

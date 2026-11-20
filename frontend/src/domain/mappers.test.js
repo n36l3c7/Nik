@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   cellText,
+  classifierBody,
   classifierRows,
+  mapperBodies,
+  mapperKey,
+  unsavedText,
   classifierRules,
   conditionOf,
   conditionRow,
@@ -196,4 +200,57 @@ test('a pre-processing rule as its form, and back', () => {
   assert.deepEqual(moved(['a', 'b', 'c'], 'c', -1), ['a', 'c', 'b'])
   assert.deepEqual(moved(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'])
   assert.deepEqual(moved(['a', 'b', 'c'], 'a', 1), ['b', 'a', 'c'])
+})
+
+test('what was changed in the form of an instance is kept as drafts and sent by its one Save', () => {
+  assert.equal(mapperKey('incoming', '*'), 'incoming:*')
+  assert.equal(mapperKey('outgoing', ''), 'outgoing:*')
+  const drafts = {
+    [mapperKey('incoming', '*')]: {
+      rows: [
+        { name: 'name', from: '{{ item.title }}', authoritative: true },
+        { name: 'severity', from: ' ', authoritative: false },
+      ],
+      extras: [{ to: 'Alert(val.ID == obj.ID)', from: '{"ID": "{{ item.id }}"}' }],
+      outRows: [],
+    },
+    [mapperKey('outgoing', 'malware')]: {
+      rows: [],
+      extras: [],
+      outRows: [
+        { to: 'summary', from: '{{ incident.name }}', known: true },
+        { to: '', from: 'x', known: false },
+      ],
+    },
+  }
+  assert.deepEqual(mapperBodies('acme', drafts), [
+    {
+      connectorId: 'acme',
+      direction: 'incoming',
+      incidentType: '*',
+      rules: [
+        { to: 'name', from: '{{ item.title }}', authoritative: true },
+        { to: 'Alert(val.ID == obj.ID)', from: { ID: '{{ item.id }}' }, authoritative: false },
+      ],
+    },
+    {
+      connectorId: 'acme',
+      direction: 'outgoing',
+      incidentType: 'malware',
+      rules: [{ to: 'summary', from: '{{ incident.name }}' }],
+    },
+  ])
+  assert.deepEqual(mapperBodies('acme', {}), [])
+
+  const classifier = { rows: [{ left: '{{ item.title }}', op: 'contains', right: 'Emotet', type: 'malware' }] }
+  assert.deepEqual(classifierBody({ ...classifier, fallback: '' }), {
+    rules: [{ when: { all: [{ left: '{{ item.title }}', op: 'contains', right: 'Emotet' }] }, type: 'malware' }],
+    defaultType: null,
+  })
+  assert.equal(classifierBody({ rows: [], fallback: 'phishing' }).defaultType, 'phishing')
+
+  assert.equal(unsavedText(null, {}), '')
+  assert.equal(unsavedText(classifier, {}), 'the classifier')
+  assert.equal(unsavedText(null, { 'incoming:*': {} }), 'a mapper')
+  assert.equal(unsavedText(classifier, drafts), 'the classifier, 2 mappers')
 })

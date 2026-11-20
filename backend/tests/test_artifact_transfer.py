@@ -117,7 +117,7 @@ def test_a_mail_and_its_attachment_keep_their_relation(admin: TestClient, no_dns
 
 def test_only_an_admin_imports_and_a_strange_archive_is_refused(admin: TestClient):
     sha, _ = _upload(admin)
-    analyst = make_key(admin, role="analyst")
+    analyst = make_key(admin, roles=["analyst"])
     other = TestClient(admin.app)
     exported = other.post("/api/artifacts/export", headers=analyst, json={"ids": [f"file-{sha}"]})
     assert exported.status_code == 200

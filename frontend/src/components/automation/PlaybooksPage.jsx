@@ -8,6 +8,7 @@ import { AsciiSkull, Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import { Field, Switch, TextInput } from './fields.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
+import { usePageMenu } from '../menu/usePageMenu.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { setPath } from '../../lib/location.js'
 
@@ -100,8 +101,12 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
     }
   }
 
+  const pageMenu = usePageMenu(() => [
+    canEdit && { label: 'New playbook…', icon: Plus, onSelect: () => setCreateOpen(true) },
+  ])
+
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4 p-6" onContextMenu={pageMenu}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-prose text-sm text-fg-muted">
           A playbook is a drawing of what to do when something happens: nodes joined by lines, started by an event, a

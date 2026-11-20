@@ -125,7 +125,7 @@ def test_parse_evtx_rejects_other_files():
 
 def test_upload_evtx(admin: TestClient, monkeypatch):
     k = TestClient(fastapi_app)
-    key = make_key(admin, role="analyst")
+    key = make_key(admin, roles=["analyst"])
     k.post("/api/incidents", headers=key, json={"id": "ev1", "data": {}})
 
     r = k.post("/api/incidents/ev1/upload?tab=eventlogs", headers=key, files={"file": ("x.evtx", b"garbage")})

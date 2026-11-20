@@ -55,31 +55,15 @@ def test_roles_are_stored_clean():
     assert permissions.stored_roles(None) == permissions.stored_roles("admin") == []
 
 
-def test_accounts_of_older_releases_map_onto_roles():
-    assert permissions.roles_from_legacy("admin") == ["admin"]
-    assert permissions.roles_from_legacy("analyst") == ["analyst"]
-    assert permissions.roles_from_legacy(None) == ["analyst"]
-    assert permissions.roles_from_legacy("analyst", ["read"]) == ["viewer"]
-    assert permissions.roles_from_legacy("analyst", ["read", "write"]) == ["analyst"]
-    assert permissions.roles_from_legacy("admin", ["read"]) == ["admin"]
-    assert permissions.legacy_role(["rules", "analyst"]) == "analyst"
-    assert permissions.legacy_role(["viewer", "admin"]) == "admin"
-    assert permissions.legacy_role(["audit"]) == "audit"
-    assert permissions.legacy_scopes(["viewer"]) == ["read"]
-    assert permissions.legacy_scopes(["analyst", "rules"]) == ["read", "write"]
-    assert permissions.legacy_scopes(["admin"]) == ["read", "write", "admin"]
-    assert permissions.legacy_scopes(["audit"]) == []
-
-
 # --------------------------------------------------------------------------- #
 # Accounts
 # --------------------------------------------------------------------------- #
 def test_me_answers_with_the_roles_and_what_they_grant(admin: TestClient):
     me = admin.get("/api/auth/me").json()["user"]
-    assert me["roles"] == ["admin"] and me["role"] == "admin" and me["permissions"] == sorted(ALL)
+    assert me["roles"] == ["admin"] and me["permissions"] == sorted(ALL)
     _user(admin, "vera", roles=["viewer", "audit"])
     vera = _signed_in("vera").get("/api/auth/me").json()["user"]
-    assert vera["roles"] == ["viewer", "audit"] and vera["role"] == "viewer"
+    assert vera["roles"] == ["viewer", "audit"] and "role" not in vera
     assert vera["permissions"] == ["audit.read", "read"]
 
 
@@ -150,15 +134,17 @@ def test_there_is_always_an_admin_and_nobody_removes_their_own(admin: TestClient
     assert caller.patch(f"/api/users/{me['id']}", headers=key, json={"roles": ["analyst"]}).status_code == 200
 
 
-def test_the_single_role_of_older_clients_is_still_accepted_and_answered(admin: TestClient):
-    old = _user(admin, "old", role="admin")
-    assert old["roles"] == ["admin"] and old["role"] == "admin"
-    res = admin.patch(f"/api/users/{old['id']}", json={"role": "analyst"})
-    assert res.json()["user"]["roles"] == ["analyst"] and res.json()["user"]["role"] == "analyst"
-    assert admin.patch(f"/api/users/{old['id']}", json={"role": "root"}).status_code == 400
-    # ``roles`` wins when both are sent.
-    res = admin.patch(f"/api/users/{old['id']}", json={"role": "admin", "roles": ["viewer"]})
-    assert res.json()["user"]["roles"] == ["viewer"]
+def test_the_single_role_of_older_clients_is_refused_with_what_to_send(admin: TestClient):
+    res = admin.post("/api/users", json={"username": "old", "password": "password1", "role": "admin"})
+    assert res.status_code == 400 and res.json()["detail"].startswith('"role" is no longer accepted: send "roles"')
+    assert "old" not in {u["username"] for u in admin.get("/api/users").json()["users"]}
+    anna = _user(admin, "anna")
+    assert "role" not in anna
+    # Refused even next to ``roles``: the caller is told, rather than left to guess which one was read.
+    for body in ({"role": "admin"}, {"role": "admin", "roles": ["viewer"]}, {"role": None}):
+        res = admin.patch(f"/api/users/{anna['id']}", json=body)
+        assert res.status_code == 400 and "no longer accepted" in res.json()["detail"], body
+    assert admin.get("/api/users").json()["users"][-1]["roles"] == ["analyst"]
 
 
 # --------------------------------------------------------------------------- #
@@ -168,7 +154,7 @@ def test_a_key_takes_roles_like_an_account(admin: TestClient):
     res = admin.post("/api/keys", json={"label": "feed", "roles": ["viewer"]})
     assert res.status_code == 201
     record = res.json()["apiKey"]
-    assert record["roles"] == ["viewer"] and record["role"] == "viewer" and record["scopes"] == ["read"]
+    assert record["roles"] == ["viewer"] and "role" not in record and "scopes" not in record
     key = {"X-API-Key": res.json()["key"]}
     caller = TestClient(fastapi_app)
     assert caller.get("/api/incidents", headers=key).status_code == 200
@@ -179,21 +165,18 @@ def test_a_key_takes_roles_like_an_account(admin: TestClient):
     assert caller.get("/api/incidents", headers=rules).status_code == 403
 
     listed = {k["label"]: k for k in admin.get("/api/keys").json()["keys"]}
-    assert listed["rules"]["roles"] == ["rules"] and listed["rules"]["scopes"] == []
+    assert listed["rules"]["roles"] == ["rules"] and "scopes" not in listed["rules"]
     for bad in ([], ["root"], ["automation"]):
         assert admin.post("/api/keys", json={"label": "bad", "roles": bad}).status_code == 400
 
 
-def test_a_key_request_of_an_older_client_maps_onto_roles(admin: TestClient):
-    def roles(**body):
-        return admin.post("/api/keys", json={"label": "k", **body}).json()["apiKey"]["roles"]
-
-    assert roles() == ["analyst"]
-    assert roles(role="analyst") == ["analyst"]
-    assert roles(role="analyst", scopes=["read"]) == ["viewer"]
-    assert roles(scopes=["read", "write"]) == ["analyst"]
-    assert roles(role="admin") == ["admin"]
-    assert roles(role="admin", scopes=["read"]) == ["admin"]
+def test_a_key_request_of_an_older_client_is_refused_with_what_to_send(admin: TestClient):
+    assert admin.post("/api/keys", json={"label": "k"}).json()["apiKey"]["roles"] == ["analyst"]
+    # A key asked for with the read scope alone must not come out as one that writes.
+    for body in ({"scopes": ["read"]}, {"role": "analyst"}, {"role": "admin", "roles": ["admin"]}):
+        res = admin.post("/api/keys", json={"label": "old", **body})
+        assert res.status_code == 400 and 'send "roles"' in res.json()["detail"], body
+    assert [k["label"] for k in admin.get("/api/keys").json()["keys"]] == ["k"]
 
 
 # --------------------------------------------------------------------------- #
@@ -203,12 +186,13 @@ def test_a_backup_carries_the_roles_and_an_older_one_is_read(admin: TestClient):
     _user(admin, "vera", roles=["viewer", "audit"])
     backup = admin.get("/api/backup/export").json()
     by_name = {u["username"]: u for u in backup["users"]}
-    assert by_name["vera"]["roles"] == ["viewer", "audit"] and by_name["vera"]["role"] == "analyst"
-    assert by_name["admin"]["roles"] == ["admin"] and by_name["admin"]["role"] == "admin"
+    assert by_name["vera"]["roles"] == ["viewer", "audit"] and "role" not in by_name["vera"]
+    assert by_name["admin"]["roles"] == ["admin"]
 
-    # A backup of a release before 4.0 has the single role only.
+    # A backup of a release before 4.0 has the single role only, and is still restored.
     for user in backup["users"]:
         del user["roles"]
+    by_name["admin"]["role"] = "admin"
     by_name["vera"]["role"] = "admin"
     backup["users"].append(
         {"id": "u9", "username": "paul", "passwordHash": by_name["vera"]["passwordHash"], "role": "analyst"}

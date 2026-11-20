@@ -2,7 +2,8 @@ id: checkpoint-sase
 name: Check Point Harmony SASE
 vendor: Check Point
 category: Network security
-version: 1.0.0
+tags: [firewall, proxy]
+version: 1.0.1
 description: >-
   Lists of addresses and the Internet Access rules of Check Point Harmony SASE.
 author: Nik

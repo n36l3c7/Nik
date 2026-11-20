@@ -13,6 +13,7 @@ them; a connection says only which of its secrets are set.
 from __future__ import annotations
 
 import io
+import time
 import zipfile
 from typing import Any
 
@@ -22,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import fetch as fetching
 from ..automation import connector_actions as store
 from ..automation import connector_logo, engine, graph, instance_keys
 from ..automation import connectors as files
@@ -71,6 +73,9 @@ class ConnectionPatch(BaseModel):
     mainName: str | None = Field(default=None, max_length=60)  # what the first key is called
     # How the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours}.
     keyPolicy: dict[str, Any] | None = None
+    # How it fetches (6.4), for a connector that can: {enabled, intervalSeconds, firstFetch,
+    # lookbackMinutes}; a value left out stays as it is.
+    fetch: dict[str, Any] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -164,6 +169,8 @@ def _connection_out(db: OrmSession, row: Connection, *, full: bool) -> dict[str,
     # Its keys (the first is the credentials above) and how they take turns: never what they are.
     held = instance_keys.shown(db, row, names)
     out.update(keys=held["keys"], keyPolicy=held["policy"])
+    # Whether it fetches, how, and how it goes; null for a connector that cannot fetch.
+    out["fetch"] = fetching.out(db, row) if connector is not None and connector.fetch is not None else None
     return out
 
 
@@ -225,6 +232,21 @@ def _merge_secrets(connector: files.ConnectorFile, row: Connection, given: dict[
         else:
             stored[name] = value
     store.store_secrets(row, stored)
+
+
+def _set_fetching(db: OrmSession, row: Connection, given: dict[str, Any]) -> list[str]:
+    """Whether an instance fetches and how, as its form sends it with the rest. Gives what changed."""
+    known = {"enabled", "intervalSeconds", "firstFetch", "lookbackMinutes"}
+    for name in given:
+        if name not in known:
+            raise fetching.FetchError(f'"{name}" is not something of how an instance fetches')
+    now = time.time()
+    said = fetching.set_settings(db, row, given, now)
+    enabled = given.get("enabled")
+    if isinstance(enabled, bool) and enabled != bool(row.fetch_enabled):
+        fetching.enable(db, row, enabled, now)
+        said.insert(0, "fetches" if enabled else "does not fetch any more")
+    return [f"fetching ({', '.join(said)})"] if said else []
 
 
 def _connector(db: OrmSession, connector_id: str) -> tuple[Connector, files.ConnectorFile]:
@@ -508,6 +530,12 @@ def update_connection(
     except instance_keys.KeyError_ as error:
         db.rollback()
         raise HTTPException(status_code=400, detail=error.message) from None
+    if body.fetch is not None:
+        try:
+            changes += _set_fetching(db, row, body.fetch)
+        except fetching.FetchError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.status, detail=error.message) from None
     if changes:
         row.updated_at = now_iso()
         row.updated_by = caller.actor

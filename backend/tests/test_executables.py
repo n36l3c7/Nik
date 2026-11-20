@@ -133,8 +133,8 @@ def test_builtin_yara_rules_compile_and_match(client: TestClient):
 
 
 def test_admin_yara_rules_api_and_reanalyse(admin: TestClient):
-    analyst = make_key(admin, role="analyst")
-    admin_key = make_key(admin, role="admin")
+    analyst = make_key(admin, roles=["analyst"])
+    admin_key = make_key(admin, roles=["admin"])
     rule = {
         "name": "Team rules",
         "source": 'rule team_marker { meta: severity = "high" strings: $m = "NIKTEAM" condition: $m }',

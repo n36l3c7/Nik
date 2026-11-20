@@ -48,6 +48,7 @@ NIK_KEY = "0s/izpmHr8vtRI2ipJJt0he4D1g1HWkZsQ0dx6jRMeU="
 INDEX_MAX = 8 * 1024 * 1024
 LOGO_MAX = 200_000
 ENTRIES_MAX = 2000
+CONNECTORS_MAX = 20  # the names of the connectors of a pack, kept to search by
 # Where GitHub sends for the file of a release: the address of the catalogue is not the host that answers.
 GITHUB_HOSTS = ("objects.githubusercontent.com", "release-assets.githubusercontent.com")
 FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.nikpack$")
@@ -201,6 +202,7 @@ def clean_entry(raw: Any) -> dict[str, Any] | None:
         except (binascii.Error, ValueError, connector_logo.LogoError):
             logo = None
     contents = raw.get("contents") if isinstance(raw.get("contents"), dict) else {}
+    connectors = raw.get("connectors") if isinstance(raw.get("connectors"), list) else []
     return {
         **manifest,
         "file": file_name,
@@ -208,6 +210,7 @@ def clean_entry(raw: Any) -> dict[str, Any] | None:
         "size": size,
         "contents": {kind: _count(contents.get(kind)) for kind in COUNTED if _count(contents.get(kind))},
         "premium": _count(contents.get("premium")),
+        "connectors": [name[:80] for name in connectors if isinstance(name, str)][:CONNECTORS_MAX],
         "logo": logo,
     }
 
