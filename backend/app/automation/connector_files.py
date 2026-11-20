@@ -12,7 +12,7 @@ what happens to them here is decided in this module, for one step of a run:
   kept, and the step says so.
 - **A file that goes out** is one of the store, named by its artifact id
   (``file-<sha256>``) or its SHA-256. Before it leaves, the data guard judges
-  it as it judges an attachment of a message (``outbound.guarded_files``): by
+  it as it judges an attachment of a message (``outbound.guarded_message``): by
   what it is, never by opening it. One that is not in the store, cannot be
   read or is over the limit is refused whatever the playbook opened.
 
@@ -118,7 +118,9 @@ class Store:
     def judge(self, found: list[dict[str, Any]]) -> bool:
         """Whether the files may leave, as the guard judges the attachments of a message. Held, it raises
         and the step fails; False on a node that drops what is held."""
-        return outbound.guarded_files(self.call, found, self.decided)
+        if not found:
+            return True
+        return outbound.guarded_message(self.call, {}, found, self.decided)[1]
 
     def read(self, sha256: str) -> bytes:
         """The bytes of a file of the store, as they are. Raises when they cannot be read."""

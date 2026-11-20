@@ -40,6 +40,32 @@
       </p>
 
       <section class="release">
+        <h3>6.5.0 <span class="date">2026-11-20</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Connectors handle files</strong>: a command keeps what it
+            downloads as an artifact, never opened, and sends a file Nik holds after the data guard judged it.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Expressions decide and count</strong>: comparisons,
+            <code>if(…)</code>, arithmetic, lists, dates and more filters, the same in the editor and on the server.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The sources of threat intelligence</strong>: 51 more commands
+            (586), with downloads and submissions of files, and verdicts written as plain conditions.
+          </li>
+          <li>
+            <span class="tag changed">changed</span>
+            <strong>Breaking: the reputation of an indicator is asked of the connectors only.</strong> A source needs
+            its pack and an instance; abuse.ch is three sources; the keys entered before move to instances (<a
+              href="deployment.html#upgrading-to-65"
+              >Upgrading to 6.5</a
+            >).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.4.0 <span class="date">2026-11-20</span></h3>
         <ul>
           <li>

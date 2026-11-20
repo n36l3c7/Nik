@@ -1487,11 +1487,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <em>attachment</em>, its name is a <em>file name</em> (and is read as text), a file Nik holds as a sample is a
         <em>sample</em>, and one whose hash is on the allowlist is an <em>allowlisted indicator</em>. Every one of those
         classes must be open for the playbook, which for <em>attachments</em> and <em>samples</em> an admin does in the
-        settings of the playbook (below). Otherwise the
-        step fails and says what was held. A node set to send without what is held sends
-        <strong>nothing at all</strong> then: a submission without its file is no submission, so the command is not
-        sent, the step ends with empty outputs and says that the file was held back. The step shows what was judged (how
-        many files, how many bytes, which classes) and, when the file went, its name, size and SHA-256.
+        settings of the playbook (below). Otherwise the step fails and says what was held. A node set to send without
+        what is held sends <strong>nothing at all</strong> then: a submission without its file is no submission, so the
+        command is not sent, the step ends with empty outputs and says that the file was held back. The step shows what
+        was judged (how many files, how many bytes, which classes) and, when the file went, its name, size and SHA-256.
       </p>
       <p>
         <strong>E-mail bodies, attachments and samples</strong> are opened in the same place, the <em>Settings</em> tab
