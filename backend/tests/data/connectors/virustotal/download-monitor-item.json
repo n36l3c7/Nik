@@ -1,0 +1,38 @@
+{
+  "args": {
+    "id": "L3Rlc3QvdGFjLmV4ZQ"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor/items/L3Rlc3QvdGFjLmV4ZQ/download",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtbW9uaXRvci1pdGVtIGdpdmVzLgo=",
+        "headers": {
+          "content-disposition": "attachment; filename=\"tac.exe\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "tac.exe",
+      "type": "application/octet-stream",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtbW9uaXRvci1pdGVtIGdpdmVzLgo="
+    }
+  ],
+  "outputs": {
+    "name": "tac.exe",
+    "type": "application/octet-stream",
+    "size": 62,
+    "sha256": "sha256:tac.exe",
+    "artifact": "artifact:tac.exe",
+    "linked": false
+  }
+}

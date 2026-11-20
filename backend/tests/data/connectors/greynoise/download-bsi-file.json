@@ -1,0 +1,42 @@
+{
+  "args": {
+    "date": "2026-05-14"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/bsi/download",
+        "query": {
+          "date": "2026-05-14"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "H4sIACBpbnZlbnRlZCBnemlwIGJ5dGVz",
+        "headers": {
+          "content-type": "application/gzip",
+          "content-disposition": "attachment; filename=\"riot-bulk-2026-05-14.json.gz\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "riot-bulk-2026-05-14.json.gz",
+      "type": "application/gzip",
+      "base64": "H4sIACBpbnZlbnRlZCBnemlwIGJ5dGVz"
+    }
+  ],
+  "outputs": {
+    "name": "riot-bulk-2026-05-14.json.gz",
+    "type": "application/gzip",
+    "size": 24,
+    "sha256": "sha256:riot-bulk-2026-05-14.json.gz",
+    "artifact": "artifact:riot-bulk-2026-05-14.json.gz",
+    "linked": false
+  }
+}

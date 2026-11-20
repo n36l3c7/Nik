@@ -16,20 +16,21 @@
 # malware (a cleaned-up URL serves anything): a payload with a malware
 # family is malicious, one without is suspicious.
 #
-# The summaries are built without conditions, which the expression
-# language does not have: a field is read as a JSON list ([] when nothing
-# was found, [null] when the field is empty, ["value"] otherwise), the
-# first two are mapped to a sentence and the brackets of the third are
-# replaced.
+# Files (6.5): download-payload keeps the ZIP URLhaus answers as an
+# artifact, as it came; nothing is unpacked. The hourly and daily batches
+# are files on datalake.abuse.ch (more_hosts), which takes no key.
 #
-# Not here, because the format cannot express them: downloading a payload
-# (a ZIP file), submitting a URL (the submission API is on another host,
-# urlhaus.abuse.ch, and a connector reaches one host), and the feeds and
-# database dumps (files whose address holds the Auth-Key).
+# Two things need the Auth-Key where the key of the instance does not go
+# (it travels in its header, to urlhaus-api.abuse.ch only): the address of
+# a database dump holds it (/v2/files/exports/<key>/recent.csv), and the
+# submission API is on another host, urlhaus.abuse.ch (more_hosts), which
+# wants it in its header. For those the instance is asked for the key a
+# second time ("auth_key"): given, it is the permission to send it there;
+# left empty, download-export and submit-url fail and the rest works.
 name: URLhaus
 id: urlhaus
-version: 1
-description: Malware distribution URLs tracked by URLhaus (abuse.ch), with the hosts they are on and the payloads they serve.
+version: 2
+description: Malware distribution URLs tracked by URLhaus (abuse.ch), with the hosts they are on and the payloads they serve, downloaded and submitted.
 api_version: "URLhaus API v1 (urlhaus-api.abuse.ch/v1)"
 verified: false
 configuration:
@@ -39,7 +40,14 @@ configuration:
     header: Auth-Key
     required: true
     help: "The Auth-Key of your abuse.ch account, from https://auth.abuse.ch/. One key works for URLhaus, MalwareBazaar and ThreatFox."
+  - name: auth_key
+    label: Auth-Key, for submissions and exports
+    type: secret
+    help: "The same Auth-Key, typed again, for submit-url and download-export only: the first sends it to urlhaus.abuse.ch, the second writes it in the address of the export. Leave it empty when neither is used."
 base_url: "https://urlhaus-api.abuse.ch"
+more_hosts:
+  - urlhaus.abuse.ch
+  - datalake.abuse.ch
 test:
   request: { method: GET, path: /v1/urls/recent/limit/1/ }
   expect: { status: 200 }
@@ -55,10 +63,13 @@ commands:
       form: { url: "{{ args.url }}" }
     error: { message: "{{ response.query_status }}" }
     outputs:
-      verdict: "{{ response.query_status | map(ok='malicious', else='unknown') }}"
+      # Malicious when URLhaus tracks the URL, online or not; unknown otherwise.
+      verdict: "{{ if(response.query_status | default('') == 'ok', 'malicious', 'unknown') }}"
       summary: >-
-        {{ response | where('query_status', 'eq', 'ok') | pluck('threat') | json | map('[]', 'not in URLhaus', '[null]', 'URLhaus: malware URL') | replace('["', 'URLhaus: ') | replace('"]', '') }}{{ response | where('query_status', 'eq', 'ok') | pluck('url_status') | json | map('[]', '', '[null]', ' (status unknown)') | replace('["', ' (') | replace('"]', ')') }}
-      link: "{{ response.urlhaus_reference }}"
+        {{ if(response.query_status | default('') == 'ok',
+        'URLhaus: ' ~ first_of(response.threat, 'malware URL') ~ ' (' ~ first_of(response.url_status, 'status unknown') ~ ')',
+        'not in URLhaus') }}
+      link: "{{ first_of(response.urlhaus_reference, 'https://urlhaus.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       id: "{{ response.id }}"
       url_status: "{{ response.url_status }}"
@@ -108,9 +119,13 @@ commands:
       form: { host: "{{ args.host }}" }
     error: { message: "{{ response.query_status }}" }
     outputs:
-      verdict: "{{ response.url_count | default(0) | int | map('0', 'unknown', else='suspicious') }}"
-      summary: "{{ response.url_count | default(0) | int | map('0', 'not in URLhaus', else='URLhaus: ') }}{{ response.url_count | default(0) | int | map('0', '') }}{{ response.url_count | default(0) | int | map('0', '', else=' malware URL(s) on this host') }}"
-      link: "{{ response.urlhaus_reference }}"
+      # Suspicious when URLhaus saw malware URLs on the host (it may be a compromised site); unknown otherwise.
+      verdict: "{{ if(response.query_status | default('') == 'ok' and response.url_count | default(0) | int > 0, 'suspicious', 'unknown') }}"
+      summary: >-
+        {{ if(response.query_status | default('') == 'ok' and response.url_count | default(0) | int > 0,
+        'URLhaus: ' ~ (response.url_count | default(0) | int | plural('malware URL')) ~ ' on this host',
+        'not in URLhaus') }}
+      link: "{{ first_of(response.urlhaus_reference, 'https://urlhaus.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       url_count: "{{ response.url_count | default(0) | int }}"
       firstseen: "{{ response.firstseen }}"
@@ -132,11 +147,17 @@ commands:
         "{{ args.hash | trim | length | map('32', 'md5_hash', else='sha256_hash') }}": "{{ args.hash | trim }}"
     error: { message: "{{ response.query_status }}" }
     outputs:
+      # A payload with a malware family is malicious; one URLhaus collected without naming a family is
+      # suspicious (a cleaned-up URL serves anything); a file it never saw is unknown.
       verdict: >-
-        {{ response | where('query_status', 'eq', 'ok') | pluck('signature') | json | map('[]', 'unknown', '[null]', 'suspicious', else='malicious') }}
+        {{ if(response.query_status | default('') == 'ok',
+        if(first_of(response.signature, ''), 'malicious', 'suspicious'),
+        'unknown') }}
       summary: >-
-        {{ response | where('query_status', 'eq', 'ok') | pluck('signature') | json | map('[]', 'not in URLhaus', '[null]', 'URLhaus: payload served by a malware URL, no malware family identified') | replace('["', 'URLhaus: ') | replace('"]', '') }}
-      link: "{{ response.urls[0].urlhaus_reference }}"
+        {{ if(response.query_status | default('') == 'ok',
+        'URLhaus: ' ~ first_of(response.signature, 'payload served by a malware URL, no malware family identified'),
+        'not in URLhaus') }}
+      link: "{{ first_of(response.urls[0].urlhaus_reference, 'https://urlhaus.abuse.ch/') }}"
       query_status: "{{ response.query_status }}"
       md5: "{{ response.md5_hash }}"
       sha256: "{{ response.sha256_hash }}"
@@ -216,3 +237,95 @@ commands:
       firstseen: "{{ response.firstseen }}"
       lastseen: "{{ response.lastseen }}"
       query_status: "{{ response.query_status }}"
+
+  # ----------------------------------------------------------------- files --
+  - name: download-payload
+    description: >-
+      Download a payload URLhaus collected from a malware URL, by its SHA256 hash, kept as an artifact: the ZIP
+      URLhaus answers, which has no password. Nothing is unpacked.
+    arguments:
+      - { name: sha256_hash, type: text, required: true, description: The SHA256 hash of the payload }
+    request:
+      method: GET
+      path: "/v1/download/{{ args.sha256_hash | urlencode }}/"
+      answer: file
+      save_as: { name: "{{ args.sha256_hash }}.zip", type: application/zip }
+    # A hash URLhaus does not hold is answered with the words not_found, an error with copy_error, where the
+    # file should be: only an archive is kept.
+    success:
+      when:
+        any:
+          - { left: "{{ headers['content-type'] }}", op: contains, right: zip }
+          - { left: "{{ headers['content-type'] }}", op: contains, right: octet-stream }
+    error: { message: "{{ first_of(response.query_status, response.text, '') | limit(200) }}" }
+    timeout: 300
+    sample: { name: payload.zip, type: application/zip, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-hourly-batch
+    description: >-
+      Download the batch of the payloads of one hour, kept as an artifact: a ZIP with the password "infected",
+      from datalake.abuse.ch. Nothing is unpacked. A batch is often hundreds of megabytes: one over the limit of
+      a sample is refused, and nothing is kept.
+    arguments:
+      - { name: hour, type: text, description: "The hour, in UTC, as YYYY-MM-DD-HH: 2026-11-19-23. Two hours ago when left empty (a batch is made a few minutes after its hour ends)" }
+    request:
+      method: GET
+      path: "https://datalake.abuse.ch/urlhaus/hourly/{{ first_of(args.hour, now.iso | date_add(-2, 'hours') | date('%Y-%m-%d-%H')) | urlencode }}.zip"
+      answer: file
+      save_as: { type: application/zip }
+    timeout: 300
+    sample: { name: 2026-11-19-23.zip, type: application/zip, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-daily-batch
+    description: >-
+      Download the batch of the payloads of one day, kept as an artifact: a ZIP with the password "infected",
+      from datalake.abuse.ch. Nothing is unpacked. A daily batch is over a gigabyte: one over the limit of a
+      sample is refused, and nothing is kept.
+    arguments:
+      - { name: date, type: text, description: "The day, in UTC, as YYYY-MM-DD: 2026-11-18. Yesterday when left empty (its batch is made a few minutes after midnight UTC)" }
+    request:
+      method: GET
+      path: "https://datalake.abuse.ch/urlhaus/daily/{{ first_of(args.date, now.iso | date_add(-1, 'days') | date('%Y-%m-%d')) | urlencode }}.zip"
+      answer: file
+      save_as: { type: application/zip }
+    timeout: 300
+    sample: { name: 2026-11-18.zip, type: application/zip, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: download-export
+    description: >-
+      Download one of the database dumps and feeds URLhaus publishes, kept as an artifact. The page
+      urlhaus.abuse.ch/api lists their names to a signed-in account. They are made every 5 minutes: do not ask
+      more often. Needs "Auth-Key, for submissions and exports" in the instance.
+    arguments:
+      - { name: file, type: text, default: recent.csv, description: "The name of the dump, as the page gives it: recent.csv" }
+    request:
+      method: GET
+      # The Auth-Key is part of the address of a dump, as URLhaus says.
+      path: "/v2/files/exports/{{ secret.auth_key }}/{{ args.file | urlencode }}"
+      answer: file
+      save_as: { name: "urlhaus-{{ args.file }}" }
+    timeout: 300
+    sample: { name: urlhaus-recent.csv, type: text/csv, size: 0, sha256: "", artifact: "", linked: false }
+
+  - name: submit-url
+    description: >-
+      Submit a URL that is serving malware right now to URLhaus, under your abuse.ch account. Read its
+      submission policy first: active malware distribution only, no phishing, no adware, no redirectors. Needs
+      "Auth-Key, for submissions and exports" in the instance: the request goes to urlhaus.abuse.ch.
+    changes_outside: true
+    arguments:
+      - { name: url, type: text, required: true, description: "The URL as it is seen on the wire, answering 200: https://evil.example/payload.exe" }
+      - { name: tags, type: list, description: "Tags, letters, digits, dot, dash and space only: [Emotet, doc]" }
+      - { name: anonymous, type: bool, default: false, description: "True to hide your abuse.ch handle on the submission" }
+    request:
+      method: POST
+      path: "https://urlhaus.abuse.ch/api/"
+      # Another host of abuse.ch: the key of the instance is not sent there, the one given for this is.
+      headers: { Auth-Key: "{{ secret.auth_key }}" }
+      json:
+        anonymous: "{{ if(args.anonymous, '1', '0') }}"
+        submission:
+          - url: "{{ args.url }}"
+            threat: malware_download
+            tags: "{{ args.tags }}"
+    sample: { response: {} }

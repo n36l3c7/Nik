@@ -1,0 +1,43 @@
+{
+  "args": {
+    "url": "https://evil.example/payload.exe",
+    "tags": [
+      "Emotet",
+      "doc"
+    ]
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "host": "urlhaus.abuse.ch",
+        "path": "/api/",
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        },
+        "json": {
+          "anonymous": "0",
+          "submission": [
+            {
+              "url": "https://evil.example/payload.exe",
+              "threat": "malware_download",
+              "tags": [
+                "Emotet",
+                "doc"
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "text": ""
+      }
+    }
+  ],
+  "outputs": {
+    "response": {
+      "text": ""
+    }
+  }
+}

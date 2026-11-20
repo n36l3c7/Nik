@@ -16,12 +16,17 @@
 # The reference shows no example for the indicator sections, the details of a
 # pulse and a few others: those commands name only the parts of the answer
 # that Nik's own enrichment or the SDK read, and give the rest as it comes.
-# Three endpoints are not here: submitting a file (it needs the bytes of the
-# file, which a command cannot send) and the two that change the TLP of what
-# was submitted (the reference gives them each other's fields).
+#
+# The verdict of the four reputation commands is the one Nik's own enrichment
+# gives for this source. A value OTX does not know is answered 404, taken
+# here as an answer: it holds none of the fields, so each is read through
+# first_of or asked by if.
+#
+# Two endpoints are not here: the two that change the TLP of what was
+# submitted (the reference gives them each other's fields).
 name: AlienVault OTX
 id: otx
-version: 1
+version: 2
 description: Indicators, pulses and users of LevelBlue's Open Threat Exchange - what is known of an address, a domain, a URL, a file or a CVE, and the pulses that name them.
 api_version: "OTX DirectConnect API v1 (otx.alienvault.com/api/v1)"
 verified: false
@@ -36,8 +41,10 @@ test:
   request: { method: GET, path: /users/me }
 commands:
   # ------------------------------------------------------------- reputation --
-  # The verdict, as Nik's enrichment gives it: in a pulse → suspicious; in none but on a list OTX
-  # trusts (its "validation") → harmless; otherwise, and when OTX does not know the value → unknown.
+  # The verdict, as Nik's enrichment gives it: OTX does not know the value (404) → unknown; in a pulse →
+  # suspicious (OTX does not judge a pulse, so never malicious); in none but on a list OTX trusts (its
+  # "validation") → harmless; otherwise → unknown. The families are those of the pulses the answer lists,
+  # in alphabetical order, eight at most.
   - name: get-ip-reputation
     description: What OTX knows of an IP address (IPv4 or IPv6) - the pulses that name it, whether OTX lists it as known good, its network and country.
     reputation: ip
@@ -45,19 +52,24 @@ commands:
       - { name: ip, type: text, required: true, description: "The address: 8.8.8.8 or 2001:4860:4860::8888" }
     request:
       method: GET
-      path: "/indicators/{{ args.ip | regex_extract(':') | map(':', 'IPv6', else='IPv4') }}/{{ args.ip }}/general"
+      path: "/indicators/{{ if(':' in args.ip, 'IPv6', 'IPv4') }}/{{ args.ip }}/general"
     success: { status: [200, 404] }
     error: { message: "{{ response.detail }}" }
     outputs:
-      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
-      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
-      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      verdict: "{{ if(status == 404 or not response, 'unknown',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'suspicious',
+        if(response.validation, 'harmless', 'unknown'))) }}"
+      summary: "{{ if(status == 404 or not response, 'not in OTX',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'in ' ~ first_of(response.pulse_info.count, 0) | int | plural('OTX pulse'),
+        if(response.validation, 'whitelisted by OTX', 'in no OTX pulse'))) }}"
+      pulse_count: "{{ first_of(response.pulse_info.count, 0) | int }}"
       pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
-      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      pulse_details: "{{ response.pulse_info.pulses | default([]) | limit(10) | pick(id='id', name='name', author='author.username', modified='modified', tags='tags', tlp='TLP') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | default([]) | unique | without(['']) | sort | limit(8) }}"
       validation: "{{ response.validation }}"
       asn: "{{ response.asn }}"
       country: "{{ response.country_name }}"
-      link: "https://otx.alienvault.com/indicator/ip/{{ args.ip }}"
+      link: "https://otx.alienvault.com/indicator/{{ if(':' in args.ip, 'ipv6', 'ipv4') }}/{{ args.ip | urlencode }}"
 
   - name: get-domain-reputation
     description: What OTX knows of a domain - the pulses that name it and whether OTX lists it as known good.
@@ -68,13 +80,18 @@ commands:
     success: { status: [200, 404] }
     error: { message: "{{ response.detail }}" }
     outputs:
-      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
-      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
-      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      verdict: "{{ if(status == 404 or not response, 'unknown',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'suspicious',
+        if(response.validation, 'harmless', 'unknown'))) }}"
+      summary: "{{ if(status == 404 or not response, 'not in OTX',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'in ' ~ first_of(response.pulse_info.count, 0) | int | plural('OTX pulse'),
+        if(response.validation, 'whitelisted by OTX', 'in no OTX pulse'))) }}"
+      pulse_count: "{{ first_of(response.pulse_info.count, 0) | int }}"
       pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
-      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      pulse_details: "{{ response.pulse_info.pulses | default([]) | limit(10) | pick(id='id', name='name', author='author.username', modified='modified', tags='tags', tlp='TLP') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | default([]) | unique | without(['']) | sort | limit(8) }}"
       validation: "{{ response.validation }}"
-      link: "https://otx.alienvault.com/indicator/domain/{{ args.domain }}"
+      link: "https://otx.alienvault.com/indicator/domain/{{ args.domain | urlencode }}"
 
   - name: get-url-reputation
     description: What OTX knows of a URL - the pulses that name it and whether OTX lists it as known good.
@@ -88,12 +105,18 @@ commands:
     success: { status: [200, 404] }
     error: { message: "{{ response.detail }}" }
     outputs:
-      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
-      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
-      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      verdict: "{{ if(status == 404 or not response, 'unknown',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'suspicious',
+        if(response.validation, 'harmless', 'unknown'))) }}"
+      summary: "{{ if(status == 404 or not response, 'not in OTX',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'in ' ~ first_of(response.pulse_info.count, 0) | int | plural('OTX pulse'),
+        if(response.validation, 'whitelisted by OTX', 'in no OTX pulse'))) }}"
+      pulse_count: "{{ first_of(response.pulse_info.count, 0) | int }}"
       pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
-      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      pulse_details: "{{ response.pulse_info.pulses | default([]) | limit(10) | pick(id='id', name='name', author='author.username', modified='modified', tags='tags', tlp='TLP') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | default([]) | unique | without(['']) | sort | limit(8) }}"
       validation: "{{ response.validation }}"
+      link: "https://otx.alienvault.com/indicator/url/{{ args.url | urlencode }}"
 
   - name: get-file-reputation
     description: What OTX knows of a file by its hash (MD5, SHA-1 or SHA-256) - the pulses that name it and whether OTX lists it as known good.
@@ -104,13 +127,18 @@ commands:
     success: { status: [200, 404] }
     error: { message: "{{ response.detail }}" }
     outputs:
-      verdict: "{{ response | where('pulse_info.count', 'lte', 0) | pluck('validation') | json | map('[]', 'suspicious', '[[]]', 'unknown', '[null]', 'unknown', else='harmless') }}"
-      summary: "in {{ response.pulse_info.count | default(0) }} OTX pulses"
-      pulse_count: "{{ response.pulse_info.count | default(0) }}"
+      verdict: "{{ if(status == 404 or not response, 'unknown',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'suspicious',
+        if(response.validation, 'harmless', 'unknown'))) }}"
+      summary: "{{ if(status == 404 or not response, 'not in OTX',
+        if(first_of(response.pulse_info.count, 0) | int != 0, 'in ' ~ first_of(response.pulse_info.count, 0) | int | plural('OTX pulse'),
+        if(response.validation, 'whitelisted by OTX', 'in no OTX pulse'))) }}"
+      pulse_count: "{{ first_of(response.pulse_info.count, 0) | int }}"
       pulses: "{{ response.pulse_info.pulses | pluck('name') }}"
-      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | unique }}"
+      pulse_details: "{{ response.pulse_info.pulses | default([]) | limit(10) | pick(id='id', name='name', author='author.username', modified='modified', tags='tags', tlp='TLP') }}"
+      families: "{{ response.pulse_info.pulses[*].malware_families[*].display_name | default([]) | unique | without(['']) | sort | limit(8) }}"
       validation: "{{ response.validation }}"
-      link: "https://otx.alienvault.com/indicator/file/{{ args.file_hash }}"
+      link: "https://otx.alienvault.com/indicator/file/{{ args.file_hash | urlencode }}"
 
   # -------------------------------------------------------------- indicators --
   - name: get-ipv4-indicator
@@ -215,6 +243,20 @@ commands:
       method: POST
       path: /indicators/submit_urls
       json: { urls: "{{ args.urls }}", tlp: "{{ args.tlp }}" }
+    error: { message: "{{ response.detail }}" }
+    sample: { response: {} }
+
+  - name: submit-file
+    description: Give OTX a file to analyse - it is analysed statically, then in OTX's sandbox when that applies. The file leaves Nik and stays with OTX. list-submitted-files says how far the analysis is.
+    changes_outside: true
+    arguments:
+      - { name: sample, type: file, required: true, description: "The file to send: an artifact of Nik (file-<sha256>) or its SHA-256" }
+    request:
+      method: POST
+      path: /indicators/submit_file
+      # The reference: multipart form data only, the part that holds the file named "file".
+      files:
+        file: { artifact: "{{ args.sample }}" }
     error: { message: "{{ response.detail }}" }
     sample: { response: {} }
 

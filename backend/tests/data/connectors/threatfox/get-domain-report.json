@@ -82,6 +82,8 @@
     "malware": "Dridex",
     "malware_id": "win.dridex",
     "threat_type": "botnet_cc",
+    "threat": "Indicator that identifies a botnet command&control server (C&C)",
+    "reporter": "abuse_ch",
     "confidence_level": 50,
     "first_seen": "2020-12-08 13:36:27 UTC",
     "last_seen": null,

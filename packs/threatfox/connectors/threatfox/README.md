@@ -43,14 +43,31 @@ paid plan.
 - `submit-ioc` shares indicators under your abuse.ch account: it changes
   something at ThreatFox and asks a person first. Read the submission
   policy of ThreatFox before using it: confirmed indicators only.
+- `download-export` downloads one of the data exports (every indicator of
+  the last 6 months as one file) and keeps it as an artifact.
 
-Each command gives `query_status`, the word the API answers with: a look-up
-that finds nothing is not a failure, its `count` is 0.
+Each look-up gives `query_status`, the word the API answers with: a look-up
+that finds nothing is not a failure, its `count` is 0. The summary of a
+report names the first indicator: its malware family and its threat type
+(`ThreatFox: Cobalt Strike (botnet C2)`), or the threat type alone.
+
+## The exports
+
+The address of an export holds the Auth-Key
+(`/v2/files/exports/<Auth-Key>/full.csv.zip`), as abuse.ch asks. The key of
+the instance travels in its header and nowhere else, so an instance that
+uses `download-export` is given the key a second time, as *Auth-Key, for the
+exports*: that one is written in the address, and is replaced in what a step
+records of the request. Left empty, `download-export` fails and every other
+command works. The export page (<https://threatfox.abuse.ch/export/>) names
+one file, `full.csv.zip`; the names of the others (JSON, MISP, Suricata
+rules, RPZ, host file) are shown there to a signed-in account, and
+`download-export` takes any of them. The file is kept as it came: nothing
+is unpacked.
 
 ## What is not here
 
-The data exports (every indicator as one JSON or CSV file) are files on
-another host, not part of the API.
+Every part of the API the documentation describes has a command.
 
 ## Not run against the service
 

@@ -31,7 +31,28 @@
                 "Forcepoint ThreatSeeker": "information technology"
               },
               "last_analysis_date": 1612962021,
-              "tags": []
+              "tags": [],
+              "last_analysis_results": {
+                "alphaMountain.ai": {
+                  "category": "suspicious",
+                  "engine_name": "alphaMountain.ai",
+                  "method": "blacklist",
+                  "result": "suspicious"
+                },
+                "CMC Threat Intelligence": {
+                  "category": "undetected",
+                  "engine_name": "CMC Threat Intelligence",
+                  "method": "blacklist",
+                  "result": "unrated"
+                },
+                "Acronis": {
+                  "category": "harmless",
+                  "engine_name": "Acronis",
+                  "method": "blacklist",
+                  "result": "clean"
+                }
+              },
+              "creation_date": 874296000
             },
             "links": {
               "self": "https://www.virustotal.com/api/v3/domains/www.hooli.com"
@@ -43,11 +64,12 @@
   ],
   "outputs": {
     "verdict": "suspicious",
-    "summary": "0 malicious, 1 suspicious, 60 harmless, 8 undetected",
+    "summary": "0/69 engines flag it, 1 suspicious",
     "malicious": 0,
     "suspicious": 1,
     "harmless": 60,
     "undetected": 8,
+    "total": 69,
     "stats": {
       "harmless": 60,
       "malicious": 0,
@@ -55,7 +77,38 @@
       "timeout": 0,
       "undetected": 8
     },
+    "engines": [
+      {
+        "engine": "alphaMountain.ai",
+        "category": "suspicious",
+        "result": "suspicious"
+      }
+    ],
+    "all_engines": [
+      {
+        "engine": "alphaMountain.ai",
+        "category": "suspicious",
+        "result": "suspicious"
+      },
+      {
+        "engine": "Acronis",
+        "category": "harmless",
+        "result": "clean"
+      },
+      {
+        "engine": "CMC Threat Intelligence",
+        "category": "undetected",
+        "result": "unrated"
+      }
+    ],
     "reputation": 0,
+    "last_analysis": 1612962021000,
+    "tags": [],
+    "registrar": "MarkMonitor Inc.",
+    "created": 874296000000,
+    "categories": [
+      "information technology"
+    ],
     "id": "www.hooli.com",
     "attributes": {
       "last_analysis_stats": {
@@ -71,7 +124,28 @@
         "Forcepoint ThreatSeeker": "information technology"
       },
       "last_analysis_date": 1612962021,
-      "tags": []
+      "tags": [],
+      "last_analysis_results": {
+        "alphaMountain.ai": {
+          "category": "suspicious",
+          "engine_name": "alphaMountain.ai",
+          "method": "blacklist",
+          "result": "suspicious"
+        },
+        "CMC Threat Intelligence": {
+          "category": "undetected",
+          "engine_name": "CMC Threat Intelligence",
+          "method": "blacklist",
+          "result": "unrated"
+        },
+        "Acronis": {
+          "category": "harmless",
+          "engine_name": "Acronis",
+          "method": "blacklist",
+          "result": "clean"
+        }
+      },
+      "creation_date": 874296000
     },
     "link": "https://www.virustotal.com/gui/domain/www.hooli.com"
   }

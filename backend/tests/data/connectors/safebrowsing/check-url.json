@@ -73,7 +73,8 @@
   ],
   "outputs": {
     "verdict": "malicious",
-    "summary": "malware, social engineering",
+    "summary": "Google Safe Browsing: malware, social engineering",
+    "link": "https://transparencyreport.google.com/safe-browsing/search?url=http%3A%2F%2Fwww.urltocheck1.org%2F",
     "threats": [
       "MALWARE",
       "SOCIAL_ENGINEERING"

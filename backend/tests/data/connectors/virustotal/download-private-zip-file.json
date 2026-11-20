@@ -1,0 +1,38 @@
+{
+  "args": {
+    "id": "4939392292"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/private/zip_files/4939392292/download",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtcHJpdmF0ZS16aXAtZmlsZSBnaXZlcy4K",
+        "headers": {
+          "content-type": "application/zip"
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "4939392292.zip",
+      "type": "application/zip",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtcHJpdmF0ZS16aXAtZmlsZSBnaXZlcy4K"
+    }
+  ],
+  "outputs": {
+    "name": "4939392292.zip",
+    "type": "application/zip",
+    "size": 66,
+    "sha256": "sha256:4939392292.zip",
+    "artifact": "artifact:4939392292.zip",
+    "linked": false
+  }
+}

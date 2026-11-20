@@ -48,6 +48,7 @@
       "evil.example"
     ],
     "count": 2,
-    "truncated": false
+    "truncated": false,
+    "total": null
   }
 }

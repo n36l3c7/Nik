@@ -937,7 +937,10 @@ class Runtime:
         path = str(ex.render_text(spec.path, scope).data)
         url = self._url(path)
         _scheme, host, _port, target, _address = egress.destination(self.policy, url, allow_http=self.allow_http)
-        would = {"method": spec.method, "host": host, "path": target.split("?")[0][:300], "dry_run": True}
+        # An API that takes its key in the address (/exports/<key>/full.csv) has a secret in the path: it is
+        # replaced here as in what a real request records.
+        path = _redact(target.split("?")[0][:300], self._hidden)
+        would = {"method": spec.method, "host": host, "path": path, "dry_run": True}
         # The files of the first request, as they would go: what they are, never their bytes. The guard
         # is asked as it would be, so that a dry run says what a real one would hold.
         files = self._files(spec, scope)

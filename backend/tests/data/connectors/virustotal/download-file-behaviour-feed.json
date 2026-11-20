@@ -1,0 +1,35 @@
+{
+  "args": {
+    "time": "202701141802"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/file_behaviours/202701141802",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItZmVlZCBnaXZlcy4K"
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "file_behaviours-202701141802.bz2",
+      "type": "application/x-bzip2",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtZmlsZS1iZWhhdmlvdXItZmVlZCBnaXZlcy4K"
+    }
+  ],
+  "outputs": {
+    "name": "file_behaviours-202701141802.bz2",
+    "type": "application/x-bzip2",
+    "size": 69,
+    "sha256": "sha256:file_behaviours-202701141802.bz2",
+    "artifact": "artifact:file_behaviours-202701141802.bz2",
+    "linked": false
+  }
+}

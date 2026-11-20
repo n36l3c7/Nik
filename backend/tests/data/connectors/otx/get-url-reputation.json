@@ -31,10 +31,12 @@
   ],
   "outputs": {
     "verdict": "unknown",
-    "summary": "in 0 OTX pulses",
+    "summary": "in no OTX pulse",
     "pulse_count": 0,
     "pulses": [],
+    "pulse_details": [],
     "families": [],
-    "validation": []
+    "validation": [],
+    "link": "https://otx.alienvault.com/indicator/url/http%3A%2F%2Fwww.fotoidea.com%2Fsport%2F4x4_san_ponso%2Fslides%2FIMG_0068.html"
   }
 }

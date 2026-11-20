@@ -420,6 +420,24 @@ def test_the_test_of_a_connection_never_raises_and_a_dry_run_sends_nothing():
     assert wire.sent == []
 
 
+def test_a_dry_run_does_not_show_a_key_that_travels_in_the_address():
+    found = connector(
+        """\
+        - name: download-export
+          request: { path: "/exports/{{ secret.export_key }}/full.csv" }
+        """,
+        auth="- { name: export_key, type: secret }",
+    )
+    would = rt.Runtime(
+        found,
+        {"url": "https://93.184.215.14/api"},
+        {"export_key": "key-in-the-address-1234"},
+        egress.Policy("listed", frozenset({"93.184.215.14"})),
+        send=Wire(),
+    )
+    assert would.would_send("download-export", {})["path"] == f"/api/exports/{rt.REDACTED}/full.csv"
+
+
 def test_a_multipart_body_is_built_for_the_apis_that_want_one():
     found = connector(
         """        - name: put-file

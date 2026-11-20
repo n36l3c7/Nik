@@ -1,0 +1,36 @@
+{
+  "args": {
+    "engine_name": "ExampleAV",
+    "date": "2027-01-14"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/monitor_partner/detections_bundle/ExampleAV/2027-01-14/download",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "RXhhbXBsZSBTb2Z0d2FyZSwyNzVhMDIxYmJmYjY0ODllNTRkNDcxODk5ZjdkYjlkMTY2M2ZjNjk1ZWMyZmUyYTJjNDUzOGFhYmY2NTFmZDBmLGh0dHBzOi8vd3d3LnZpcnVzdG90YWwuY29tL2FwaS92My9tb25pdG9yX3BhcnRuZXIvaGFzaGVzLzI3NWEwMjFiYmZiNjQ4OWU1NGQ0NzE4OTlmN2RiOWQxNjYzZmM2OTVlYzJmZTJhMmM0NTM4YWFiZjY1MWZkMGYvYW5hbHlzZXMsaHR0cHM6Ly93d3cudmlydXN0b3RhbC5jb20vYXBpL3YzL21vbml0b3JfcGFydG5lci9maWxlcy8yNzVhMDIxYmJmYjY0ODllNTRkNDcxODk5ZjdkYjlkMTY2M2ZjNjk1ZWMyZmUyYTJjNDUzOGFhYmY2NTFmZDBmL2Rvd25sb2FkCg=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "ExampleAV-detections-2027-01-14.csv",
+      "type": "text/csv",
+      "base64": "RXhhbXBsZSBTb2Z0d2FyZSwyNzVhMDIxYmJmYjY0ODllNTRkNDcxODk5ZjdkYjlkMTY2M2ZjNjk1ZWMyZmUyYTJjNDUzOGFhYmY2NTFmZDBmLGh0dHBzOi8vd3d3LnZpcnVzdG90YWwuY29tL2FwaS92My9tb25pdG9yX3BhcnRuZXIvaGFzaGVzLzI3NWEwMjFiYmZiNjQ4OWU1NGQ0NzE4OTlmN2RiOWQxNjYzZmM2OTVlYzJmZTJhMmM0NTM4YWFiZjY1MWZkMGYvYW5hbHlzZXMsaHR0cHM6Ly93d3cudmlydXN0b3RhbC5jb20vYXBpL3YzL21vbml0b3JfcGFydG5lci9maWxlcy8yNzVhMDIxYmJmYjY0ODllNTRkNDcxODk5ZjdkYjlkMTY2M2ZjNjk1ZWMyZmUyYTJjNDUzOGFhYmY2NTFmZDBmL2Rvd25sb2FkCg=="
+    }
+  ],
+  "outputs": {
+    "name": "ExampleAV-detections-2027-01-14.csv",
+    "type": "text/csv",
+    "size": 343,
+    "sha256": "sha256:ExampleAV-detections-2027-01-14.csv",
+    "artifact": "artifact:ExampleAV-detections-2027-01-14.csv",
+    "linked": false
+  }
+}

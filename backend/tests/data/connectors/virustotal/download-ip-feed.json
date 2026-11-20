@@ -1,0 +1,35 @@
+{
+  "args": {
+    "time": "202701141802"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/ip_addresses/202701141802",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtaXAtZmVlZCBnaXZlcy4K"
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "ip_addresses-202701141802.bz2",
+      "type": "application/x-bzip2",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtaXAtZmVlZCBnaXZlcy4K"
+    }
+  ],
+  "outputs": {
+    "name": "ip_addresses-202701141802.bz2",
+    "type": "application/x-bzip2",
+    "size": 57,
+    "sha256": "sha256:ip_addresses-202701141802.bz2",
+    "artifact": "artifact:ip_addresses-202701141802.bz2",
+    "linked": false
+  }
+}

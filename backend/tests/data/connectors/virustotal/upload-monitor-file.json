@@ -1,0 +1,46 @@
+{
+  "args": {
+    "sample": "store:myfile.exe",
+    "path": "/folder/myfile.exe",
+    "upload_url": "https://www.virustotal.com/_ah/upload/AMmfu6b-_DXUeFe36Sb3b0F4B8mH9Nb-CHbRoUNVOPwG/"
+  },
+  "store": {
+    "myfile.exe": {
+      "text": "A few invented bytes that stand for a file.\n"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/_ah/upload/AMmfu6b-_DXUeFe36Sb3b0F4B8mH9Nb-CHbRoUNVOPwG/",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "body_has": [
+          "name=\"path\"\r\n\r\n/folder/myfile.exe\r\n"
+        ],
+        "files": [
+          {
+            "field": "file",
+            "name": "myfile.exe",
+            "text": "A few invented bytes that stand for a file.\n"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "data": {
+            "type": "monitor_item",
+            "id": "L2ZvbGRlci9teWZpbGUuZXhl"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "id": "L2ZvbGRlci9teWZpbGUuZXhl",
+    "type": "monitor_item"
+  }
+}

@@ -39,6 +39,7 @@
       "CVE-2021-23017"
     ],
     "count": 1,
-    "truncated": false
+    "truncated": false,
+    "total": null
   }
 }

@@ -120,7 +120,8 @@
   ],
   "outputs": {
     "verdict": "unknown",
-    "summary": "network NET-RTR-1 (NET-192-0-2-0-1), held by Example Networks Pty",
+    "summary": "NET-RTR-1 · Example Networks Pty · AU",
+    "link": "https://client.rdap.org/?type=ip&object=192.0.2.17",
     "name": "NET-RTR-1",
     "handle": "NET-192-0-2-0-1",
     "start_address": "192.0.2.0",

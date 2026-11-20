@@ -1,0 +1,38 @@
+{
+  "args": {
+    "path": "days/search/20251001.gz"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/datadump/link/days/search/20251001.gz",
+        "headers": {
+          "API-Key": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "H4sIACBpbnZlbnRlZCBnemlwIGJ5dGVz",
+        "headers": {
+          "content-type": "application/gzip"
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "days-search-20251001.gz",
+      "type": "application/gzip",
+      "base64": "H4sIACBpbnZlbnRlZCBnemlwIGJ5dGVz"
+    }
+  ],
+  "outputs": {
+    "name": "days-search-20251001.gz",
+    "type": "application/gzip",
+    "size": 24,
+    "sha256": "sha256:days-search-20251001.gz",
+    "artifact": "artifact:days-search-20251001.gz",
+    "linked": false
+  }
+}

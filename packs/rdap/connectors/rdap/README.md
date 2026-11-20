@@ -67,10 +67,18 @@ Nothing here needs a paid plan.
 | `get-help` | What the server says of itself. |
 
 `get-domain` and `get-ip` are the reputation commands for a domain and an
-address. They inform; they do not judge: the verdict is always *unknown*.
-A domain registered a few days ago is suspect, but the age of a domain
-cannot be worked out inside a connector: `get-domain` gives the date
-(`registered`), to be compared in the playbook.
+address. They inform; they do not judge, with one exception, the one Nik's
+own enrichment makes: a domain registered less than 30 days ago is
+*suspicious*. `get-domain` gives the age in whole days (`age_days`) and says
+it in its summary: `registered 16 days ago (2026-12-30), Example Registrar`
+for a young domain, `registered 1995-08-14, Example Registrar` otherwise.
+For every other domain, and for every address, the verdict is *unknown*.
+The summary of `get-ip` is the name of the network, its holder and its
+country.
+
+A domain or an address the registry has no record of (404) is an answer,
+not a failure: the verdict is *unknown* and the summary says so. Any other
+refusal fails the step.
 
 `get-domain` takes the registered domain (`example.co.uk`), not a host under
 it (`www.example.co.uk`): a registry has no record of a host name. Personal

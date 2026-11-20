@@ -1,0 +1,43 @@
+{
+  "args": {
+    "session_id": "250115-abc123def456",
+    "scope": "demo"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/250115-abc123def456/frames",
+        "query": {
+          "scope": "demo"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "1MOyoSBpbnZlbnRlZCBjYXB0dXJlIG9mIG9uZSBzZXNzaW9u",
+        "headers": {
+          "content-type": "application/vnd.tcpdump.pcap",
+          "content-disposition": "attachment; filename=\"session-250115-abc123def456.pcap\""
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "session-250115-abc123def456.pcap",
+      "type": "application/vnd.tcpdump.pcap",
+      "base64": "1MOyoSBpbnZlbnRlZCBjYXB0dXJlIG9mIG9uZSBzZXNzaW9u"
+    }
+  ],
+  "outputs": {
+    "name": "session-250115-abc123def456.pcap",
+    "type": "application/vnd.tcpdump.pcap",
+    "size": 36,
+    "sha256": "sha256:session-250115-abc123def456.pcap",
+    "artifact": "artifact:session-250115-abc123def456.pcap",
+    "linked": false
+  }
+}

@@ -19,7 +19,7 @@
 # the JSON form of the API has them.
 name: Google Safe Browsing
 id: safebrowsing
-version: 1
+version: 2
 description: Checks URLs and hash prefixes against Google's lists of unsafe web resources, and reads the lists themselves.
 api_version: "Safe Browsing API v4 and v5 (safebrowsing.googleapis.com)"
 verified: false
@@ -66,8 +66,13 @@ commands:
             - url: "{{ args.url }}"
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.matches | default('') | length | map('0', 'unknown', else='malicious') }}"
-      summary: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort | join(', ') | lower | replace('_', ' ') | map('', 'not on Google Safe Browsing lists') }}"
+      # Malicious when a list has it; unknown otherwise (not being listed does not mean a page is safe).
+      verdict: "{{ if(response.matches | default([]) | length > 0, 'malicious', 'unknown') }}"
+      summary: >-
+        {{ if(response.matches | default([]) | length > 0,
+        'Google Safe Browsing: ' ~ (response.matches | default([]) | where('threatType') | pluck('threatType') | unique | sort | join(', ') | lower | replace('_', ' ')),
+        'not on Google Safe Browsing lists') }}
+      link: "https://transparencyreport.google.com/safe-browsing/search?url={{ args.url | urlencode }}"
       threats: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort }}"
       matches: "{{ response.matches | default('') | where('threatType') }}"
       count: "{{ response.matches | default('') | length }}"
@@ -92,8 +97,13 @@ commands:
             - url: "https://{{ args.domain }}/"
     error: { message: "{{ response.error.message }}" }
     outputs:
-      verdict: "{{ response.matches | default('') | length | map('0', 'unknown', else='malicious') }}"
-      summary: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort | join(', ') | lower | replace('_', ' ') | map('', 'not on Google Safe Browsing lists') }}"
+      # Malicious when a list has it; unknown otherwise (not being listed does not mean a page is safe).
+      verdict: "{{ if(response.matches | default([]) | length > 0, 'malicious', 'unknown') }}"
+      summary: >-
+        {{ if(response.matches | default([]) | length > 0,
+        'Google Safe Browsing: ' ~ (response.matches | default([]) | where('threatType') | pluck('threatType') | unique | sort | join(', ') | lower | replace('_', ' ')),
+        'not on Google Safe Browsing lists') }}
+      link: "https://transparencyreport.google.com/safe-browsing/search?url={{ args.domain | urlencode }}"
       threats: "{{ response.matches | default('') | where('threatType') | pluck('threatType') | unique | sort }}"
       matches: "{{ response.matches | default('') | where('threatType') }}"
       count: "{{ response.matches | default('') | length }}"

@@ -1,0 +1,42 @@
+{
+  "args": {
+    "session_id": "250115-abc123def456",
+    "type": "rawSource"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v3/sessions/250115-abc123def456/export",
+        "query": {
+          "type": "rawSource"
+        },
+        "headers": {
+          "key": "gn-key-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGH"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "R0VUIC9pbnZlbnRlZCBIVFRQLzEuMQ0KSG9zdDogc2Vuc29yLmV4YW1wbGUNCg0K",
+        "headers": {
+          "content-type": "application/octet-stream"
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "session-250115-abc123def456-rawSource.bin",
+      "type": "application/octet-stream",
+      "base64": "R0VUIC9pbnZlbnRlZCBIVFRQLzEuMQ0KSG9zdDogc2Vuc29yLmV4YW1wbGUNCg0K"
+    }
+  ],
+  "outputs": {
+    "name": "session-250115-abc123def456-rawSource.bin",
+    "type": "application/octet-stream",
+    "size": 48,
+    "sha256": "sha256:session-250115-abc123def456-rawSource.bin",
+    "artifact": "artifact:session-250115-abc123def456-rawSource.bin",
+    "linked": false
+  }
+}

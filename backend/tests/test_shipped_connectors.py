@@ -235,7 +235,8 @@ def played(connector, name: str, fixture: dict, connection: dict) -> None:
 
 
 def test_a_fixture_can_describe_a_file_that_comes_back_and_a_file_that_is_sent():
-    """No shipped connector carries a file yet: the format of the fixtures is run here on one that does."""
+    """The format of the fixtures of a command that carries a file, run on a connector made for it: a
+    fixture that names another file than the one sent must fail."""
     from app.automation import connectors as cn
 
     connector = cn.load(

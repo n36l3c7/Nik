@@ -4,8 +4,8 @@ The Open Threat Exchange (OTX, now run by LevelBlue) is a community threat-intel
 publish **pulses**: named sets of indicators (IP addresses, domains, hostnames, URLs, file hashes, CVEs…) with
 what they are about: an adversary, malware families, targeted countries and industries. For each indicator OTX
 also holds what LevelBlue Labs observed: geography, passive DNS, the URLs and malware samples seen with it,
-whois, the analysis of a file. This connector reads all of that through the DirectConnect API, and publishes,
-edits and subscribes to pulses.
+whois, the analysis of a file. This connector reads all of that through the DirectConnect API, publishes,
+edits and subscribes to pulses, and submits URLs and files for analysis. It has 47 commands.
 
 ## The key
 
@@ -16,16 +16,20 @@ paste it in the connection. Every command needs it.
 ## Reputation
 
 `get-ip-reputation`, `get-domain-reputation`, `get-url-reputation` and `get-file-reputation` answer the War
-Room's `!ip`, `!domain`, `!url` and `!file`. They read the `general` section of the indicator and say:
+Room's `!ip`, `!domain`, `!url` and `!file`. They read the `general` section of the indicator. The verdict and
+the summary are the ones Nik's own enrichment gives for OTX, and the rule is written in the file:
 
-- `suspicious` when at least one pulse names the value (OTX does not judge a pulse, so this is never
-  `malicious`);
-- `harmless` when no pulse names it and OTX lists it as known good (its `validation`: a whitelisted domain, a
-  well-known address);
-- `unknown` otherwise, and when OTX does not know the value at all.
+| What OTX answers | Verdict | Summary |
+| --- | --- | --- |
+| 404: it does not know the value | unknown | not in OTX |
+| at least one pulse names the value | suspicious | in 3 OTX pulses |
+| no pulse, and OTX lists it as known good (its `validation`: a whitelisted domain, a well-known address) | harmless | whitelisted by OTX |
+| no pulse, no such list | unknown | in no OTX pulse |
 
-The outputs also give the names of the pulses, the malware families they name, and for an address its network
-and country.
+OTX does not judge a pulse, so a value in a pulse is never `malicious`. The outputs also give the number of
+pulses, their names (`pulses`), the first ten with their id, author, date, tags and TLP (`pulse_details`), the
+malware families the listed pulses name, in alphabetical order, eight at most (`families`), what OTX's lists say
+(`validation`), a link to the page of the indicator on OTX, and for an address its network and country.
 
 ## Limits
 
@@ -36,15 +40,20 @@ ceiling (a thousand subscribed pulses, five thousand indicators of a pulse): nar
 ## Commands that change something
 
 Publishing, editing, cloning and deleting a pulse, subscribing to a pulse or a user, following a user, putting
-a pulse in a group and submitting URLs for analysis. Several of these are plain GET requests in this API; they
-ask a person first all the same, and are never sent in a dry run. A pulse created with `public` set is visible
-to everyone on OTX.
+a pulse in a group and submitting URLs or a file for analysis. Several of these are plain GET requests in this
+API; they ask a person first all the same, and are never sent in a dry run. A pulse created with `public` set is
+visible to everyone on OTX.
+
+`submit-file` sends a file Nik holds (an artifact, or its SHA-256) to OTX, which analyses it statically and
+then in its sandbox when that applies. The file leaves Nik and stays with OTX: the data guard judges it before
+anything is sent, and the node asks a person first. The reference gives this endpoint no field beside the file,
+so the TLP of a submitted file cannot be chosen here. `list-submitted-files` says how far the analysis is.
 
 ## What is not here
 
-- Submitting a **file** for analysis: it needs the bytes of the file, which a command cannot send.
 - Changing the TLP of submitted files and URLs: the reference gives each of the two endpoints the fields of
-  the other, so neither could be written with confidence.
+  the other (the one for files asks for `urls`, the one for URLs for `hashes`), so neither could be written
+  with confidence.
 
 ## How this was written
 

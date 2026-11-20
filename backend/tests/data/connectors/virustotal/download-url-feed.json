@@ -1,0 +1,33 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/feeds/urls/202701150700",
+        "headers": {
+          "x-apikey": "vt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtdXJsLWZlZWQgZ2l2ZXMuCg=="
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "urls-202701150700.bz2",
+      "type": "application/x-bzip2",
+      "base64": "SW52ZW50ZWQgYnl0ZXMgc3RhbmRpbmcgZm9yIHdoYXQgZG93bmxvYWQtdXJsLWZlZWQgZ2l2ZXMuCg=="
+    }
+  ],
+  "outputs": {
+    "name": "urls-202701150700.bz2",
+    "type": "application/x-bzip2",
+    "size": 58,
+    "sha256": "sha256:urls-202701150700.bz2",
+    "artifact": "artifact:urls-202701150700.bz2",
+    "linked": false
+  }
+}

@@ -50,6 +50,11 @@ Google made trusted reporters.
 | `search-urls`, `search-hashes` | The v5 look-ups. |
 | `list-hash-lists`, `get-hash-list`, `batch-get-hash-lists` | The v5 hash lists. |
 
+The summary of `check-url` and `check-domain` is the line Nik's own
+enrichment gives: `Google Safe Browsing: malware, social engineering`, or
+`not on Google Safe Browsing lists`; `link` is the page of Google's
+Transparency Report for the URL or the domain.
+
 Hash prefixes, full hashes, states and versions are base64 texts, as the JSON
 form of the API has them. The lists come Rice-encoded or raw: the connector
 gives them as the API sends them and does not decode them.

@@ -28,7 +28,9 @@ is sent in the query of a request (`?key=…`), as the API asks, to
 are never sent it. Nik stores it encrypted and never shows it in what a step
 records.
 
-A connection needs a key even to use only the commands that take none.
+The key is optional. An instance without one can use the commands of the
+services that take no key (`check-ip` and those of CVEDB, EntityDB and
+GeoNet); every other command is refused by Shodan (401).
 
 ## Plans and limits
 
@@ -82,9 +84,16 @@ the host:
 - **suspicious** when the only such tag is `tor`;
 - **unknown** otherwise, and when InternetDB has nothing on the address.
 
-The summary lists the open ports, the number of known CVEs and the tags.
-`get-host` reads the full record of a host from the REST API (banners,
-location, organisation), with the key.
+The summary is the line the enrichment gives: the first 8 open ports, the
+number of known CVEs and the first 5 tags (`ports 22, 443; 1 CVE; tags c2`),
+`no open port` for a host that has none, `no open port known to Shodan` when
+InternetDB has nothing on the address. `bad_tags` gives the tags the verdict
+came from. `get-host` reads the full record of a host from the REST API
+(banners, location, organisation), with the key.
+
+`search-all-hosts`, `list-saved-queries` and `search-saved-queries` read a
+list page after page and also give `total`, how many results Shodan has
+beyond the pages that were read.
 
 ## What is not here
 

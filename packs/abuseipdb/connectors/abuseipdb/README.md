@@ -26,15 +26,27 @@ is sent in the `Key` header.
 | `get-blacklist` | The most reported addresses, with their confidence. |
 | `get-blacklist-text` | The same list as plain text, one address a line. |
 | `report-ip` | Report an address. Changes something at AbuseIPDB. |
+| `bulk-report` | Report many addresses at once, from a CSV file Nik holds. Changes something at AbuseIPDB. |
 | `clear-address` | Delete your own reports of an address. Changes something at AbuseIPDB. |
 
 The verdict of `check-ip` is the one Nik's own enrichment gives for
 AbuseIPDB: **harmless** when the address is on one of AbuseIPDB's whitelists,
 **malicious** from a confidence of 75, **suspicious** from 25, **unknown**
-below.
+below. Its summary is the same line: `confidence 100 %, 42 reports in 90
+days`.
 
 A comment sent with `report-ip` is public: take out of it anything that
-names a person.
+names a person. The same holds for the comments of a file sent with
+`bulk-report`.
+
+`bulk-report` takes the file as an artifact of Nik (`file-<sha256>`): a CSV
+with the headings `IP`, `Categories`, `ReportDate` and `Comment`, in any
+order, under 8 MB and 10 000 lines
+([www.abuseipdb.com/bulk-report](https://www.abuseipdb.com/bulk-report)
+describes it). It asks a person first, and the data guard judges the file
+before it leaves. It gives how many reports were saved and the rows that
+were refused, each with its reason. `list-reports` also gives `total`, how
+many reports AbuseIPDB holds beyond the pages that were read.
 
 ## Limits of a free account
 
@@ -68,8 +80,8 @@ No command is for subscribers only. A subscription changes these arguments:
 
 ## Not here
 
-`bulk-report` (reporting many addresses with a CSV file) is not a command:
-the endpoint takes the file as an upload, which a connector cannot send.
+Every endpoint of the reference has a command. The reference states no
+daily limit for `bulk-report`.
 
 ## Not verified
 

@@ -21,10 +21,11 @@
   ],
   "outputs": {
     "verdict": "unknown",
-    "summary": "in 0 OTX pulses",
+    "summary": "not in OTX",
     "pulse_count": 0,
     "pulses": null,
-    "families": null,
+    "pulse_details": [],
+    "families": [],
     "validation": null,
     "link": "https://otx.alienvault.com/indicator/file/6c5360d41bd2b14b1565f5b18e5c203cf512e493"
   }

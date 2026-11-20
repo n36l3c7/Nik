@@ -1,0 +1,36 @@
+{
+  "args": {},
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/v2/files/exports/abusech-auth-key-0123456789abcdef/recent.csv",
+        "headers": {
+          "Auth-Key": "abusech-auth-key-0123456789abcdef"
+        }
+      },
+      "response": {
+        "status": 200,
+        "base64": "IyBpZCxkYXRlYWRkZWQsdXJsLHVybF9zdGF0dXMsbGFzdF9vbmxpbmUsdGhyZWF0LHRhZ3MsdXJsaGF1c19saW5rLHJlcG9ydGVyCg==",
+        "headers": {
+          "content-type": "text/csv"
+        }
+      }
+    }
+  ],
+  "kept": [
+    {
+      "name": "urlhaus-recent.csv",
+      "type": "text/csv",
+      "base64": "IyBpZCxkYXRlYWRkZWQsdXJsLHVybF9zdGF0dXMsbGFzdF9vbmxpbmUsdGhyZWF0LHRhZ3MsdXJsaGF1c19saW5rLHJlcG9ydGVyCg=="
+    }
+  ],
+  "outputs": {
+    "name": "urlhaus-recent.csv",
+    "type": "text/csv",
+    "size": 76,
+    "sha256": "sha256:urlhaus-recent.csv",
+    "artifact": "artifact:urlhaus-recent.csv",
+    "linked": false
+  }
+}

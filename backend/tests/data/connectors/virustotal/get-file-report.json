@@ -44,12 +44,37 @@
                   "engine_version": "1.1.1.5",
                   "method": "blacklist",
                   "result": "EICAR-Test-File (not a virus)"
+                },
+                "Zillya": {
+                  "category": "undetected",
+                  "engine_name": "Zillya",
+                  "engine_update": "20200609",
+                  "engine_version": "2.0.0.4113",
+                  "method": "blacklist",
+                  "result": null
+                },
+                "AhnLab-V3": {
+                  "category": "malicious",
+                  "engine_name": "AhnLab-V3",
+                  "engine_update": "20200609",
+                  "engine_version": "3.18.0.10009",
+                  "method": "blacklist",
+                  "result": "EICAR_Test_File"
                 }
               },
               "tags": [
                 "powershell",
                 "via-tor"
-              ]
+              ],
+              "names": [
+                "eicar.com",
+                "eicar.txt"
+              ],
+              "popular_threat_classification": {
+                "suggested_threat_label": "virus.eicar/test"
+              },
+              "first_submission_date": 1148301722,
+              "last_submission_date": 1591701032
             },
             "links": {
               "self": "https://www.virustotal.com/api/v3/files/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
@@ -61,11 +86,12 @@
   ],
   "outputs": {
     "verdict": "malicious",
-    "summary": "62 malicious, 0 suspicious, 0 harmless, 4 undetected",
+    "summary": "62/75 engines flag it",
     "malicious": 62,
     "suspicious": 0,
     "harmless": 0,
     "undetected": 4,
+    "total": 75,
     "stats": {
       "confirmed-timeout": 0,
       "failure": 0,
@@ -76,7 +102,53 @@
       "type-unsupported": 9,
       "undetected": 4
     },
+    "engines": [
+      {
+        "engine": "ALYac",
+        "category": "malicious",
+        "result": "EICAR-Test-File (not a virus)"
+      },
+      {
+        "engine": "AhnLab-V3",
+        "category": "malicious",
+        "result": "EICAR_Test_File"
+      }
+    ],
+    "all_engines": [
+      {
+        "engine": "ALYac",
+        "category": "malicious",
+        "result": "EICAR-Test-File (not a virus)"
+      },
+      {
+        "engine": "AhnLab-V3",
+        "category": "malicious",
+        "result": "EICAR_Test_File"
+      },
+      {
+        "engine": "Zillya",
+        "category": "undetected",
+        "result": null
+      }
+    ],
     "reputation": -1021,
+    "last_analysis": 1591701363000,
+    "tags": [
+      "powershell",
+      "via-tor"
+    ],
+    "name": "eicar.com",
+    "names": [
+      "eicar.com",
+      "eicar.txt"
+    ],
+    "type": "Powershell",
+    "size": 68,
+    "label": "virus.eicar/test",
+    "signer": "",
+    "created": null,
+    "first_seen": 1148301722000,
+    "last_seen": 1591701032000,
     "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
     "attributes": {
       "meaningful_name": "eicar.com",
@@ -105,12 +177,37 @@
           "engine_version": "1.1.1.5",
           "method": "blacklist",
           "result": "EICAR-Test-File (not a virus)"
+        },
+        "Zillya": {
+          "category": "undetected",
+          "engine_name": "Zillya",
+          "engine_update": "20200609",
+          "engine_version": "2.0.0.4113",
+          "method": "blacklist",
+          "result": null
+        },
+        "AhnLab-V3": {
+          "category": "malicious",
+          "engine_name": "AhnLab-V3",
+          "engine_update": "20200609",
+          "engine_version": "3.18.0.10009",
+          "method": "blacklist",
+          "result": "EICAR_Test_File"
         }
       },
       "tags": [
         "powershell",
         "via-tor"
-      ]
+      ],
+      "names": [
+        "eicar.com",
+        "eicar.txt"
+      ],
+      "popular_threat_classification": {
+        "suggested_threat_label": "virus.eicar/test"
+      },
+      "first_submission_date": 1148301722,
+      "last_submission_date": 1591701032
     },
     "link": "https://www.virustotal.com/gui/file/275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
   }
