@@ -30,8 +30,8 @@ def test_expressions_give_what_the_shared_vectors_say(vector):
         assert ex.render_text(vector["template"], SCOPE).data == vector["result"]
 
 
-def test_an_expression_is_a_path_and_filters_and_nothing_else():
-    assert len(DATA["vectors"]) > 70 and sum("error" in v for v in DATA["vectors"]) >= 18
+def test_an_expression_keeps_its_type_and_has_limits():
+    assert len(DATA["vectors"]) > 200 and sum("error" in v for v in DATA["vectors"]) >= 18
     # One expression alone keeps its type; mixed with text it is text.
     assert ex.render_text("{{ trigger.mail.score }}", SCOPE).data == 82
     assert ex.render_text(" {{ trigger.mail.score }}", SCOPE).data == " 82"
@@ -63,6 +63,47 @@ def test_an_expression_is_a_path_and_filters_and_nothing_else():
     # Nothing in the module evaluates text as code.
     source = Path(ex.__file__).read_text(encoding="utf-8")
     assert "eval(" not in source and "exec(" not in source and "__import__" not in source
+
+
+def test_an_expression_decides_and_counts_within_bounds():
+    def give(template):
+        return ex.render_text(template, SCOPE).data
+
+    # Every path of an expression is a reference, wherever it is written.
+    template = "{{ if(search.count > index, trigger.mail.urls | limit(run.id | length), [item.name]) }}"
+    assert sorted(name for name, _ in ex.references(template)) == ["index", "item", "run", "search", "trigger"]
+    assert ex.first_names("{{ a.x + (a.y | default(b.z)) }} {{ a[0] }}", "a") == {"x", "y"}
+    # One path, with or without filters, is still said as one path: what the buttons and the mappers ask.
+    one, computed = ex.parse("{{ trigger.mail.subject | upper }}")[0], ex.parse("{{ 1 + search.count }}")[0]
+    assert (one.root, one.steps, [item.name for item in one.filters]) == ("trigger", ("mail", "subject"), ["upper"])
+    assert (computed.root, computed.steps, computed.filters) == ("", (), ())
+    # The side that does not count is not read: an absent path there is not an error.
+    assert give("{{ if(trigger.mail.flag, 'yes', trigger.mail.gone) }}") == "yes"
+    assert give("{{ trigger.mail.flag or trigger.mail.gone }}") is True
+    assert give("{{ trigger.mail.empty and trigger.mail.gone }}") == ""
+    # Whole numbers stay whole, so that a text made of them reads the same in the editor's preview.
+    assert type(give("{{ 6 / 3 }}")) is int and type(give("{{ 7 / 2 }}")) is float
+    assert give("n={{ 6 / 3 }}") == "n=2" and give("n={{ 2.0 * 1.5 }}") == "n=3"
+    # Bounds: the parts of one expression, the nesting, the size of a number, the lists compared item by item.
+    with pytest.raises(ex.ExpressionError, match="too long"):
+        ex.parse("{{ " + " + ".join(["1"] * ex.MAX_NODES) + " }}")
+    with pytest.raises(ex.ExpressionError, match="too deep"):
+        ex.parse("{{ " + "[" * (ex.MAX_NESTING + 1) + "]" * (ex.MAX_NESTING + 1) + " }}")
+    with pytest.raises(ex.ExpressionError, match="too deep"):
+        ex.parse("{{ " + "not " * (ex.MAX_NESTING + 1) + "true }}")
+    with pytest.raises(ex.ExpressionError, match="too large"):
+        give("{{ 999999999999 * 999999999999 }}")
+    many = ex.Scope(values={"a": list(range(2000)), "b": list(range(2000))})
+    with pytest.raises(ex.ExpressionError, match="intersect"):
+        ex.render_text("{{ a | intersect(b) }}", many)
+    assert ex.render_text("{{ a | limit(500) | intersect(b) | length }}", many).data == 500
+    # The longest expression the reader takes is evaluated without running out of stack.
+    longest = "{{ " + " + ".join(["1"] * (ex.MAX_NODES // 2)) + " }}"
+    assert give(longest) == ex.MAX_NODES // 2
+    # The clock is a value of the scope like any other: nothing reads the time of the machine.
+    assert give("{{ now.iso | date_diff('2026-11-18T12:00:00Z', 'hours') }}") == 24
+    source = Path(ex.__file__).read_text(encoding="utf-8")
+    assert "datetime.now" not in source and "time.time" not in source
 
 
 def test_classes_of_data_travel_with_values():
@@ -107,6 +148,17 @@ def test_classes_of_data_travel_with_values():
     # A filter cannot launder: the result has the classes of what went in.
     assert classes("{{ trigger.mail.sender | upper | replace('@', ' at ') }}") == ["email_address"]
     assert classes("{{ trigger.mail.sender | length }}") == ["email_address"]
+    # Nor can an operator, a condition or a function: what is computed carries the classes of all it was computed from.
+    assert classes("{{ trigger.mail.sender ~ ' / ' ~ trigger.mail.subject }}") == ["email_address", "subject"]
+    assert classes("{{ trigger.mail.sender == 'eve@evil.example' }}") == ["email_address"]
+    assert classes("{{ if(trigger.mail.subject, trigger.mail.sha256, 'none') }}") == ["hash", "subject"]
+    assert classes("{{ if(trigger.mail.subject == 'Bye', trigger.mail.sha256, 'none') }}") == ["subject"]
+    assert classes("{{ first_of(trigger.mail.gone, trigger.mail.sender) }}") == ["email_address"]
+    assert classes("{{ [trigger.mail.sha256, 1] }}") == ["hash"]
+    assert classes("{{ trigger.mail.gone | default(trigger.mail.sender) }}") == ["email_address"]
+    assert classes("{{ 'x' | replace('x', trigger.mail.subject) }}") == ["subject"]
+    assert classes("{{ trigger.mail.subject | length + 1 }}") == ["subject"]
+    assert classes("{{ not trigger.mail.sender }}") == ["email_address"]
     # A rendered text, and a structure, carry the classes of everything put into them.
     assert classes("From {{ trigger.mail.sender }}: {{ trigger.mail.subject }}") == ["email_address", "subject"]
     assert classes({"a": "{{ trigger.mail.sha256 }}", "b": ["{{ trigger.mail.subject }}"]}) == ["hash", "subject"]

@@ -25,6 +25,7 @@ const AUTH_NAMES = {
   basic: 'a user name and a password',
   bearer: 'a token',
   header: 'a key sent in a header',
+  query: 'a key sent in the address',
   oauth2_client: 'OAuth2 client credentials',
   session: 'a session opened with a login',
   zscaler: 'the Zscaler sign-in',

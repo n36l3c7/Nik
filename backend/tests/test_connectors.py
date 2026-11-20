@@ -130,7 +130,7 @@ def test_templates_are_checked_where_they_are_written():
     early = GOOD.replace('short_description: "{{ args.short_description }}"', 'short_description: "{{ response.x }}"')
     assert problems(early)[0] == (
         31,
-        '"response" cannot be read in what is sent: only args, config, secret, steps',
+        '"response" cannot be read in what is sent: only args, config, now, secret, steps',
     )
     leak = GOOD.replace('number: "{{ response.result.number }}"', 'number: "{{ secret.token }}"')
     assert any("cannot be read in what is read from the answer" in message for _line, message in problems(leak))

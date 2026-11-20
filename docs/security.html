@@ -208,6 +208,20 @@
           connection, these are opened by the one module that opens connections.
         </li>
         <li>
+          <strong>Files a connector carries.</strong> A command of a connector may download a file (a sample, a capture,
+          an archive) or submit one Nik holds. A file that comes in is bytes from the answer to the store: it is never
+          decoded, unpacked or opened, an archive protected with a password stays that archive, and it is analysed as an
+          upload is, under the size limit of an upload (a larger answer stops being read at the limit and nothing is
+          kept). Its name is what the answer says, cut to a file name: never a path. A redirect on the way is followed
+          only to a host the connector's file lists, and the key of the instance, whatever header it travels in, is not
+          sent on to that host. A file that goes out is read from the store as bytes after the data guard judged it as
+          it judges an attachment (its class, its name, its size and its hash; a sample is a sample); one that is not in
+          the store, cannot be read or is over the limit is refused whatever was opened, the command that sends it must
+          be declared as changing the outside (so it asks for approval), and both directions are written to the audit
+          log (<code>connector.file.keep</code>, <code>connector.file.send</code>). The file is named by its artifact id
+          or its SHA-256, which is checked to be one before it is used as a name in the store.
+        </li>
+        <li>
           <strong>Logos</strong> of connectors come from outside, in a pack or an upload, and are shown to everyone. A
           logo is a PNG, by its signature, or an SVG that holds a drawing and nothing else: no script, no
           <code>foreignObject</code>, no event handler, no DOCTYPE, no reference outside the file. It is drawn with
@@ -350,6 +364,15 @@
           what it holds is one that always leaves, or one an admin opened for that playbook. E-mail bodies, attachments,
           samples and TLP:RED data cannot be opened. What leaves is also read as text for private addresses, internal
           names and allowlisted values typed by hand.
+        </li>
+        <li>
+          <strong>Expressions.</strong> The <code>{{ }}</code> language compares, counts and chooses, and is still not
+          code: it is read by a parser written for it, a name is a path into the data or one of four functions, and
+          nothing in it reaches Python (no attribute of an object, no call that is not in its table of filters). Its
+          work is bounded: the length of a text, 200 parts and 40 levels of nesting for one expression, numbers within
+          10<sup>15</sup>, a time limit on patterns, a most of items for the filters that compare two lists. The clock
+          it reads is a value it is given. What it computes keeps the classes of data of everything it was computed
+          from, so a condition or a sum cannot carry a held value past the data guard.
         </li>
         <li>
           <strong>Approvals.</strong> A node that changes something outside asks a person first unless someone turned

@@ -132,6 +132,8 @@ def _source(template: str, known: dict) -> dict[str, str] | None:
     if len(parts) != 1 or not isinstance(parts[0], ex.Expr):
         return None
     expr = parts[0]
+    if not expr.root:
+        return None  # something computed, not one field
     name = expr.root
     if expr.root == "incident" and expr.steps and isinstance(expr.steps[0], str):
         name = expr.steps[0]

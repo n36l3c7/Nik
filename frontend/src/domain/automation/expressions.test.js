@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
   ExpressionError,
+  FILTER_NAMES,
+  FUNCTION_NAMES,
   compare,
   lookup,
   MISSING,
@@ -20,7 +22,7 @@ const { scope, vectors } = JSON.parse(
 )
 
 test('expressions give what the vectors shared with the server say', () => {
-  assert.ok(vectors.length > 70)
+  assert.ok(vectors.length > 200)
   for (const vector of vectors) {
     if (vector.error) {
       assert.throws(
@@ -77,6 +79,46 @@ test('renaming a node rewrites the expressions that read it, and only those', ()
     list: ['{{ lookup_2 }}', 3],
     broken: '{{ search.',
   })
+  // Wherever the name is read: in a condition, in the argument of a filter, in a list.
+  assert.equal(
+    renameRoot("{{ if(search.count > 1, a.x | default(search.first), [search.last, 'search']) }}", 'search', 's2'),
+    "{{ if(s2.count > 1, a.x | default(s2.first), [s2.last, 'search']) }}",
+  )
+})
+
+test('an expression that decides or counts is read, and every path in it is a reference', () => {
+  for (const valid of [
+    "{{ if(data.stats.malicious >= 3, 'malicious', 'unknown') }}",
+    "{{ now.iso | date_diff(data.registered, 'days') < 30 }}",
+    "{{ data.tags | has_any(['c2', 'tor']) and not data.zero }}",
+    '{{ (a.b + 1) * 2 / c | round(1) }}',
+    "{{ first_of(a.b, c.d, 'none') ~ ' ' ~ (n | plural('report')) }}",
+  ]) {
+    assert.equal(problemOf(valid), null, valid)
+  }
+  assert.deepEqual(problemOf('{{ nope(1) }}'), { position: 3, message: 'There is no function "nope"' })
+  assert.deepEqual(problemOf('{{ 1 + }}'), { position: 7, message: 'A name is expected here' })
+  assert.deepEqual(
+    references('{{ if(search.count > index, trigger.mail.urls | limit(run.id | length), [item.name]) }}')
+      .map((found) => found.name)
+      .sort(),
+    ['index', 'item', 'run', 'search', 'trigger'],
+  )
+  // One path is still said as one path; something computed names none.
+  const [one] = parse('{{ trigger.mail.subject | upper }}')
+  assert.deepEqual(
+    [one.root, one.steps, one.filters.map((filter) => filter.name)],
+    ['trigger', ['mail', 'subject'], ['upper']],
+  )
+  assert.equal(parse('{{ 1 + search.count }}')[0].root, '')
+  assert.deepEqual(FUNCTION_NAMES, ['if', 'first_of', 'min', 'max'])
+  assert.ok(['round', 'plural', 'date_diff', 'has_any', 'sha256'].every((name) => FILTER_NAMES.includes(name)))
+  // The side that does not count is not read, and the bounds are the server's.
+  assert.equal(renderText("{{ if(trigger.mail.flag, 'yes', trigger.mail.gone) }}", scope), 'yes')
+  assert.equal(renderText('n={{ 6 / 3 }}', scope), 'n=2')
+  assert.throws(() => parse(`{{ ${Array(200).fill('1').join(' + ')} }}`), /too long/)
+  assert.throws(() => parse(`{{ ${'['.repeat(41)}${']'.repeat(41)} }}`), /too deep/)
+  assert.throws(() => renderText('{{ 999999999999 * 999999999999 }}', scope), /too large/)
 })
 
 test('comparisons and lookups behave as on the server', () => {

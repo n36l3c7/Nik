@@ -24,9 +24,18 @@ Running a command is ``connector_runtime.py``; the format is documented key by
 key in ``docs/automation.html``.
 
 Templates may read ``config`` (the connection's values), ``args``,
-``steps`` (the answers of earlier steps of the same command) and, where an
-answer exists, ``response``, ``status`` and ``headers``. Secrets are read as ``secret.<name>`` and only
-in what is sent, never in ``outputs``.
+``steps`` (the answers of earlier steps of the same command), ``now`` (the
+moment the command runs: ``now.iso``, ``now.epoch``, ``now.epoch_ms``) and,
+where an answer exists, ``response``, ``status`` and ``headers``. Secrets are
+read as ``secret.<name>`` and only in what is sent, never in ``outputs``.
+
+**Files.** A command may give a file instead of something to read
+(``answer: file``): the bytes go to Nik's store as an artifact, never opened,
+and ``response`` is what describes it (``name``, ``type``, ``size``,
+``sha256``, ``artifact``). A command may send a file Nik holds: a part of a
+multipart form (``files``) or the body itself (``body_file``), each naming
+an artifact, usually through an argument of type ``file``. A command that
+sends a file changes the outside, and its file must say so.
 """
 
 from __future__ import annotations
@@ -44,12 +53,12 @@ MAX_BYTES = 1_000_000  # a connector with every command of a large API is a long
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 COMMAND_RE = re.compile(r"^[a-z][a-z0-9-]{1,48}$")
-METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")
 OPERATORS = ("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "exists", "empty")
 
 # What a connection is asked for. The first six are plain values; the others are credentials.
 VALUE_TYPES = ("url", "text", "number", "bool", "choice", "secret")
-AUTH_TYPES = ("basic", "bearer", "header", "oauth2_client", "session", "zscaler")
+AUTH_TYPES = ("basic", "bearer", "header", "query", "oauth2_client", "session", "zscaler")
 # The commands Nik's own code has for each kind of native connector (automation/mail_runtime.py).
 NATIVE: dict[str, frozenset[str]] = {
     "mail": frozenset(
@@ -68,9 +77,10 @@ NATIVE: dict[str, frozenset[str]] = {
         }
     ),
 }
-ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice")
+ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice", "file")
 
 MAX_PAGES = 100
+PAGE_MAX = 1000
 FETCH_MIN_INTERVAL = 30
 _FIRST_FETCH = re.compile(r"^\s*(\d{1,4})\s*(minute|hour|day)s?\s*$")
 
@@ -115,10 +125,38 @@ class Conditions(_Strict):
         return self
 
 
+class SaveAs(_Strict):
+    """What a file that comes back is called and is, when the answer does not say it well enough.
+
+    Both are templates over the answer (``headers``, ``status``) and what was asked (``args``,
+    ``config``). Left out, the name is the one the answer gives (``Content-Disposition``), or the
+    last part of the address, and the type is the answer's ``Content-Type``."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=500)
+    type: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class FilePart(_Strict):
+    """A file Nik holds, as a request sends it: which one, under what name, as what type.
+
+    ``artifact`` is a template that gives the artifact (``file-<sha256>``) or its SHA-256, usually
+    ``"{{ args.<an argument of type file> }}"``. Left out, the name is the one the artifact has."""
+
+    artifact: str = Field(min_length=1, max_length=500)
+    name: str | None = Field(default=None, min_length=1, max_length=500)
+    type: str = Field(default="application/octet-stream", min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def _names_one(self):
+        if "{{" not in self.artifact:
+            raise ValueError('"artifact" is a template that gives the file: "{{ args.file }}"')
+        return self
+
+
 class RequestSpec(_Strict):
     """One HTTP request. ``path`` is added to the connector's ``base_url`` (a full address is taken as it is)."""
 
-    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
+    method: Literal["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] = "GET"
     path: str = Field(min_length=1, max_length=2000)
     query: dict[str, Any] | None = None
     headers: dict[str, str] | None = None
@@ -126,18 +164,39 @@ class RequestSpec(_Strict):
     form: dict[str, Any] | None = None
     multipart: dict[str, Any] | None = None
     body: str | None = None
+    # Files Nik holds, sent as parts of a multipart form (beside the text fields of "multipart"), by field name.
+    files: dict[str, FilePart] | None = None
+    # A file Nik holds, sent as the body itself.
+    body_file: FilePart | None = None
     # How the answer is read: "auto" as JSON when it is JSON, as text otherwise ({{ response.text }});
-    # "text" always as text, for a file whose content may happen to be JSON.
-    answer: Literal["auto", "text"] = "auto"
+    # "text" always as text, for a file whose content may happen to be JSON; "file" not at all: the
+    # bytes are kept as an artifact and {{ response }} describes it.
+    answer: Literal["auto", "text", "file"] = "auto"
+    save_as: SaveAs | None = None
 
     @model_validator(mode="after")
     def _one_body(self):
-        given = [name for name in ("json_body", "form", "multipart", "body") if getattr(self, name) is not None]
+        bodies = ("json_body", "form", "multipart", "body", "body_file")
+        given = [name for name in bodies if getattr(self, name) is not None]
         if len(given) > 1:
-            raise ValueError("a request has one of json, form, multipart, body")
-        if given and self.method == "GET":
-            raise ValueError("a GET request has no body")
+            raise ValueError("a request has one of json, form, multipart, body, body_file")
+        if self.files is not None:
+            if not self.files:
+                raise ValueError('"files" is empty')
+            if len(self.files) > 10:
+                raise ValueError("a request sends 10 files at most")
+            if given and given != ["multipart"]:
+                raise ValueError('"files" are parts of a multipart form: beside them, only "multipart"')
+            given.append("files")
+        if given and self.method in ("GET", "HEAD"):
+            raise ValueError(f"a {self.method} request has no body")
+        if self.save_as is not None and self.answer != "file":
+            raise ValueError('"save_as" belongs to a request whose answer is a file: answer: file')
         return self
+
+    @property
+    def sends_file(self) -> bool:
+        return self.files is not None or self.body_file is not None
 
 
 class Success(_Strict):
@@ -161,12 +220,25 @@ class Pagination(_Strict):
     items: str = Field(min_length=1, max_length=500)  # "{{ response.result }}"
     param: str | None = None  # offset / page / cursor: the query parameter that moves
     limit_param: str | None = None
-    limit: int = Field(default=100, ge=1, le=1000)
+    # How many items a page holds and how many pages are read: a number, or a template that gives
+    # one ("{{ args.limit }}"), kept within the same bounds when the command runs.
+    limit: int | str = 100
     next: str | None = None  # cursor: "{{ response.pagination.nextCursor }}"
-    max_pages: int = Field(default=10, ge=1, le=MAX_PAGES)
+    max_pages: int | str = 10
+    # What the first page says beside its items (a total, a query id): templates over that answer,
+    # read as {{ response.kept.<name> }} beside {{ response.items }}.
+    keep: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _shape(self):
+        for name, most in (("limit", PAGE_MAX), ("max_pages", MAX_PAGES)):
+            value = getattr(self, name)
+            if isinstance(value, bool) or (isinstance(value, int) and not 1 <= value <= most):
+                raise ValueError(f'"{name}" is a number from 1 to {most}, or a template that gives one')
+            if isinstance(value, str) and "{{" not in value:
+                raise ValueError(f'"{name}" is a number from 1 to {most}, or a template that gives one')
+        if len(self.keep) > 20:
+            raise ValueError('"keep" holds 20 values at most')
         if self.type in ("offset", "page") and not self.param:
             raise ValueError(f'"{self.type}" pagination needs "param"')
         if self.type == "cursor" and not (self.param and self.next):
@@ -202,9 +274,12 @@ class Step(_Strict):
 
 class Argument(_Strict):
     name: str
-    type: Literal["text", "number", "bool", "list", "object", "any", "choice"] = "text"
+    # "file" is an artifact Nik holds, by its id (file-<sha256>) or its SHA-256: what "files" and "body_file" send.
+    type: Literal["text", "number", "bool", "list", "object", "any", "choice", "file"] = "text"
     required: bool = False
     default: Any = None
+    # The configuration entry whose value is the default, when the instance says it and not the file.
+    default_from: str | None = None
     choices: list[str] | None = None
     description: str = Field(default="", max_length=300)
 
@@ -214,6 +289,10 @@ class Argument(_Strict):
             raise ValueError("an argument's name is a lower-case letter, then letters, digits or _")
         if self.type == "choice" and not self.choices:
             raise ValueError('a "choice" argument needs "choices"')
+        if self.default is not None and self.default_from is not None:
+            raise ValueError('an argument has "default" or "default_from", not both')
+        if self.type == "file" and (self.default is not None or self.default_from is not None):
+            raise ValueError("an argument of type file has no default")
         return self
 
 
@@ -251,6 +330,20 @@ class Command(_Strict):
     sample: dict[str, Any] | None = None
     timeout: int = Field(default=60, ge=1, le=300)
 
+    def requests(self) -> list[RequestSpec]:
+        """Every request the command makes, in order."""
+        if self.request is not None:
+            return [self.request]
+        return [step.request for step in self.steps or []]
+
+    @property
+    def gives_file(self) -> bool:
+        return any(request.answer == "file" for request in self.requests())
+
+    @property
+    def sends_file(self) -> bool:
+        return any(request.sends_file for request in self.requests())
+
     @model_validator(mode="after")
     def _shape(self):
         if not COMMAND_RE.match(self.name):
@@ -269,6 +362,19 @@ class Command(_Strict):
                 raise ValueError("two steps have the same name")
         if self.pagination and self.poll:
             raise ValueError("a command pages through a list or polls, not both")
+        for where, request, again in (
+            ("the command", self.request, self.pagination or self.poll),
+            *((f'the step "{step.name}"', step.request, step.poll) for step in self.steps or []),
+        ):
+            if request is None:
+                continue
+            if again and (request.answer == "file" or request.sends_file):
+                # Asked again and again, it would keep the file each time, or send it each time.
+                raise ValueError(f"{where} carries a file: it is not polled nor paged (use a step of its own)")
+            if request.sends_file and not self.changes_outside:
+                raise ValueError(
+                    f"{where} sends a file Nik holds: the command says changes_outside: true, so that it is approved"
+                )
         seen = set()
         for argument in self.arguments:
             if argument.name in seen:
@@ -399,8 +505,8 @@ class ConfigParam(_Strict):
     name: str
     label: str = Field(default="", max_length=100)
     type: Literal[
-        "url", "text", "number", "bool", "choice", "secret", "basic", "bearer", "header", "oauth2_client", "session",
-        "zscaler",
+        "url", "text", "number", "bool", "choice", "secret", "basic", "bearer", "header", "query", "oauth2_client",
+        "session", "zscaler",
     ] = "text"  # fmt: skip
     required: bool = False
     default: Any = None
@@ -409,6 +515,8 @@ class ConfigParam(_Strict):
     # header: the name of the header the secret goes in, and what precedes it.
     header: str | None = Field(default=None, max_length=100)
     prefix: str = Field(default="", max_length=40)
+    # query: the name of the query parameter the secret goes in (an API that takes its key in the address).
+    param: str | None = Field(default=None, max_length=100)
     # oauth2_client
     token_url: str | None = Field(default=None, max_length=2000)
     scope: str = Field(default="", max_length=500)
@@ -425,6 +533,10 @@ class ConfigParam(_Strict):
             raise ValueError('a "choice" needs "choices"')
         if self.type == "header" and not self.header:
             raise ValueError('"header" credentials need "header": the name of the header')
+        if self.type == "query" and not (self.param and re.fullmatch(r"[A-Za-z0-9_.-]+", self.param)):
+            raise ValueError('"query" credentials need "param": the name of the query parameter')
+        if self.type != "query" and self.param is not None:
+            raise ValueError('"param" belongs to "query" credentials')
         if self.type == "oauth2_client" and not self.token_url:
             raise ValueError('"oauth2_client" credentials need "token_url"')
         if self.type == "session" and self.login is None:
@@ -615,8 +727,10 @@ def _where(loc: tuple) -> str:
 # Templates                                                                   #
 # --------------------------------------------------------------------------- #
 # The names a template may read, by where it is.
-_SENT = frozenset({"config", "args", "steps", "secret"})
-_ANSWER = frozenset({"config", "args", "steps", "response", "status", "headers"})
+_SENT = frozenset({"config", "args", "steps", "secret", "now"})
+_ANSWER = frozenset({"config", "args", "steps", "now", "response", "status", "headers"})
+# What a file that came back is named from: the answer is not read, only what came with it.
+_SAVED = _ANSWER - {"response"}
 # A fetch: what its request reads, what is read from its answer, what is read of one item.
 _FETCH_SENT = frozenset({"config", "secret", "state", "first", "now"})
 _FETCH_ANSWER = frozenset({"config", "state", "first", "now", "response", "status", "headers", "items"})
@@ -660,9 +774,19 @@ def _check_templates(value: Any, allowed: frozenset, loc: tuple, lines: dict, pr
             _check_templates(item, allowed, (*loc, index), lines, problems)
 
 
-def _request_templates(raw: Any, loc: tuple, lines: dict, problems: list[Problem]) -> None:
-    if isinstance(raw, dict):
-        _check_templates(raw, _SENT, loc, lines, problems)
+def _request_templates(
+    raw: Any, loc: tuple, lines: dict, problems: list[Problem], sent: frozenset = _SENT, files: bool = True
+) -> None:
+    """The templates of one request. ``files`` is whether a file may come back or be sent there: only a
+    command has a run to keep a file for, and a guard to judge the one it sends."""
+    if not isinstance(raw, dict):
+        return
+    _check_templates({key: value for key, value in raw.items() if key != "save_as"}, sent, loc, lines, problems)
+    _check_templates(raw.get("save_as"), _SAVED, (*loc, "save_as"), lines, problems)
+    if not files and (raw.get("answer") == "file" or "files" in raw or "body_file" in raw):
+        problems.append(
+            Problem(_line_of(lines, loc), "Only a command keeps a file or sends one: not this request", _where(loc))
+        )
 
 
 def _check_command(raw: dict, loc: tuple, lines: dict, problems: list[Problem]) -> None:
@@ -733,14 +857,16 @@ def load(text: str | bytes) -> ConnectorFile:
     _check_templates(raw.get("headers"), _SENT - {"steps", "args"}, ("headers",), lines, problems)
     test = raw.get("test")
     if isinstance(test, dict):
-        _request_templates(test.get("request"), ("test", "request"), lines, problems)
+        _request_templates(test.get("request"), ("test", "request"), lines, problems, files=False)
     for index, param in enumerate(raw.get("configuration") or []):
         if not isinstance(param, dict):
             continue
         for key in ("login", "logout"):
             part = param.get(key)
             if isinstance(part, dict):
-                _request_templates(part.get("request"), ("configuration", index, key, "request"), lines, problems)
+                _request_templates(
+                    part.get("request"), ("configuration", index, key, "request"), lines, problems, files=False
+                )
                 _check_templates(part.get("token"), _ANSWER, ("configuration", index, key, "token"), lines, problems)
         _check_templates(param.get("token_url"), frozenset({"config"}), ("configuration", index), lines, problems)
     for index, command in enumerate(raw.get("commands") or []):
@@ -748,7 +874,7 @@ def load(text: str | bytes) -> ConnectorFile:
             _check_command(command, ("commands", index), lines, problems)
     fetch = raw.get("fetch")
     if isinstance(fetch, dict):
-        _check_templates(fetch.get("request"), _FETCH_SENT, ("fetch", "request"), lines, problems)
+        _request_templates(fetch.get("request"), ("fetch", "request"), lines, problems, _FETCH_SENT, files=False)
         for key in ("pagination", "items", "next_state", "success", "error"):
             _check_templates(fetch.get(key), _FETCH_ANSWER, ("fetch", key), lines, problems)
         for key in ("item_id", "occurred"):
@@ -787,18 +913,7 @@ def load(text: str | bytes) -> ConnectorFile:
 
 def _paths(value: Any, root: str) -> set[str]:
     """The first names read under ``root`` by the templates of a value: ``config.url`` → ``url``."""
-    found: set[str] = set()
-    if isinstance(value, str) and "{{" in value:
-        for part in ex.parse(value):
-            if isinstance(part, ex.Expr) and part.root == root and part.steps and isinstance(part.steps[0], str):
-                found.add(part.steps[0])
-    elif isinstance(value, dict):
-        for item in value.values():
-            found |= _paths(item, root)
-    elif isinstance(value, list):
-        for item in value:
-            found |= _paths(item, root)
-    return found
+    return ex.first_names(value, root)
 
 
 def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Problem]:
@@ -819,6 +934,16 @@ def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Probl
     for index, command in enumerate(connector.commands):
         declared = {argument.name for argument in command.arguments}
         body = raw["commands"][index]
+        for at, argument in enumerate(command.arguments):
+            if argument.default_from is not None and argument.default_from not in plain:
+                problems.append(
+                    Problem(
+                        _line_of(lines, ("commands", index, "arguments", at)),
+                        f'the argument "{argument.name}" takes its default from "{argument.default_from}", '
+                        "which is not a plain value of the configuration",
+                        f"commands[{index}].arguments[{at}]",
+                    )
+                )
         for name in sorted(_paths(body, "args") - declared):
             problems.append(
                 Problem(

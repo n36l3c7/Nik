@@ -304,7 +304,9 @@ def _send(
                 break
             size += len(chunk)
             if size > max_body:
-                raise EgressError(f"The answer is larger than {max_body // 1_000_000} MB", sent=True)
+                error = EgressError(f"The answer is larger than {max_body // 1_000_000} MB", sent=True)
+                error.too_large = True  # who asked for a file says it in its own words
+                raise error
             chunks.append(chunk)
         headers: dict[str, str] = {}
         for key, value in answer.getheaders():
@@ -329,8 +331,12 @@ def request(
     allow_http: bool = False,
     ca_pem: str | None = None,
     max_body: int = MAX_BODY,
+    secret_headers: tuple[str, ...] = (),
 ) -> Response:
-    """Send a request under the policy. Raises ``EgressError``."""
+    """Send a request under the policy. Raises ``EgressError``.
+
+    ``secret_headers`` names headers that carry a credential beside the usual ones (a connector's own
+    ``x-apikey``): like those, they are not sent on when a redirect leads to another host."""
     method = str(method or "GET").upper()
     if method not in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"):
         raise EgressError("Unknown HTTP method", refused=True)
@@ -355,6 +361,7 @@ def request(
     sent.setdefault("User-Agent", "nik-automation")
     sent.setdefault("Accept", "application/json, */*;q=0.5")
 
+    private = {*CREDENTIAL_HEADERS, *(name.lower() for name in secret_headers)}
     started = time.monotonic()
     first_host = None
     record: dict[str, Any] = {}
@@ -364,7 +371,7 @@ def request(
             first_host = host
         elif host != first_host:
             # Credentials do not follow to another host.
-            sent = {key: value for key, value in sent.items() if key.lower() not in CREDENTIAL_HEADERS}
+            sent = {key: value for key, value in sent.items() if key.lower() not in private}
         record = {"method": method, "host": host, "path": path.split("?")[0][:300], "redirects": hop}
         try:
             status, answer_headers, content = _send(

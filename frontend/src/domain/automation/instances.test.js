@@ -34,6 +34,13 @@ test('the form of a connection: plain values, then the parts of its credentials'
   assert.equal(fields[4].help, 'From the admin console')
   assert.equal(authOf(CONNECTOR), 'a user name and a password')
   assert.equal(authOf({ configuration: [{ name: 'url', type: 'url' }] }), '')
+  // A key that goes in the address is credentials too: a secret of the instance, not a field of the form.
+  const keyed = { configuration: [{ name: 'credentials', type: 'query', param: 'key' }], secrets: ['value'] }
+  assert.equal(authOf(keyed), 'a key sent in the address')
+  assert.deepEqual(
+    fieldsOf(keyed).map((field) => [field.name, field.kind]),
+    [['value', 'secret']],
+  )
   assert.deepEqual(fieldsOf(null), [])
 })
 

@@ -11,6 +11,13 @@ arguments first, then the request leaves under the playbook's policy, to
 which the host of the connection is added (making a connection is the
 permission to reach its host). In a dry run nothing is sent: the step shows
 the first request it would make and gives the ``sample`` of the command.
+
+A command that carries a file does it through the store of the run
+(connector_files.py): a file that comes back is kept as an artifact, one
+that is sent is judged by the guard first. The answer of a command that
+keeps a file is never one of the kept answers of the instance: asked again,
+the file is fetched again, so that the run that asked has it in its incident
+and in its audit trail (the store itself holds each file once, by its hash).
 """
 
 from __future__ import annotations
@@ -28,9 +35,9 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core import vault
 from ..core.models import Connection, Connector
 from ..core.security import now_iso
-from . import actions, connector_logo, egress, instance_keys, mail_evidence, outbound
+from . import actions, connector_files, connector_logo, egress, instance_keys, mail_evidence, outbound
 from . import expressions as ex
-from .connector_runtime import AUTH_FIELDS, CommandError, Runtime, forget_tokens
+from .connector_runtime import AUTH_FIELDS, FILE_SAMPLE, CommandError, NotSent, Runtime, forget_tokens
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
 
 SEED_DIR = Path(__file__).parent / "seed" / "connectors"
@@ -381,7 +388,9 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     # The keys of the instance take turns (instance_keys.py). Not in a dry run, which sends nothing, and
     # not for a connector Nik speaks for, which has its own way in.
     turns = connector.native is None and not call.dry_run
-    if turns and not state and not command.changes_outside:
+    # An answer is kept for a command that only reads, and reads something that can be repeated: not a file.
+    keeps = turns and not command.changes_outside and not command.gives_file
+    if keeps and not state:
         kept = instance_keys.kept_answer(db, connection, command_name, args, now)
         if kept is not None:
             return actions.Result(
@@ -424,14 +433,30 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
                 runtime.keep = lambda found, message, wanted: mail_evidence.keep_attachments(
                     call, found, message, wanted
                 )
+            else:
+                # A file a command gives is kept there, one it sends is read from there once the guard
+                # has judged it: what the guard says is added to what it said of the arguments.
+                runtime.store = connector_files.Store(call, connector.name, command_name, decided)
             if call.dry_run:
                 would = {**runtime.would_send(command_name, args), "held": decided, "connection": connection.name}
                 sample = command.sample if command.sample is not None else dict.fromkeys(command.outputs)
+                if command.sample is None and not command.outputs and command.gives_file:
+                    sample = dict(FILE_SAMPLE)
                 return actions.Result(output=sample, request=would)
             answer = runtime.run(command_name, args, state)
             break
         except egress.EgressError as error:
             raise actions.ActionError(error.message, retry=not error.refused, request=error.record) from None
+        except NotSent as error:
+            if call.held != "drop":
+                raise actions.ActionError(error.message, retry=False, request={"held": decided}) from None
+            # The node drops what is held, and what was held is the file: nothing left, and the step goes on
+            # with empty outputs, saying why.
+            return actions.Result(
+                output=dict.fromkeys(command.outputs),
+                request={"notSent": error.message, "held": decided, "connection": connection.name}
+                | ({"dry_run": True} if call.dry_run else {}),
+            )
         except CommandError as error:
             failure = actions.ActionError(
                 error.message,
@@ -456,7 +481,7 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     if not answer.done:
         waiting = {**(answer.state or {}), "key": key.id} if key is not None else answer.state
         return actions.Result(again_at=answer.again_at, state=_seal(waiting), request=record)
-    if turns and not command.changes_outside:
+    if keeps:
         instance_keys.keep_answer(db, connection, command_name, args, answer.outputs, answer.context, now)
     # What comes back may repeat what was sent: it keeps the classes of what went out, beside those
     # the command gives its own outputs (the name of an attachment).
@@ -469,8 +494,20 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     )
 
 
+# What a command that keeps a file gives when its file names no outputs: what describes the file.
+_FILE_OUTPUTS = (
+    {"name": "name", "type": "text", "description": "The name of the file"},
+    {"name": "type", "type": "text", "description": "Its type, as the answer said it"},
+    {"name": "size", "type": "number", "description": "Its size in bytes"},
+    {"name": "sha256", "type": "text", "description": "Its SHA-256"},
+    {"name": "artifact", "type": "text", "description": "The artifact it was kept as (file-…)"},
+    {"name": "linked", "type": "bool", "description": "Whether the incident of the run references it"},
+)
+
+
 def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
     connector_id, name = connector.id, command.name
+    described = command.gives_file and not command.outputs
     return actions.Spec(
         id=f"{connector.id}.{command.name}",
         group=connector.name,
@@ -478,7 +515,11 @@ def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
         description=command.description,
         arguments=tuple(argument.model_dump(exclude_none=True) for argument in command.arguments),
         outputs=tuple({"name": key, "type": "any", "description": ""} for key in command.outputs)
-        or ({"name": "response", "type": "any", "description": "The answer, as it came"},),
+        or (
+            _FILE_OUTPUTS
+            if described
+            else ({"name": "response", "type": "any", "description": "The answer, as it came"},)
+        ),
         changes_outside=command.changes_outside,
         idempotent=command.idempotent,
         timeout=command.timeout,

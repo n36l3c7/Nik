@@ -267,7 +267,7 @@ def test_a_command_of_a_connector_names_its_connection_and_writes_to_the_context
     )
     detail = ran(admin, "!acme-desk-get-ticket T-9 full=yes using=desk")
     assert detail["author"] == "connector:acme-desk" and detail["step"]["output"] == {"state": "open"}
-    assert detail["step"]["request"]["connection"] == "Desk" and "full=True" in str(desk.requests[-1]["path"])
+    assert detail["step"]["request"]["connection"] == "Desk" and "full=true" in str(desk.requests[-1]["path"])
     assert "written to the context: Ticket:t-9" in detail["step"]["log"]
     context = admin.get("/api/incidents/i1/context").json()
     assert context["context"]["Ticket"] == [{"ID": "t-9", "Number": "T-9", "Status": "open"}]

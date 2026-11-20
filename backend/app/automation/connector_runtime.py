@@ -16,38 +16,55 @@ What it never does:
 - send a key without a value: an optional argument that was not given is left
   out of the body, at any depth, instead of going as ``null``;
 - hold a worker while the other side works: a ``poll`` gives the step back
-  with a time, and the engine calls again then (``Result.again_at``).
+  with a time, and the engine calls again then (``Result.again_at``);
+- open a file. One that comes back (``answer: file``) is bytes handed to the
+  store of the run (``Runtime.store``), which keeps it as an artifact; one
+  that is sent (``files``, ``body_file``) is bytes read from that store,
+  after the data guard said it may leave. Nothing here decodes, unpacks or
+  runs them, and where there is no store (a test of the connection) a
+  command that carries a file is refused.
 
 The names a template reads: ``config``, ``args``, ``steps`` (earlier steps:
-``steps.<name>.response``, ``.status``, ``.headers``), ``secret`` (only in
-what is sent) and, once there is an answer, ``response``, ``status`` and
-``headers``.
+``steps.<name>.response``, ``.status``, ``.headers``), ``now`` (the moment of
+the engine's clock: ``now.iso``, ``now.epoch``, ``now.epoch_ms``), ``secret``
+(only in what is sent) and, once there is an answer, ``response``, ``status``
+and ``headers``.
 """
 
 from __future__ import annotations
 
 import base64
 import json as jsonlib
+import re
 import secrets as pysecrets
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 from . import egress
 from . import expressions as ex
-from .connectors import Command, ConfigParam, ConnectorFile, Poll, RequestSpec, Step, Success
+from .connectors import MAX_PAGES, PAGE_MAX, Command, ConfigParam, ConnectorFile, Poll, RequestSpec, Step, Success
 
 MAX_ITEMS = 5000
 REDACTED = "•••"
 TOKEN_SKEW = 60
+RETRY_AFTER_MAX = 600  # the longest a poll waits because the other side asked it to
+# What describes a file, and the classes of data those are: what a command that keeps one gives.
+FILE_FIELDS = ("name", "type", "size", "sha256", "artifact", "linked")
+FILE_CLASSES = {"name": ["attachment_name"], "sha256": ["hash"], "artifact": ["nik_id"]}
+FILE_SAMPLE = {"name": "", "type": "", "size": 0, "sha256": "", "artifact": "", "linked": False}
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 # What each kind of credentials is made of (the fields a connection asks for, all secret).
 AUTH_FIELDS: dict[str, tuple[str, ...]] = {
     "basic": ("username", "password"),
     "bearer": ("token",),
     "header": ("value",),
+    "query": ("value",),
     "oauth2_client": ("client_id", "client_secret"),
     "session": ("username", "password", "api_key"),
     "zscaler": ("username", "password", "api_key"),
@@ -72,6 +89,11 @@ class CommandError(Exception):
         self.retry = retry
         self.sent = sent  # the request left: the other side may have acted
         self.record = record or {}
+
+
+class NotSent(CommandError):
+    """A command that was not sent because the file it is for was held back, on a node that drops
+    what is held: there is nothing to send without it. Not a failure of the step."""
 
 
 @dataclass
@@ -169,17 +191,73 @@ def _named(fields: dict[str, Any], scope: ex.Scope) -> dict[str, Any]:
     }
 
 
-def _multipart(fields: dict[str, Any]) -> tuple[bytes, str]:
+def _quoted(value: Any) -> str:
+    """A name as it is written between quotes in a header of a multipart form."""
+    return _CONTROL.sub("", str(value)).replace("\\", "\\\\").replace('"', "%22")
+
+
+def _multipart(fields: dict[str, Any], files: list[dict[str, Any]] | None = None) -> tuple[bytes, str]:
+    """A multipart form: text fields, then files (each ``{field, name, type, data}``, its bytes as they are)."""
     boundary = "nik" + pysecrets.token_hex(12)
-    parts = []
+    parts: list[bytes] = []
     for name, value in fields.items():
         if value is None:
             continue
         text = value if isinstance(value, str) else jsonlib.dumps(value)
-        safe = str(name).replace('"', "%22").replace("\r", "").replace("\n", "")
-        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{safe}"\r\n\r\n{text}\r\n')
-    parts.append(f"--{boundary}--\r\n")
-    return "".join(parts).encode("utf-8"), f"multipart/form-data; boundary={boundary}"
+        head = f'--{boundary}\r\nContent-Disposition: form-data; name="{_quoted(name)}"\r\n\r\n'
+        parts.append(f"{head}{text}\r\n".encode("utf-8"))
+    for item in files or []:
+        kind = _CONTROL.sub("", str(item["type"])) or "application/octet-stream"
+        head = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{_quoted(item["field"])}"; '
+            f'filename="{_quoted(item["name"])}"\r\nContent-Type: {kind}\r\n\r\n'
+        )
+        parts.append(head.encode("utf-8") + item["data"] + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode("ascii"))
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def _queried(value: Any) -> Any:
+    """A value as an address carries it: yes and no as ``true`` and ``false``, not as Python writes them."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, tuple)):
+        return [_queried(item) for item in value]
+    return value
+
+
+def _file_name(headers: dict[str, str], url: str) -> str:
+    """The name the answer gives a file (``Content-Disposition``), or the last part of its address."""
+    said = headers.get("content-disposition", "")
+    found = re.search(r"filename\*\s*=\s*(?:UTF-8|utf-8)\'\'([^;]+)", said)
+    if found:
+        return unquote(found.group(1).strip())
+    found = re.search(r'filename\s*=\s*(?:"([^"]*)"|([^;]+))', said)
+    if found:
+        return (found.group(1) if found.group(1) is not None else found.group(2)).strip()
+    return unquote(urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1])
+
+
+def clean_name(name: Any) -> str:
+    """A file name as it is kept and shown: no path, no control character, of a length a person reads."""
+    text = " ".join(_CONTROL.sub(" ", str(name or "")).split())
+    return text.replace("\\", "/").rsplit("/", 1)[-1][:200]
+
+
+def _retry_after(headers: dict[str, str], now: float) -> float:
+    """How many seconds the answer asks to wait (``Retry-After``: a number, or a date); 0 when it does not."""
+    said = str(headers.get("retry-after") or "").strip()
+    if not said:
+        return 0.0
+    if said.isdigit():
+        return float(min(int(said), RETRY_AFTER_MAX))
+    try:
+        moment = parsedate_to_datetime(said)
+    except (TypeError, ValueError):
+        return 0.0
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return float(max(0.0, min(moment.timestamp() - now, RETRY_AFTER_MAX)))
 
 
 class Runtime:
@@ -206,6 +284,10 @@ class Runtime:
         self._hidden = {value for value in self.secrets.values() if len(value) >= 4}
         self._session: dict[str, str] | None = None  # the header a session is sent with
         self.records: list[dict] = []
+        # Where files are kept and read, and who judges one that leaves: given by who runs the command
+        # for a playbook (connector_files.Store). None where no file can be carried.
+        self.store: Any = None
+        self._output_classes: dict[str, list] = {}
         base = ex.render_text(connector.base_url, ex.Scope(values={"config": self.config})).data
         self.base_url = str(base or "").strip().rstrip("/")
         parts = urlsplit(self.base_url)
@@ -230,13 +312,31 @@ class Runtime:
             out[param.name] = value
         return out
 
+    def _now(self) -> dict[str, Any]:
+        """The moment of the clock the runtime was given, as a fetch reads it too."""
+        epoch = float(self._clock())
+        stamp = datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"iso": stamp, "epoch": int(epoch), "epoch_ms": int(epoch * 1000)}
+
     def _scope(self, args: dict, steps: dict, answer: dict | None = None, *, sent: bool) -> ex.Scope:
-        values: dict[str, Any] = {"config": self.config, "args": args, "steps": steps}
+        values: dict[str, Any] = {"config": self.config, "args": args, "steps": steps, "now": self._now()}
+        classes: dict[str, dict] = {}
         if sent:
             values["secret"] = self.secrets
         if answer is not None:
             values.update(response=answer["response"], status=answer["status"], headers=answer["headers"])
-        return ex.Scope(values=values)
+            if answer.get("kept"):
+                classes["response"] = FILE_CLASSES
+        # A step that kept a file is read by the outputs as steps.<name>.response: its classes go with it.
+        kept = {
+            f"{name}.response.{key}": held
+            for name, step in steps.items()
+            if step.get("kept")
+            for key, held in FILE_CLASSES.items()
+        }
+        if kept:
+            classes["steps"] = kept
+        return ex.Scope(values=values, classes=classes)
 
     # ---------------------------------------------------------------- sending --
     def _url(self, path: str) -> str:
@@ -260,8 +360,49 @@ class Runtime:
             and host in self.connector.more_hosts
         )
 
+    def _files(self, spec: RequestSpec, scope: ex.Scope) -> list[dict[str, Any]]:
+        """The files a request sends, described (``field``, ``name``, ``type``, ``size``, ``sha256``): found
+        in the store, never read here. Raises when one is not a file Nik holds."""
+        parts = [*(spec.files or {}).items()]
+        if spec.body_file is not None:
+            parts.append(("", spec.body_file))
+        if not parts:
+            return []
+        if self.store is None:
+            raise CommandError(
+                "A command that sends a file runs from a playbook: there is no store to read it from here"
+            )
+        found = []
+        for name, part in parts:
+            wanted = ex.render_text(part.artifact, scope).data
+            if wanted in (None, ""):
+                # The argument was left empty, or the guard took it out: there is no file to send.
+                raise NotSent("The file to send was not given, or was held back: the command was not sent", retry=False)
+            described = self.store.describe(wanted)
+            given = ex._text(ex.render_text(part.name, scope).data) if part.name else ""
+            found.append(
+                {
+                    "field": ex._text(ex.render_text(name, scope).data) if "{{" in name else name,
+                    "name": clean_name(given) or clean_name(described["name"]) or described["sha256"],
+                    "type": ex._text(ex.render_text(part.type, scope).data).strip() or "application/octet-stream",
+                    "size": described["size"],
+                    "sha256": described["sha256"],
+                }
+            )
+        return found
+
+    def _judged(self, files: list[dict[str, Any]]) -> None:
+        """Ask the data guard about the files a request is about to send. Held, the guard raises and the
+        step fails; on a node that drops what is held the command is not sent at all (``NotSent``): a
+        submission without its file is nothing."""
+        if files and not self.store.judge([{key: item[key] for key in ("name", "size", "sha256")} for item in files]):
+            raise NotSent("The file was held back by the data guard: the command was not sent without it", retry=False)
+
     def _raw(self, spec: RequestSpec, scope: ex.Scope, auth: bool = True, timeout: float = 60) -> dict[str, Any]:
-        """Send one request and give back ``{response, status, headers}``. Raises ``CommandError``."""
+        """Send one request and give back ``{response, status, headers}`` (with ``file``, the bytes that
+        came, when the answer is a file: ``_one`` keeps them). Raises ``CommandError``."""
+        files = self._files(spec, scope)
+        self._judged(files)
         rendered = {
             "path": ex.render_text(spec.path, scope).data,
             "query": ex.render(spec.query, scope).data if spec.query is not None else None,
@@ -279,40 +420,103 @@ class Runtime:
             **{str(key): str(value) for key, value in (rendered["headers"] or {}).items() if value is not None},
         }
         url = self._url(str(rendered["path"]))
+        query = {key: _queried(value) for key, value in (rendered["query"] or {}).items() if value not in (None, "")}
         # The credentials of the instance are for its own host: another host the connector lists gets none.
+        own: dict[str, str] = {}
         if auth and not self._other(url):
-            headers.update(self._credentials())
+            own = self._credentials()
+            headers.update(own)
+            query.update(self._query_credentials())
         body = rendered["body"]
-        if rendered["multipart"] is not None:
-            body, content_type = _multipart(rendered["multipart"])
+        if rendered["multipart"] is not None or spec.files is not None:
+            # The bytes are read now, once the guard has let them go, and go as they are.
+            parts = [{**item, "data": self.store.read(item["sha256"])} for item in files]
+            body, content_type = _multipart(rendered["multipart"] or {}, parts)
             headers["Content-Type"] = content_type
+        elif spec.body_file is not None:
+            body = self.store.read(files[0]["sha256"])
+            headers.setdefault("Content-Type", files[0]["type"])
+        more: dict[str, Any] = {}
+        if spec.answer == "file":
+            if self.store is None:
+                raise CommandError(
+                    "A command that keeps a file runs from a playbook: there is no store to keep it in here"
+                )
+            more["max_body"] = self.store.limit
+        if own:
+            # The header a key goes in is not one of the usual ones: it must not follow a redirect elsewhere.
+            more["secret_headers"] = tuple(own)
         try:
             answer = self._send(
                 self.policy,
                 spec.method,
                 url,
                 headers=headers,
-                query={key: value for key, value in (rendered["query"] or {}).items() if value not in (None, "")}
-                or None,
+                query=query or None,
                 json=rendered["json"],
                 form=rendered["form"],
                 body=body,
                 timeout=timeout,
                 allow_http=self.allow_http,
                 ca_pem=self.ca_pem,
+                **more,
             )
         except egress.EgressError as error:
             record = _redact(dict(error.record or {}), self._hidden)
+            if files:
+                record["files"] = [{key: item[key] for key in ("name", "size", "sha256")} for item in files]
             if record:
                 self.records.append(record)
-            raise CommandError(error.message, retry=not error.refused, sent=error.sent, record=record) from None
-        self.records.append(_redact(dict(answer.record), self._hidden))
+            message = error.message
+            if getattr(error, "too_large", False) and spec.answer == "file":
+                message = f"The file is larger than the {self.store.limit_mb} MB limit of a sample: it was not kept"
+            raise CommandError(message, retry=not error.refused, sent=error.sent, record=record) from None
+        record = _redact(dict(answer.record), self._hidden)
+        if files:
+            record["files"] = [{key: item[key] for key in ("name", "size", "sha256")} for item in files]
+        self.records.append(record)
+        if spec.answer == "file":
+            return {
+                "response": {},
+                "status": answer.status,
+                "headers": dict(answer.headers),
+                "file": answer,
+                "url": url,
+            }
         parsed = answer.json() if spec.answer == "auto" else None
         return {
             "response": parsed if parsed is not None else {"text": answer.text[:200_000]},
             "status": answer.status,
             "headers": dict(answer.headers),
         }
+
+    def _kept(self, part: Command | Step, args: dict, steps: dict, answer: dict[str, Any]) -> None:
+        """Turn the answer of a request whose answer is a file into what describes the file, kept in the
+        store. An answer that is not a success is read as any other is, so that the error can quote it:
+        by its status, or by what ``success.when`` says of what came with it (an API that answers 200 and
+        an error in JSON where the file should be is told apart by its ``Content-Type``)."""
+        came = answer.pop("file")
+        url = answer.pop("url")
+        statuses = part.success.statuses() if part.success is not None else None
+        good = answer["status"] in statuses if statuses else 200 <= answer["status"] < 300
+        if good and part.success is not None and part.success.when is not None:
+            good = _holds(part.success.when, self._scope(args, steps, answer, sent=False))
+        if not good:
+            parsed = came.json()
+            answer["response"] = parsed if parsed is not None else {"text": came.text[:200_000]}
+            return
+        data = bytes(came.body)
+        if not data:
+            raise CommandError(f"{self.connector.name} answered with an empty file: nothing was kept", sent=True)
+        scope = self._scope(args, steps, answer, sent=False)
+        saved = part.request.save_as
+        name = ex._text(ex.render_text(saved.name, scope).data) if saved is not None and saved.name else ""
+        kind = ex._text(ex.render_text(saved.type, scope).data) if saved is not None and saved.type else ""
+        name = clean_name(name) or clean_name(_file_name(answer["headers"], url))
+        kind = kind.strip() or str(answer["headers"].get("content-type") or "").split(";")[0].strip()
+        kept = self.store.keep(data, name, kind)
+        answer["response"] = {key: kept.get(key) for key in FILE_FIELDS}
+        answer["kept"] = True
 
     def _judge(self, answer: dict, success: Success | None, error, scope: ex.Scope) -> None:
         """Raise ``CommandError`` unless the answer is a success."""
@@ -342,15 +546,26 @@ class Runtime:
         if auth.type == "basic":
             pair = f"{secret.get('username', '')}:{secret.get('password', '')}".encode()
             return {"Authorization": "Basic " + base64.b64encode(pair).decode("ascii")}
+        # A key that was not given is not sent: an API that also answers without one is asked without.
         if auth.type == "bearer":
-            return {"Authorization": f"Bearer {secret.get('token', '')}"}
+            return {"Authorization": f"Bearer {secret['token']}"} if secret.get("token") else {}
         if auth.type == "header":
-            return {str(auth.header): f"{auth.prefix}{secret.get('value', '')}"}
+            return {str(auth.header): f"{auth.prefix}{secret['value']}"} if secret.get("value") else {}
+        if auth.type == "query":
+            return {}
         if auth.type == "oauth2_client":
             return {"Authorization": f"Bearer {self._oauth_token(auth)}"}
         if self._session is None:
             self._session = self._login_zscaler() if auth.type == "zscaler" else self._login(auth)
         return dict(self._session)
+
+    def _query_credentials(self) -> dict[str, str]:
+        """The key of an instance that goes in the address (``query`` credentials): never recorded, since
+        what a step shows of a request stops at the question mark."""
+        auth = self.connector.auth
+        if auth is None or auth.type != "query" or not self.secrets.get("value"):
+            return {}
+        return {str(auth.param): self.secrets["value"]}
 
     def _oauth_token(self, auth: ConfigParam) -> str:
         now = self._clock()
@@ -503,11 +718,15 @@ class Runtime:
         next_url: str | None = None
         last: dict[str, Any] = {"response": {}, "status": 0, "headers": {}}
         truncated = False
-        for count in range(page.max_pages):
+        kept: dict[str, Any] = {}
+        # The size of a page and how many are read may come from an argument: within the bounds of the file's own.
+        size = self._bounded(page.limit, sent_scope(), PAGE_MAX, "limit")
+        pages = self._bounded(page.max_pages, sent_scope(), MAX_PAGES, "max_pages")
+        for count in range(pages):
             spec = request
             extra: dict[str, Any] = {}
             if page.limit_param:
-                extra[page.limit_param] = page.limit
+                extra[page.limit_param] = size
             if page.type == "offset":
                 extra[page.param] = offset
             elif page.type == "page":
@@ -521,6 +740,12 @@ class Runtime:
             last = self._raw(spec, sent_scope(), timeout=timeout)
             after = answer_scope(last)
             self._judge(last, success, error, after)
+            if count == 0:
+                for key, template in page.keep.items():
+                    try:
+                        kept[key] = ex.render(template, after).data
+                    except ex.ExpressionError:
+                        kept[key] = None  # the first page did not say it
             try:
                 found = ex.render_text(page.items, after).data
             except ex.ExpressionError:
@@ -531,7 +756,7 @@ class Runtime:
                 items, truncated = items[:limit], True
                 break
             if page.type in ("offset", "page"):
-                if len(found) < page.limit:
+                if len(found) < size:
                     break
                 offset += len(found)
                 number += 1
@@ -546,15 +771,27 @@ class Runtime:
                 next_url = _next_link(last["headers"].get("link", ""), self.base_url)
                 if not next_url or not found:
                     break
-            if count == page.max_pages - 1:
+            if count == pages - 1:
                 truncated = True
-        return {"response": {"items": items, "pages": count + 1, "truncated": truncated}, **{
-            key: last[key] for key in ("status", "headers")
-        }}  # fmt: skip
+        response = {"items": items, "pages": count + 1, "truncated": truncated, **({"kept": kept} if page.keep else {})}
+        return {"response": response, **{key: last[key] for key in ("status", "headers")}}
+
+    @staticmethod
+    def _bounded(value: Any, scope: ex.Scope, most: int, what: str) -> int:
+        """A number of the pagination that may be a template: from 1 to ``most``, whatever was asked."""
+        if isinstance(value, str):
+            value = ex.render_text(value, scope).data
+            if isinstance(value, str) and value.strip().isdigit():
+                value = int(value.strip())
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise CommandError(f'The "{what}" of the pagination is not a number')
+        return max(1, min(int(value), most))
 
     def _one(self, part: Command | Step, args: dict, steps: dict, timeout: float) -> dict[str, Any]:
-        """One request of a command or of a step, judged."""
+        """One request of a command or of a step, judged. A file that came with it is kept first."""
         answer = self._raw(part.request, self._scope(args, steps, sent=True), timeout=timeout)
+        if "file" in answer:
+            self._kept(part, args, steps, answer)
         self._judge(answer, part.success, part.error, self._scope(args, steps, answer, sent=False))
         return answer
 
@@ -568,15 +805,15 @@ class Runtime:
         now = self._clock()
         if now - started >= poll.timeout:
             raise CommandError(f"{self.connector.name} did not finish in time", sent=True)
-        return now + poll.every
+        # The other side may say when to ask again (Retry-After): it is waited for, when it is longer.
+        return now + max(float(poll.every), _retry_after(answer["headers"], now))
 
     def run(self, name: str, args: dict[str, Any], state: dict[str, Any] | None = None) -> Answer:
         """Run a command, or go on with one that asked to be called again. Raises ``CommandError``."""
         command = self.connector.command(name)
         if command is None:
             raise CommandError("This command is not in the connector any more")
-        # Every declared argument can be read: one that was not given is null (and so left out of what is sent).
-        args = {**{argument.name: argument.default for argument in command.arguments}, **args}
+        args = self._arguments(command, args)
         state = dict(state or {})
         if state.get("session"):
             self._session = dict(state["session"])
@@ -597,6 +834,7 @@ class Runtime:
                     outputs=self._outputs(command, args, {}, answer),
                     records=self.records,
                     context=self._context(command, args, {}, answer),
+                    classes=self._output_classes,
                 )
             index = int(state.get("index") or 0)
             answer = None
@@ -622,6 +860,7 @@ class Runtime:
                 outputs=self._outputs(command, args, steps, last),
                 records=self.records,
                 context=self._context(command, args, steps, last),
+                classes=self._output_classes,
             )
         except CommandError as error:
             error.record = error.record or (self.records[-1] if self.records else {})
@@ -635,6 +874,15 @@ class Runtime:
                 self.close()
 
     _waiting = False
+
+    def _arguments(self, command: Command, given: dict[str, Any]) -> dict[str, Any]:
+        """Every declared argument can be read: one that was not given has its default (the file's, or
+        the value the instance has for it), or is null and so left out of what is sent."""
+        defaults = {
+            argument.name: self.config.get(argument.default_from) if argument.default_from else argument.default
+            for argument in command.arguments
+        }
+        return {**defaults, **given}
 
     def _wait(self, again_at: float, state: dict[str, Any]) -> Answer:
         """Give the step back, to be called again: a session that is open stays open, and travels with it."""
@@ -659,13 +907,23 @@ class Runtime:
     def _outputs(self, command: Command, args: dict, steps: dict, answer: dict) -> dict[str, Any]:
         scope = self._scope(args, steps, answer, sent=False)
         out: dict[str, Any] = {}
+        self._output_classes = {}
         for key, template in command.outputs.items():
             try:
                 out[key] = ex.render(template, scope).data
             except ex.ExpressionError:
                 out[key] = None  # the answer did not hold it: the output is empty, not an error
+                continue
+            if scope.classes:
+                # Only a file that was kept has classes here: its name, its hash, its id in Nik.
+                self._output_classes.update(ex.render_classes({key: template}, scope))
         if not command.outputs:
-            out = {"response": answer["response"]}
+            if answer.get("kept"):
+                # A command that keeps a file and says nothing more gives what describes the file.
+                out = dict(answer["response"])
+                self._output_classes = dict(FILE_CLASSES)
+            else:
+                out = {"response": answer["response"]}
         return _redact(out, self._hidden)
 
     def would_send(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -673,13 +931,22 @@ class Runtime:
         command = self.connector.command(name)
         if command is None:
             raise CommandError("This command is not in the connector any more")
-        args = {**{argument.name: argument.default for argument in command.arguments}, **args}
+        args = self._arguments(command, args)
         spec = command.request if command.request is not None else command.steps[0].request
         scope = self._scope(args, {}, sent=True)
         path = str(ex.render_text(spec.path, scope).data)
         url = self._url(path)
         _scheme, host, _port, target, _address = egress.destination(self.policy, url, allow_http=self.allow_http)
-        return {"method": spec.method, "host": host, "path": target.split("?")[0][:300], "dry_run": True}
+        would = {"method": spec.method, "host": host, "path": target.split("?")[0][:300], "dry_run": True}
+        # The files of the first request, as they would go: what they are, never their bytes. The guard
+        # is asked as it would be, so that a dry run says what a real one would hold.
+        files = self._files(spec, scope)
+        self._judged(files)
+        if files:
+            would["files"] = [{key: item[key] for key in ("field", "name", "type", "size", "sha256")} for item in files]
+        if command.gives_file:
+            would["keeps"] = "a file, as an artifact"
+        return would
 
     def test(self) -> dict[str, Any]:
         """ "Test the connection": ``{ok, status, message}``. Never raises."""

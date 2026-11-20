@@ -801,8 +801,10 @@ Content-Type: application/json
 Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       <ul>
         <li>
-          An expression is a <strong>path</strong> and, after <code>|</code>, <strong>filters</strong>. There is no
-          arithmetic, no comparison and no code: logic belongs to condition nodes and to scripts.
+          An expression is a <strong>path</strong> and, after <code>|</code>, <strong>filters</strong>. It can also
+          compare, count and choose (<a href="#expressions-deciding">Deciding and counting</a>, below). There is still
+          no code: a name is a path into the data or one of four functions, and nothing else can be called. What takes
+          several steps or a loop belongs to condition nodes and to scripts.
         </li>
         <li>
           A path starts with a name: <code>trigger</code>, the <strong>id of a node</strong> (shown in the inspector,
@@ -822,8 +824,9 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           number, a list a list). Mixed with text it becomes text; a list or an object is then written as JSON.
         </li>
         <li>
-          A path that leads nowhere <strong>fails the step</strong>, unless <code>| default(…)</code> follows it. That
-          is on purpose: a ticket opened with an empty title is worse than a run that stops and says why.
+          A path that leads nowhere <strong>fails the step</strong>, unless <code>| default(…)</code> follows it, or it
+          is given to <code>first_of(…)</code> or asked by <code>if(…)</code>. That is on purpose: a ticket opened with
+          an empty title is worse than a run that stops and says why.
         </li>
         <li>
           A node reads only what is <strong>certain to have run before it</strong>: the trigger and the nodes every path
@@ -841,8 +844,11 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           </thead>
           <tbody>
             <tr>
-              <td><code>default("x")</code></td>
-              <td>The value, or <code>x</code> when it is missing or null.</td>
+              <td><code>default("x")</code> · <code>default(other.path)</code></td>
+              <td>
+                The value, or <code>x</code> when it is missing or null. What a filter is given may be a text, a number
+                or another expression: here, another path to read instead.
+              </td>
             </tr>
             <tr>
               <td><code>length</code></td>
@@ -934,6 +940,211 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           </tbody>
         </table>
       </div>
+
+      <h3 id="expressions-deciding">Deciding and counting</h3>
+      <p>
+        Since 6.5 an expression can do what a verdict or a summary needs: compare, count, choose between two values, and
+        tell how far apart two dates are. It reads as it is written:
+      </p>
+      <pre><code>{{ if(response.stats.malicious >= 3, "malicious", "unknown") }}
+{{ response.stats.malicious }}/{{ response.stats | values | sum }} engines flag it
+confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 90 days
+{{ first_of(response.malware, response.threat_type, "known IOC") }}
+{{ response.tags | has_any(["malware", "c2", "botnet"]) }}
+{{ now.iso | date_diff(response.registered, "days") &lt; 30 }}</code></pre>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Written</th>
+              <th>Gives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>==</code> · <code>!=</code> · <code>&lt;</code> · <code>&lt;=</code> · <code>&gt;</code> ·
+                <code>&gt;=</code>
+              </td>
+              <td>
+                True or false, compared as a condition node compares: texts regardless of case, a number written as a
+                text as that number (<code>"12" > 9</code>), an empty text equal to null. One comparison at a time:
+                <code>a &lt; b and b &lt; c</code>, not <code>a &lt; b &lt; c</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>and</code> · <code>or</code> · <code>not</code></td>
+              <td>
+                <code>a or b</code> is <code>a</code> when it counts as yes, <code>b</code> otherwise;
+                <code>a and b</code> is <code>a</code> when it counts as no. The side that does not decide is not read.
+                Nothing counts as yes but what is neither null, false, zero nor empty (a text, a list, an object).
+              </td>
+            </tr>
+            <tr>
+              <td><code>x in [...]</code> · <code>x not in [...]</code></td>
+              <td>
+                Whether a value is an item of a list (<code>verdict in ["malware", "c2"]</code>), a part of a text
+                (<code>":" in args.ip</code>) or a key of an object. A list is written between brackets, and its items
+                may be paths.
+              </td>
+            </tr>
+            <tr>
+              <td><code>+</code> · <code>-</code> · <code>*</code> · <code>/</code> · <code>( )</code></td>
+              <td>
+                The four operations, on numbers only: a number that came as a text goes through
+                <code>| int</code> or <code>| float</code> first. A result that is whole is a whole number (<code
+                  >6 / 3</code
+                >
+                is <code>2</code>, <code>7 / 2</code> is <code>3.5</code>). Dividing by zero and a result beyond 10<sup
+                  >15</sup
+                >
+                fail the step.
+              </td>
+            </tr>
+            <tr>
+              <td><code>a ~ b</code></td>
+              <td>The two values written one after the other, as text: <code>", " ~ count ~ " suspicious"</code>.</td>
+            </tr>
+            <tr>
+              <td><code>if(condition, then, otherwise)</code></td>
+              <td>
+                <code>then</code> when the condition counts as yes, <code>otherwise</code> when not (null when
+                <code>otherwise</code> is left out). Only the value that is chosen is read, and a condition that is a
+                path leading nowhere counts as no. One inside another gives a verdict in three steps:
+                <code>if(m >= 3, "malicious", if(m or s, "suspicious", "unknown"))</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>first_of(a, b, "x")</code></td>
+              <td>
+                The first of the values that is not missing, null or empty; null when all are. Unlike
+                <code>default</code>, it takes any number of paths and skips an empty text.
+              </td>
+            </tr>
+            <tr>
+              <td><code>min(a, b)</code> · <code>max(a, b)</code></td>
+              <td>The smallest and the largest of several numbers, or of one list.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A filter applies to the value just before it, before any operator: <code>a + b | round</code> rounds
+        <code>b</code> alone, <code>(a + b) | round</code> rounds the sum; and <code>items | length > 3</code> compares
+        the length. Every new form is written between the same <code>{{ }}</code>, so nothing changes in a YAML file: an
+        expression is quoted as it always was (<code
+          >verdict: "{{ if(response.score >= 75, 'malicious', 'unknown') }}"</code
+        >).
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Filter</th>
+              <th>Gives</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>round</code> · <code>round(2)</code> · <code>abs</code></td>
+              <td>A number to so many decimals, a half away from zero (2.5 is 3) · without its sign.</td>
+            </tr>
+            <tr>
+              <td><code>sum</code> · <code>min</code> · <code>max</code></td>
+              <td>
+                Of a list of numbers: <code>stats | values | sum</code>. The smallest and largest of an empty list are
+                null.
+              </td>
+            </tr>
+            <tr>
+              <td><code>percent(total)</code> · <code>percent(total, 1)</code></td>
+              <td>The number as a percentage of a total, rounded (0 when the total is 0).</td>
+            </tr>
+            <tr>
+              <td><code>count</code> · <code>count("vip")</code> · <code>count("status", "gte", 400)</code></td>
+              <td>
+                How many items a list has · how many whose field is set · how many whose field compares so, with the
+                operators of <code>where</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>plural("report")</code> · <code>plural("entry", "entries")</code></td>
+              <td>
+                A count with its noun: <code>1 report</code>, <code>2 reports</code>, <code>0 entries</code>. A list
+                counts as its length.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>has_any([...])</code> · <code>has_all([...])</code> · <code>intersect([...])</code> ·
+                <code>without([...])</code> · <code>union([...])</code>
+              </td>
+              <td>
+                Whether a list has one of these values · all of them · its items that are among them · its items that
+                are not · its items and then those of the other list it does not have. Texts are compared regardless of
+                case.
+              </td>
+            </tr>
+            <tr>
+              <td><code>starts_with("x")</code> · <code>ends_with("x")</code></td>
+              <td>True or false, regardless of case.</td>
+            </tr>
+            <tr>
+              <td><code>limit(10)</code></td>
+              <td>The first items of a list, or the first characters of a text.</td>
+            </tr>
+            <tr>
+              <td><code>entries</code></td>
+              <td>
+                An object as a list of <code>{ key, value }</code>, so that what is keyed by a name (the engines of an
+                analysis) can be filtered and counted as a list.
+              </td>
+            </tr>
+            <tr>
+              <td><code>pick(name="attributes.name", id="id")</code></td>
+              <td>Each item of a list as a new object with those fields, each read by its path (null when absent).</td>
+            </tr>
+            <tr>
+              <td><code>sort_by("date")</code> · <code>sort_by("score", "desc")</code></td>
+              <td>The items in the order of one of their fields: numbers as numbers, anything else as text.</td>
+            </tr>
+            <tr>
+              <td><code>sha256</code></td>
+              <td>The SHA-256 of a text, in hexadecimal: how some APIs name a URL.</td>
+            </tr>
+            <tr>
+              <td><code>timestamp</code></td>
+              <td>
+                A date as whole seconds since 1970: what two dates are compared as (<code
+                  >a | timestamp &lt; b | timestamp</code
+                >), and multiplied by 1000 what an API that counts in milliseconds wants.
+              </td>
+            </tr>
+            <tr>
+              <td><code>date_diff(other)</code> · <code>date_diff(other, "hours")</code></td>
+              <td>
+                How many whole days (or <code>seconds</code>, <code>minutes</code>, <code>hours</code>,
+                <code>weeks</code>) the date is after the other; negative when it is before.
+              </td>
+            </tr>
+            <tr>
+              <td><code>date_add(30)</code> · <code>date_add(-90, "minutes")</code></td>
+              <td>The date so much later (earlier, with a negative number), as ISO 8601 in UTC.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A date is an ISO 8601 text or a number of seconds since 1970. In the file of a connector,
+        <code>now</code> is the moment the command runs, on the clock of the run (<code>now.iso</code>,
+        <code>now.epoch</code>, <code>now.epoch_ms</code>): the age of a domain is
+        <code>{{ now.iso | date_diff(response.registered, "days") }}</code>.
+      </p>
+      <p>
+        The work an expression can ask for has an end: one expression has at most 200 parts and 40 levels of
+        parentheses, a number stays within 10<sup>15</sup>, and the filters that compare every item of a list with every
+        item of another refuse lists that are too long together. What goes beyond that is a script's work.
+      </p>
       <p>
         The server and the canvas read expressions with the same rules, checked against the same list of examples
         (<code>backend/tests/data/expressions.json</code>): what the canvas accepts as you type is what the server will
@@ -1129,6 +1340,23 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
       <p>
         Results of scripts are a class of their own because a script can turn one thing into another: what it returns
         carries the classes of everything it was given, and that one besides.
+      </p>
+      <p>
+        An expression that computes cannot change what a value is either: a sum, a comparison, the value an
+        <code>if</code> chose or a text joined with <code>~</code> carries the classes of everything it was computed
+        from, the condition included.
+      </p>
+      <p>
+        <strong>A file a connector sends</strong> (<a href="#connector-files">Files</a>) is judged exactly as an
+        attachment a message carries is: by what it is, its name, its size and its hash, never by opening it. It is an
+        <em>attachment</em>, its name is a <em>file name</em> (and is read as text), a file Nik holds as a sample is a
+        <em>sample</em>, and one whose hash is on the allowlist is an <em>allowlisted indicator</em>. Every one of those
+        classes must be open for the playbook, which for <em>attachments</em> and <em>samples</em> an admin does through
+        the API (<code>PUT /api/automation/playbooks/{id}/data-allow</code>, with the same double check). Otherwise the
+        step fails and says what was held. A node set to send without what is held sends
+        <strong>nothing at all</strong> then: a submission without its file is no submission, so the command is not
+        sent, the step ends with empty outputs and says that the file was held back. The step shows what was judged (how
+        many files, how many bytes, which classes) and, when the file went, its name, size and SHA-256.
       </p>
 
       <h2 id="scripts">Scripts</h2>
@@ -2179,9 +2407,11 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
                 Other hosts the commands reach beside the one of <code>base_url</code>: a list of names
                 (<code>[internetdb.shodan.io]</code>), lower case, without a port, never a template or an address, 40 at
                 most. A command reaches one by giving the full <code>https://</code> address as its <code>path</code>; a
-                redirect to one of them is followed. The credentials of the instance are <strong>not</strong> sent
-                there. Installing the connector and making an instance is the permission to reach these hosts, and the
-                page of the connector lists them.
+                redirect to one of them is followed, and a redirect to any other host is refused: a download that the
+                vendor serves from a storage host (<a href="#connector-files">Files</a>) needs that host here. The
+                credentials of the instance are <strong>not</strong> sent there, in a request or after a redirect.
+                Installing the connector and making an instance is the permission to reach these hosts, and the page of
+                the connector lists them.
               </td>
             </tr>
             <tr>
@@ -2271,6 +2501,16 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               </td>
             </tr>
             <tr>
+              <td><code>query</code></td>
+              <td><code>value</code></td>
+              <td>
+                a parameter of the address, added to every request to the instance (an API that takes its key as
+                <code>?key=…</code>). What a step shows of a request stops before the parameters, so the key is never
+                recorded.
+              </td>
+              <td><code>param</code> (required: the name of the parameter)</td>
+            </tr>
+            <tr>
               <td><code>oauth2_client</code></td>
               <td><code>client_id</code>, <code>client_secret</code></td>
               <td>
@@ -2303,6 +2543,12 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
           </tbody>
         </table>
       </div>
+      <p>
+        A key that an instance leaves empty is <strong>not sent</strong>: with <code>bearer</code>,
+        <code>header</code> and <code>query</code> credentials the request goes without the header or the parameter, so
+        a connector for an API that also answers without a key (more slowly, or less) works on an instance that has
+        none.
+      </p>
 
       <h4 id="connector-command">A command</h4>
       <div class="table-wrap">
@@ -2351,8 +2597,12 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>
                 What the node asks for, 40 at most. Each: <code>name</code>, <code>type</code> (<code>text</code>,
                 <code>number</code>, <code>bool</code>, <code>list</code>, <code>object</code>, <code>any</code>,
-                <code>choice</code> with <code>choices</code>), <code>required</code>, <code>default</code>,
-                <code>description</code>.
+                <code>choice</code> with <code>choices</code>, <code>file</code>: a file Nik holds, see
+                <a href="#connector-files">Files</a>), <code>required</code>, <code>default</code>,
+                <code>description</code>. <code>default_from</code> in place of <code>default</code> names an entry of
+                the configuration: the argument left empty takes the value the instance has for it (<code
+                  >{ name: limit, type: number, default_from: page_size }</code
+                >).
               </td>
             </tr>
             <tr>
@@ -2387,7 +2637,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>
                 What the node gives: a name and a template over the answer for each. One the answer does not hold is
                 empty, not an error. With no <code>outputs</code> the node gives <code>response</code>, the answer as it
-                came. Secrets cannot be read here, and a value equal to a secret is blanked wherever it appears.
+                came (for a command whose answer is a file: what describes the file). Secrets cannot be read here, and a
+                value equal to a secret is blanked wherever it appears.
               </td>
             </tr>
             <tr>
@@ -2439,7 +2690,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             <tr>
               <td><code>method</code></td>
               <td>
-                <code>GET</code> (the default), <code>POST</code>, <code>PUT</code>, <code>PATCH</code>,
+                <code>GET</code> (the default), <code>HEAD</code> (the answer has no body: the outputs read
+                <code>status</code> and <code>headers</code>), <code>POST</code>, <code>PUT</code>, <code>PATCH</code>,
                 <code>DELETE</code>.
               </td>
             </tr>
@@ -2452,14 +2704,24 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
             </tr>
             <tr>
               <td><code>query</code>, <code>headers</code></td>
-              <td>Names and templates. A query value that comes out empty is not sent.</td>
+              <td>
+                Names and templates. A query value that comes out empty is not sent; one that is true or false is sent
+                as <code>true</code> or <code>false</code>.
+              </td>
             </tr>
             <tr>
               <td><code>json</code>, <code>form</code>, <code>multipart</code>, <code>body</code></td>
               <td>
-                The body, one of the four (none for a GET): JSON, a URL-encoded form, a multipart form, or a text sent
-                as it is. In the first three a key whose value comes out empty is left out, so an optional argument
-                needs no special case; the name of a form field may itself be a template.
+                The body, one of the four (none for a GET or a HEAD): JSON, a URL-encoded form, a multipart form, or a
+                text sent as it is. In the first three a key whose value comes out empty is left out, so an optional
+                argument needs no special case; the name of a form field may itself be a template.
+              </td>
+            </tr>
+            <tr>
+              <td><code>files</code>, <code>body_file</code></td>
+              <td>
+                A file Nik holds, sent as a part of a multipart form (beside the text fields of
+                <code>multipart</code>) or as the body itself (<a href="#connector-files">Files</a>).
               </td>
             </tr>
             <tr>
@@ -2467,12 +2729,164 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
               <td>
                 <code>auto</code> (the default): the answer is read as JSON when it says it is JSON, as text otherwise
                 (<code>response.text</code>). <code>text</code>: always as text, for a file whose content may itself be
-                JSON.
+                JSON. <code>file</code>: not read at all, kept as an artifact (<a href="#connector-files">Files</a>),
+                with <code>save_as</code> to say its name and type.
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p>
+        Templates read <code>config</code>, <code>args</code>, <code>steps</code>, <code>secret</code> (in what is sent
+        only) and <code>now</code>, the moment the command runs on the clock of the run: <code>now.iso</code>,
+        <code>now.epoch</code> (seconds), <code>now.epoch_ms</code>. Once there is an answer they read
+        <code>response</code>, <code>status</code> and <code>headers</code> too.
+      </p>
+
+      <h4 id="connector-files">Files</h4>
+      <p>
+        <strong>A command whose answer is a file</strong> (a sample, a capture, a screenshot, an archive) says
+        <code>answer: file</code>. The bytes are never decoded nor opened: they go to Nik's store as a file artifact,
+        analysed as an uploaded file is, and referenced by the incident the run works on when there is one.
+        <code>response</code> is then what describes the file, and with no <code>outputs</code> the node gives exactly
+        that:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Output</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code></td>
+              <td>
+                The name of the file: the one <code>save_as</code> gives, or the one the answer gives
+                (<code>Content-Disposition</code>), or the last part of the address. Never a path. Its class of data is
+                "file and attachment names".
+              </td>
+            </tr>
+            <tr>
+              <td><code>type</code></td>
+              <td>The type <code>save_as</code> gives, or the answer's <code>Content-Type</code>.</td>
+            </tr>
+            <tr>
+              <td><code>size</code>, <code>sha256</code></td>
+              <td>Its size in bytes and its SHA-256.</td>
+            </tr>
+            <tr>
+              <td><code>artifact</code></td>
+              <td>
+                The artifact it is now (<code>file-&lt;sha256&gt;</code>): what the nodes of Nik and a command that
+                sends a file take.
+              </td>
+            </tr>
+            <tr>
+              <td><code>linked</code></td>
+              <td>Whether an incident references it: false when the run works on none.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <pre><code>- name: download-sample
+  description: Download a sample, kept as an artifact (a ZIP protected with the password "infected").
+  arguments: [{ name: hash, type: text, required: true }]
+  request:
+    method: POST
+    path: /api/v1/
+    form: { query: get_file, sha256_hash: "{{ args.hash }}" }
+    answer: file
+    save_as: { name: "{{ args.hash }}.zip", type: application/zip }
+  success: { when: { all: [{ left: "{{ headers['content-type'] }}", op: ne, right: application/json }] } }
+  error: { message: "{{ response.query_status }}" }
+  sample: { name: sample.zip, type: application/zip, size: 0, sha256: "", artifact: "", linked: false }</code></pre>
+      <ul>
+        <li>
+          <code>save_as</code> is optional: <code>name</code> and <code>type</code> are templates over
+          <code>args</code>, <code>config</code>, <code>status</code> and <code>headers</code> (not over
+          <code>response</code>, which is the file).
+        </li>
+        <li>
+          A file may be as large as an upload (<code>SAMPLE_MAX_MB</code>). A larger one is refused with a sentence that
+          says the limit, and nothing is kept; so is an empty answer.
+        </li>
+        <li>
+          It is stored <strong>as it came</strong>. An archive the vendor protects with a password stays that archive:
+          nothing is unpacked, and the password is said in the description of the command for whoever takes it out.
+        </li>
+        <li>
+          An answer that is not a success is read as any answer is, so that <code>error</code> can quote it. Some APIs
+          answer 200 and an error in JSON where the file should be: <code>success.when</code> tells the two apart by
+          what came with the answer (its <code>headers</code>, its <code>status</code>), and nothing is kept when it
+          does not hold.
+        </li>
+        <li>
+          Many vendors answer a download with a redirect to a storage host. The redirect is followed only to a host the
+          connector lists in <code>more_hosts</code>; the key of the instance does not go there.
+        </li>
+        <li>
+          A dry run fetches nothing and keeps nothing: it gives the <code>sample</code>, or an empty description of a
+          file.
+        </li>
+        <li>
+          The answer of such a command is never among the <strong>kept answers</strong> of the instance: asked again,
+          the file is fetched again, so that the run that asked has it in its incident and in the audit log. The store
+          holds a file once, by its hash, however often it comes.
+        </li>
+        <li>
+          A request whose answer is a file is not polled nor paged: when the file has to be waited for, a step before it
+          waits.
+        </li>
+      </ul>
+      <p>
+        <strong>A command that sends a file</strong> takes it from Nik's store. The node names the file by its artifact
+        (<code>file-&lt;sha256&gt;</code>, as the page of an artifact and the outputs of other nodes give it) or by its
+        SHA-256, in an argument of type <code>file</code>; the request says how it travels:
+      </p>
+      <pre><code>- name: submit-file
+  description: Submit a file for analysis.
+  changes_outside: true
+  arguments:
+    - { name: sample, type: file, required: true }
+    - { name: password, type: text }
+  request:
+    method: POST
+    path: /files
+    multipart: { password: "{{ args.password }}" }
+    files:
+      file: { artifact: "{{ args.sample }}" }
+  outputs: { analysis: "{{ response.data.id }}" }
+  sample: { analysis: "" }</code></pre>
+      <ul>
+        <li>
+          <code>files</code>: the parts of a multipart form that are files, by field name. Each has
+          <code>artifact</code> (required: a template that gives the file), <code>name</code> (the name it is sent
+          under: the artifact's own when left out) and <code>type</code> (<code>application/octet-stream</code> by
+          default). The text fields go in <code>multipart</code> beside them. Ten files at most.
+        </li>
+        <li>
+          <code>body_file</code>: the same three keys, for an API that takes the bytes as the body itself (<code
+            >body_file: { artifact: "{{ args.sample }}" }</code
+          >
+          with a <code>PUT</code>).
+        </li>
+        <li>
+          Such a command <strong>must</strong> say <code>changes_outside: true</code>, or the file is refused: sending a
+          file out is never something a node does without asking.
+        </li>
+        <li>
+          Before anything leaves, the <a href="#data-guard">data guard</a> judges the file as it judges an attachment of
+          a message. A file that is not in the store, cannot be read or is over the limit of an upload is refused
+          whatever the playbook was opened.
+        </li>
+        <li>
+          A dry run sends nothing: the step shows the name, the size and the SHA-256 of the file in place of its bytes,
+          and says what the guard would hold.
+        </li>
+        <li>The bytes are read and sent. Nothing executes, unpacks or opens them.</li>
+      </ul>
 
       <h4 id="connector-pagination">Pages, steps and polls</h4>
       <p>
@@ -2490,9 +2904,19 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <li><code>items</code>: where the items of a page are (<code>"{{ response.result }}"</code>);</li>
         <li>
           <code>limit_param</code> and <code>limit</code>: the name of the parameter that sets the size of a page, and
-          the size (100 by default);
+          the size (100 by default, 1 000 at most);
         </li>
-        <li><code>max_pages</code>: 10 by default, 100 at most.</li>
+        <li><code>max_pages</code>: 10 by default, 100 at most;</li>
+        <li>
+          <code>limit</code> and <code>max_pages</code> may be templates, so that the node decides (<code
+            >limit: "{{ args.limit }}"</code
+          >): what they give is kept within the same bounds;
+        </li>
+        <li>
+          <code>keep</code>: what the first page says beside its items, as names and templates over that answer (<code
+            >keep: { total: "{{ response.total }}" }</code
+          >), read by the outputs as <code>response.kept.total</code>.
+        </li>
       </ul>
       <p>
         <strong><code>steps</code></strong> is a list of up to 12 requests sent in order, for an API where one action is
@@ -2506,7 +2930,8 @@ Phishing: {{ trigger.incident.name }} ({{ lookup.score }})</code></pre>
         <code>until</code> (conditions on the answer), <code>fail_when</code> (conditions that mean it failed),
         <code>every</code> (seconds between tries: 5 by default, 2 to 600) and <code>timeout</code> (300 by default, an
         hour at most). Between tries the run waits without holding a worker: a playbook can wait for a policy to install
-        while others run.
+        while others run. When the answer carries a <code>Retry-After</code> header (seconds, or a date), the next try
+        waits that long if it is longer than <code>every</code>, ten minutes at most.
       </p>
       <p>
         Conditions are written as in a condition node:
