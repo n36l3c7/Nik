@@ -292,6 +292,28 @@ class AuditEntry(Base):
     details: Mapped[str] = mapped_column(String, nullable=False, default="")
     incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     incident_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The chain (app/auditlog): the number of the entry, the hash of the entry before it and its
+    # own. Written once, when the transaction that holds the entry commits; nothing until then.
+    seq: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    prev_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (Index("ux_audit_log_seq", "seq", unique=True),)
+
+
+class AuditChain(Base):
+    """The head of the chain of the audit log: one row (id 1), locked by whoever links entries.
+
+    ``seq`` and ``hash`` are those of the last entry linked. The row is what
+    makes the order strict: a transaction that has entries to link takes it
+    last, just before it commits, so two never give the same number.
+    """
+
+    __tablename__ = "audit_chain"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    hash: Mapped[str] = mapped_column(String(64), nullable=False, default="0" * 64)
 
 
 class Sample(Base):
@@ -1867,3 +1889,10 @@ AUTOMATION_TABLES = (
 
 # Created by migration 0048_backups where missing.
 BACKUP_TABLES = ("backups",)
+
+# Created by migration 0051_audit_chain where missing.
+AUDIT_CHAIN_TABLES = ("audit_chain",)
+
+# The entries of the audit log are numbered and linked when their transaction commits: the
+# listeners live with the chain, and are there for every session that can hold an entry.
+from ..auditlog import chain as _audit_chain  # noqa: E402, F401

@@ -388,6 +388,14 @@ def main() -> None:
     from ..backups import scheduler as backup_scheduler
 
     backup_scheduler.start_shipper()
+    # So does the audit log, entry by entry, to the syslog receiver an administrator set.
+    from ..auditlog import forward as audit_forward
+
+    audit_forward.start()
+    # And the health of the server is looked at from here too, for the day the API process is what is stuck.
+    from ..health import watch as health_watch
+
+    health_watch.start()
     loop()
     logger.info("Automation worker stopped")
 

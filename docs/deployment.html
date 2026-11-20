@@ -55,6 +55,8 @@
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
           <li><a href="#automation-containers">The automation containers</a></li>
           <li><a href="#worker-watch">When a worker is down</a></li>
+          <li><a href="#audit-log-forwarding">The audit log: its chain, and sending it to syslog</a></li>
+          <li><a href="#health-and-metrics">Health, warnings and Prometheus</a></li>
           <li><a href="#sign-in-and-sessions">Sign-in: the client's address, and getting back in</a></li>
           <li><a href="#upgrading-to-30">Upgrading to 3.0</a></li>
           <li><a href="#upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18</a></li>
@@ -1071,6 +1073,286 @@ podman compose up -d --build
           <code>podman compose logs -f &lt;service&gt;</code>.
         </li>
       </ul>
+      <h4 id="audit-log-forwarding">The audit log: its chain, and sending it to syslog</h4>
+      <p>
+        From 6.8 the audit log is a chain of hashes (<a href="security.html#audit-chain"
+          >what that protects, and what it cannot</a
+        >). Nothing has to be set for the chain: the server links the entries it writes, walks the chain every five
+        minutes and tells the administrators when it finds a break. What an operator sets is where the log goes.
+      </p>
+      <ul>
+        <li>
+          <strong>Send it to a receiver.</strong> <em>Settings → System → Audit log → Forwarding to syslog</em>: the
+          host and the port of the receiver, the protocol (TLS on 6514 is the one to use), the authority or the
+          certificate the receiver presents, a client certificate if the receiver asks for one. Save, press
+          <em>Test</em> (a marked message is sent over a connection of its own and the page says what the socket said),
+          then turn it on. A new receiver gets the whole log from its first entry, or only what follows, as chosen.
+        </li>
+        <li>
+          <strong>The automation worker sends</strong>, not the backend: the receiver must be reachable from the
+          <code>automation</code> container (its <code>automation-egress</code> network). It connects straight to the
+          receiver (syslog does not go through an HTTP proxy), on a private address too: that host and that port are an
+          exception of their own, and playbooks gain nothing from it. With <code>AUTOMATION_WORKER=off</code> nothing is
+          sent; with <code>inline</code> the backend process sends, if it can reach the receiver.
+        </li>
+        <li>
+          <strong>A receiver that is down</strong> loses nothing: the entries wait in the table and leave in order when
+          it is back. The page and the health page show how many wait and since when; the administrators are told when
+          that lasts (five minutes by default, a problem after thirty) and when it drained. Entries that wait are never
+          removed by clearing the log.
+        </li>
+        <li>
+          <strong>On the receiver</strong> each message is one line: an RFC 5424 header, the structured data
+          <code>[nik@32473 seq="…" hash="…" prev="…" id="…" action="…"]</code> and the entry as JSON. Keep the raw
+          message (rsyslog: a template with <code>%rawmsg%</code>; syslog-ng: <code>${MSG}</code> with
+          <code>flags(syslog-protocol)</code> keeps the JSON), in a file the administrators of Nik cannot write to. A
+          message with the id <code>checkpoint</code> arrives every five minutes even when nothing happened: alert on
+          its absence.
+        </li>
+        <li>
+          <strong>Checking the log against the receiver's copy</strong>, on any machine with Python:
+          <pre><code class="language-bash"># on the server: every entry, one JSON object a line
+podman compose exec api python -m app.auditlog export &gt; audit-export.jsonl
+# anywhere: the export alone, then held against what the receiver got
+python backend/app/auditlog/verifier.py audit-export.jsonl
+python backend/app/auditlog/verifier.py audit-export.jsonl --syslog /var/log/nik-audit.log
+# or against the last checkpoint only (its seq and hash)
+podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
+</code></pre>
+          It exits 0 when everything holds, and names what does not: an entry edited, entries missing, a log cut at its
+          end (the receiver knows entries the server no longer has), a log rewritten (the same number with another
+          content).
+        </li>
+        <li>
+          <strong>After a restore</strong> the server's log is the backup's, with one new entry that says so. The
+          receiver then sees numbers it already has arrive again with other content, starting with that entry
+          (<code>audit.restore</code>): the verifier reads it as a restore, and reports how many entries exist only on
+          the receiver. Those are the ones written between the backup and the restore.
+        </li>
+        <li>
+          <strong>Removing old entries</strong> (<em>Remove the entries…</em> on the page, or
+          <code>DELETE /api/audit?olderThanDays=N</code> as a signed-in administrator) leaves an entry that says how
+          many went and up to which hash. Nothing removes entries by itself: there is no retention to set.
+        </li>
+      </ul>
+
+      <h4 id="health-and-metrics">Health, warnings and Prometheus</h4>
+      <p>
+        <strong>Settings → System → Health</strong> says in one place whether the server is well: the disks (the store
+        of files and the backup directory, how fast each fills and when it will be full at that rate), the size of the
+        database, every queue with what waits and for how long, the workers, the backups, the database (connections,
+        long transactions, whether its schema is the one this version expects), the certificate of the web container,
+        the chain of the audit log and its forwarding, two warnings about the sign-in, and the clock against the
+        database. Each row is fine, needs attention or is a problem, by thresholds an administrator can change at the
+        foot of the page, and leads to the page that has the whole story.
+      </p>
+      <ul>
+        <li>
+          <strong>Warnings.</strong> The server looks once a minute, from the backend and from the automation worker
+          (whichever is alive), and every administrator gets one notification when a row gets worse and one when it is
+          fine again: a disk past 80% (a problem at 90%) or that will be full within 30 days (7), a queue whose oldest
+          item has waited 10 minutes (60), a schedule or a fetch 5 minutes late (60), the certificate 30 days from its
+          end (7), an audit entry that has waited 5 minutes to be forwarded (30), a broken chain, the database at 80% of
+          its connections (95%) or a pool with none left, a transaction open for 15 minutes, clocks 5 seconds apart
+          (60). A value has to be found twice in a row before anybody is told. Workers and backups keep their own
+          notices; this page does not repeat them.
+        </li>
+        <li>
+          <strong>The disk of the database</strong> cannot be read from the backend (it belongs to the
+          <code>db</code> container): the page gives the size of the database and how fast it grows. Watch the volume on
+          the host.
+        </li>
+        <li>
+          <strong>The certificate</strong> is read by the backend from the web container itself
+          (<code>NIK_WEB_TLS</code>, <code>web:443</code> in the stack; set it empty where there is no web container, or
+          to the host and port of your own proxy on a manual install).
+        </li>
+        <li>
+          <strong>Prometheus.</strong> The same numbers are at <code>/api/metrics</code>, through the web port like
+          everything else, for whoever presents the <strong>scrape token</strong>: make it at the foot of the health
+          page (it is shown once), put it in a file only Prometheus reads, and add the job the page gives:
+          <pre><code class="language-yaml">scrape_configs:
+  - job_name: nik
+    scheme: https
+    metrics_path: /api/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/nik-metrics-token
+    tls_config:
+      ca_file: /etc/prometheus/nik-ca.crt # the certificate of Nik, or of its authority
+    static_configs:
+      - targets: ["nik.example:8443"]
+</code></pre>
+          Without the token the route answers 401, to a signed-in administrator too. <code>METRICS_TOKEN</code> in
+          <code>.env</code>, the way of earlier versions, is still accepted beside it; with neither, nobody reads the
+          metrics.
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Labels</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>nik_health_state</code></td>
+              <td><code>check</code></td>
+              <td>State of each row of the health page: 0 fine, 1 attention, 2 problem, -1 not known.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_disk_total_bytes</code>, <code>nik_disk_used_bytes</code>, <code>nik_disk_free_bytes</code>
+              </td>
+              <td><code>disk</code> (<code>store</code>, <code>backups</code>)</td>
+              <td>The disk that holds the store of files, and the one of the backup directory.</td>
+            </tr>
+            <tr>
+              <td><code>nik_disk_growth_bytes_per_day</code>, <code>nik_disk_full_in_seconds</code></td>
+              <td><code>disk</code></td>
+              <td>
+                How fast it fills, over the last days, and the time left at that rate (absent when it is not filling).
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_database_size_bytes</code>, <code>nik_database_growth_bytes_per_day</code></td>
+              <td></td>
+              <td>Size of the database and its growth.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_connections</code>, <code>nik_database_connections_max</code></td>
+              <td></td>
+              <td>Connections open on the database, and how many the server accepts.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_pool_in_use</code>, <code>nik_database_pool_size</code></td>
+              <td></td>
+              <td>The pool of the API process that answered the scrape.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_longest_transaction_seconds</code></td>
+              <td></td>
+              <td>Age of the oldest open transaction.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_revision_current</code></td>
+              <td></td>
+              <td>1 when the schema is the one this version expects.</td>
+            </tr>
+            <tr>
+              <td><code>nik_clock_skew_seconds</code></td>
+              <td></td>
+              <td>Clock of the server minus clock of the database.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_queue_waiting</code>, <code>nik_queue_running</code>, <code>nik_queue_oldest_seconds</code>
+              </td>
+              <td>
+                <code>queue</code> (<code>artifact_jobs</code>, <code>url_scans</code>, <code>uploads</code>,
+                <code>playbook_steps</code>, <code>events</code>, <code>fetch</code>, <code>lookups</code>,
+                <code>mirror</code>, <code>backup_copies</code>)
+              </td>
+              <td>What waits, what is being done, and how long the oldest has waited.</td>
+            </tr>
+            <tr>
+              <td><code>nik_playbook_runs</code></td>
+              <td><code>state</code></td>
+              <td>Runs the server keeps, by state.</td>
+            </tr>
+            <tr>
+              <td><code>nik_schedules</code>, <code>nik_schedules_late</code></td>
+              <td></td>
+              <td>Schedules of playbooks, and those whose time passed without a run.</td>
+            </tr>
+            <tr>
+              <td><code>nik_fetch_instances</code></td>
+              <td><code>state</code> (<code>ok</code>, <code>failing</code>, <code>paused</code>)</td>
+              <td>Instances that fetch.</td>
+            </tr>
+            <tr>
+              <td><code>nik_worker_up</code></td>
+              <td><code>worker</code></td>
+              <td>1 when a worker answered its last check.</td>
+            </tr>
+            <tr>
+              <td><code>nik_automation_heartbeat_age_seconds</code></td>
+              <td></td>
+              <td>Time since the automation worker last said it was alive.</td>
+            </tr>
+            <tr>
+              <td><code>nik_backup_last_good_age_seconds</code>, <code>nik_backup_last_good_size_bytes</code></td>
+              <td></td>
+              <td>The last backup that passed its restore test.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_backup_problems</code>, <code>nik_backup_next_run_timestamp_seconds</code>,
+                <code>nik_upgrade_snapshots</code>
+              </td>
+              <td></td>
+              <td>
+                Problems the watch of the backups holds; when the next backup is due; snapshots kept from before
+                upgrades.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_certificate_expiry_timestamp_seconds</code></td>
+              <td></td>
+              <td>When the certificate of the web container expires.</td>
+            </tr>
+            <tr>
+              <td><code>nik_audit_entries_total</code>, <code>nik_audit_entries</code></td>
+              <td></td>
+              <td>Entries ever linked into the chain; entries the log holds now.</td>
+            </tr>
+            <tr>
+              <td><code>nik_audit_chain_ok</code>, <code>nik_audit_chain_verified_timestamp_seconds</code></td>
+              <td></td>
+              <td>1 when the last walk found nothing wrong; when the chain was last walked without a problem.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_audit_forward_enabled</code>, <code>nik_audit_forward_backlog</code>,
+                <code>nik_audit_forward_oldest_seconds</code>, <code>nik_audit_forward_sent_total</code>
+              </td>
+              <td></td>
+              <td>
+                The forwarding to syslog: on or off, what waits, for how long, how many were sent to the current
+                receiver.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_signin_failures_total</code>, <code>nik_signin_waiting</code></td>
+              <td></td>
+              <td>Failed sign-ins the audit log holds; accounts and addresses that must wait.</td>
+            </tr>
+            <tr>
+              <td><code>nik_administrators_without_second_factor</code></td>
+              <td></td>
+              <td>Administrators with no second factor.</td>
+            </tr>
+            <tr>
+              <td><code>nik_info</code></td>
+              <td><code>version</code></td>
+              <td>The version of Nik.</td>
+            </tr>
+            <tr>
+              <td><code>nik_http_requests_total</code></td>
+              <td><code>method</code>, <code>path</code> (the route, never the address asked), <code>status</code></td>
+              <td>Requests answered, by every API process.</td>
+            </tr>
+            <tr>
+              <td><code>nik_http_request_duration_seconds</code></td>
+              <td><code>method</code>, <code>path</code>, <code>le</code></td>
+              <td>How long they took (a histogram).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <h4 id="sign-in-and-sessions">Sign-in: the client's address, and getting back in</h4>
       <p>
         The rules of signing in are an admin's, under <strong>Settings → Sign-in and sessions</strong> (the

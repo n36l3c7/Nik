@@ -44,6 +44,9 @@ export default defineConfig({
         DATABASE_URL: `sqlite:///./${E2E_DB}`,
         COOKIE_SECURE: 'false',
         RATE_LIMIT_DEFAULT: '100000/minute',
+        // Nor is the limit of ten sign-ins a minute for one address: the suite signs in eleven times
+        // within a minute, all from 127.0.0.1, and passed or failed by how those fell in the window.
+        RATELIMIT_ENABLED: 'false',
         SAMPLE_STORE: E2E_SAMPLES,
         // The backups of the test server: a folder of its own, emptied before every run.
         BACKUP_DIR: E2E_BACKUPS,
@@ -53,6 +56,8 @@ export default defineConfig({
         NIK_PACKS_CATALOGUE: '',
         // Playbooks run inside the test server (in production a container of its own does).
         AUTOMATION_WORKER: 'inline',
+        // No web container in front of the test server: there is no certificate for the health page to read.
+        NIK_WEB_TLS: '',
         // Set by CI when the analyzer container runs (see .github/workflows/ci.yml).
         ANALYZER_URL: process.env.E2E_ANALYZER_URL ?? '',
         ANALYZER_TOKEN: process.env.E2E_ANALYZER_TOKEN ?? '',

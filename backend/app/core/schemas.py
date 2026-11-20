@@ -178,6 +178,10 @@ class AuditOut(BaseModel):
     details: str
     incidentId: Optional[str] = None
     incidentName: Optional[str] = None
+    # The place of the entry in the chain (app/auditlog): its number, the hash of the entry before, its own.
+    seq: Optional[int] = None
+    prev: Optional[str] = None
+    hash: Optional[str] = None
 
 
 class AuditEnvelope(BaseModel):

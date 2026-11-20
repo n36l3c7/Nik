@@ -7,13 +7,29 @@ Wired in ``main.py`` via one HTTP middleware plus the ``/api/metrics`` and
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from contextvars import ContextVar
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-from starlette.requests import Request
-from starlette.responses import Response
+# The server runs several API processes, and a scrape reaches one of them. With
+# PROMETHEUS_MULTIPROC_DIR set (the image sets it, to a directory of the memory-backed /tmp),
+# every process writes its counts there and whichever answers a scrape adds them up. The
+# directory has to be there before the first metric is made.
+_SHARED = os.environ.get("PROMETHEUS_MULTIPROC_DIR", "")
+if _SHARED:
+    os.makedirs(_SHARED, exist_ok=True)
+
+from prometheus_client import (  # noqa: E402
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+    multiprocess,
+)
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import Response  # noqa: E402
 
 # Current request id, available to log records anywhere in the request.
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
@@ -88,6 +104,15 @@ async def observability_middleware(request: Request, call_next):
         # The response object exists only on the success path; header set there.
 
 
-def metrics_response() -> Response:
-    """Render the Prometheus exposition format."""
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+def request_metrics() -> bytes:
+    """The requests this server answered, in the Prometheus exposition format: those of every
+    API process when they share a directory, those of this one otherwise."""
+    if _SHARED:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        return generate_latest(registry)
+    return generate_latest()
+
+
+def metrics_response(body: bytes) -> Response:
+    return Response(body, media_type=CONTENT_TYPE_LATEST)

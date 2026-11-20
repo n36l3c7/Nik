@@ -88,7 +88,8 @@ def test_an_import_adds_what_is_not_here_and_changes_nothing_that_is(admin: Test
         assert db.query(SessionModel).count() == sessions_before
         line = db.query(AuditEntry).filter_by(action="backup.import").one().details
     assert line == (
-        "Imported a file of content: added 1 of 2 accounts, 1 of 2 incidents, 1 of 1 audit entries; "
+        "Imported a file of content: added 1 of 2 accounts, 1 of 2 incidents, 1 of 1 audit entries "
+        "(they join the chain of this server here, with the time and the author the file gives them); "
         "nothing that was here was changed"
     )
     assert [c["name"] for c in admin.get("/api/automation/credentials").json()["credentials"]] == ["kept_key"]

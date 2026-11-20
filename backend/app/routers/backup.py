@@ -268,7 +268,8 @@ def import_backup(
             caller.actor,
             "backup.import",
             f"Imported a file of content: added {added['users']} of {len(users)} accounts, "
-            f"{added['incidents']} of {len(incidents)} incidents, {added['audit']} of {len(audit)} audit entries; "
+            f"{added['incidents']} of {len(incidents)} incidents, {added['audit']} of {len(audit)} audit entries "
+            "(they join the chain of this server here, with the time and the author the file gives them); "
             "nothing that was here was changed",
         )
         db.commit()

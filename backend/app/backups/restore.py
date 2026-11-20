@@ -193,6 +193,10 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
     finally:
         loader.close()
     ended = database.after_restore(url)
+    # The log on this server is now the log of the backup: its first new entry says so.
+    from ..auditlog import restored
+
+    restored.note(url, str(manifest.get("name") or path.name), str(manifest.get("createdAt") or ""))
     _say(f"Done in {time.monotonic() - clock:.0f} s. Checked:")
     for check in checks:
         _say(f"  - {check}")

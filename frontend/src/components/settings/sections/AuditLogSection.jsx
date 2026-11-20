@@ -5,12 +5,18 @@ import { Badge, Button, DataTable, EmptyState, Wait } from '../../ui/index.js'
 import { useAudit } from '../../../context/AuditContext.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { formatDateTime } from '../../../lib/time.js'
+import AuditChainPanel from './AuditChainPanel.jsx'
+import AuditForwardingForm from './AuditForwardingForm.jsx'
 
 /*
  * Audit-log settings section: the global, cross-incident audit trail, written
- * by the server and read each time the section opens. The whole log can be
- * wiped, but only by an admin and behind an inline confirmation; the server
- * then leaves one entry saying who did it.
+ * by the server and read each time the section opens.
+ *
+ * The log is a chain: the panel at the top says how far it was verified and
+ * walks it on demand; administrators set below it where the log is sent as it
+ * is written. Nothing edits an entry. Old entries can be removed, by a
+ * signed-in administrator and behind a confirmation: the chain then keeps one
+ * entry that says how many went and up to which hash, so it still verifies.
  */
 
 function actionBadgeColor(action) {
@@ -75,14 +81,17 @@ export default function AuditLogSection() {
   const { can } = useAuth()
   const isAdmin = can('admin')
   const [confirming, setConfirming] = useState(false)
+  // The chain is read again after the log was changed from this page.
+  const [chainKey, setChainKey] = useState(0)
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  const handleClear = () => {
-    clearAudit()
+  const handleClear = async () => {
     setConfirming(false)
+    await clearAudit()
+    setChainKey((key) => key + 1)
   }
 
   const hasEntries = entries.length > 0
@@ -116,18 +125,22 @@ export default function AuditLogSection() {
             onClick={() => setConfirming(true)}
             className="text-high hover:bg-high-soft hover:text-high"
           >
-            Clear log
+            Remove the entries…
           </Button>
         )}
       </div>
+
+      <AuditChainPanel key={chainKey} onVerified={refresh} />
+      {isAdmin && <AuditForwardingForm />}
 
       {confirming && (
         <div className="flex flex-wrap items-center justify-between gap-3 border border-high-line bg-high-soft px-4 py-3">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-high" aria-hidden="true" />
             <p className="text-sm text-high">
-              Permanently delete all {entries.length} audit {entries.length === 1 ? 'entry' : 'entries'}? This cannot be
-              undone.
+              Remove the {entries.length} audit {entries.length === 1 ? 'entry' : 'entries'}? This cannot be undone. One
+              entry stays in their place: it says how many were removed, by whom, and the hash of the last, so the chain
+              still verifies. While the log is forwarded, what was not sent yet stays too.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -135,7 +148,7 @@ export default function AuditLogSection() {
               Cancel
             </Button>
             <Button variant="danger" size="sm" icon={Trash2} onClick={handleClear}>
-              Clear log
+              Remove the entries
             </Button>
           </div>
         </div>

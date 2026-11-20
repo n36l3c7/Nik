@@ -1926,6 +1926,14 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
               </td>
             </tr>
             <tr>
+              <td>Health <em>(admins)</em></td>
+              <td>
+                Whether the server is well, in one place (see <a href="#health">Health</a>): disks, queues, workers,
+                backups, the database, the certificate, the audit log. The thresholds, and the token Prometheus reads
+                the same numbers with.
+              </td>
+            </tr>
+            <tr>
               <td>Workers <em>(admins)</em></td>
               <td>
                 The processes Nik hands work to: the automation worker (playbooks, fetching, timers) and the analysis
@@ -1945,7 +1953,11 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             </tr>
             <tr>
               <td>Audit log</td>
-              <td>The platform's audit trail (the Audit role, or an admin).</td>
+              <td>
+                The platform's audit trail (the Audit role, or an admin). At its top, the state of its chain and
+                <em>Verify now</em>; for admins, where it is sent as it is written (see
+                <a href="#audit-log">Audit log</a>).
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1954,6 +1966,64 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         <img src="img/settings.png" alt="The Settings page" width="1600" height="1000" loading="lazy" />
         <figcaption>Settings: detection rules.</figcaption>
       </figure>
+      <h3 id="health">Health</h3>
+      <p>
+        <em>Settings → System → Health</em> (admins). One row for each thing an operator would otherwise go and look at,
+        in groups: the disks, the database, the queues, the workers, the backups, the certificate, the audit log, the
+        sign-in, the server. A row has a value (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>,
+        <em>attention</em>, <em>problem</em>, or <em>not known</em> when it could not be measured), since when it is in
+        that state, what to do when it is not fine, and a link to the page that has the whole story: Storage, Workers,
+        Backup and the audit log are summed up here, not repeated. What is not fine is listed again at the top, the
+        problems first.
+      </p>
+      <ul>
+        <li>
+          A disk says how fast it fills and <strong>when it will be full at that rate</strong>, once the server has
+          watched it for a few hours.
+        </li>
+        <li>
+          The server looks by itself once a minute. Every administrator gets a notification when a row gets worse and
+          one when it is fine again, nothing in between; the notification leads here.
+        </li>
+        <li>
+          <strong>Thresholds</strong>, at the foot: from which value each row needs attention and from which it is a
+          problem. What is typed and not saved is asked about before leaving the page.
+        </li>
+        <li>
+          <strong>Metrics for Prometheus</strong>: <em>Make a token…</em> shows the scrape token once; the page then
+          says only that one is set and how it ends. <em>How to point Prometheus at it</em> gives the job to copy. The
+          metrics answer to that token and to nobody else, a signed-in administrator included.
+        </li>
+      </ul>
+
+      <h3 id="audit-log">Audit log</h3>
+      <p>
+        <em>Settings → System → Audit log</em> (the Audit role, or an admin). The log is a chain: each entry carries the
+        hash of the one before it, so an entry that was changed, removed or moved shows when the chain is walked.
+      </p>
+      <ul>
+        <li>
+          <strong>Chain</strong> says how far the log was verified and when (<em>Holds up to entry 4182</em>), or where
+          it broke and how (<em>Broken at entry 3120: the content of entry 3120 was changed after it was written</em>).
+          The server walks the chain every few minutes; <strong>Verify now</strong> walks it at once.
+          <em>Hold it against a head from outside</em> takes the number and the hash of an entry noted elsewhere (the
+          last checkpoint of the syslog receiver): it is what shows that the newest entries were removed, which the
+          chain alone cannot. A box there has every entry read, instead of only what is new.
+        </li>
+        <li>
+          <strong>Forwarding to syslog</strong> (admins) sets where the log is sent as it is written: the receiver, the
+          protocol, for TLS the certificates, how the messages are marked (facility, severity, names), how often a
+          checkpoint goes. The line above the form says where the log goes, how many entries wait and what the last
+          error was. <strong>Test</strong> sends one marked message to the receiver that is saved and says what the
+          socket said. A change is itself an entry, and the receiver that was set hears of it before it takes effect.
+        </li>
+        <li>
+          <strong>Remove the entries…</strong> (a signed-in admin) removes what the log holds and leaves one entry in
+          its place: how many were removed, by whom, and the hash of the last, so the chain still verifies. While the
+          log is forwarded, what was not sent yet stays.
+        </li>
+      </ul>
+
       <h3 id="backup">Backup</h3>
       <p>
         <em>Settings → System → Backup</em> (admins). Nik takes its own backups: the database and every file of the

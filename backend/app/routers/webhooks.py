@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from ..core import audit
 from ..core.db import get_db
 from ..core.models import Webhook
 from ..core.schemas import WebhookCreate, WebhookCreated, WebhooksEnvelope
@@ -70,6 +71,7 @@ def create_webhook(
         created_by=admin.actor,
     )
     db.add(row)
+    audit.record(db, admin.actor, "webhook.create", f"Added a webhook to {url} for {', '.join(events)}", target=url)
     db.commit()
     return {"webhook": _to_dict(row), "secret": secret}
 
@@ -77,13 +79,14 @@ def create_webhook(
 @router.delete("/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_webhook(
     webhook_id: str,
-    _admin: Principal = Depends(admin_principal),
+    admin: Principal = Depends(admin_principal),
     db: OrmSession = Depends(get_db),
 ):
     """Delete a webhook subscription (admin only)."""
     row = db.get(Webhook, webhook_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Webhook not found")
+    audit.record(db, admin.actor, "webhook.delete", f"Removed the webhook to {row.url}", target=row.url)
     db.delete(row)
     db.commit()
     # 204 No Content

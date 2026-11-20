@@ -4,23 +4,42 @@ The log is written by the server: each handler records what it does (see
 ``core/audit.py``). The only entries a browser may add are the actions that
 happen in the browser alone, with no request the server could record
 (``CLIENT_ACTIONS``); the id, timestamp and actor are always the server's.
+
+The log is a chain (``app/auditlog``): the routes under ``/audit/chain`` say
+where it stands and walk it, those under ``/audit/forwarding`` set where it
+is sent as it is written. Reading the chain and walking it is open to
+whoever reads the log. The forwarding is the administrators'; changing it,
+testing it and removing old entries need a signed-in administrator
+(``admin_session``): whoever holds a key alone must not be able to point the
+log elsewhere, turn its forwarding off, or remove entries.
 """
 
 from __future__ import annotations
 
+import re
+import time
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import delete as sa_delete
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import query
+from ..auditlog import chain, forward
 from ..core import audit
+from ..core.config import settings as app_settings
 from ..core.db import get_db
 from ..core.models import AuditEntry
 from ..core.schemas import AuditEnvelope, AuditIn, AuditOut
-from ..core.security import Principal, admin_principal, audit_principal, now_iso, reader_principal
+from ..core.security import (
+    Principal,
+    admin_principal,
+    admin_session,
+    audit_principal,
+    now_iso,
+    reader_principal,
+)
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -41,6 +60,10 @@ def _entry_to_dict(entry: AuditEntry) -> dict:
         "details": entry.details,
         "incidentId": entry.incident_id,
         "incidentName": entry.incident_name,
+        # Its place in the chain: nothing until the transaction that wrote it committed.
+        "seq": entry.seq,
+        "prev": entry.prev_hash,
+        "hash": entry.hash,
     }
 
 
@@ -109,12 +132,124 @@ def create_audit(
     return _entry_to_dict(entry)
 
 
-@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
-def clear_audit(admin: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)):
-    """Clear the audit log (admin session or admin key). The new log starts
-    with an entry saying who cleared it and how many entries went."""
-    removed = db.scalar(select(func.count()).select_from(AuditEntry)) or 0
-    db.execute(sa_delete(AuditEntry))
-    audit.record(db, admin.actor, "audit.clear", f"Cleared the audit log ({removed} entries)")
+@router.delete("")
+def clear_audit(
+    older_than_days: int | None = Query(None, alias="olderThanDays", ge=1, le=36500),
+    admin: Principal = Depends(admin_session),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Remove old entries (a signed-in administrator): all of them, or with ``olderThanDays``
+    those from the start of the log that are older. The chain keeps an ``audit.trim`` entry
+    that says how many went, their numbers and the hash of the last, so it still verifies.
+    While the log is forwarded, an entry that was not sent yet stays."""
+    removed = chain.trim(db, admin.actor, older_than_days=older_than_days)
     db.commit()
-    # 204 No Content
+    return {"removed": removed, "entries": db.scalar(select(func.count()).select_from(AuditEntry)) or 0}
+
+
+# --------------------------------------------------------------------------- #
+# The chain                                                                   #
+# --------------------------------------------------------------------------- #
+_HASH = re.compile(r"^[0-9a-f]{64}$")
+
+
+@router.get("/chain")
+def read_chain(_: Principal = Depends(audit_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """Where the chain of the log stands: its head, how far it was verified and when, the
+    problem the last walk found (``kind``, ``seq``, ``text``) or none."""
+    return chain.out(db)
+
+
+@router.post("/chain/verify")
+def verify_chain(
+    body: dict[str, Any] = Body(default={}),
+    caller: Principal = Depends(audit_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Walk the chain now. ``full`` reads every entry (otherwise only what was added since the
+    last good walk); ``head`` (``{"seq": …, "hash": "…"}``) is a head noted outside the server,
+    such as the last checkpoint the syslog receiver got: the end of the log is held against it."""
+    outside = None
+    given = body.get("head")
+    if given:
+        seq = given.get("seq") if isinstance(given, dict) else None
+        held = str(given.get("hash") or "").strip().lower() if isinstance(given, dict) else ""
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1 or not _HASH.match(held):
+            raise HTTPException(
+                status_code=422, detail="A head is the number of an entry and its hash (64 hexadecimal digits)."
+            )
+        outside = (seq, held)
+    chain.link_strays()
+    state = chain.verify(db, full=bool(body.get("full")), outside=outside)
+    problem = state.get("problem")
+    audit.record(
+        db,
+        caller.actor,
+        "audit.verify",
+        f"Verified the audit log: {problem['text']}"
+        if problem
+        else f"Verified the audit log: it holds up to entry {(state.get('verified') or {}).get('seq')}",
+        target="audit log",
+    )
+    db.commit()
+    return chain.out(db)
+
+
+# --------------------------------------------------------------------------- #
+# Forwarding to syslog                                                        #
+# --------------------------------------------------------------------------- #
+@router.get("/forwarding")
+def read_forwarding(_: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """Where the log is sent as it is written, and how that stands: the receiver in force, the
+    backlog, the last error. The key of a client certificate is never returned."""
+    return forward.out(db)
+
+
+@router.put("/forwarding")
+def write_forwarding(
+    body: dict[str, Any] = Body(...), caller: Principal = Depends(admin_session), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Change the forwarding (only the keys that are sent change). The change is an audit entry,
+    and takes effect once the receiver that was set before took that entry: turning the
+    forwarding off, or pointing it elsewhere, is the last thing the old receiver hears."""
+    try:
+        forward.write(db, body, caller.actor)
+    except forward.ConfigError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    db.commit()
+    return forward.out(db)
+
+
+@router.post("/forwarding/test")
+def test_forwarding(caller: Principal = Depends(admin_session), db: OrmSession = Depends(get_db)) -> dict:
+    """Send a marked test message to the receiver that is saved, over a connection of its own,
+    and say what the socket said. The process that forwards does it (the backend has no way
+    out), so the answer can take a few seconds."""
+    if not forward.ready(forward.read(db)):
+        raise HTTPException(status_code=409, detail="Save a receiver first.")
+    if app_settings.AUTOMATION_WORKER == "off":
+        raise HTTPException(
+            status_code=409,
+            detail="The log is sent by the automation worker, and AUTOMATION_WORKER is off on this server.",
+        )
+    request = forward.ask_test(db)
+    audit.record(
+        db,
+        caller.actor,
+        "audit.forward.test",
+        f"Tested the syslog receiver {forward.destination(forward.read(db))}",
+        target="audit log forwarding",
+    )
+    db.commit()
+    deadline = time.time() + forward.TEST_ANSWER_WITHIN
+    while time.time() < deadline:
+        db.rollback()  # a new look at the row, and no transaction held while waiting
+        answer = forward.test_answer(db, request)
+        if answer is not None:
+            return answer
+        time.sleep(0.5)
+    return {
+        "ok": False,
+        "message": "The automation worker, which sends the log, did not answer. "
+        "Its state is in Settings → System → Workers.",
+    }

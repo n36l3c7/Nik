@@ -92,7 +92,27 @@
               <td><code>METRICS_TOKEN</code></td>
               <td>—</td>
               <td>
-                When set, <code>/api/metrics</code> answers only to <code>Authorization: Bearer &lt;token&gt;</code>.
+                A bearer token <code>/api/metrics</code> accepts beside the scrape token made on the health page (<em
+                  >Settings → System → Health</em
+                >). With neither, the route answers to nobody.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_WEB_TLS</code></td>
+              <td><code>web:443</code></td>
+              <td>
+                Where the web server listens for TLS, as the backend reaches it: the health page reads the dates of the
+                certificate it presents there. Empty when there is none to read; the host and port of your own proxy on
+                a manual install.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PROMETHEUS_MULTIPROC_DIR</code></td>
+              <td><code>/tmp/nik-metrics</code> in the image</td>
+              <td>
+                A directory, in memory, where the API processes add up the requests they counted, so that
+                <code>/api/metrics</code> gives the same totals whichever process answers. Unset, each process counts
+                for itself.
               </td>
             </tr>
             <tr>
@@ -418,8 +438,11 @@
               <td><code>METRICS_TOKEN</code></td>
               <td>—</td>
               <td>
-                Bearer token for <code>/api/metrics</code>. nginx never publishes the endpoint: scrape
-                <code>http://api:8000/api/metrics</code> from the compose network.
+                A bearer token for <code>/api/metrics</code>, accepted beside the scrape token made on the health page.
+                The route is reached through the web port and answers to a token only (<a
+                  href="deployment.html#health-and-metrics"
+                  >deployment guide</a
+                >).
               </td>
             </tr>
             <tr>
