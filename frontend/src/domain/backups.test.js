@@ -10,6 +10,7 @@ import {
   settingsForm,
   settingsProblem,
   sizeText,
+  spaceText,
   typedName,
   whereText,
 } from './backups.js'
@@ -78,6 +79,25 @@ test('the schedule in words', () => {
     'Every 6 hours, counted from 02:30 (UTC).',
   )
   assert.match(scheduleText({ ...SETTINGS.schedule, enabled: false }), /schedule is off/)
+})
+
+test('the room the backups take, now and with the settings of the form', () => {
+  const form = settingsForm(SETTINGS)
+  assert.deepEqual(spaceText({ kept: 0, count: 0, lastGood: 0 }, form), {
+    now: 'No backup is kept yet.',
+    then: 'How much these settings will take is known once a backup has been taken.',
+  })
+  const gigabyte = 1024 ** 3
+  const said = spaceText({ kept: 3 * gigabyte, count: 3, lastGood: gigabyte }, { ...form, last: '8', weeks: '4' })
+  assert.match(said.now, /^3 backups are kept now: 3(\.0+)? GB\.$/)
+  assert.match(
+    said.then,
+    /^With these settings up to 12 are kept \(8 and one for each of 4 weeks\): about 12(\.0+)? GB/,
+  )
+  assert.match(said.then, /room for one more while it is written\.$/)
+  assert.match(spaceText({ kept: gigabyte, count: 1, lastGood: gigabyte }, form).now, /^1 backup is kept now/)
+  // A number that cannot be read gives no estimate rather than a wrong one.
+  assert.equal(spaceText({ kept: gigabyte, count: 1, lastGood: gigabyte }, { ...form, last: 'many' }).then, '')
 })
 
 test('the state of a backup', () => {

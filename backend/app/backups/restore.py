@@ -192,7 +192,7 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
             checks = loader.finish(reader.manifest)
     finally:
         loader.close()
-    database.forget_in_flight(url)
+    ended = database.after_restore(url)
     _say(f"Done in {time.monotonic() - clock:.0f} s. Checked:")
     for check in checks:
         _say(f"  - {check}")
@@ -209,6 +209,11 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
             "The stored secrets (keys of instances, credentials) are readable only with the SECRET_KEY the backup "
             "was made under: it must be the one in .env. If it is lost, they have to be entered again."
         )
+    _say(
+        f"Nobody is signed in on the restored server: the {ended.get('sessions', 0)} session(s) that were open when "
+        "the backup was taken are ended. Accounts, second factors, recovery codes and the sign-in policy are as "
+        "they were."
+    )
     _say("Now start the stack, sign in, and look at: the list of incidents, a file of the store (open a sample),")
     _say("Settings → Backup (the backups this server knows), Settings → System → Workers.")
     return 0

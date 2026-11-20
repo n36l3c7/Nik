@@ -106,7 +106,19 @@
             <tr>
               <td><code>SESSION_TTL_HOURS</code></td>
               <td><code>12</code></td>
-              <td>Session lifetime.</td>
+              <td>
+                The longest a session lasts, until an admin sets another under
+                <em>Settings → Sign-in and sessions</em>: what is set there wins.
+              </td>
+            </tr>
+            <tr>
+              <td><code>TRUSTED_PROXIES</code></td>
+              <td>empty (<code>web</code> in Compose)</td>
+              <td>
+                Who <code>X-Forwarded-For</code> is believed from: host names, addresses or networks, separated by
+                commas. From anybody else the header is ignored and the client is known by the address of its
+                connection. The waits after failed sign-ins and the administrators' networks go by it.
+              </td>
             </tr>
             <tr>
               <td><code>SAMPLE_STORE</code></td>
@@ -423,7 +435,15 @@
             <tr>
               <td><code>SESSION_TTL_HOURS</code></td>
               <td><code>12</code></td>
-              <td>Session lifetime.</td>
+              <td>The longest a session lasts, until an admin sets another in Settings.</td>
+            </tr>
+            <tr>
+              <td><code>TRUSTED_PROXIES</code></td>
+              <td><code>web</code></td>
+              <td>
+                Who the backend believes about the client's address: the web container. Change it only if something else
+                than this stack's nginx hands requests to the backend.
+              </td>
             </tr>
             <tr>
               <td><code>ANALYZER_TOKEN</code></td>
@@ -563,10 +583,12 @@
             </tr>
             <tr>
               <td><code>FORWARDED_ALLOW_IPS</code></td>
-              <td><code>127.0.0.1</code> (<code>*</code> in Compose)</td>
+              <td><code>127.0.0.1</code> (empty in Compose)</td>
               <td>
-                Which proxies the backend believes about the client's address. In Compose only nginx reaches the
-                backend, so every address is accepted.
+                gunicorn's own list of proxies whose headers rewrite the address of a connection. Leave it empty: the
+                backend decides itself whom to believe (<code>TRUSTED_PROXIES</code>). With <code>*</code>, as the
+                Compose file had it before 6.7, the header is believed from whoever sends it; the policy page warns when
+                it finds that.
               </td>
             </tr>
             <tr>

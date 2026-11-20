@@ -649,10 +649,10 @@
 
       <h2 id="accounts">Accounts, sessions and the audit log</h2>
       <ul>
-        <li>Passwords are hashed with bcrypt; sessions are random tokens kept on the server, 12 hours by default.</li>
         <li>
-          Sign-in is limited per client address, and an account is locked for five minutes after ten wrong passwords in
-          a row. A password change or disabling an account ends its sessions.
+          Passwords are hashed with bcrypt; sessions are random tokens kept on the server. A session ends after eight
+          hours without use (thirty minutes for an administrator) and twelve hours at most, unless an admin sets other
+          times; what follows says how sign-in is protected beyond the password.
         </li>
         <li>
           There is always one admin that can sign in. API keys are stored as digests, carry roles and an optional
@@ -675,6 +675,127 @@
         <li>Changes by two people to the same incident are merged or refused, never silently overwritten.</li>
       </ul>
 
+      <h3 id="second-factor">A second factor at sign-in</h3>
+      <p>
+        An account can have a second factor: a time-based code (TOTP, RFC 6238: SHA-1, six digits, thirty seconds, as
+        every authenticator app makes them). An admin can make it a must for administrators (<em
+          >Settings → Sign-in and sessions</em
+        >); every other account decides for itself.
+      </p>
+      <ul>
+        <li>
+          <strong>The first step gives nothing.</strong> The right password of an account with a second factor opens no
+          session: the browser gets a ticket, in a cookie of its own (<code>HttpOnly</code>,
+          <code>SameSite=Strict</code>, sent only to the sign-in routes), good for five minutes and for the second step
+          only. The answer says that a code is needed and nothing else.
+        </li>
+        <li>
+          <strong>A code is accepted once.</strong> The server takes the code of the current half minute and of one
+          either side, compares in constant time, and remembers the last time step it accepted: the same code, or an
+          older one, is refused, also when two requests carry it at the same instant.
+        </li>
+        <li>
+          <strong>The secret</strong> is encrypted with <code>SECRET_KEY</code> where it is stored, is shown once at the
+          set-up and is never sent again. The QR code is drawn in the browser.
+        </li>
+        <li>
+          <strong>Recovery codes</strong>: ten, single-use, stored hashed like passwords, shown once. Making new ones
+          ends the old ones.
+        </li>
+        <li>
+          <strong>Required of administrators</strong>, when the switch is on: an account that holds the Admin role and
+          has no second factor is let through to the routes of the set-up and to nothing else (the API answers
+          <code>403</code> with the code <code>second_factor_required</code>), from the moment the rule is saved. There
+          is no period of grace.
+        </li>
+        <li>
+          <strong>Asked again</strong> before the second factor is turned off, new recovery codes are made or the
+          password is changed: the password and a current code. Setting a second factor up asks for the password first,
+          so that a session somebody else got hold of cannot put its own factor on the account; only a session that
+          signed in less than two minutes ago is spared the question. Wrong values there are counted like failed
+          sign-ins.
+        </li>
+        <li>
+          <strong>What it covers</strong>: every interactive sign-in, the dialog of a session that ended included. There
+          is no "remember this browser": on a platform like this one, a copied browser profile is the case a second
+          factor is for. <strong>API keys are not asked</strong>: a key is a credential of its own, as strong as it is
+          secret. Give keys the narrowest roles and an expiry, replace them regularly, and remember that a key with the
+          Admin role can create accounts and set passwords. It cannot take somebody's second factor away: that needs a
+          signed-in admin.
+        </li>
+        <li><strong>Passkeys</strong> (WebAuthn) and single sign-on are not part of this release.</li>
+      </ul>
+
+      <h3 id="sessions">Sessions</h3>
+      <ul>
+        <li>
+          The session cookie is <code>HttpOnly</code>, <code>SameSite=Lax</code> and <code>Secure</code> (unless
+          <code>COOKIE_SECURE=false</code>, for development over plain HTTP). Its value is a random 256-bit token that
+          the lists of sessions never show.
+        </li>
+        <li>
+          <strong>A sign-in always makes a new session.</strong> The one the browser held before is ended on the server,
+          and the id changes again when a second factor is turned on: an id planted in a browser beforehand is never the
+          one that becomes signed in. Signing out deletes the session on the server.
+        </li>
+        <li>
+          <strong>Idle time and lifetime</strong> are checked by the server at every request. "Use" is a request the
+          person caused: the page marks the ones it sends by itself (a list that refreshes, the count of notifications)
+          and the server does not count them, so an open tab does not keep a session alive.
+        </li>
+        <li>
+          A new password, other roles, the account disabled, its second factor turned on, off or reset end the sessions
+          of the account (the one the change is made from goes on). Everyone sees and ends their own sessions; an admin,
+          anybody's.
+        </li>
+        <li>
+          <strong>Requests from another site</strong>: besides <code>SameSite</code>, the server refuses any request
+          that changes something when the browser says it was sent by another site or by another host of the same site
+          (<code>Sec-Fetch-Site</code>), whatever cookie it carries.
+        </li>
+      </ul>
+
+      <h3 id="failed-sign-ins">Failed sign-ins</h3>
+      <ul>
+        <li>
+          Failures are counted in a row, per account and per client address, wrong codes apart from wrong passwords.
+          After five (by default) the next attempt waits thirty seconds, then twice as long after each further failure,
+          up to fifteen minutes; an attempt made during a wait is refused without being looked at. The count falls back
+          with time, and to nothing with a good sign-in.
+        </li>
+        <li>
+          <strong>No lock that an attacker can hold.</strong> A wait never exceeds the maximum, and the addresses an
+          account last signed in from are not made to wait by failures that came from elsewhere: guessing at somebody's
+          password does not keep them out of their account.
+        </li>
+        <li>
+          <strong>Nothing says whether an account exists.</strong> A name that is no account is counted, answered and
+          made to wait exactly like a wrong password, after the same work. What was typed as a name is written in the
+          audit log only when it is an account.
+        </li>
+        <li>
+          The audit log has the first failure of a run and each one past the threshold; the admins get one notice when a
+          run reaches ten.
+        </li>
+      </ul>
+
+      <h3 id="admin-networks">Administrators' networks, and the client's address</h3>
+      <p>
+        An admin can list the networks administrators are accepted from. Accounts and API keys that hold the Admin role
+        are then refused from anywhere else: at the sign-in, after the password and the code were right (so that nothing
+        tells which accounts are administrators before that), and at every request of a session that moved. A list that
+        would refuse the admin who saves it is refused unless they say they want it, and a command on the server empties
+        it (<a href="deployment.html#sign-in-and-sessions">deployment guide</a>).
+      </p>
+      <p>
+        All of this, and the waits per address, rest on the server knowing where a request comes from. The web container
+        writes the address it saw in <code>X-Forwarded-For</code>, and the backend believes that header
+        <strong>only when the connection itself comes from the web container</strong> (<code>TRUSTED_PROXIES</code>);
+        from anybody else it is ignored. Some container set-ups hide the addresses of clients from the web container
+        itself (rootless podman, Docker Desktop): the server recognises that, says on the policy page that the
+        restriction cannot work there, refuses the list, and counts failures per account only.
+      </p>
+
       <h2 id="secrets">Secrets and backups</h2>
       <ul>
         <li>
@@ -684,11 +805,11 @@
         </li>
         <li>
           <code>SECRET_KEY</code> encrypts the credentials of the instances of connectors (the keys of the
-          threat-intelligence sources among them), the <a href="#stored-credentials">stored credentials</a> they name
-          and the TLS key logs stored in the database. Changing it with <code>SECRET_KEY_PREVIOUS</code> set re-encrypts
-          all of them, the keys an instance holds beside its first included, and the backup passphrase with them. It
-          lives in <code>.env</code>, which is <strong>not</strong> in a backup unless an administrator chose to put the
-          key inside (below).
+          threat-intelligence sources among them), the <a href="#stored-credentials">stored credentials</a> they name,
+          the secrets of the accounts' second factors and the TLS key logs stored in the database. Changing it with
+          <code>SECRET_KEY_PREVIOUS</code> set re-encrypts all of them, the keys an instance holds beside its first
+          included, and the backup passphrase with them. It lives in <code>.env</code>, which is <strong>not</strong> in
+          a backup unless an administrator chose to put the key inside (below).
         </li>
       </ul>
       <h3 id="backup-security">Backups</h3>
@@ -740,7 +861,16 @@
           <strong>Restoring is not a route.</strong> No request to the API can put a backup back: it is done on the
           host, by someone who has a shell there, the file and its passphrase. An administrator of the application can
           take, test, download (the encrypted file) and delete backups; each of these is in the audit log, and deleting
-          the last good backup is asked twice.
+          the last good backup is asked twice. An administrator's <strong>API key</strong> can read the state of the
+          backups and ask for one or for a restore test, and nothing more: changing the settings or the passphrase,
+          deleting a backup and downloading one need a signed-in administrator, with the second factor and the networks
+          the sign-in policy asks of them.
+        </li>
+        <li>
+          <strong>A restored server starts with nobody signed in.</strong> A backup holds the sessions that were open
+          when it was taken; a restore (and a rollback) ends them all, with the sign-ins that were half-way and the
+          count of failed ones, so a cookie of that day opens nothing. Accounts, second factors, recovery codes and the
+          sign-in policy are restored as they were.
         </li>
         <li>
           The <strong>export of content as one file</strong> (the "Full backup" of earlier releases) no longer replaces
@@ -779,6 +909,14 @@
           how long it takes.
         </li>
         <li>Give each person an account; disable, do not delete, the account of someone who leaves.</li>
+        <li>
+          Under <em>Settings → Sign-in and sessions</em>, turn on <em>Administrators must have a second factor</em>, and
+          ask everybody else to set one up under My account. Set up your own first, and keep its recovery codes.
+        </li>
+        <li>
+          If administrators always work from the same networks, list them there. Check first what the page says of the
+          address the server sees you at: where it cannot know it, fix the deployment before relying on this.
+        </li>
         <li>
           Give an account and an API key the narrowest roles that work (Viewer for a key that only reads), and a key an
           expiry. Keep the Admin role for the few who manage the platform: an analyst who maintains the rule sets needs
@@ -822,6 +960,15 @@
           The database part of a backup is Nik's own (tables, constraints, indexes, sequences, rows), not a
           <code>pg_dump</code>: a database that holds anything Nik does not make (a view, a trigger of your own) is
           refused, loudly, rather than backed up without it.
+        </li>
+        <li>
+          Under rootless podman and Docker Desktop the web container does not see the addresses of its clients: the
+          administrators' networks cannot be used there and failed sign-ins are counted per account only. The policy
+          page says when that is the case.
+        </li>
+        <li>
+          A second factor does not protect an API key, nor the server itself: whoever can run commands in the backend
+          container can reset any account's second factor.
         </li>
         <li>Analysts can read every incident: there is no per-incident access control.</li>
         <li>

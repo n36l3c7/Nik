@@ -20,10 +20,12 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .. import ioc_history
 from .. import ioc_library as lib
+from ..core import signin_policy
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
 from ..core.security import (
     Principal,
+    check_admin_network,
     key_principal,
     now_iso,
     principal,
@@ -616,8 +618,10 @@ def _feed_caller(request: Request, db: OrmSession = Depends(get_db)) -> Principa
         caller = key_principal(db, secret)
         if caller is None:
             raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Basic"})
+        # Held to the administrators' networks like every other use of an administrator's key.
+        check_admin_network(request, signin_policy.load(db), caller.roles)
     else:
-        caller = principal(db, request.cookies.get("nik_session"), request.headers.get("X-API-Key"))
+        caller = principal(request, db, request.cookies.get("nik_session"), request.headers.get("X-API-Key"))
     if not caller.has("read"):
         raise HTTPException(status_code=403, detail="You do not have the permission this needs")
     return caller

@@ -55,7 +55,7 @@ SETTINGS_ID = 22  # which version of Nik last started on this database
 LOCK_WAIT = 30 * 60
 MIN_POSTGRES = 14
 # The revision a release ended at, for a database that never recorded its version (before 6.7).
-RELEASES = {"0047_playbook_files": "6.6.0"}
+RELEASES = {"0047_playbook_files": "6.6.1"}
 PORT = 8000
 
 

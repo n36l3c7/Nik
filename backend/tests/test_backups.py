@@ -48,6 +48,11 @@ def backups(admin, tmp_path, monkeypatch):
     (files / ("b" * 64 + ".mail")).write_bytes(b"Subject: fixture\n\nbody\n")
     monkeypatch.setattr(settings, "SAMPLE_STORE", str(files))
     monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path / "backups"))
+    # One backup a day and a late warning: the slots and the ages below are counted from these.
+    with SessionLocal() as db:
+        kept = {"schedule": dict(DAILY), "retention": {"last": 7, "weeks": 4, "upgrades": 3}, "warnAfterHours": 36}
+        config._keep(db, kept)
+        db.commit()
     created = admin.post("/api/incidents", json={"name": "Kept in the backup"})
     assert created.status_code == 201, created.text
     return admin
@@ -622,6 +627,7 @@ def test_back_up_now_and_verify_now_are_done_by_the_loop(backups):
     )
     assert shown["restoreCommand"] == f"deploy/restore.sh {name}" and listed["state"]["lastGood"]["id"] == name
     assert listed["state"]["running"] is False and listed["state"]["nextRun"]
+    assert listed["state"]["space"] == {"kept": shown["size"], "count": 1, "lastGood": shown["size"]}
     again = backups.post(f"/api/backups/{name}/verify")
     assert again.status_code == 202 and again.json()["verifyState"] == "queued"
     assert backups.get("/api/backups").json()["state"]["running"] is True
@@ -726,6 +732,12 @@ def test_a_missed_backup_and_an_old_one_are_told(backups):
 def test_a_backup_that_fails_its_test_and_a_full_directory_are_told(backups, monkeypatch):
     set_phrase(backups)
     name = runner.take(now=T0)
+    # Room for less than two backups the size of the last good one is "nearly full", however large the disk.
+    size = runner.file_of(name).stat().st_size
+    with SessionLocal() as db:
+        assert "disk" not in watch.problems(db, T0 + 5, lambda _path: Disk(10 * size, 8 * size, 2 * size))
+        tight = watch.problems(db, T0 + 5, lambda _path: Disk(10 * size, 8 * size, 2 * size - 1))
+    assert f"The next backup needs about {size // 2**20} MB." in tight["disk"]
     with SessionLocal() as db:
         row = db.get(Backup, name)
         row.verify_state, row.verify = "failed", {"passed": False, "error": "a row is missing"}
@@ -754,6 +766,31 @@ def test_a_server_with_no_passphrase_is_told_after_a_day(backups):
 # --------------------------------------------------------------------------- #
 # The routes                                                                  #
 # --------------------------------------------------------------------------- #
+def test_what_a_server_starts_with(client):
+    assert config.DEFAULTS["schedule"] == {
+        "enabled": True,
+        "every": "hours",
+        "hours": 6,
+        "at": "02:30",
+        "weekday": 6,
+        "timezone": "UTC",
+    }
+    assert config.DEFAULTS["retention"] == {"last": 8, "weeks": 4, "upgrades": 3}
+    assert config.DEFAULTS["warnAfterHours"] == 13 and config.DEFAULTS["includeKey"] is False
+    with SessionLocal() as db:
+        assert config.read(db)["schedule"] == config.DEFAULTS["schedule"]
+    # Every six hours, counted from 02:30: four runs a day.
+    day = at("2026-11-20T00:00")
+    slots = sorted({policy.latest_slot(config.DEFAULTS["schedule"], day + hour * 3600 + 1800) for hour in range(3, 27)})
+    assert [datetime.fromtimestamp(slot, timezone.utc).strftime("%d %H:%M") for slot in slots] == [
+        "20 02:30",
+        "20 08:30",
+        "20 14:30",
+        "20 20:30",
+        "21 02:30",
+    ]
+
+
 def test_the_settings_are_kept_checked_and_audited(backups):
     first = backups.get("/api/backups").json()
     assert first["settings"]["schedule"] == {**DAILY, "weekday": 6}
@@ -863,7 +900,8 @@ def test_only_an_administrator_reaches_the_backups(backups):
         key = make_key(backups, label=role, roles=[role])
         backups.cookies.clear()
         assert backups.get("/api/backups", headers=key).status_code == 403
-        assert backups.put("/api/backups/passphrase", json={"passphrase": PHRASE}, headers=key).status_code == 403
+        # The passphrase is a signed-in administrator's to set: a key, whatever its roles, is not one.
+        assert backups.put("/api/backups/passphrase", json={"passphrase": PHRASE}, headers=key).status_code == 401
         assert backups.post("/api/backups/run", headers=key).status_code == 403
         login = backups.post("/api/auth/login", json={"username": "admin", "password": "supersecret"})
         assert login.status_code == 200

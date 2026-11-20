@@ -66,10 +66,28 @@ class UserUpdate(RolesBody):
 
 
 class PasswordChange(BaseModel):
-    """A user changing their own password."""
+    """A user changing their own password; with a second factor, a current code of it
+    (or a recovery code) is asked too."""
 
     currentPassword: str
     newPassword: str
+    code: Optional[str] = None
+    recoveryCode: Optional[str] = None
+
+
+class CodeIn(BaseModel):
+    """The second step of a sign-in: a code of the second factor, or a recovery code."""
+
+    code: Optional[str] = None
+    recoveryCode: Optional[str] = None
+
+
+class IdentityIn(BaseModel):
+    """The password again, and a current code when the account has a second factor."""
+
+    password: str = ""
+    code: Optional[str] = None
+    recoveryCode: Optional[str] = None
 
 
 class UserOut(BaseModel):
@@ -83,6 +101,19 @@ class UserOut(BaseModel):
     createdAt: str
     createdBy: Optional[str] = None
     disabled: bool = False
+    # Whether the account has a second factor, and whether its roles ask for one.
+    secondFactor: bool = False
+    secondFactorRequired: bool = False
+
+
+class SessionState(BaseModel):
+    """How long the caller's session has left. ``idleSeconds`` is the limit (0: none),
+    ``idleLeft`` what is left of it, ``warnSeconds`` how long before the end the page warns."""
+
+    idleSeconds: int = 0
+    idleLeft: Optional[int] = None
+    lifetimeLeft: int = 0
+    warnSeconds: int = 0
 
 
 class BootstrapOut(BaseModel):
@@ -95,6 +126,26 @@ class UserEnvelope(BaseModel):
     """Wrapper for a single user response: {user}."""
 
     user: UserOut
+
+
+class SignedIn(UserEnvelope):
+    """A signed-in person: the account, the state of the session and, right after a
+    sign-in, what the person is told once (``notice``) and how many recovery codes are
+    left when one was just used."""
+
+    session: Optional[SessionState] = None
+    notice: Optional[str] = None
+    recoveryCodesLeft: Optional[int] = None
+
+
+class LoginOut(BaseModel):
+    """The answer to a right password: the signed-in person, or ``secondFactor`` when a
+    second step is asked first (nothing else is said, and no session exists yet)."""
+
+    user: Optional[UserOut] = None
+    session: Optional[SessionState] = None
+    notice: Optional[str] = None
+    secondFactor: Optional[dict] = None
 
 
 class UsersEnvelope(BaseModel):

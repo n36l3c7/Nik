@@ -234,14 +234,19 @@
 │   ├── db.py                       # SQLAlchemy engine / session factory
 │   ├── models.py                   # users, sessions, incidents, audit_log, settings, samples, …
 │   ├── schemas.py                  # Pydantic request/response models
-│   ├── security.py                 # bcrypt hashing, sessions, the Principal and require("&lt;permission&gt;")
+│   ├── security.py                 # bcrypt hashing, sessions (idle time, lifetime), the Principal and
+│   │                               #   require("&lt;permission&gt;"), the two refusals that carry a code
+│   ├── signin_policy.py            # The sign-in policy an admin sets: required roles, times, waits, networks
+│   ├── totp.py                     # Time-based one-time passwords (RFC 6238), each time step accepted once
+│   ├── client_address.py           # The address a request comes from: X-Forwarded-For from trusted proxies only
 │   ├── permissions.py              # The roles, the permissions and what each role grants
 │   ├── locking.py                  # Row lock every writer of an incident document takes first
 │   ├── files.py                    # read_upload (size limit while reading), safe_name,
 │   │                               #   attachment_headers (RFC 5987 download names)
 │   ├── audit.py                    # record(): the audit trail, written by the handlers;
 │   │                               #   describe_patch(): what a merge patch means (flag, note, status…)
-│   ├── vault.py                    # Encryption of API keys and TLS key logs (Fernet, HKDF of SECRET_KEY);
+│   ├── vault.py                    # Encryption of API keys, second-factor secrets and TLS key logs (Fernet,
+│   │                               #   HKDF of SECRET_KEY);
 │   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
@@ -335,6 +340,8 @@
 │   ├── offsite.py                  #   the copy off the server (SFTP), sent by the automation worker
 │   ├── upgrade.py                  #   before migrating: snapshot, rehearsal (the entrypoint runs it)
 │   └── restore.py · now.py         #   the command line behind deploy/restore.sh, rollback.sh, backup.sh
+├── signin.py                       # Signing in: waits after failures, second factors, recovery codes, sessions
+├── account.py                      # python -m app.account: reset a second factor, clear the admins' networks
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
 ├── report.py                       # Incident report: HTML (EN/IT, TLP, ATT&amp;CK) and PDF (WeasyPrint)
@@ -1025,13 +1032,28 @@
         successful <code>POST /api/auth/login</code> creates a server-side session row and sets the
         <strong>httpOnly</strong> <code>nik_session</code> cookie (with the <code>Secure</code> flag when
         <code>COOKIE_SECURE=true</code>, the default); <code>credentials: 'include'</code> on every fetch keeps it
-        flowing. Sessions expire after <code>SESSION_TTL_HOURS</code>.
+        flowing. An account with a second factor (<code>user_factors</code>, <code>recovery_codes</code>) gets a ticket
+        instead (<code>signin_tickets</code>, a cookie of its own) and its session from
+        <code>POST /api/auth/login/code</code> (<code>backend/app/signin.py</code>, <code>core/totp.py</code>). A
+        session ends when it was not used for the idle time of the sign-in policy (<code>sessions.last_used_at</code>;
+        requests the page sends by itself carry <code>X-Nik-Background</code> and do not count,
+        <code>frontend/src/lib/activity.js</code>) and at most <code>lifetimeHours</code> after the sign-in (<code
+          >SESSION_TTL_HOURS</code
+        >
+        until an admin sets it). The policy is one row of <code>settings</code> (<code>core/signin_policy.py</code>).
       </p>
       <p>
-        User shape: <code>{ id, username, roles, permissions, createdAt, createdBy, disabled }</code> — the password
-        hash never leaves the backend. A sign-in that names an unknown account does the same hashing work as a wrong
-        password, ten wrong passwords in a row lock the account for five minutes (<code>users.failed_logins</code>,
-        <code>users.locked_until</code>), and expired sessions are purged at each sign-in.
+        User shape:
+        <code
+          >{ id, username, roles, permissions, createdAt, createdBy, disabled, secondFactor, secondFactorRequired
+          }</code
+        >
+        — the password hash never leaves the backend. A sign-in that names an unknown account does the same hashing work
+        as a wrong password and is counted the same way; failures in a row make the next attempt wait, per account and
+        per address (<code>signin_attempts</code>; <code>users.failed_logins</code> and
+        <code>users.locked_until</code> are no longer read), and expired sessions are purged at each sign-in. The
+        client's address is the connection's, or the one <code>X-Forwarded-For</code> names when the connection comes
+        from a proxy of <code>TRUSTED_PROXIES</code> (<code>core/client_address.py</code>).
       </p>
       <p>
         The App shell (<code>App.jsx</code>) implements a three-state <strong>auth gate</strong>, driven by
@@ -1073,13 +1095,15 @@
       </p>
       <p>Entry shape: <code>{ id, at, actor, action, target, details, incidentId, incidentName }</code>.</p>
       <p>
-        Action strings include: <code>auth.login</code> / <code>.logout</code> / <code>.locked</code>,
-        <code>user.create</code> / <code>.update</code> / <code>.delete</code> / <code>.password</code>,
-        <code>apikey.create</code> / <code>.revoke</code>, <code>settings.update</code>, <code>incident.create</code> /
-        <code>.update</code> / <code>.delete</code> / <code>.export</code>, <code>evidence.update</code>,
-        <code>flag.add</code> / <code>.remove</code> / <code>.comment</code>, <code>note.add</code> /
-        <code>.update</code> / <code>.remove</code>, the sample, e-mail, capture and URL actions,
-        <code>backup.export</code> / <code>backup.import</code> and <code>audit.clear</code>.
+        Action strings include: <code>auth.login</code> / <code>.logout</code> / <code>.failed</code> /
+        <code>.refused</code> / <code>.code.failed</code> / <code>.factor.on</code> / <code>.factor.off</code> /
+        <code>.factor.reset</code> / <code>.recovery.new</code> / <code>.recovery.used</code> /
+        <code>.session.end</code> / <code>.policy</code>, <code>user.create</code> / <code>.update</code> /
+        <code>.delete</code> / <code>.password</code>, <code>apikey.create</code> / <code>.revoke</code>,
+        <code>settings.update</code>, <code>incident.create</code> / <code>.update</code> / <code>.delete</code> /
+        <code>.export</code>, <code>evidence.update</code>, <code>flag.add</code> / <code>.remove</code> /
+        <code>.comment</code>, <code>note.add</code> / <code>.update</code> / <code>.remove</code>, the sample, e-mail,
+        capture and URL actions, <code>backup.export</code> / <code>backup.import</code> and <code>audit.clear</code>.
       </p>
       <p>
         The <strong>Audit log</strong> section of Settings (<code>AuditLogSection.jsx</code>) reads the trail each time

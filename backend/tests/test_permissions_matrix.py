@@ -10,6 +10,8 @@ What a route may expect:
 - a tuple of permissions: the caller needs **one of** them;
 - ``"signed-in"``: any account or key, whatever its roles;
 - ``"session"``: a signed-in person (the session cookie), not an API key;
+- ``"admin-session"``: a signed-in administrator, not an API key (what must
+  not be done with a key alone: taking somebody's second factor away);
 - ``"first-run"``: open while there is no account, admin only afterwards;
 - ``"public"``: no authentication (sign-in, health, the API documentation;
   ``/api/metrics`` has its own bearer token and is not published by nginx).
@@ -37,14 +39,31 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/metrics"): "public",
     ("GET", "/api/auth/bootstrap"): "public",
     ("POST", "/api/auth/login"): "public",
+    ("POST", "/api/auth/login/code"): "public",
     ("POST", "/api/auth/logout"): "public",
     ("GET", "/api/auth/me"): "session",
+    ("GET", "/api/auth/session"): "session",
+    ("POST", "/api/auth/session/stay"): "session",
+    ("GET", "/api/auth/sessions"): "session",
+    ("POST", "/api/auth/sessions/end-others"): "session",
+    ("DELETE", "/api/auth/sessions/{session_id}"): "session",
+    ("GET", "/api/auth/second-factor"): "session",
+    ("POST", "/api/auth/second-factor/totp"): "session",
+    ("POST", "/api/auth/second-factor/totp/confirm"): "session",
+    ("POST", "/api/auth/second-factor/off"): "session",
+    ("POST", "/api/auth/second-factor/recovery-codes"): "session",
+    ("GET", "/api/auth/policy"): ("admin",),
+    ("PUT", "/api/auth/policy"): ("admin",),
     ("POST", "/api/users"): "first-run",
     ("GET", "/api/users"): ("admin",),
     ("GET", "/api/users/names"): "signed-in",
     ("PUT", "/api/users/me/password"): "session",
     ("PATCH", "/api/users/{user_id}"): ("admin",),
     ("DELETE", "/api/users/{user_id}"): ("admin",),
+    ("GET", "/api/users/{user_id}/sessions"): ("admin",),
+    ("DELETE", "/api/users/{user_id}/sessions"): ("admin",),
+    ("DELETE", "/api/users/{user_id}/sessions/{session_id}"): ("admin",),
+    ("POST", "/api/users/{user_id}/second-factor/reset"): "admin-session",
     ("GET", "/api/keys"): ("admin",),
     ("POST", "/api/keys"): ("admin",),
     ("DELETE", "/api/keys/{key_id}"): ("admin",),
@@ -402,13 +421,13 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/backup/export"): ("admin",),
     ("POST", "/api/backup/import"): ("admin",),
     ("GET", "/api/backups"): ("admin",),
-    ("PUT", "/api/backups/settings"): ("admin",),
-    ("PUT", "/api/backups/passphrase"): ("admin",),
+    ("PUT", "/api/backups/settings"): "admin-session",
+    ("PUT", "/api/backups/passphrase"): "admin-session",
     ("POST", "/api/backups/run"): ("admin",),
     ("POST", "/api/backups/destination/test"): ("admin",),
     ("POST", "/api/backups/{backup_id}/verify"): ("admin",),
-    ("DELETE", "/api/backups/{backup_id}"): ("admin",),
-    ("GET", "/api/backups/{backup_id}/download"): ("admin",),
+    ("DELETE", "/api/backups/{backup_id}"): "admin-session",
+    ("GET", "/api/backups/{backup_id}/download"): "admin-session",
     ("GET", "/api/storage"): ("admin",),
     ("GET", "/api/workers"): ("admin",),
 }
@@ -432,6 +451,9 @@ def _declared(route) -> tuple[str, ...] | str:
     found: list[tuple[str, ...] | str] = []
 
     def walk(node) -> None:
+        if node.call is security.admin_session:
+            found.append("admin-session")
+            return
         if hasattr(node.call, "permissions"):
             found.append(tuple(node.call.permissions) or "signed-in")
         elif node.call is security.principal:
@@ -444,7 +466,7 @@ def _declared(route) -> tuple[str, ...] | str:
     if dependant is not None:
         walk(dependant)
     for gate in found:  # a permission wins over the plain sign-in it is built on
-        if isinstance(gate, tuple):
+        if isinstance(gate, tuple) or gate == "admin-session":
             return gate
     return found[0] if found else "public"
 
@@ -486,7 +508,7 @@ def test_each_role_reaches_what_its_permissions_allow_and_nothing_else(admin: Te
     caller = TestClient(fastapi_app)
     wrong = []
     for (method, path), expected in EXPECTED.items():
-        if expected in ("public", "session"):
+        if expected in ("public", "session", "admin-session"):
             continue
         body = {} if method in ("POST", "PUT", "PATCH") else None
         if expected == "first-run":  # the handler checks the caller itself, after reading the body
@@ -521,5 +543,16 @@ def test_a_session_route_refuses_an_api_key(admin: TestClient):
     key = make_key(admin, label="adm", roles=["admin"])
     caller = TestClient(fastapi_app)
     for (method, path), expected in EXPECTED.items():
-        if expected == "session":
+        if expected in ("session", "admin-session"):
             assert caller.request(method, _url(path), headers=key, json={}).status_code == 401, (method, path)
+
+
+def test_an_admin_session_route_refuses_a_signed_in_account_that_is_no_admin(admin: TestClient):
+    created = admin.post("/api/users", json={"username": "anna", "password": "password1", "roles": ["analyst"]})
+    assert created.status_code == 201
+    anna = TestClient(fastapi_app)
+    assert anna.post("/api/auth/login", json={"username": "anna", "password": "password1"}).status_code == 200
+    for (method, path), expected in EXPECTED.items():
+        if expected == "admin-session":
+            assert anna.request(method, _url(path), json={}).status_code == 403, (method, path)
+            assert admin.request(method, _url(path), json={}).status_code not in (401, 403), (method, path)

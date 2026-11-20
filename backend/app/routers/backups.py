@@ -9,6 +9,14 @@ from the command line with the stack stopped (``deploy/restore.sh``).
 ``/backup/export`` and ``/backup/import`` (``routers/backup.py``) are the
 older export of incidents, accounts and settings as one JSON file. They are
 kept: that file moves content between two servers. It is not a backup.
+
+**A key or a person.** Reading the state, asking for a backup, for a restore
+test and for a test of the destination are open to an administrator's API key
+as to a signed-in administrator: a monitoring tool or a script may want them.
+Changing the settings or the passphrase, deleting a backup and downloading
+one need a signed-in administrator (``admin_session``): whoever holds a key
+alone must not be able to point the copies elsewhere, replace the passphrase
+the next backups are made under, remove the way back or take the files away.
 """
 
 from __future__ import annotations
@@ -28,7 +36,7 @@ from ..core import audit
 from ..core.config import settings as app_settings
 from ..core.db import get_db
 from ..core.models import Backup
-from ..core.security import Principal, admin_principal
+from ..core.security import Principal, admin_principal, admin_session
 
 router = APIRouter(prefix="/backups", tags=["backup"])
 
@@ -84,6 +92,8 @@ def _state(db: OrmSession) -> dict[str, Any]:
                 row.state in ("queued", "running") or row.verify_state in ("queued", "running") for row in rows
             ),
             "directory": {"path": str(folder), "disk": room},
+            # What the backups that are here take, and the size of the last good one.
+            "space": runner.space(db),
             "copies": offsite.Sftp(destination, "").where if config.ready(destination) else "",
             "problems": watch.out(db),
             "nikVersion": runner.nik_version(),
@@ -103,7 +113,7 @@ def read_backups(_: Principal = Depends(admin_principal), db: OrmSession = Depen
 
 @router.put("/settings")
 def write_settings(
-    body: dict[str, Any] = Body(...), caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    body: dict[str, Any] = Body(...), caller: Principal = Depends(admin_session), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Change the schedule (``schedule``), the retention (``retention``), the age of the last good
     backup that is warned about (``warnAfterHours``), whether ``SECRET_KEY`` goes inside the
@@ -123,7 +133,7 @@ def write_settings(
 
 @router.put("/passphrase")
 def write_passphrase(
-    body: dict[str, Any] = Body(...), caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    body: dict[str, Any] = Body(...), caller: Principal = Depends(admin_session), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Set the backup passphrase (``passphrase``). Every backup taken from now on is encrypted
     under it; the earlier ones keep the passphrase they were made with. It is never returned."""
@@ -186,7 +196,7 @@ def delete_backup(
     backup_id: str,
     confirm: str = Query(default=""),
     last_good: bool = Query(default=False, alias="lastGood"),
-    caller: Principal = Depends(admin_principal),
+    caller: Principal = Depends(admin_session),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Delete a backup: its file, and its copy off the server at the next pass. ``confirm`` must
@@ -212,7 +222,7 @@ def delete_backup(
 
 @router.get("/{backup_id}/download")
 def download_backup(
-    backup_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+    backup_id: str, caller: Principal = Depends(admin_session), db: OrmSession = Depends(get_db)
 ) -> FileResponse:
     """The file of a backup, as it is on the disk: encrypted. It can be read only with the
     passphrase it was made with (``deploy/restore.sh``, or ``container.py`` alone)."""

@@ -399,10 +399,15 @@ def _adopt(db: OrmSession, name: str) -> None:
     except (BackupError, OSError):
         return
     verified = note.get("verify") if isinstance(note.get("verify"), dict) else {}
+    kind = str(note.get("kind") or header.get("kind") or ("upgrade" if "upgrade" in name else "full"))
+    # A snapshot taken before an upgrade goes off the server like any backup, when a destination is
+    # set: it is found here, after the upgrade, and never keeps the upgrade waiting. One that was not
+    # rehearsed (and so not restored yet) is tested first, like every backup that is copied.
+    wants_copy = kind == "upgrade" and config.ready(config.read(db).get("destination") or {})
     db.add(
         Backup(
             id=name,
-            kind=str(note.get("kind") or header.get("kind") or ("upgrade" if "upgrade" in name else "full")),
+            kind=kind,
             state="done",
             created_at=str(note.get("createdAt") or header.get("createdAt") or iso(file_of(name).stat().st_mtime)),
             finished_at=note.get("finishedAt"),
@@ -412,10 +417,13 @@ def _adopt(db: OrmSession, name: str) -> None:
             label=str(note.get("label") or ""),
             requested_by=SYSTEM,
             summary={**(note.get("summary") or {}), "keyFrom": note.get("keyFrom") or header["key"].get("from")},
-            verify_state=("passed" if verified.get("passed") else "failed") if verified else "",
+            verify_state=("passed" if verified.get("passed") else "failed")
+            if verified
+            else ("queued" if wants_copy else ""),
             verified_at=verified.get("at"),
             verify={key: value for key, value in verified.items() if key != "at"},
             local=True,
+            offsite_state="pending" if wants_copy else "",
         )
     )
 
@@ -450,7 +458,11 @@ def sync(db: OrmSession, now: float | None = None, holder: str = HOLDER) -> None
             row.verify_state = "queued"  # a test that died with the server is run again
         if here != row.local:
             row.local = here
-        if not here and row.offsite_state not in ("copied", "delete"):
+        if not here and row.kind == "upgrade" and row.offsite_state == "copied":
+            # The upgrade keeps the latest few snapshots by itself, before this table can be read
+            # (upgrade._prune): the copy of one it removed here is removed there too.
+            row.offsite_state = "delete"
+        elif not here and row.offsite_state not in ("copied", "delete"):
             db.delete(row)
 
 
@@ -489,6 +501,18 @@ def apply_retention(db: OrmSession, now: float | None = None) -> list[str]:
         if row is not None:
             remove(db, row, SYSTEM, "the retention")
     return gone
+
+
+def space(db: OrmSession) -> dict[str, int]:
+    """How much the backups that are here take, and how large the last good one is: what the screen
+    reckons the room of the chosen settings from."""
+    here = list(db.scalars(select(Backup).where(Backup.local.is_(True), Backup.state == "done")))
+    good = last_good(db)
+    return {
+        "kept": sum(row.size for row in here),
+        "count": len(here),
+        "lastGood": good.size if good else 0,
+    }
 
 
 def last_good(db: OrmSession) -> Backup | None:

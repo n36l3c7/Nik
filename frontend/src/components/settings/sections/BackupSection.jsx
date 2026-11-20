@@ -25,6 +25,7 @@ import {
   settingsForm,
   settingsProblem,
   sizeText,
+  spaceText,
   typedName,
   whereText,
 } from '../../../domain/backups.js'
@@ -158,7 +159,7 @@ function PassphraseDialog({ settings, onClose, onSaved }) {
 }
 
 /** The schedule, the retention, the key and the destination: one form, saved together. */
-function SettingsForm({ settings, sends, onSaved }) {
+function SettingsForm({ settings, sends, space, onSaved }) {
   const [form, setForm] = useState(() => settingsForm(settings))
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -168,6 +169,7 @@ function SettingsForm({ settings, sends, onSaved }) {
   const loaded = JSON.stringify(settingsForm(settings))
   const dirty = JSON.stringify(form) !== loaded
   const problem = settingsProblem(form, settings)
+  const room = spaceText(space, form)
 
   // What the server keeps changed under the form (saved elsewhere): an untouched form follows it.
   const before = useRef(loaded)
@@ -340,9 +342,13 @@ function SettingsForm({ settings, sends, onSaved }) {
             />
           </label>
         </div>
+        <p aria-label="Room the backups take" className="max-w-prose text-sm text-fg">
+          {room.now} <span className="text-fg-muted">{room.then}</span>
+        </p>
         <p className="max-w-prose text-xs text-fg-muted">
-          A backup counts once it has passed its restore test. The last good one is never removed, however many came
-          after it and failed. The copy off the server follows: what is removed here is removed there.
+          A backup holds the whole store of files each time, whatever changed since the one before. A backup counts once
+          it has passed its restore test. The last good one is never removed, however many came after it and failed. The
+          copy off the server follows: what is removed here is removed there.
         </p>
         <label className="flex items-start gap-2 text-sm text-fg">
           <input
@@ -846,7 +852,7 @@ export default function BackupSection() {
             </Button>
           </div>
 
-          <SettingsForm settings={settings} sends={state.sends} onSaved={setFound} />
+          <SettingsForm settings={settings} sends={state.sends} space={state.space} onSaved={setFound} />
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">

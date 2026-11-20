@@ -54,7 +54,10 @@ def test_an_admin_changes_name_role_and_password_of_an_account(admin: TestClient
     # The incidents assigned to the account follow its new name.
     assert admin.get("/api/incidents/i1").json()["assignee"] == "anna.b"
     assert admin.get("/api/incidents?view=summary&assignee=anna.b").json()["total"] == 1
-    # A rename or a new role keeps the session; a new password ends it.
+    # A rename keeps the session; a new role or a new password ends it.
+    assert session.get("/api/auth/me").status_code == 401
+    session = _signed_in("anna.b", "password1")
+    assert admin.patch(f"/api/users/{anna['id']}", json={"username": "anna.b"}).status_code == 200
     assert session.get("/api/auth/me").json()["user"]["username"] == "anna.b"
     assert admin.patch(f"/api/users/{anna['id']}", json={"password": "another-secret"}).status_code == 200
     assert session.get("/api/auth/me").status_code == 401
@@ -146,50 +149,44 @@ def test_a_user_changes_their_own_password(admin: TestClient):
 # --------------------------------------------------------------------------- #
 # Sign-in protections
 # --------------------------------------------------------------------------- #
-def test_an_account_is_locked_after_too_many_wrong_passwords(admin: TestClient, monkeypatch):
-    from app.routers import auth
-
+def test_an_account_waits_after_too_many_wrong_passwords(admin: TestClient):
+    """The waits themselves, per account and per address, are the subject of test_signin.py."""
     fastapi_app.state.limiter.enabled = False
     try:
-        monkeypatch.setattr(auth, "MAX_FAILED_LOGINS", 3)
+        admin.put("/api/auth/policy", json={"attemptsBeforeWait": 3})
         anna = _user(admin)
         client = TestClient(fastapi_app)
         for _ in range(3):
             assert client.post("/api/auth/login", json={"username": "anna", "password": "nope"}).status_code == 401
-        locked = client.post("/api/auth/login", json={"username": "anna", "password": "password1"})
-        assert locked.status_code == 429 and "try again in 5 minutes" in locked.json()["detail"]
-        assert "auth.locked" in _actions(admin)
-        # An unknown account is answered like a wrong password, however often.
-        for _ in range(4):
-            assert client.post("/api/auth/login", json={"username": "ghost", "password": "x"}).status_code == 401
-        # An admin's password reset unlocks it.
+        waits = client.post("/api/auth/login", json={"username": "anna", "password": "password1"})
+        assert waits.status_code == 429 and "try again in 30 seconds" in waits.json()["detail"]
+        assert "auth.failed" in _actions(admin)
+        # An admin's password reset ends the wait.
         admin.patch(f"/api/users/{anna['id']}", json={"password": "fresh-secret"})
         _signed_in("anna", "fresh-secret")
     finally:
         fastapi_app.state.limiter.enabled = True
 
 
-def test_a_good_sign_in_resets_the_count_and_purges_expired_sessions(admin: TestClient, monkeypatch):
+def test_a_good_sign_in_resets_the_count_and_purges_expired_sessions(admin: TestClient):
     from app.core.db import SessionLocal
     from app.core.models import Session as SessionModel
-    from app.core.models import User
-    from app.routers import auth
+    from app.core.models import SigninAttempt, User
 
-    monkeypatch.setattr(auth, "MAX_FAILED_LOGINS", 3)
     _user(admin)
     client = TestClient(fastapi_app)
     for _ in range(2):
         client.post("/api/auth/login", json={"username": "anna", "password": "nope"})
     with SessionLocal() as db:
         anna = db.scalar(sa.select(User).where(User.username == "anna"))
-        assert anna.failed_logins == 2
+        assert [row.failures for row in db.scalars(sa.select(SigninAttempt))] == [2]
         db.add(
             SessionModel(token="old", user_id=anna.id, created_at="2020-01-01", expires_at="2020-01-02T00:00:00+00:00")
         )
         db.commit()
     _signed_in("anna", "password1")
     with SessionLocal() as db:
-        assert db.scalar(sa.select(User).where(User.username == "anna")).failed_logins == 0
+        assert db.scalars(sa.select(SigninAttempt)).all() == []
         assert db.get(SessionModel, "old") is None
 
 

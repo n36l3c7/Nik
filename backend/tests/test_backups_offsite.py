@@ -239,6 +239,68 @@ def test_a_copy_that_is_gone_from_the_destination_is_sent_again_or_forgotten(sec
     assert "The destination no longer holds: nik-20260101-000000" in audit_lines("backup.offsite")
 
 
+def test_a_snapshot_taken_before_an_upgrade_is_copied_and_its_copy_follows_its_retention(second_host):
+    from app.backups import container
+
+    client, server = second_host
+
+    def snapshot(at: float, verified: bool) -> str:
+        """A snapshot as the upgrade leaves it: a file and its note in the directory, no row yet."""
+        name = runner.new_name("upgrade", at)
+        with SessionLocal() as db:
+            key = runner.snapshot_key(db)
+        note = runner.write_file(name, key, kind="upgrade", label="Before the upgrade from 6.6.1 to 6.7.0", now=at)
+        if verified:  # the rehearsal restored it
+            runner.write_note({**note, "verify": {"passed": True, "checks": ["rehearsed"], "at": runner.iso(at)}})
+        return name
+
+    first = snapshot(T0, verified=True)
+    with SessionLocal() as db:
+        runner.sync(db)
+        db.commit()
+    row = row_of(first)
+    assert (row.kind, row.verify_state, row.offsite_state) == ("upgrade", "passed", "pending")
+    assert offsite.ship(now=T0 + 10) == [f"copied:{first}"]
+    assert remote(server) == [f"{first}.json", f"{first}.nikbak"]
+    assert (server.root / "nik-backups" / f"{first}.nikbak").read_bytes().startswith(container.MAGIC)
+    # One that was not rehearsed is tested before it is sent, like every backup.
+    second = snapshot(T0 + 60, verified=False)
+    with SessionLocal() as db:
+        runner.sync(db)
+        db.commit()
+    assert (row_of(second).verify_state, row_of(second).offsite_state) == ("queued", "pending")
+    assert offsite.ship(now=T0 + 70) == [], "not before its test"
+    assert runner.verify(second) is True
+    assert offsite.ship(now=T0 + 80) == [f"copied:{second}"]
+    # A copy that fails is told like the others, and nothing waited for it.
+    third = snapshot(T0 + 120, verified=True)
+    with SessionLocal() as db:
+        runner.sync(db)
+        db.commit()
+    client.put("/api/backups/settings", json={"destination": {"hostKey": "SHA256:" + "A" * 43}})
+    assert offsite.ship(now=T0 + 130) == [f"failed:{third}"]
+    with SessionLocal() as db:
+        assert f"The copy of the backup {third} off the server failed" in watch.problems(db, T0 + 140, roomy)["offsite"]
+    client.put("/api/backups/settings", json={"destination": {"hostKey": server.host_line}})
+    assert offsite.ship(now=T0 + 4000) == [f"copied:{third}"]
+    # The upgrade keeps the latest few by itself, by the files: the copy of one it removed goes too.
+    for path in (runner.file_of(first), runner.note_of(first)):
+        path.unlink()
+    with SessionLocal() as db:
+        runner.sync(db)
+        db.commit()
+    assert row_of(first).offsite_state == "delete"
+    assert offsite.ship(now=T0 + 4100) == [f"removed:{first}"]
+    assert remote(server) == sorted(f"{name}{suffix}" for name in (second, third) for suffix in (".json", ".nikbak"))
+    # And the retention of the screen (keep 3, here 1) removes it on both sides.
+    client.put("/api/backups/settings", json={"retention": {"upgrades": 1}})
+    with SessionLocal() as db:
+        assert runner.apply_retention(db, T0 + 4200) == [second]
+        db.commit()
+    assert offsite.ship(now=T0 + 4300) == [f"removed:{second}"]
+    assert remote(server) == [f"{third}.json", f"{third}.nikbak"]
+
+
 def test_the_test_button_reports_the_key_the_server_presents(second_host, monkeypatch):
     client, server = second_host
     with SessionLocal() as db:

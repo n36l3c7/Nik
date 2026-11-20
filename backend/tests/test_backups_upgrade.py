@@ -313,9 +313,13 @@ def test_a_backup_is_restored_on_an_empty_server(elsewhere, capsys):
     assert ("nothing to migrate" in said) == (database.about()["revision"] == HEAD)
     assert users_in(scratch.url) == ["admin"]
     # The backup holds its own row as it was while it was written ("running"): not on the restored server.
+    # Nor is anybody signed in there: the session that was open when the backup was taken is ended.
+    assert "Nobody is signed in on the restored server: the 1 session(s)" in said
     other = sa.create_engine(scratch.url)
     with other.connect() as conn:
         assert conn.execute(sa.text("SELECT count(*) FROM backups")).scalar() == 0
+        assert conn.execute(sa.text("SELECT count(*) FROM sessions")).scalar() == 0
+        assert conn.execute(sa.text("SELECT count(*) FROM users")).scalar() == 1
     other.dispose()
     restored = {
         path.relative_to(target_store).as_posix(): path.read_bytes()

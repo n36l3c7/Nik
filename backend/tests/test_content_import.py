@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from app.core.db import Base, SessionLocal, engine
-from app.core.models import AuditEntry, Incident, Setting, User
+from app.core.models import AuditEntry, Incident, Setting, User, UserFactor
 from app.core.models import Session as SessionModel
 
 
@@ -36,6 +36,11 @@ def test_an_import_adds_what_is_not_here_and_changes_nothing_that_is(admin: Test
         db.commit()
     made = admin.post("/api/automation/credentials", json={"name": "kept_key", "kind": "secret", "value": "v"})
     assert made.status_code == 201, made.text
+    # A second factor of an account that is here: the file knows nothing of factors.
+    with SessionLocal() as db:
+        vera_id = db.query(User).filter_by(username="vera").one().id
+        db.add(UserFactor(id="f-vera", user_id=vera_id, kind="totp", secret="kept", created_at="t", confirmed_at="t"))
+        db.commit()
 
     file = admin.get("/api/backup/export").json()
     file["users"] = [
@@ -69,7 +74,10 @@ def test_an_import_adds_what_is_not_here_and_changes_nothing_that_is(admin: Test
     with SessionLocal() as db:
         vera = db.query(User).filter_by(username="vera").one()
         assert vera.password_hash == vera_hash and vera.roles == ["viewer"]
-        assert db.query(User).filter_by(username="paul").one().roles == ["analyst"]
+        paul = db.query(User).filter_by(username="paul").one()
+        assert paul.roles == ["analyst"] and paul.signin_addresses is None and paul.signin_notice is None
+        # The account that arrived has no second factor; the one that was here keeps its own.
+        assert [(row.id, row.user_id, row.secret) for row in db.query(UserFactor)] == [("f-vera", vera_id, "kept")]
         assert db.get(Setting, 5).doc == {"signIn": {"secondFactor": "required"}}
         assert db.get(Setting, 20).doc == {"passphrase": "kept-encrypted"}
         assert db.get(Setting, 1).doc == {"keywords": ["of this server"]}

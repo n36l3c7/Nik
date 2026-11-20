@@ -13,8 +13,16 @@
  * carries the HTTP `status` and, as `data`, the whole answer; a network
  * failure has neither.
  *
- * A 401 outside `/auth/*` means the session ended while the app was open: the
- * handler registered with `onUnauthorized` (AuthContext) asks to sign in again.
+ * A 401 means the session ended while the app was open (except from the routes
+ * of the sign-in itself, where it is an answer): the handler registered with
+ * `onUnauthorized` (AuthContext) asks to sign in again.
+ * A 403 that carries a `code` is a refusal the whole app must hear of (the
+ * account has to set a second factor up, the administrator is not on a listed
+ * network): the handler registered with `onRefused` gets it.
+ *
+ * A request sent while the person is doing nothing is the page's own (a list
+ * that refreshes): it carries `X-Nik-Background`, and the server does not count
+ * it as the session being used (lib/activity.js).
  *
  * 204 (No Content) resolves to `null`; 304 (Not Modified, after a conditional
  * request with `If-None-Match`) resolves to the `NOT_MODIFIED` sentinel.
@@ -23,7 +31,10 @@
  * (auth, audit, settings, incidents) builds on top of it.
  */
 
+import { noteForeground, requestIsBackground } from '../lib/activity.js'
+
 const BASE = '/api'
+const BACKGROUND_HEADER = 'X-Nik-Background'
 
 /** Returned instead of a payload when the server answers 304 Not Modified. */
 export const NOT_MODIFIED = Symbol('NOT_MODIFIED')
@@ -35,8 +46,33 @@ export function onUnauthorized(handler) {
   unauthorizedHandler = handler
 }
 
+// A 401 from these is an answer, not a session that ended: a wrong password, nobody signed in yet,
+// the state of a session whoever asks deals with.
+const NOT_A_SESSION_END = /^\/auth\/(login|logout|me|bootstrap|session)(\/|\?|$)/
+
 function reportUnauthorized(status, path) {
-  if (status === 401 && !path.startsWith('/auth/')) unauthorizedHandler?.()
+  if (status === 401 && !NOT_A_SESSION_END.test(path)) unauthorizedHandler?.()
+}
+
+let refusedHandler = null
+
+/** Register what happens when the server refuses a signed-in client with a code (`{ detail, code }`). */
+export function onRefused(handler) {
+  refusedHandler = handler
+}
+
+function reportRefused(status, path, payload) {
+  // The answers of a sign-in are shown where the sign-in is.
+  if (status === 403 && typeof payload?.code === 'string' && !path.startsWith('/auth/login')) {
+    refusedHandler?.(payload.code, typeof payload.detail === 'string' ? payload.detail : '')
+  }
+}
+
+/** Mark a request as the page's own or the person's; returns the headers to send. */
+function withActivity(headers, background) {
+  if (background ?? requestIsBackground()) return { ...headers, [BACKGROUND_HEADER]: '1' }
+  noteForeground()
+  return headers
 }
 
 /**
@@ -49,6 +85,8 @@ function reportUnauthorized(status, path) {
  * @param {AbortSignal} [opts.signal]  Cancels the request when aborted.
  * @param {string} [opts.contentType]  Body media type (default application/json).
  * @param {(headers: Headers) => void} [opts.onHeaders]  Receives the response headers (ETag).
+ * @param {boolean} [opts.background]  Says whose request it is instead of asking lib/activity.js:
+ *        true for one the page sends by itself whatever the person is doing.
  * @param {(p: {received: number, total: number|null}) => void} [opts.onProgress]
  *        Download progress while the response body streams in; `total` is
  *        null when the size is unknown (no Content-Length, or compressed).
@@ -57,11 +95,16 @@ function reportUnauthorized(status, path) {
  * @throws {Error} With the server's `detail` message on non-2xx; an aborted
  *                 request rejects with the fetch AbortError.
  */
-async function request(method, path, body, { headers = {}, signal, contentType, onProgress, onHeaders } = {}) {
+async function request(
+  method,
+  path,
+  body,
+  { headers = {}, signal, contentType, onProgress, onHeaders, background } = {},
+) {
   const options = {
     method,
     credentials: 'include', // send/receive the httpOnly session cookie
-    headers: { ...headers },
+    headers: withActivity({ ...headers }, background),
     signal,
   }
 
@@ -103,9 +146,15 @@ async function request(method, path, body, { headers = {}, signal, contentType, 
     const detail =
       (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
     reportUnauthorized(response.status, path)
+    reportRefused(response.status, path, payload)
     // `query`: for a query that cannot be read, where and why (position, code, suggestion).
     // `data`: whatever else the server said (the problems of a playbook, the result of a script's test).
-    throw Object.assign(new Error(detail), { status: response.status, query: payload?.query ?? null, data: payload })
+    throw Object.assign(new Error(detail), {
+      status: response.status,
+      code: typeof payload?.code === 'string' ? payload.code : null,
+      query: payload?.query ?? null,
+      data: payload,
+    })
   }
 
   return payload
@@ -159,6 +208,8 @@ export function upload(path, file, { onProgress, signal, fields = {}, method = '
     const xhr = new XMLHttpRequest()
     xhr.open(method, `${BASE}${path}`)
     xhr.withCredentials = true
+    // A file is sent because somebody chose it.
+    noteForeground()
     xhr.responseType = 'json'
     if (onProgress) {
       xhr.upload.onprogress = (event) => onProgress({ sent: event.loaded, total: event.total })
@@ -171,6 +222,7 @@ export function upload(path, file, { onProgress, signal, fields = {}, method = '
         return
       }
       reportUnauthorized(xhr.status, path)
+      reportRefused(xhr.status, path, xhr.response)
       reject(Object.assign(new Error(xhr.response?.detail || `Request failed (${xhr.status})`), { status: xhr.status }))
     }
     signal?.addEventListener('abort', () => xhr.abort())
@@ -191,7 +243,7 @@ export async function postForBlob(path, body, { signal } = {}) {
     response = await fetch(`${BASE}${path}`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withActivity({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body ?? {}),
       signal,
     })

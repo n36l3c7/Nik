@@ -38,11 +38,15 @@ PASSPHRASE_MIN = 12
 PASSPHRASE_MAX = 1000
 PREVIOUS_KEPT = 10
 
+# Until an administrator sets something else: a backup every six hours, counted from 02:30 UTC
+# (02:30, 08:30, 14:30, 20:30); the latest eight good ones kept (two days of them) and one a week
+# for four weeks; the administrators told when the last good one is older than thirteen hours
+# (two runs missed, and an hour).
 DEFAULTS: dict[str, Any] = {
-    "schedule": {"enabled": True, "every": "day", "hours": 6, "at": "02:30", "weekday": 6, "timezone": "UTC"},
-    "retention": {"last": 7, "weeks": 4, "upgrades": 3},
+    "schedule": {"enabled": True, "every": "hours", "hours": 6, "at": "02:30", "weekday": 6, "timezone": "UTC"},
+    "retention": {"last": 8, "weeks": 4, "upgrades": 3},
     # The administrators are told when the last good backup is older than this.
-    "warnAfterHours": 36,
+    "warnAfterHours": 13,
     "includeKey": False,
     "destination": {"kind": ""},
 }

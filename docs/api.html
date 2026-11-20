@@ -159,9 +159,32 @@
       <p>
         A browser session is opened with <code>POST /api/auth/login</code> (<code>{ username, password }</code>, at most
         10 attempts a minute per address) and closed with <code>POST /api/auth/logout</code>;
-        <code>GET /api/auth/me</code> returns the signed-in user and <code>GET /api/auth/bootstrap</code> says whether
-        any account exists. After ten wrong passwords in a row an account answers <code>429</code> for five minutes; a
-        disabled account answers <code>403</code>.
+        <code>GET /api/auth/me</code> returns the signed-in user and the state of the session, and
+        <code>GET /api/auth/bootstrap</code> says whether any account exists. A disabled account answers
+        <code>403</code>.
+      </p>
+      <p>
+        For an account that has a <strong>second factor</strong> the right password opens no session: the answer is
+        <code>{ "secondFactor": { "kinds": ["totp"], "recoveryCodes": true, "seconds": 300 } }</code> and a cookie that
+        is good for <code>POST /api/auth/login/code</code> only (<code>{ code }</code>, or
+        <code>{ recoveryCode }</code>), which opens the session. A code is taken once. After five failures in a row
+        (passwords, or codes, counted apart, per account and per address) an attempt is answered <code>429</code> with
+        <code>Retry-After</code>, for longer after each further failure up to a maximum; an account that does not exist
+        is answered exactly like a wrong password.
+      </p>
+      <p>
+        Two refusals carry a <code>code</code> beside <code>detail</code>, both <code>403</code>:
+        <code>second_factor_required</code> (the account is an administrator's, administrators must have a second factor
+        and it has none: only <code>/api/auth/me</code>, <code>/api/auth/session</code> and the set-up routes answer)
+        and <code>admin_network</code> (the caller holds the Admin role and is not on one of the administrators'
+        networks). The second one concerns API keys too; a key is never asked for a second factor. A request that
+        changes something and that the browser marks as sent by another site (<code>Sec-Fetch-Site</code>) is refused
+        with <code>403</code> and the code <code>cross_site</code>.
+      </p>
+      <p>
+        The interface marks the requests it sends by itself (lists that refresh) with the header
+        <code>X-Nik-Background</code>: they are answered and do not count as the session being used. A client that holds
+        a session and wants the same sends that header too.
       </p>
 
       <h2 id="endpoints">Endpoints</h2>
@@ -1095,9 +1118,9 @@
               <td>
                 Change an account (<strong>admin</strong>): any of
                 <code>{ username, roles, password, disabled }</code>. A new name is carried to the incidents assigned to
-                the account; a new password or <code>disabled: true</code> ends its sessions; new roles take effect at
-                its next request. <code>400</code> for an unknown or empty list of roles, when it would leave no admin
-                able to sign in, or when the caller would take away their own <code>admin</code> role.
+                the account; a new password, other roles or <code>disabled: true</code> end its sessions.
+                <code>400</code> for an unknown or empty list of roles, when it would leave no admin able to sign in, or
+                when the caller would take away their own <code>admin</code> role.
               </td>
             </tr>
             <tr>
@@ -1108,7 +1131,70 @@
               <td><code>PUT /api/users/me/password</code></td>
               <td>
                 The signed-in user changes their own password (<code>{ currentPassword, newPassword }</code>, session
-                only); the account's other sessions end.
+                only; with a second factor also <code>code</code> or <code>recoveryCode</code>); the account's other
+                sessions end.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET/DELETE /api/users/{id}/sessions</code></td>
+              <td>
+                The open sessions of an account, and ending all of them (<strong>admin</strong>): each has an
+                <code>id</code>, <code>createdAt</code>, <code>lastUsedAt</code>, <code>address</code>,
+                <code>userAgent</code>, <code>endsAt</code> and <code>current</code>.
+                <code>DELETE /api/users/{id}/sessions/{sessionId}</code> ends one. A session that is ended is refused at
+                its next request.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/users/{id}/second-factor/reset</code></td>
+              <td>
+                Take the second factor of another account away, with its recovery codes and sessions (a signed-in
+                <strong>admin</strong>: never an API key, never the caller's own account).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/auth/session</code></td>
+              <td>
+                How long the caller's session has left (session only):
+                <code>{ idleSeconds, idleLeft, lifetimeLeft, warnSeconds }</code>. Asking never counts as use;
+                <code>POST /api/auth/session/stay</code> does, and answers the same.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/auth/sessions</code></td>
+              <td>
+                The open sessions of the caller's account (session only).
+                <code>DELETE /api/auth/sessions/{sessionId}</code> ends one (the caller's own: a sign-out),
+                <code>POST /api/auth/sessions/end-others</code> all but the caller's.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/auth/second-factor</code></td>
+              <td>
+                The second factor of the caller's account (session only):
+                <code>{ factors, recoveryCodesLeft, required, kinds }</code>.
+                <code>POST /api/auth/second-factor/totp</code> starts the set-up and answers the secret and its
+                <code>otpauth://</code> address, once. It takes <code>{ password }</code>: without it the answer is
+                <code>400</code> with the code <code>password_required</code>, unless the session signed in less than
+                two minutes ago; a wrong password is counted like a failed sign-in.
+                <code>POST …/totp/confirm</code> (<code>{ code }</code>) turns it on and answers the ten
+                <code>recoveryCodes</code>, once. <code>POST …/recovery-codes</code> makes new ones and
+                <code>POST …/off</code> turns it off: both take <code>{ password, code }</code> (or
+                <code>recoveryCode</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET/PUT /api/auth/policy</code></td>
+              <td>
+                The sign-in policy (<strong>admin</strong>): <code>adminSecondFactor</code> (true or false: whether the
+                accounts that hold the administrator's permission must have a second factor; nobody else can be required
+                to), <code>idleMinutes</code>, <code>idleMinutesAdmin</code>, <code>lifetimeHours</code>,
+                <code>attemptsBeforeWait</code>, <code>firstWaitSeconds</code>, <code>maxWaitMinutes</code>,
+                <code>notifyAfter</code>, <code>adminNetworks</code>. <code>PUT</code> takes any of them. The answer
+                also holds the defaults, the limits of each number and <code>address</code>: what the server sees of the
+                caller, and whether it can know where its clients are. A list of networks that would refuse the caller
+                is answered <code>409</code> with the code <code>locks_you_out</code> or <code>address_unknown</code>,
+                unless <code>confirm: true</code> is sent with it.
               </td>
             </tr>
             <tr>
@@ -1138,11 +1224,10 @@
                 retention, <code>warnAfterHours</code>, <code>includeKey</code>, <code>destination</code>;
                 <code>passphraseSet</code> and <code>destination.secretSet</code> say whether a secret is there, no
                 route returns one), <code>state</code> (<code>lastGood</code>, <code>nextRun</code>,
-                <code>running</code>, the directory and its free room, where copies go, <code>problems</code>) and
-                <code>backups</code>, the latest first: <code>id</code> (the name of the file), <code>kind</code> (<code
-                  >full</code
-                >
-                | <code>upgrade</code>), <code>state</code> (<code>queued</code> | <code>running</code> |
+                <code>running</code>, the directory and its free room, <code>space</code>: what the kept backups take
+                and the size of the last good one, where copies go, <code>problems</code>) and <code>backups</code>, the
+                latest first: <code>id</code> (the name of the file), <code>kind</code> (<code>full</code> |
+                <code>upgrade</code>), <code>state</code> (<code>queued</code> | <code>running</code> |
                 <code>done</code> | <code>failed</code>), <code>verifyState</code> (<code>queued</code> |
                 <code>running</code> | <code>passed</code> | <code>failed</code>) with <code>verify.checks</code> or
                 <code>verify.error</code>, <code>offsiteState</code> (<code>pending</code> | <code>copied</code> |
@@ -1159,14 +1244,14 @@
                 <code>destination</code> (<code>kind</code>: <code>sftp</code> or empty, <code>host</code>,
                 <code>port</code>, <code>user</code>, <code>auth</code>: <code>key</code> | <code>password</code>,
                 <code>secret</code>, <code>hostKey</code>, <code>path</code>). Only the keys sent change; answers as
-                <code>GET /api/backups</code> (<strong>admin</strong>).
+                <code>GET /api/backups</code> (a <strong>signed-in admin</strong>: not an API key).
               </td>
             </tr>
             <tr>
               <td><code>PUT /api/backups/passphrase</code></td>
               <td>
-                <code>{ passphrase }</code>: set or change the backup passphrase, 12 characters at least
-                (<strong>admin</strong>). It is never returned.
+                <code>{ passphrase }</code>: set or change the backup passphrase, 12 characters at least (a
+                <strong>signed-in admin</strong>: not an API key). It is never returned.
               </td>
             </tr>
             <tr>
@@ -1184,13 +1269,17 @@
             </tr>
             <tr>
               <td><code>GET /api/backups/{id}/download</code></td>
-              <td>The file of a backup, encrypted as it is on the disk (<strong>admin</strong>; audited).</td>
+              <td>
+                The file of a backup, encrypted as it is on the disk (a <strong>signed-in admin</strong>: not an API
+                key; audited).
+              </td>
             </tr>
             <tr>
               <td><code>DELETE /api/backups/{id}?confirm={id}</code></td>
               <td>
-                Delete a backup and, at the next pass, its copy off the server (<strong>admin</strong>).
-                <code>confirm</code> must be its name; the last good backup also needs <code>lastGood=true</code>.
+                Delete a backup and, at the next pass, its copy off the server (a <strong>signed-in admin</strong>: not
+                an API key). <code>confirm</code> must be its name; the last good backup also needs
+                <code>lastGood=true</code>.
               </td>
             </tr>
             <tr>

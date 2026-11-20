@@ -522,30 +522,48 @@ def _dump_sqlite(writer: Writer, url: URL) -> dict[str, Any]:
     }
 
 
-def forget_in_flight(url: URL) -> int:
-    """After a restore: forget the backups that were being taken when the dump was read.
+# What a restored database must not keep, though the backup held it: (table, condition or "").
+# - the backups that were being taken when the dump was read: a backup holds the table of the
+#   backups as it was while that very backup was written, so its own row says "running";
+# - the sessions that were open, and the sign-ins that were half-way: nobody stays signed in on a
+#   server that was put back (the cookies of that day may be anybody's by now);
+# - the failed sign-ins that were being counted: the waits they imposed are of another day;
+# - the leases: the processes that held them are not the ones that start now.
+# Accounts, second factors, recovery codes and the sign-in policy are kept: they are the server.
+AFTER_RESTORE: tuple[tuple[str, str], ...] = (
+    ("backups", "state IN ('queued', 'running')"),
+    ("sessions", ""),
+    ("signin_tickets", ""),
+    ("signin_attempts", ""),
+    ("leases", ""),
+)
 
-    A backup holds the table of the backups as it was while that very backup
-    was being written, so its own row says "running". On the restored server
-    nothing is running: left there, the row would be read as a backup that
-    died. Returns how many rows went.
-    """
-    statement = "DELETE FROM backups WHERE state IN ('queued', 'running')"
+
+def after_restore(url: URL) -> dict[str, int]:
+    """Clear what belongs to the moment the backup was taken and not to the server that starts
+    from it (``AFTER_RESTORE``). A table that is not there (a backup of an earlier version) is
+    skipped. Returns how many rows went from each table."""
+    gone: dict[str, int] = {}
     if not is_postgres(url):
         db = sqlite3.connect(_sqlite_path(url))
         try:
-            if not db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'backups'").fetchone():
-                return 0
-            gone = db.execute(statement).rowcount
+            there = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            for table, condition in AFTER_RESTORE:
+                if table in there:
+                    where = f" WHERE {condition}" if condition else ""
+                    gone[table] = db.execute(f"DELETE FROM {table}{where}").rowcount  # noqa: S608 - names written above
             db.commit()
-            return gone
         finally:
             db.close()
+        return gone
     with _pg(url) as conn, conn.cursor() as cur:
-        if "backups" not in _pg_tables(cur):
-            return 0
-        cur.execute(statement)
-        return cur.rowcount
+        there = set(_pg_tables(cur))
+        for table, condition in AFTER_RESTORE:
+            if table in there:
+                where = f" WHERE {condition}" if condition else ""
+                cur.execute(f"DELETE FROM public.{table}{where}")  # noqa: S608 - names written above
+                gone[table] = cur.rowcount
+    return gone
 
 
 # --------------------------------------------------------------------------- #

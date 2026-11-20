@@ -29,6 +29,11 @@ are compared with the local file: only then is the copy counted. The small
 ``.json`` of the backup goes beside it, so that the other machine can tell
 what its files are without their passphrase.
 
+**Snapshots taken before upgrades** are copied too, with their own count
+kept there as here. The upgrade does not wait for it: the snapshot is found
+in the directory once the server is up, and sent like any backup; a copy
+that fails is told to the administrators like any other.
+
 The connection goes straight to the host (SFTP does not go through an HTTP
 proxy): the destination must be reachable from the network of the
 automation worker.

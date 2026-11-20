@@ -9,6 +9,7 @@
  *   id     its own key
  *   what   what it is, as the question names it: "The playbook"
  *   name   the name of the thing, when it has one: "Phishing triage"
+ *   sentence  optional: the whole sentence the question says, for what is not a change that was typed
  *   path   the address shown when it began to hold changes
  *   stays  optional: (path) => true for the addresses it stays on screen at
  *          (the tabs of one form each have an address)
@@ -64,8 +65,12 @@ export function lostBy(entries, { path = null, only = null, except = null, here 
   return others.filter((entry) => !staysAt(entry, path))
 }
 
-/** "The playbook Phishing triage has changes that are not saved." in its parts: the name is set apart. */
+/**
+ * "The playbook Phishing triage has changes that are not saved." in its parts: the name is set apart.
+ * What would be lost without being a change (codes that are shown once) says its own `sentence`.
+ */
 export function sentenceOf(entry) {
+  if (entry.sentence) return { before: String(entry.sentence).trim(), name: '', after: '' }
   const what = String(entry.what || 'This form').trim()
   const name = String(entry.name ?? '').trim()
   return { before: name ? `${what} ` : what, name, after: ' has changes that are not saved.' }

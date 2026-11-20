@@ -137,8 +137,10 @@ def problems(db: OrmSession, now: float | None = None, usage=shutil.disk_usage) 
             )
 
     if config.ready(doc.get("destination") or {}):
-        for row in rows:
-            if row.state != "done" or not row.local:
+        # Snapshots taken before upgrades are copied too: the latest of everything that is here.
+        every = db.scalars(select(Backup).order_by(Backup.created_at.desc()))
+        for row in every:
+            if row.state != "done" or not row.local or row.offsite_state == "":
                 continue
             if row.offsite_state == "failed":
                 why = (row.offsite or {}).get("error") or "no reason was kept"
@@ -158,11 +160,14 @@ def _disk(rows: list[Backup], usage) -> dict[str, str]:
     except OSError:
         return {}
     good = next((row for row in rows if row.state == "done" and row.verify_state == "passed"), None)
-    wanted = 2 * (good.size if good else 0)
-    if disk.total and (disk.free * 100 < disk.total * DISK_PERCENT or disk.free < wanted):
+    # A backup copies the whole store each time: the next one is expected to be as large as the
+    # last, and is written before the retention removes an older one. Room for two is the margin.
+    expected = good.size if good else 0
+    if disk.total and (disk.free * 100 < disk.total * DISK_PERCENT or disk.free < 2 * expected):
+        needs = f" The next backup needs about {expected // 2**20} MB." if expected else ""
         return {
-            "disk": f"The backup directory is nearly full: {disk.free // 2**20} MB free of {disk.total // 2**20} MB. "
-            "Keep fewer backups, or give it more room."
+            "disk": f"The backup directory is nearly full: {disk.free // 2**20} MB free of {disk.total // 2**20} MB."
+            f"{needs} Keep fewer backups, or give it more room."
         }
     return {}
 

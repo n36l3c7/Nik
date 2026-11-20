@@ -36,15 +36,15 @@ export function settingsForm(settings) {
   const destination = settings?.destination ?? {}
   return {
     enabled: Boolean(schedule.enabled),
-    every: schedule.every ?? 'day',
+    every: schedule.every ?? 'hours',
     hours: String(schedule.hours ?? 6),
     at: schedule.at ?? '02:30',
     weekday: String(schedule.weekday ?? 6),
     timezone: schedule.timezone ?? 'UTC',
-    last: String(retention.last ?? 7),
+    last: String(retention.last ?? 8),
     weeks: String(retention.weeks ?? 4),
     upgrades: String(retention.upgrades ?? 3),
-    warnAfterHours: String(settings?.warnAfterHours ?? 36),
+    warnAfterHours: String(settings?.warnAfterHours ?? 13),
     includeKey: Boolean(settings?.includeKey),
     copy: destination.kind === 'sftp',
     host: destination.host ?? '',
@@ -108,6 +108,34 @@ export function settingsBody(form) {
     warnAfterHours: whole(form.warnAfterHours),
     includeKey: form.includeKey,
     destination,
+  }
+}
+
+/**
+ * The room the backups take, in two sentences: what is kept now, and what the settings of the form
+ * lead to. A backup copies the whole store each time, so the estimate is the number of backups the
+ * retention keeps (the latest ones, and one for each week) times the size of the last good one.
+ * `space` is { kept, count, lastGood } in bytes (GET /backups); returns { now, then }.
+ */
+export function spaceText(space, form) {
+  const count = space?.count ?? 0
+  const now =
+    count === 0
+      ? 'No backup is kept yet.'
+      : `${count} ${count === 1 ? 'backup is' : 'backups are'} kept now: ${sizeText(space.kept)}.`
+  const last = whole(form.last)
+  const weeks = whole(form.weeks)
+  if (!(space?.lastGood > 0)) {
+    return { now, then: 'How much these settings will take is known once a backup has been taken.' }
+  }
+  if (!(last >= 1) || !(weeks >= 0)) return { now, then: '' }
+  const most = last + weeks
+  return {
+    now,
+    then:
+      `With these settings up to ${most} are kept (${last} and one for each of ${weeks} ` +
+      `${weeks === 1 ? 'week' : 'weeks'}): about ${sizeText(most * space.lastGood)} at the size of the last one ` +
+      `(${sizeText(space.lastGood)}), and room for one more while it is written.`,
   }
 }
 
