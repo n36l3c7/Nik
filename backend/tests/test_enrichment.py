@@ -375,6 +375,10 @@ def test_never_sent_private_internal_allowlisted_or_tlp_red(admin: TestClient, o
 # The keys, the limits and the kept answers are the instance's                #
 # --------------------------------------------------------------------------- #
 def test_two_keys_with_limits_take_turns_and_a_source_that_is_used_up_is_skipped(admin: TestClient, outside):
+    # The limit is counted by the minute of the clock: started near the end of one, the test would see
+    # the counters of the first two look-ups forgotten by the third. It waits for the next minute instead.
+    if time.time() % 60 > 40:
+        time.sleep(61 - time.time() % 60)
     rated(outside, keys=2, perMinute=1, mode="each")
     outside.answer("rated.example.com", json={"verdict": "harmless", "line": "nothing"})
 

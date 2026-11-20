@@ -223,11 +223,14 @@ export default function ConnectorsSection() {
 
   /* ---- instances ---- */
   const toggle = async (instance, enabled) => {
+    setError(null)
     // Shown at once; the list read again says what the server kept.
     setInstances((current) => current.map((item) => (item.id === instance.id ? { ...item, enabled } : item)))
     try {
       await api.put(`/automation/instances/${encodeURIComponent(instance.id)}`, { enabled })
-      said(`${instance.name} is ${enabled ? 'on' : 'off'}.`)
+      // Not said(): the answer may arrive after another action failed (a test pressed right after
+      // the switch), and the error of that one must stay on the screen.
+      setNotice(`${instance.name} is ${enabled ? 'on' : 'off'}.`)
     } catch (failure) {
       setError(failure.message)
     }
