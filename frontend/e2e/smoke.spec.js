@@ -2762,7 +2762,7 @@ test('a connector is added from its file, a connection is made, and its commands
   await row.getByRole('button', { name: 'Edit Acme test' }).click()
   await edit.getByRole('tab', { name: 'Keys' }).click()
   await expect(held).toHaveCount(2)
-  await expect(held.nth(1).getByLabel('Password')).toHaveValue('')
+  await expect(held.nth(1).getByLabel(/^Password/)).toHaveValue('')
   await expect(held.nth(1)).toContainText('stored')
   await expect(keys.getByRole('button', { name: 'Forget the kept answers' })).toBeVisible()
   const kept = (await (await page.request.get('/api/automation/instances')).json()).instances.find(
@@ -2805,6 +2805,199 @@ test('a connector is added from its file, a connection is made, and its commands
   await expect(area.getByTestId('playbook-canvas').locator('.react-flow__node')).toHaveCount(4)
   await expect(area.getByText('draft saved')).toBeVisible()
 
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a credential is stored once, named by an instance, kept from a typed secret, and not deleted while it is used', async () => {
+  test.setTimeout(240_000)
+  const before = page.url()
+  const get = async (path) => (await page.request.get(path)).json()
+  await page.getByRole('button', { name: 'Open platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+
+  // Credentials is a section of its own, beside the connectors; the search box finds it by what it holds.
+  await settings.getByLabel('Find a setting').fill('stored secrets')
+  await expect(sections.getByRole('button')).toHaveText(['Credentials'])
+  await settings.getByLabel('Find a setting').fill('')
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/automation\/credentials$/)
+  const table = settings.getByRole('table', { name: 'Credentials' })
+  await expect(table).toContainText('Nothing here yet.')
+
+  // A pair: a user name, which is shown, and a password, which is never shown again.
+  await settings.getByRole('button', { name: 'New credential…' }).click()
+  const fresh = page.getByRole('dialog', { name: 'New credential' })
+  await fresh.locator('#credential-name').fill('Acme Account')
+  await expect(fresh.getByRole('button', { name: 'Create' })).toBeDisabled() // not a name an instance can write
+  await expect(fresh).toContainText('A name is a lower-case letter')
+  await fresh.locator('#credential-name').fill('acme_account')
+  await fresh.locator('#credential-title').fill('The service account of the desk')
+  await fresh.getByRole('radio', { name: /^User name and password/ }).check()
+  await fresh.locator('#credential-username').fill('svc-store')
+  await fresh.locator('#credential-value').fill('stored-pass-1')
+  await fresh.getByRole('button', { name: 'Create' }).click()
+  await expect(settings.getByRole('status')).toContainText('acme_account is stored.')
+  const stored = table.getByRole('row').filter({ hasText: 'acme_account' })
+  await expect(stored).toContainText('The service account of the desk')
+  await expect(stored).toContainText('User name and password')
+  await expect(stored).toContainText('svc-store')
+  await expect(stored).toContainText('not used')
+  expect(JSON.stringify(await get('/api/automation/credentials'))).not.toContain('stored-pass-1')
+
+  // An instance made with it: the picker comes first when a credential fits, and a pair fills the user
+  // name and the password together.
+  await sections.getByRole('button', { name: 'Connectors', exact: true }).click()
+  const installed = settings
+    .getByRole('list', { name: 'Connectors', exact: true })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme Desk' })
+    .first()
+  await installed.getByRole('button', { name: 'Add an instance of Acme Desk' }).click()
+  const form = settings.getByRole('complementary', { name: 'New instance of Acme Desk' })
+  await form.locator('#instance-name').fill('Acme vault')
+  await form.getByLabel('Instance address').fill('https://vault.example.invalid/api')
+  await expect(form.getByLabel('How the password is given')).toHaveValue('credential')
+  await form.getByLabel('Credential for the password').selectOption({ label: 'acme_account (svc-store)' })
+  await expect(form.getByLabel('Credential for the user name')).toHaveValue('{{ credentials.acme_account.username }}')
+  await form.getByRole('button', { name: 'Create' }).click()
+  const row = installed
+    .getByRole('list', { name: 'Instances of Acme Desk' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Acme vault' })
+  await expect(row).toContainText('vault.example.invalid')
+  const instance = async () =>
+    (await get('/api/automation/instances')).instances.find((item) => item.name === 'Acme vault')
+  // What the instance holds is the name of the credential, not a copy of its value.
+  expect((await instance()).credentials).toEqual({
+    username: { name: 'acme_account', part: 'username', missing: false },
+    password: { name: 'acme_account', part: 'password', missing: false },
+  })
+  expect(JSON.stringify(await instance())).not.toContain('stored-pass-1')
+
+  // The form shows the name where the value would be, with a link to it; the credential says where it is used.
+  await row.getByRole('button', { name: 'Edit Acme vault' }).click()
+  const edit = settings.getByRole('complementary', { name: 'Instance Acme vault' })
+  await expect(edit.getByLabel('Credential for the password')).toHaveValue('{{ credentials.acme_account.password }}')
+  await expect(edit.locator('label[for="instance-field-password"]')).toContainText('from a credential')
+  await edit.getByRole('link', { name: 'Open the credential acme_account' }).first().click()
+  await expect(page).toHaveURL(/\/settings\/automation\/credentials\/acme_account$/)
+  await expect(stored).toContainText('Acme vault')
+  await expect(stored).toContainText('Acme Desk')
+  await stored.getByRole('link', { name: 'Acme vault' }).click()
+  await expect(page).toHaveURL(/\/settings\/automation\/connectors\/[^/]+$/)
+  await expect(edit).toBeVisible()
+
+  // A command runs through it: the credential is read, and the request goes as far as the host (which
+  // does not exist here). Nothing that is kept of the run says the password.
+  const ran = await page.request.post('/api/playground/command', {
+    data: { line: '!acme-get-ticket number=T-1 using="Acme vault"' },
+  })
+  expect(ran.status()).toBe(201)
+  await expect
+    .poll(async () => JSON.stringify((await get('/api/playground')).entries), { timeout: 30_000 })
+    .toContain('vault.example.invalid could not be resolved')
+  const said = JSON.stringify((await get('/api/playground')).entries)
+  expect(said).not.toContain('stored-pass-1')
+  expect(said).not.toContain('does not exist: make it again')
+  expect((await page.request.delete('/api/playground')).ok()).toBe(true)
+
+  // Written by hand, as a variable: one that names no credential is refused; then the secrets are typed again.
+  await edit.getByLabel('How the password is given').selectOption('typed')
+  const password = edit.locator('#instance-field-password')
+  await expect(password).toHaveAttribute('placeholder', 'from acme_account: type to replace it')
+  await password.fill('{{ credentials.nope.password }}')
+  await expect(password).toHaveAttribute('type', 'text') // a name, not a secret: shown as it is typed
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(edit.getByRole('alert')).toContainText('There is no credential called "nope"')
+  await password.fill('typed-pass-2')
+  await expect(password).toHaveAttribute('type', 'password')
+  await edit.getByLabel('How the user name is given').selectOption('typed')
+  await edit.locator('#instance-field-username').fill('svc2')
+  await edit.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(edit).toHaveCount(0)
+  expect((await instance()).credentials).toEqual({})
+
+  // Keep as a credential: what was typed is moved under a name, and nobody types it again.
+  await row.getByRole('button', { name: 'Edit Acme vault' }).click()
+  await edit.getByRole('button', { name: 'Keep the password as a credential' }).click()
+  const keeping = page.getByRole('dialog', { name: 'Keep as a credential' })
+  await expect(keeping).toContainText('The user name and the password stored in this instance are moved')
+  const kept = keeping.locator('#keep-credential-name')
+  await expect(kept).toHaveValue('acme_vault') // suggested from the name of the instance
+  await kept.fill('acme_account')
+  await expect(keeping).toContainText('A credential called "acme_account" exists already')
+  await expect(keeping.getByRole('button', { name: 'Keep', exact: true })).toBeDisabled()
+  await kept.fill('acme_vault')
+  await keeping.getByRole('button', { name: 'Keep', exact: true }).click()
+  await expect(keeping).toBeHidden()
+  // The form stays open, and names the credential where it held the value.
+  await expect(edit.getByLabel('Credential for the password')).toHaveValue('{{ credentials.acme_vault.password }}')
+  await expect(edit.getByLabel('Credential for the user name')).toHaveValue('{{ credentials.acme_vault.username }}')
+  const all = (await get('/api/automation/credentials')).credentials
+  const moved = all.find((item) => item.name === 'acme_vault')
+  expect([moved.kind, moved.username, moved.usedBy.map((use) => use.name)]).toEqual(['pair', 'svc2', ['Acme vault']])
+  expect(all.find((item) => item.name === 'acme_account').usedBy).toEqual([])
+  expect(JSON.stringify([all, await instance()])).not.toContain('typed-pass-2')
+  await edit.getByRole('button', { name: 'Close the instance' }).click()
+
+  // One that is used is not deleted, and keeps its name: the dialog says where it is used.
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  const used = table.getByRole('row').filter({ hasText: 'acme_vault' })
+  await expect(used.getByRole('link', { name: 'Acme vault' })).toBeVisible()
+  await used.getByRole('button', { name: 'Delete acme_vault' }).click()
+  const refusal = page.getByRole('dialog', { name: 'Delete acme_vault?' })
+  await expect(refusal).toContainText('It is used, and is not deleted while it is.')
+  await expect(refusal.getByRole('link', { name: 'Acme vault' })).toBeVisible()
+  await expect(refusal.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
+  await refusal.getByRole('button', { name: 'Close', exact: true }).last().click()
+  expect((await page.request.delete(`/api/automation/credentials/${moved.id}`)).status()).toBe(409)
+  // Its row has the menu of an object: edit, copy its name and the variable, delete.
+  await used.click({ button: 'right' })
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Edit…',
+    'Copy link',
+    'Copy the name',
+    'Copy the variable',
+    'Delete…',
+    'New credential…',
+    ...GENERAL_MENU,
+  ])
+  await menu.getByRole('menuitem', { name: 'Edit…' }).click()
+  const editing = page.getByRole('dialog', { name: 'Credential acme_vault' })
+  await expect(editing.locator('#credential-name')).toBeDisabled()
+  await expect(editing).toContainText('a credential that is used keeps its name')
+  // The value is replaced without being shown: every instance that names it sends the new one next.
+  await expect(editing.locator('#credential-value')).toHaveValue('')
+  await editing.locator('#credential-value').fill('rotated-pass-3')
+  await editing.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(settings.getByRole('status')).toContainText('acme_vault is saved.')
+  const audit = (await get('/api/audit?q=action:credential.update')).entries[0]
+  expect(audit.details).toBe('Changed the credential "acme_vault": its password; used by Acme vault')
+  expect(JSON.stringify(await get('/api/audit'))).not.toMatch(/stored-pass-1|typed-pass-2|rotated-pass-3/)
+
+  // The instance is deleted: its credential stays, used by nothing, and can go. Nothing is left for the
+  // tests that follow: without a credential the form of an instance is the one it always was.
+  expect((await page.request.delete(`/api/automation/instances/${(await instance()).id}`)).status()).toBe(204)
+  await sections.getByRole('button', { name: 'Connectors', exact: true }).click()
+  await sections.getByRole('button', { name: 'Credentials', exact: true }).click()
+  await expect(used).toContainText('not used')
+  await used.getByRole('button', { name: 'Delete acme_vault' }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete acme_vault?' })
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(settings.getByRole('status')).toContainText('acme_vault was deleted.')
+  await stored.getByRole('button', { name: 'Delete acme_account' }).click()
+  await page
+    .getByRole('dialog', { name: 'Delete acme_account?' })
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(table).toContainText('Nothing here yet.')
+  expect((await get('/api/automation/credentials')).credentials).toEqual([])
+  await settings.getByRole('button', { name: 'Close settings' }).click()
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
 })

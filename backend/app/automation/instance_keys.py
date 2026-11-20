@@ -5,6 +5,13 @@ hold **more than one set of credentials** (its *keys*), and says how they are
 used. The first key is what the instance always had (``connections.secrets``);
 the others are in ``connections.extra_keys``, encrypted the same way.
 
+A part of a key is a value that was typed, or the name of a stored credential
+(credentials.py), which is read when a request is built. Two instances that
+name the same credential each count their own requests: the limits are said
+in an instance and what is counted is filed under it, so one instance never
+waits for what another one sent. When the vendor refuses the key they share
+(429), each instance learns it from its own next request.
+
 How the keys take turns (``mode``):
 
 - ``each``: one request each, in turn;
@@ -39,6 +46,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core import vault
 from ..core.models import CommandAnswer, Connection, InstanceKeyUse
+from . import credentials
 
 MODES = ("each", "until_exhausted", "least_used", "reserve")
 MAIN = "main"  # the id of the first key: the credentials the instance always had
@@ -265,6 +273,21 @@ def refused(db: OrmSession, connection: Connection, key_id: str, now: float, sec
     row.refusals = int(row.refusals or 0) + 1
 
 
+def set_key_secrets(connection: Connection, key_id: str, secrets: dict[str, str]) -> None:
+    """Store the parts of one key of the instance as they are given (the caller checked them, and commits)."""
+    kept = {field: str(value) for field, value in secrets.items() if value not in (None, "")}
+    if key_id == MAIN:
+        connection.secrets = vault.encrypt(json.dumps(kept)) if kept else ""
+        return
+    entries = extra_keys(connection)
+    for entry in entries:
+        if entry.get("id") == key_id:
+            entry["secrets"] = kept
+            connection.extra_keys = vault.encrypt(json.dumps(entries))
+            return
+    raise KeyError_("This key is not of this instance any more")
+
+
 def forget(db: OrmSession, connection_id: str, keep: set[str] | None = None) -> None:
     """Drop what was counted for keys that are gone (all of them when ``keep`` is None)."""
     statement = delete(InstanceKeyUse).where(InstanceKeyUse.connection_id == connection_id)
@@ -293,6 +316,8 @@ def shown(db: OrmSession, connection: Connection, secret_names: list[str], now: 
                 "id": key.id,
                 "name": key.name,
                 "secrets": {name: bool(key.secrets.get(name)) for name in secret_names},
+                # The parts that name a stored credential instead of holding a value: {field: {name, part, missing}}.
+                "credentials": credentials.named(db, key.secrets),
                 "usedThisMinute": minute,
                 "usedToday": day,
                 "total": int(getattr(row, "total", 0) or 0),

@@ -508,6 +508,11 @@ export default function ConnectorsSection() {
           onClose={() => edit(null)}
           onTest={test}
           onDelete={setDeleting}
+          onChanged={(saved) => {
+            // Something of the instance was changed without leaving its form (a secret kept as a credential).
+            setEditing((current) => (current?.instance?.id === saved.id ? { ...current, instance: saved } : current))
+            load()
+          }}
           onSaved={(saved) => {
             edit(null)
             said(`${saved.name} is saved. Test it to see that ${saved.connectorName} answers.`)
@@ -762,8 +767,9 @@ export default function ConnectorsSection() {
         }
       >
         <p className="text-sm text-fg">
-          <span className="font-semibold">{deleting?.name}</span> goes with its credentials. An instance a playbook uses
-          cannot be deleted; it can be turned off.
+          <span className="font-semibold">{deleting?.name}</span> goes with the credentials typed into it; a stored
+          credential it names stays in Settings, Credentials. An instance a playbook uses cannot be deleted; it can be
+          turned off.
         </p>
       </Modal>
     </section>

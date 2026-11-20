@@ -1131,6 +1131,30 @@ class Connection(Base):
     updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
+class Credential(Base):
+    """A secret kept once under a name and used by any number of instances (6.6).
+
+    ``kind`` is ``secret`` (one value: an API key, a token) or ``pair`` (a user name and a
+    password). ``secret`` holds the value, or the password of a pair, encrypted with the vault key
+    as the credentials of a connection are, and never returned by the API; ``username`` is not
+    secret and is shown. An instance names a credential where it would hold a value
+    (automation/credentials.py): nothing of it is copied there.
+    """
+
+    __tablename__ = "credentials"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="secret")
+    username: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    secret: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
 class InstanceKeyUse(Base):
     """What a key of an instance was used for: this minute, today, and until when the vendor refuses it."""
 
@@ -1601,6 +1625,9 @@ class SavedFilterDefault(Base):
         String(32), ForeignKey("saved_filters.id", ondelete="CASCADE"), nullable=False
     )
 
+
+# Created by migration 0046_credentials where missing.
+CREDENTIAL_TABLES = ("credentials",)
 
 # Created by migration 0041_saved_filters where missing, in this order.
 SAVED_FILTER_TABLES = ("saved_filters", "saved_filter_defaults")

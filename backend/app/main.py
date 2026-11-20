@@ -51,6 +51,7 @@ from .routers import (
     capa_rules,
     connectors,
     context,
+    credentials,
     dashboards,
     enrichment,
     fetch,
@@ -314,6 +315,7 @@ app.include_router(query.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 app.include_router(automation.incident_router, prefix="/api")
 app.include_router(connectors.router, prefix="/api")
+app.include_router(credentials.router, prefix="/api")
 app.include_router(fields.router, prefix="/api")
 app.include_router(fields.incident_router, prefix="/api")
 app.include_router(incident_types.router, prefix="/api")

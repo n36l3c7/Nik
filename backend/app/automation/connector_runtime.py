@@ -426,7 +426,9 @@ class Runtime:
         if auth and not self._other(url):
             own = self._credentials()
             headers.update(own)
-            query.update(self._query_credentials())
+            # A key that goes in the address goes first, where a file that wrote it by hand had it.
+            keyed = self._query_credentials()
+            query = {**keyed, **{key: value for key, value in query.items() if key not in keyed}}
         body = rendered["body"]
         if rendered["multipart"] is not None or spec.files is not None:
             # The bytes are read now, once the guard has let them go, and go as they are.

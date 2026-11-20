@@ -1736,6 +1736,16 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
               </td>
             </tr>
             <tr>
+              <td>Credentials <em>(the Connectors role)</em></td>
+              <td>
+                Secrets kept once under a name, for the instances of the connectors to use: an API key or a token, or a
+                user name and a password. An instance names a credential instead of holding the value, so the value is
+                changed in one place and is still there when an instance is made again. The value is never shown; the
+                list says where each credential is used. See
+                <a href="automation.html#credentials">Automation → Credentials</a>.
+              </td>
+            </tr>
+            <tr>
               <td>Stop all <em>(admins)</em></td>
               <td>
                 One switch for every playbook, and whether the worker that runs them is alive. Stopped, nothing starts
@@ -1859,8 +1869,9 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
             <tr>
               <td>Connectors</td>
               <td>
-                Install connectors and add their instances, with the credentials of the other products. It does not
-                build playbooks by itself: give it with Playbooks to who does both.
+                Install connectors and add their instances, with the credentials of the other products, typed into an
+                instance or kept once in <em>Credentials</em>. It does not build playbooks by itself: give it with
+                Playbooks to who does both.
               </td>
             </tr>
             <tr>

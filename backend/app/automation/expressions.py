@@ -77,6 +77,14 @@ MAX_NUMBER = 1e15  # beyond it the two parsers would not count alike
 MAX_COMPARED = 1_000_000  # items of one list times items of the other, for the filters that compare them all
 
 
+# Stored credentials (credentials.py) are named in the fields of an instance and nowhere else: no scope
+# ever holds them, and whoever reads the name in an expression is told so rather than "not a name".
+CREDENTIALS_ELSEWHERE = (
+    "A stored credential is read only in a field of an instance of a connector: "
+    '"credentials" cannot be read in a playbook, a script or a connector file'
+)
+
+
 class ExpressionError(ValueError):
     """An expression that cannot be read or evaluated: where, and a fixed sentence."""
 
@@ -1114,6 +1122,8 @@ def _compute(node: Any, scope: Scope, expr: Expr) -> Value:
         return Value(node.value)
     if isinstance(node, Path):
         if node.root not in scope.values:
+            if node.root == "credentials":
+                raise ExpressionError(expr.position, CREDENTIALS_ELSEWHERE)
             raise ExpressionError(expr.position, f'"{node.root}" is not a name that can be read here')
         return Value(_walk(scope.values[node.root], node.steps), scope.classes_at(node.root, node.steps))
     if isinstance(node, Piped):

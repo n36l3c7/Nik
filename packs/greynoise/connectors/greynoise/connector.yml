@@ -4,9 +4,12 @@
 # one page for each endpoint, each with its OpenAPI definition. Not run
 # against the real service: see "verified" below.
 #
-# The key goes in the "key" header. The Community API (get-community-ip)
-# answers without a key, a few addresses a day: the key is optional here, and
-# a request is sent without the header when the connection has none.
+# The key goes in the "key" header: it is the credentials of the instance
+# ("header"), which Nik adds to every request, so no command says it. The
+# Community API (get-community-ip) answers without a key, a few addresses a
+# day: the key is optional here, and a request is sent without the header
+# when the instance has none. An instance that has a key sends it with every
+# request to api.greynoise.io, the public RSS feed included.
 #
 # Almost everything else needs a paid plan, and often one entitlement or
 # add-on module among several: those commands say "premium: true", and what
@@ -33,7 +36,7 @@
 # its credential, and an argument is not a secret.
 name: GreyNoise
 id: greynoise
-version: 3
+version: 4
 description: "What GreyNoise knows of an IP address (internet scanner, business service, classification), GNQL searches, CVEs, tags, callback addresses, blocklists, event feeds and the sessions of your own sensors."
 api_version: "GreyNoise API v3 (api.greynoise.io, OpenAPI 3.0.0 of the reference)"
 verified: false
@@ -42,11 +45,12 @@ lookups: { weight: 2 }
 configuration:
   - name: api_key
     label: API key
-    type: secret
+    type: header
+    header: key
     help: "The API key of your GreyNoise account. Leave it empty to ask only the Community API, without an account, a few addresses a day."
 base_url: "https://api.greynoise.io"
 test:
-  request: { method: GET, path: /ping, headers: { key: "{{ secret.api_key | default(null) }}" } }
+  request: { method: GET, path: /ping }
 commands:
   - name: get-community-ip
     description: "What GreyNoise knows of an IP address, from the free Community API: whether it scans the internet (noise), whether it belongs to a common business service (RIOT), and how GreyNoise classifies it."
@@ -56,7 +60,6 @@ commands:
     request:
       method: GET
       path: "/v3/community/{{ args.ip }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     success: { status: [200, 404] }
     error: { message: "{{ response.message }}" }
     outputs:
@@ -88,7 +91,6 @@ commands:
     request:
       method: GET
       path: "/ping"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       message: "{{ response.message }}"
@@ -108,7 +110,6 @@ commands:
     request:
       method: GET
       path: "/v3/ip/{{ args.ip }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
         workspace_labels: "{{ args.workspace_labels }}"
@@ -147,7 +148,6 @@ commands:
     request:
       method: POST
       path: "/v3/ip"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
         workspace_labels: "{{ args.workspace_labels }}"
@@ -174,7 +174,6 @@ commands:
     request:
       method: GET
       path: "/v3/noise/ips/{{ args.ip }}/timeline"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         field: "{{ args.field }}"
         days: "{{ args.days }}"
@@ -199,7 +198,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
@@ -230,7 +228,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/metadata"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         quick: "{{ args.quick | map('true', 'true', 'false', 'false') }}"
@@ -260,7 +257,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/stats"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         count: "{{ args.count }}"
@@ -284,7 +280,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/count"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
     error: { message: "{{ response.message }}" }
@@ -304,7 +299,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/ips"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         exclude_riot: "{{ args.exclude_riot | map('true', 'true', 'false', 'false') }}"
@@ -325,7 +319,6 @@ commands:
     request:
       method: POST
       path: "/v3/gnql/validate"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         query: "{{ args.query }}"
         report_unknown_tags: "{{ args.report_unknown_tags }}"
@@ -345,7 +338,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/fields"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       fields: "{{ response.fields }}"
@@ -364,7 +356,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/timeseries"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         start: "{{ args.start }}"
@@ -388,7 +379,6 @@ commands:
     request:
       method: GET
       path: "/v3/gnql/timeseries/stats"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         interval: "{{ args.interval }}"
@@ -413,7 +403,6 @@ commands:
     request:
       method: GET
       path: "/v3/cves/list"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         sort: "{{ args.sort }}"
         order: "{{ args.order }}"
@@ -436,7 +425,6 @@ commands:
     request:
       method: POST
       path: "/v3/cves"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         include_vendors: "{{ args.include_vendors | map('true', 'true', 'false', 'false') }}"
       json:
@@ -457,7 +445,6 @@ commands:
     request:
       method: GET
       path: "/v1/cve/{{ args.cve }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         include_vendors: "{{ args.include_vendors | map('true', 'true', 'false', 'false') }}"
         workspace_labels: "{{ args.workspace_labels }}"
@@ -491,7 +478,6 @@ commands:
     request:
       method: GET
       path: "/v3/tags"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         name: "{{ args.name }}"
         slug: "{{ args.slug }}"
@@ -516,7 +502,6 @@ commands:
     request:
       method: GET
       path: "/v3/tags/{{ args.id }}/activity"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         days: "{{ args.days }}"
         granularity: "{{ args.granularity }}"
@@ -546,7 +531,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/diff"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         source_workspace: "{{ args.source_workspace }}"
         target_workspace: "{{ args.target_workspace }}"
@@ -576,7 +560,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/stats-diff"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         source_workspace: "{{ args.source_workspace }}"
         target_workspace: "{{ args.target_workspace }}"
@@ -602,7 +585,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/unique-ips"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         source_workspace: "{{ args.source_workspace }}"
         target_workspace: "{{ args.target_workspace }}"
@@ -621,7 +603,6 @@ commands:
     request:
       method: GET
       path: "/v3/workspaces/unique-ips/{{ args.job_id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         limit: "{{ args.limit }}"
         offset: "{{ args.offset }}"
@@ -647,7 +628,6 @@ commands:
     request:
       method: GET
       path: "/v1/callback/ip/{{ args.ip }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       ip: "{{ response.ip }}"
@@ -684,7 +664,6 @@ commands:
     request:
       method: POST
       path: "/v1/callback/ips"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         is_stage_1: "{{ args.is_stage_1 }}"
         is_stage_2: "{{ args.is_stage_2 }}"
@@ -727,7 +706,6 @@ commands:
     request:
       method: POST
       path: "/v1/callback/export-ips"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         is_stage_1: "{{ args.is_stage_1 }}"
         is_stage_2: "{{ args.is_stage_2 }}"
@@ -767,7 +745,6 @@ commands:
     request:
       method: POST
       path: "/v1/callback/overview"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         is_stage_1: "{{ args.is_stage_1 }}"
         is_stage_2: "{{ args.is_stage_2 }}"
@@ -802,7 +779,6 @@ commands:
     request:
       method: GET
       path: "/v3/files/gnql"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         format: "csv"
@@ -836,7 +812,6 @@ commands:
     request:
       method: DELETE
       path: "/v3/files/gnql"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         format: "csv"
@@ -858,7 +833,6 @@ commands:
     request:
       method: GET
       path: "/v3/files/gnql/metadata"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         query: "{{ args.query }}"
         format: "csv"
@@ -884,7 +858,6 @@ commands:
     request:
       method: GET
       path: "/v3/files/profiles"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       profiles: "{{ response.profiles }}"
@@ -898,7 +871,6 @@ commands:
     request:
       method: GET
       path: "/v3/files/callback"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         days: "{{ args.days }}"
         format: "csv"
@@ -924,7 +896,6 @@ commands:
     request:
       method: GET
       path: "/v3/files/callback/metadata"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         days: "{{ args.days }}"
         format: "csv"
@@ -953,7 +924,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         start_time: "{{ args.start_time }}"
         end_time: "{{ args.end_time }}"
@@ -983,7 +953,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/fields"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         scope: "{{ args.scope }}"
     error: { message: "{{ response.message }}" }
@@ -1004,7 +973,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/counts"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         start_time: "{{ args.start_time }}"
         end_time: "{{ args.end_time }}"
@@ -1033,7 +1001,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/connections"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         start_time: "{{ args.start_time }}"
         end_time: "{{ args.end_time }}"
@@ -1063,7 +1030,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/timeseries"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         start_time: "{{ args.start_time }}"
         end_time: "{{ args.end_time }}"
@@ -1091,7 +1057,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/unique"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         start_time: "{{ args.start_time }}"
         end_time: "{{ args.end_time }}"
@@ -1114,7 +1079,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/{{ args.session_id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         scope: "{{ args.scope }}"
     error: { message: "{{ response.message }}" }
@@ -1138,7 +1102,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/{{ args.session_id | urlencode }}/frames"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         scope: "{{ args.scope }}"
       answer: file
@@ -1162,7 +1125,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/export"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         start_time: "{{ args.start_time }}"
         end_time: "{{ args.end_time }}"
@@ -1187,7 +1149,6 @@ commands:
     request:
       method: GET
       path: "/v3/sessions/{{ args.session_id | urlencode }}/export"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         type: "{{ args.type }}"
       answer: file
@@ -1206,7 +1167,6 @@ commands:
     request:
       method: GET
       path: "/v3/bsi/trust"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         date: "{{ args.date }}"
     error: { message: "{{ response.message }}" }
@@ -1223,7 +1183,6 @@ commands:
     request:
       method: GET
       path: "/v3/bsi/company"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         date: "{{ args.date }}"
     error: { message: "{{ response.message }}" }
@@ -1240,7 +1199,6 @@ commands:
     request:
       method: GET
       path: "/v3/bsi/category"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         date: "{{ args.date }}"
     error: { message: "{{ response.message }}" }
@@ -1257,7 +1215,6 @@ commands:
     request:
       method: GET
       path: "/v3/bsi/lookup"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         ip: "{{ args.ip }}"
     error: { message: "{{ response.message }}" }
@@ -1277,7 +1234,6 @@ commands:
     request:
       method: POST
       path: "/v3/bsi/bulk"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         ips: "{{ args.ips }}"
     error: { message: "{{ response.message }}" }
@@ -1293,7 +1249,6 @@ commands:
     request:
       method: GET
       path: "/v3/bsi/download"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         date: "{{ args.date }}"
       answer: file
@@ -1317,7 +1272,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/{{ args.workspace_id }}/blocklists"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         query: "{{ args.query }}"
         name: "{{ args.name }}"
@@ -1344,7 +1298,6 @@ commands:
     request:
       method: GET
       path: "/v3/workspaces/{{ args.workspace_id }}/blocklists"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     pagination:
       type: offset
       param: offset
@@ -1375,7 +1328,6 @@ commands:
     request:
       method: PUT
       path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         query: "{{ args.query }}"
         name: "{{ args.name }}"
@@ -1403,7 +1355,6 @@ commands:
     request:
       method: GET
       path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       id: "{{ response.id }}"
@@ -1425,7 +1376,6 @@ commands:
     request:
       method: DELETE
       path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     success: { status: 204 }
     error: { message: "{{ response.message }}" }
     outputs:
@@ -1442,7 +1392,6 @@ commands:
     request:
       method: GET
       path: "/v3/workspaces/{{ args.workspace_id }}/blocklists/{{ args.blocklist_id }}/ips"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         size: "{{ args.size }}"
     error: { message: "{{ response.message }}" }
@@ -1467,7 +1416,6 @@ commands:
     request:
       method: POST
       path: "/v3/feeds/events/search"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         feed_ids: "{{ args.feed_ids }}"
         event_types: "{{ args.event_types }}"
@@ -1497,7 +1445,6 @@ commands:
     request:
       method: GET
       path: "/v3/feeds/{{ args.feed_id }}/events"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         consumer: "{{ args.consumer }}"
         limit: "{{ args.limit }}"
@@ -1522,7 +1469,6 @@ commands:
     request:
       method: POST
       path: "/v3/feeds/{{ args.feed_id }}/events/ack"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         cursor: "{{ args.cursor }}"
         consumer: "{{ args.consumer }}"
@@ -1542,7 +1488,6 @@ commands:
     request:
       method: GET
       path: "/v3/feeds/{{ args.feed_id }}/consumers"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       consumers: "{{ response.consumers }}"
@@ -1559,7 +1504,6 @@ commands:
     request:
       method: POST
       path: "/v3/feeds/{{ args.feed_id }}/consumers"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         consumer: "{{ args.consumer }}"
     error: { message: "{{ response.message }}" }
@@ -1582,7 +1526,6 @@ commands:
     request:
       method: POST
       path: "/v3/feeds/{{ args.feed_id }}/consumers/{{ args.consumer }}/reset"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       name: "{{ response.name }}"
@@ -1603,7 +1546,6 @@ commands:
     request:
       method: DELETE
       path: "/v3/feeds/{{ args.feed_id }}/consumers/{{ args.consumer }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     success: { status: 204 }
     error: { message: "{{ response.message }}" }
     outputs:
@@ -1623,7 +1565,6 @@ commands:
     request:
       method: GET
       path: "/v3/articles"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         search: "{{ args.search }}"
         category: "{{ args.category }}"
@@ -1646,7 +1587,6 @@ commands:
     request:
       method: GET
       path: "/v3/articles/categories"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       categories: "{{ response }}"
@@ -1660,7 +1600,6 @@ commands:
     request:
       method: GET
       path: "/v3/articles/{{ args.id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       title: "{{ response.title }}"
@@ -1679,7 +1618,6 @@ commands:
     request:
       method: GET
       path: "/v3/articles/rss-token"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       feed_url: "{{ response.feed_url }}"
@@ -1694,7 +1632,6 @@ commands:
     request:
       method: POST
       path: "/v3/articles/rss-token"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
     error: { message: "{{ response.message }}" }
     outputs:
       feed_url: "{{ response.feed_url }}"
@@ -1735,7 +1672,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/{{ args.workspace_id }}/tactics"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         exclude_non_interactive: "{{ args.exclude_non_interactive | map('true', 'true', 'false', 'false') }}"
       json:
@@ -1779,7 +1715,6 @@ commands:
     request:
       method: GET
       path: "/v3/workspaces/{{ args.workspace_id }}/tactics/{{ args.detection_id }}"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         commands_page: "{{ args.commands_page }}"
         artifacts_page: "{{ args.artifacts_page }}"
@@ -1809,7 +1744,6 @@ commands:
     request:
       method: GET
       path: "/v3/workspaces/{{ args.workspace_id }}/tactics/{{ args.detection_id }}/dest-ips"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         include_lateral: "{{ args.include_lateral | map('true', 'true', 'false', 'false') }}"
     pagination:
@@ -1835,7 +1769,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/{{ args.workspace_id }}/tactics/{{ args.detection_id }}/files"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       query:
         mutations_only: "{{ args.mutations_only | map('true', 'true', 'false', 'false') }}"
     error: { message: "{{ response.message }}" }
@@ -1853,7 +1786,6 @@ commands:
     request:
       method: POST
       path: "/v3/workspaces/{{ args.workspace_id }}/host-artifact/content"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         path: "{{ args.path }}"
     error: { message: "{{ response.message }}" }
@@ -1878,7 +1810,6 @@ commands:
     request:
       method: POST
       path: "/v1/psychic"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         model: "{{ args.model }}"
         date: "{{ args.date }}"
@@ -1900,7 +1831,6 @@ commands:
     request:
       method: POST
       path: "/v1/psychic/snapshots"
-      headers: { key: "{{ secret.api_key | default(null) }}" }
       json:
         model: "{{ args.model }}"
         days: "{{ args.days | int }}"

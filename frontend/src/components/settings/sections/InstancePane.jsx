@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Trash2, X, Zap } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import {
@@ -15,20 +15,36 @@ import {
   startingValues,
   takesKeys,
 } from '../../../domain/automation/instances.js'
+import {
+  credentialChoices,
+  keepable,
+  keptKind,
+  nameProblem,
+  secretMode,
+  storedReference,
+  suggestedName,
+  valueForMode,
+} from '../../../domain/automation/credentials.js'
 import { fetchChanged, fetchForm, fetchPayload, fetchProblem } from '../../../domain/fetch.js'
 import { classifierBody, mapperBodies, mapperKey, unsavedText } from '../../../domain/mappers.js'
-import { Button } from '../../ui/index.js'
+import { settingsPath } from '../../../domain/settingsNav.js'
+import { setPath } from '../../../lib/location.js'
+import { Button, Modal } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import InstanceClassifier from './InstanceClassifier.jsx'
 import InstanceFetch from './InstanceFetch.jsx'
 import InstanceKeys from './InstanceKeys.jsx'
 import InstanceMappers from './InstanceMappers.jsx'
+import SecretField from './SecretField.jsx'
 
 /*
  * An instance of a connector, beside the list of connectors: its name, its
  * address and its credentials. The form is built from what the connector asks
  * for. Credentials are kept encrypted and never shown again: a field left
- * empty keeps what is stored.
+ * empty keeps what is stored. A secret is typed here, or comes from a stored
+ * credential (Settings → Credentials): the field then holds the name of the
+ * credential, never its value (SecretField.jsx), and a secret that was typed
+ * can be kept as a credential without typing it again.
  *
  * One form and one "Save", in parts that are its tabs: the connection (the
  * name, the address and the credentials); for a connector that signs in, its
@@ -54,6 +70,7 @@ const INPUT =
  *   wide?: boolean,                   // the form has the width of the page
  *   onClose: () => void,
  *   onSaved: (saved: object) => void,
+ *   onChanged?: (saved: object) => void,  // the instance changed and its form stays open
  *   onTest?: (instance: object) => void,
  *   onDelete?: (instance: object) => void,
  * }} props
@@ -67,6 +84,7 @@ export default function InstancePane({
   wide = false,
   onClose,
   onSaved,
+  onChanged = () => {},
   onTest,
   onDelete,
 }) {
@@ -80,6 +98,22 @@ export default function InstancePane({
   const [busy, setBusy] = useState(false)
   const fields = fieldsOf(connector)
   const keyed = takesKeys(connector)
+  // The stored credentials a secret can come from, the way each secret is given where the person chose
+  // it ({ field: 'typed' | 'credential' }), and the secret that is being kept as a credential.
+  const [credentials, setCredentials] = useState([])
+  const [modes, setModes] = useState({})
+  const [keeping, setKeeping] = useState(null) // { key, keyName, field, label, kind, name, title, error, busy }
+  const secretNames = connector.secrets ?? []
+  const loadCredentials = useCallback(() => {
+    // Without them the form is the one it always was: every secret is typed.
+    api.get('/automation/credentials').then(
+      (found) => setCredentials(found.credentials ?? []),
+      () => setCredentials([]),
+    )
+  }, [])
+  useEffect(() => {
+    loadCredentials()
+  }, [loadCredentials])
   // The keys, the first of which is the credentials above: a new instance starts with that one.
   const [keys, setKeys] = useState(() => {
     const held = editableKeys(instance)
@@ -100,6 +134,50 @@ export default function InstancePane({
     formProblem(connector, name, values) ??
     (keyed ? keysProblem(connector, keys, policy) : null) ??
     (fetches ? fetchProblem(fetching, { minInterval: fetchStatus?.minIntervalSeconds, byTime }) : null)
+
+  /** Ask under which name the stored secret of a field (of the first key, or of another) is kept. */
+  const askKeep = (key, field) =>
+    setKeeping({
+      key: key.id,
+      keyName: key.id === 'main' ? '' : key.name,
+      field: field.name,
+      label: field.label,
+      kind: keptKind(field.name, secretNames, key.secrets, key.credentials),
+      name: suggestedName(`${instance.name}${key.id === 'main' ? '' : ` ${key.name}`}`),
+      title: '',
+      error: null,
+      busy: false,
+    })
+  const keep = async (event) => {
+    event.preventDefault()
+    setKeeping((current) => ({ ...current, busy: true, error: null }))
+    try {
+      const saved = await api.post(`/automation/instances/${encodeURIComponent(instance.id)}/credentials`, {
+        key: keeping.key,
+        field: keeping.field,
+        name: keeping.name.trim(),
+        title: keeping.title.trim(),
+      })
+      // What the keys hold is read again; what was typed into the form and is not saved stays.
+      setKeys((current) =>
+        current.map((key) => {
+          const now = saved.keys.find((item) => item.id === key.id)
+          return now ? { ...key, secrets: now.secrets, credentials: now.credentials } : key
+        }),
+      )
+      setKeeping(null)
+      loadCredentials()
+      onChanged(saved)
+    } catch (failure) {
+      setKeeping((current) => ({ ...current, busy: false, error: failure.message }))
+    }
+  }
+  const keepProblem = keeping
+    ? nameProblem(
+        keeping.name,
+        credentials.map((credential) => credential.name),
+      )
+    : null
 
   const submit = async (event) => {
     event.preventDefault()
@@ -243,6 +321,54 @@ export default function InstancePane({
                 const id = `instance-field-${field.name}`
                 const stored = field.kind === 'secret' && Boolean(instance?.secrets?.[field.name])
                 const gone = removed.includes(field.name)
+                if (field.kind === 'secret') {
+                  const choices = credentialChoices(credentials, field.name, secretNames)
+                  const mode = secretMode({
+                    chosen: modes[field.name],
+                    typed: values[field.name],
+                    stored,
+                    reference: storedReference(instance?.credentials, field.name),
+                    choices,
+                  })
+                  const main = { id: 'main', secrets: instance?.secrets, credentials: instance?.credentials }
+                  return (
+                    <SecretField
+                      key={field.name}
+                      id={id}
+                      label={field.label}
+                      field={field.name}
+                      masked={field.masked}
+                      inputClass={INPUT}
+                      value={values[field.name] ?? ''}
+                      onValue={(text) => {
+                        setValues({ ...values, [field.name]: text })
+                        if (gone) setRemoved(removed.filter((item) => item !== field.name))
+                      }}
+                      onFill={(fills) => {
+                        const filled = Object.keys(fills)
+                        setValues({ ...values, ...fills })
+                        setModes({ ...modes, ...Object.fromEntries(filled.map((name) => [name, 'credential'])) })
+                        setRemoved(removed.filter((item) => !filled.includes(item)))
+                      }}
+                      mode={mode}
+                      onMode={(next) => {
+                        setModes({ ...modes, [field.name]: next })
+                        setValues({ ...values, [field.name]: valueForMode(values[field.name], next) })
+                      }}
+                      stored={stored}
+                      held={instance?.credentials}
+                      choices={choices}
+                      removed={gone}
+                      onRemove={() => setRemoved([...removed, field.name])}
+                      onKeep={
+                        instance && keepable(stored, instance.credentials, field.name, secretNames)
+                          ? () => askKeep(main, field)
+                          : undefined
+                      }
+                      help={field.help}
+                    />
+                  )
+                }
                 return (
                   <div key={field.name} className="flex flex-col gap-1">
                     <label className="text-fg-muted" htmlFor={id}>
@@ -253,8 +379,6 @@ export default function InstancePane({
                           *
                         </span>
                       )}
-                      {stored && !gone && <span className="ml-2 font-mono text-[11px] text-accent-fg">stored</span>}
-                      {gone && <span className="ml-2 font-mono text-[11px] text-high-fg">will be removed</span>}
                     </label>
                     {field.type === 'bool' ? (
                       <input
@@ -279,39 +403,16 @@ export default function InstancePane({
                         ))}
                       </select>
                     ) : (
-                      <div className="flex gap-2">
-                        <input
-                          id={id}
-                          type={field.masked ? 'password' : 'text'}
-                          value={values[field.name] ?? ''}
-                          autoComplete={field.masked ? 'new-password' : 'off'}
-                          spellCheck={false}
-                          placeholder={
-                            field.kind === 'secret'
-                              ? stored && !gone
-                                ? 'stored: type to replace it'
-                                : ''
-                              : field.type === 'url'
-                                ? 'https://…'
-                                : field.placeholder
-                          }
-                          onChange={(event) => {
-                            setValues({ ...values, [field.name]: event.target.value })
-                            if (gone) setRemoved(removed.filter((item) => item !== field.name))
-                          }}
-                          className={INPUT}
-                        />
-                        {stored && !gone && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            aria-label={`Remove the stored ${field.label.toLowerCase()}`}
-                            onClick={() => setRemoved([...removed, field.name])}
-                          >
-                            Remove
-                          </Button>
-                        )}
-                      </div>
+                      <input
+                        id={id}
+                        type="text"
+                        value={values[field.name] ?? ''}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={field.type === 'url' ? 'https://…' : field.placeholder}
+                        onChange={(event) => setValues({ ...values, [field.name]: event.target.value })}
+                        className={INPUT}
+                      />
                     )}
                     {field.help && <span className="text-xs text-fg-muted">{field.help}</span>}
                   </div>
@@ -321,6 +422,24 @@ export default function InstancePane({
                 Credentials are stored encrypted and are never shown again, here or in the API. Every playbook that uses
                 this instance may reach its host.
               </p>
+              {fields.some((field) => field.kind === 'secret') && (
+                <p className="text-xs text-fg-muted">
+                  A secret can also be kept once and used by several instances:{' '}
+                  <a
+                    href={settingsPath('credentials')}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      setPath(settingsPath('credentials'))
+                    }}
+                    className="text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    Settings, Credentials
+                  </a>
+                  . The instance then holds the name of the credential, written{' '}
+                  <code className="font-mono">{'{{ credentials.<name> }}'}</code>, and its value is read when a request
+                  is sent.
+                </p>
+              )}
             </>
           )}
           {shown === 'keys' && keyed && (
@@ -331,6 +450,8 @@ export default function InstancePane({
               onKeys={setKeys}
               policy={policy}
               onPolicy={setPolicy}
+              credentials={credentials}
+              onKeep={instance ? askKeep : undefined}
             />
           )}
           {shown === 'fetch' && (
@@ -393,6 +514,66 @@ export default function InstancePane({
           )}
         </div>
       </aside>
+
+      <Modal
+        open={keeping !== null}
+        onClose={() => setKeeping(null)}
+        title="Keep as a credential"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setKeeping(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="form-keep-credential" disabled={Boolean(keepProblem) || keeping?.busy}>
+              Keep
+            </Button>
+          </>
+        }
+      >
+        {keeping && (
+          <form id="form-keep-credential" onSubmit={keep} className="flex flex-col gap-3 text-sm">
+            <p className="text-fg">
+              {keeping.kind === 'pair'
+                ? 'The user name and the password stored in this instance'
+                : `The ${keeping.label.toLowerCase()} stored in this instance`}
+              {keeping.keyName ? ` (key “${keeping.keyName}”)` : ''} {keeping.kind === 'pair' ? 'are' : 'is'} moved to
+              Settings, Credentials under this name, and the instance names the credential from now on. Nothing is typed
+              again, and the value is not shown.
+            </p>
+            <label className="flex flex-col gap-1 text-fg-muted" htmlFor="keep-credential-name">
+              Name of the credential
+              <input
+                id="keep-credential-name"
+                type="text"
+                value={keeping.name}
+                maxLength={40}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setKeeping({ ...keeping, name: event.target.value })}
+                className={INPUT}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fg-muted" htmlFor="keep-credential-title">
+              Description
+              <input
+                id="keep-credential-title"
+                type="text"
+                value={keeping.title}
+                maxLength={200}
+                autoComplete="off"
+                onChange={(event) => setKeeping({ ...keeping, title: event.target.value })}
+                className={INPUT.replace('font-mono ', '')}
+              />
+            </label>
+            {keeping.error && (
+              <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-high">
+                {keeping.error}
+              </p>
+            )}
+            {keepProblem && !keeping.error && <p className="text-xs text-med-fg">{keepProblem}</p>}
+          </form>
+        )}
+      </Modal>
     </>
   )
 }

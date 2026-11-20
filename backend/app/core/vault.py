@@ -67,16 +67,23 @@ def _rotated(token: str | None) -> str | None:
 
 
 def _rotate_automation(db) -> int:
-    """The secrets of automation: the credentials of connections, the SMTP password."""
+    """The secrets of automation: the credentials of connections (their first key and the others), the
+    stored credentials they name, the SMTP password."""
     from sqlalchemy.orm.attributes import flag_modified
 
-    from .models import Connection, Setting
+    from .models import Connection, Credential, Setting
 
     moved = 0
-    for row in db.scalars(select(Connection).where(Connection.secrets != "")):
-        token = _rotated(row.secrets)
+    for row in db.scalars(select(Connection)):
+        for column in ("secrets", "extra_keys"):
+            token = _rotated(getattr(row, column))
+            if token:
+                setattr(row, column, token)
+                moved += 1
+    for row in db.scalars(select(Credential)):
+        token = _rotated(row.secret)
         if token:
-            row.secrets = token
+            row.secret = token
             moved += 1
     settings_row = db.get(Setting, 2)  # automation/state.py
     smtp = ((settings_row.doc if settings_row else None) or {}).get("smtp") or {}

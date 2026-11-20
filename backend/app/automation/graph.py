@@ -649,6 +649,9 @@ def validate(graph: Any, library: Library, name: str | None = None) -> list[Prob
                 problems.append(Problem(f'"{name}" {reason}', node_id))
             elif name in IN_LOOP:
                 problems.append(Problem(f'"{name}" can be read only inside a "for each"', node_id))
+            elif name == "credentials":
+                # A stored credential is for the fields of an instance: a playbook never reads one.
+                problems.append(Problem(expressions.CREDENTIALS_ELSEWHERE, node_id))
             else:
                 problems.append(Problem(f'"{name}" is not a node of this playbook', node_id))
 

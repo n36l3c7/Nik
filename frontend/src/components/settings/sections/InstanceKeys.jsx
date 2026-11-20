@@ -1,14 +1,24 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Plus, Trash2, Zap } from 'lucide-react'
 import { api } from '../../../services/api.js'
+import {
+  credentialChoices,
+  keepable,
+  secretMode,
+  storedReference,
+  valueForMode,
+} from '../../../domain/automation/credentials.js'
 import { KEY_MODES, keyFields, keyShare, keyUse, newKey } from '../../../domain/automation/instances.js'
 import { Badge, Button } from '../../ui/index.js'
+import SecretField from './SecretField.jsx'
 
 /*
  * The keys of an instance (6.1): more credentials than one for the same
  * product, and how they take turns. The first key is the credentials of the
  * instance, edited on its Connection tab; the others are added, named, ordered and removed
- * here. A key is never shown again after it is saved.
+ * here. A key is never shown again after it is saved. Each part of a key is
+ * typed, or comes from a stored credential (SecretField.jsx), as the
+ * credentials of the Connection tab do.
  *
  * It is a part of the form of the instance (InstancePane.jsx), which holds
  * what is edited here and saves it with everything else: there is one "Save".
@@ -32,14 +42,26 @@ const STATE_COLOR = { 'in use': 'emerald', 'used up': 'amber', waiting: 'slate',
  *   onKeys: (keys: object[]) => void,
  *   policy: object,
  *   onPolicy: (policy: object) => void,
+ *   credentials?: object[],               // the stored credentials a part of a key can come from
+ *   onKeep?: (key: object, field: object) => void,  // keep a stored part of a key as a credential
  * }} props
  */
-export default function InstanceKeys({ connector, instance, keys, onKeys: setKeys, policy, onPolicy: setPolicy }) {
+export default function InstanceKeys({
+  connector,
+  instance,
+  keys,
+  onKeys: setKeys,
+  policy,
+  onPolicy: setPolicy,
+  credentials = [],
+  onKeep,
+}) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState(null)
   const [said, setSaid] = useState('')
   const [tested, setTested] = useState(null) // id → { ok, message }
   const fields = keyFields(connector)
+  const secretNames = fields.map((field) => field.name)
   const path = instance ? `/automation/instances/${encodeURIComponent(instance.id)}` : null
 
   const change = (index, patch) => setKeys(keys.map((key, at) => (at === index ? { ...key, ...patch } : key)))
@@ -138,27 +160,55 @@ export default function InstanceKeys({ connector, instance, keys, onKeys: setKey
               {first ? (
                 <p className="text-xs text-fg-muted">The credentials of the instance, set on the Connection tab.</p>
               ) : (
-                fields.map((field) => (
-                  <label key={field.name} className="flex flex-col gap-0.5 text-xs text-fg-muted">
-                    <span>
-                      {field.label}
-                      {key.secrets?.[field.name] && (
-                        <span className="ml-2 font-mono text-[11px] text-accent-fg">stored</span>
-                      )}
-                    </span>
-                    <input
-                      type={field.masked ? 'password' : 'text'}
-                      value={key.values?.[field.name] ?? ''}
-                      autoComplete={field.masked ? 'new-password' : 'off'}
-                      spellCheck={false}
-                      placeholder={key.secrets?.[field.name] ? 'stored: type to replace it' : ''}
-                      onChange={(event) =>
-                        change(index, { values: { ...key.values, [field.name]: event.target.value } })
-                      }
-                      className={INPUT}
-                    />
-                  </label>
-                ))
+                fields.map((field) => {
+                  const choices = credentialChoices(credentials, field.name, secretNames)
+                  const stored = Boolean(key.secrets?.[field.name])
+                  const typed = key.values?.[field.name] ?? ''
+                  const mode = secretMode({
+                    chosen: key.modes?.[field.name],
+                    typed,
+                    stored,
+                    reference: storedReference(key.credentials, field.name),
+                    choices,
+                  })
+                  return (
+                    <div key={field.name} className="text-xs">
+                      <SecretField
+                        id={`key-${index}-${field.name}`}
+                        label={field.label}
+                        field={field.name}
+                        masked={field.masked}
+                        inputClass={INPUT}
+                        value={typed}
+                        onValue={(text) => change(index, { values: { ...key.values, [field.name]: text } })}
+                        onFill={(fills) =>
+                          change(index, {
+                            values: { ...key.values, ...fills },
+                            modes: {
+                              ...key.modes,
+                              ...Object.fromEntries(Object.keys(fills).map((name) => [name, 'credential'])),
+                            },
+                          })
+                        }
+                        mode={mode}
+                        onMode={(next) =>
+                          change(index, {
+                            modes: { ...key.modes, [field.name]: next },
+                            values: { ...key.values, [field.name]: valueForMode(typed, next) },
+                          })
+                        }
+                        stored={stored}
+                        held={key.credentials}
+                        choices={choices}
+                        onKeep={
+                          onKeep && key.id && keepable(stored, key.credentials, field.name, secretNames)
+                            ? () => onKeep(key, field)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  )
+                })
               )}
               {!key.isNew && (
                 <div className="flex items-center gap-2 text-xs text-fg-muted">

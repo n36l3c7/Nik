@@ -12,6 +12,7 @@ import {
   HardDrive,
   KeyRound,
   ListOrdered,
+  LockKeyhole,
   Mail,
   OctagonX,
   Plug,
@@ -48,6 +49,7 @@ import ListsSection from './sections/ListsSection.jsx'
 import ContentPacksSection from './sections/ContentPacksSection.jsx'
 import ScriptSignaturesSection from './sections/ScriptSignaturesSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
+import CredentialsSection from './sections/CredentialsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
@@ -91,6 +93,7 @@ const SECTION_VIEWS = {
   preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },
+  credentials: { icon: LockKeyhole, Component: CredentialsSection },
   contentPacks: { icon: PackageOpen, Component: ContentPacksSection },
   scriptSignatures: { icon: FileCode2, Component: ScriptSignaturesSection },
   automationNetwork: { icon: Globe, Component: AutomationNetworkSection },

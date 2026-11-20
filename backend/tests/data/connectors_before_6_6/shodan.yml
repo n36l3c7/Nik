@@ -1,0 +1,1262 @@
+# Shodan, through its REST API (https://api.shodan.io) and the services it
+# keeps beside it.
+#
+# The REST API was written from Shodan's public documentation,
+# https://developer.shodan.io/api, and the OpenAPI file it publishes
+# (https://developer.shodan.io/api/openapi.json, "Shodan REST API
+# Documentation" 1.0.0). Where the two differ the page was followed: the
+# status of a scan is read at /shodan/scan/{id}, and the optional parameters
+# the page lists (minify and fields of a search, page, sort and order of the
+# directory, history, type and page of a domain) are here.
+#
+# The other services are on hosts of their own (more_hosts), each written
+# from what Shodan publishes about it:
+#   InternetDB  https://internetdb.shodan.io/openapi.json   no key
+#   CVEDB       https://cvedb.shodan.io/openapi.json        no key
+#   EntityDB    https://entitydb.shodan.io/openapi.json     no key
+#   GeoNet      https://geonet.shodan.io/openapi.json       no key
+#   Trends      https://developer.shodan.io/api/trends      the key, Enterprise
+#
+# The key goes in the query of a request (?key=...), as the API asks: on
+# api.shodan.io and trends.shodan.io only. The services that take no key are
+# never sent it, and an instance without a key can use their commands
+# (check-ip, CVEDB, EntityDB, GeoNet): the key is read with a default, so a
+# request that wants one leaves without it and Shodan refuses it (401).
+#
+# Not here: the Exploits API (exploits.shodan.io), whose reference could not
+# be read, and the Streaming API (stream.shodan.io), an endless stream.
+#
+# check-ip reads InternetDB and gives the verdict Nik's own look-up code gave
+# from it: malicious when the host is tagged malware, c2, compromised or
+# botnet, suspicious when its only such tag is tor, unknown otherwise (Shodan
+# says what a host exposes, not that it is clean). A host InternetDB has
+# nothing on (404) is unknown, not an error.
+#
+# Not run against the real services: see "verified" below.
+name: Shodan
+id: shodan
+version: 2
+description: >-
+  Hosts, searches, on-demand scans, network alerts and DNS of Shodan, the search engine of what is exposed
+  on the Internet, with InternetDB, CVEDB, EntityDB, GeoNet and Trends.
+api_version: "Shodan REST API 1.0.0 (api.shodan.io); InternetDB, CVEDB, EntityDB and GeoNet 1.0.0; Trends API v1"
+verified: false
+configuration:
+  - name: api_key
+    label: API key
+    type: secret
+    help: "The API key of a Shodan account: https://account.shodan.io. Left empty, only the commands of InternetDB (check-ip), CVEDB, EntityDB and GeoNet work: they take no key."
+base_url: "https://api.shodan.io"
+more_hosts:
+  - internetdb.shodan.io
+  - cvedb.shodan.io
+  - entitydb.shodan.io
+  - geonet.shodan.io
+  - trends.shodan.io
+headers:
+  Accept: application/json
+test:
+  request: { method: GET, path: /api-info, query: { key: "{{ secret.api_key | default('') }}" } }
+  expect: { status: 200 }
+commands:
+  # ----------------------------------------------------------------- hosts --
+  - name: check-ip
+    description: >-
+      The open ports, known CVEs, host names and tags of an IP address, from Shodan InternetDB (no key, no
+      credits), with a verdict from the tags: malicious (malware, c2, compromised, botnet), suspicious (tor
+      only), unknown otherwise or when InternetDB has nothing on it.
+    reputation: ip
+    arguments:
+      - { name: ip, type: text, required: true, description: The IP address of the host }
+    request:
+      method: GET
+      path: "https://internetdb.shodan.io/{{ args.ip }}"
+    success: { status: [200, 404] }
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      # Malicious when the host is tagged malware, c2, compromised or botnet; suspicious when its only such
+      # tag is tor; unknown otherwise.
+      verdict: >-
+        {{ if(response.tags | default([]) | has_any(['malware', 'c2', 'compromised', 'botnet']), 'malicious',
+        if(response.tags | default([]) | has_any(['tor']), 'suspicious', 'unknown')) }}
+      # "ports 22, 443; 1 CVE; tags c2": the first 8 ports, the number of CVEs, the first 5 tags.
+      summary: >-
+        {{ if(status == 404 or not response, 'no open port known to Shodan',
+        if(response.ports | default([]), 'ports ' ~ (response.ports | limit(8) | join(', ')), 'no open port')
+        ~ if(response.vulns | default([]), '; ' ~ (response.vulns | plural('CVE')), '')
+        ~ if(response.tags | default([]), '; tags ' ~ (response.tags | limit(5) | join(', ')), '')) }}
+      bad_tags: "{{ response.tags | default([]) | intersect(['malware', 'c2', 'compromised', 'botnet', 'tor']) | sort }}"
+      link: "https://www.shodan.io/host/{{ args.ip }}"
+      ports: "{{ response.ports }}"
+      hostnames: "{{ response.hostnames }}"
+      cpes: "{{ response.cpes }}"
+      vulns: "{{ response.vulns }}"
+      tags: "{{ response.tags }}"
+
+  - name: get-host
+    description: Every service Shodan found on a host, with its location, organisation, host names and tags.
+    arguments:
+      - { name: ip, type: text, required: true, description: The IP address of the host }
+      - { name: history, type: bool, description: "True to get every historical banner as well (false when left out)" }
+      - { name: minify, type: bool, description: "True to get only the list of ports and the general information, no banners" }
+    request:
+      method: GET
+      path: "/shodan/host/{{ args.ip }}"
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        history: "{{ args.history }}"
+        minify: "{{ args.minify }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      ip: "{{ response.ip_str }}"
+      ports: "{{ response.ports }}"
+      hostnames: "{{ response.hostnames }}"
+      domains: "{{ response.domains }}"
+      tags: "{{ response.tags }}"
+      vulns: "{{ response.vulns }}"
+      org: "{{ response.org }}"
+      isp: "{{ response.isp }}"
+      asn: "{{ response.asn }}"
+      os: "{{ response.os }}"
+      country: "{{ response.country_name }}"
+      city: "{{ response.city }}"
+      last_update: "{{ response.last_update }}"
+      services: "{{ response.data }}"
+
+  - name: count-hosts
+    description: How many results a search query has, and its facets, without the results. Uses no query credits.
+    arguments:
+      - { name: query, type: text, required: true, description: "A Shodan search query, with filters as filter:value (apache country:DE)" }
+      - { name: facets, type: text, description: "Properties to summarise, separated by commas; property:count gives that many values (org,country:100)" }
+    request:
+      method: GET
+      path: /shodan/host/count
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        query: "{{ args.query }}"
+        facets: "{{ args.facets }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      total: "{{ response.total }}"
+      facets: "{{ response.facets }}"
+
+  - name: search-hosts
+    description: >-
+      One page (100 results) of a Shodan search, with its total and facets. Uses 1 query credit when the query
+      holds a filter, and 1 for each page past the first.
+    arguments:
+      - { name: query, type: text, required: true, description: "A Shodan search query, with filters as filter:value (apache country:DE)" }
+      - { name: facets, type: text, description: "Properties to summarise, separated by commas; property:count gives that many values (org,country:100)" }
+      - { name: page, type: number, description: "The page to read, 100 results each (1 when left out)" }
+      - { name: minify, type: bool, description: "False to keep the large fields (http.html…) that are truncated by default" }
+      - { name: fields, type: text, description: "The fields to return, separated by commas (tags,http.title,http.favicon.hash)" }
+    request:
+      method: GET
+      path: /shodan/host/search
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        query: "{{ args.query }}"
+        facets: "{{ args.facets }}"
+        page: "{{ args.page }}"
+        minify: "{{ args.minify }}"
+        fields: "{{ args.fields }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      matches: "{{ response.matches }}"
+      ips: "{{ response.matches[*].ip_str | unique }}"
+      total: "{{ response.total }}"
+      facets: "{{ response.facets }}"
+
+  - name: search-all-hosts
+    description: >-
+      The results of a Shodan search read page after page, 500 at most. Uses 1 query credit when the query
+      holds a filter, and 1 more for each page of 100 past the first.
+    arguments:
+      - { name: query, type: text, required: true, description: "A Shodan search query, with filters as filter:value (apache country:DE)" }
+      - { name: minify, type: bool, description: "False to keep the large fields (http.html…) that are truncated by default" }
+      - { name: fields, type: text, description: "The fields to return, separated by commas (tags,http.title,http.favicon.hash)" }
+    request:
+      method: GET
+      path: /shodan/host/search
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        query: "{{ args.query }}"
+        minify: "{{ args.minify }}"
+        fields: "{{ args.fields }}"
+    pagination:
+      type: page
+      param: page
+      limit: 100
+      items: "{{ response.matches }}"
+      max_pages: 5
+      keep: { total: "{{ response.total }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      matches: "{{ response.items }}"
+      ips: "{{ response.items[*].ip_str | unique }}"
+      count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-search-facets
+    description: The facets a search can be summarised by.
+    request:
+      method: GET
+      path: /shodan/host/search/facets
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      facets: "{{ response }}"
+
+  - name: list-search-filters
+    description: The filters a search query can use.
+    request:
+      method: GET
+      path: /shodan/host/search/filters
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      filters: "{{ response }}"
+
+  - name: parse-search-query
+    description: Break a search query into its tokens, to see which filters it uses and what each was given.
+    arguments:
+      - { name: query, type: text, required: true, description: "A Shodan search query (Raspbian port:22)" }
+    request:
+      method: GET
+      path: /shodan/host/search/tokens
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        query: "{{ args.query }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      filters: "{{ response.filters }}"
+      attributes: "{{ response.attributes }}"
+      string: "{{ response.string }}"
+      errors: "{{ response.errors }}"
+
+  # -------------------------------------------------------------- scanning --
+  - name: list-ports
+    description: The ports Shodan's crawlers look for on the Internet.
+    request:
+      method: GET
+      path: /shodan/ports
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      ports: "{{ response }}"
+
+  - name: list-protocols
+    description: The protocols an on-demand scan can use, each with what its module does.
+    request:
+      method: GET
+      path: /shodan/protocols
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      protocols: "{{ response }}"
+      names: "{{ response | keys }}"
+
+  - name: submit-scan
+    description: >-
+      Ask Shodan to crawl IP addresses or netblocks. Needs a paid API plan and uses scan credits: 1 for each
+      IP address.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - name: ips
+        type: text
+        required: true
+        description: >-
+          IPs or netblocks (CIDR) separated by commas; or, to scan given services only, a JSON object as text:
+          {"1.1.1.1": [[53, "dns-udp"], [443, "https"]]}
+    request:
+      method: POST
+      path: /shodan/scan
+      query: { key: "{{ secret.api_key | default('') }}" }
+      form:
+        ips: "{{ args.ips }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      count: "{{ response.count }}"
+      credits_left: "{{ response.credits_left }}"
+    sample: { id: 3bPx0St3TvEHr24Y, count: 1, credits_left: 99 }
+
+  - name: submit-internet-scan
+    description: >-
+      Ask Shodan to crawl the whole Internet for one port and protocol. Only for security researchers Shodan
+      approved and holders of a Shodan Enterprise Data license.
+    premium: true
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: port, type: number, required: true, description: The port to crawl the Internet for }
+      - { name: protocol, type: text, required: true, description: "The protocol the port is interrogated with, one of list-protocols (http)" }
+    request:
+      method: POST
+      path: /shodan/scan/internet
+      query: { key: "{{ secret.api_key | default('') }}" }
+      form:
+        port: "{{ args.port }}"
+        protocol: "{{ args.protocol }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+    sample: { id: DQdcm6QYgENbGj0R }
+
+  - name: list-scans
+    description: The on-demand scans that are active on the account.
+    request:
+      method: GET
+      path: /shodan/scans
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      scans: "{{ response.matches }}"
+      ids: "{{ response.matches | pluck('id') }}"
+      total: "{{ response.total }}"
+
+  - name: get-scan
+    description: "The progress of a scan that was submitted: SUBMITTING, QUEUE, PROCESSING or DONE."
+    arguments:
+      - { name: id, type: text, required: true, description: The id submit-scan gave }
+    request:
+      method: GET
+      path: "/shodan/scan/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      status: "{{ response.status }}"
+      id: "{{ response.id }}"
+      count: "{{ response.count }}"
+      created: "{{ response.created }}"
+
+  - name: wait-for-scan
+    description: Wait until a scan that was submitted is DONE, asking every half minute for an hour at most.
+    arguments:
+      - { name: id, type: text, required: true, description: The id submit-scan gave }
+    request:
+      method: GET
+      path: "/shodan/scan/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    poll:
+      until: { all: [{ left: "{{ response.status }}", op: eq, right: DONE }] }
+      every: 30
+      timeout: 3600
+    error: { message: "{{ response.error }}" }
+    outputs:
+      status: "{{ response.status }}"
+      id: "{{ response.id }}"
+      count: "{{ response.count }}"
+      created: "{{ response.created }}"
+
+  # -------------------------------------------------------- network alerts --
+  - name: create-alert
+    description: Create a network alert that watches IP addresses or netblocks for what Shodan discovers on them.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: name, type: text, required: true, description: The name of the alert }
+      - { name: ips, type: list, required: true, description: "The IP addresses or network ranges (CIDR) to watch" }
+      - { name: expires, type: number, description: "Seconds the alert stays active (0, or left out, for no end)" }
+    request:
+      method: POST
+      path: /shodan/alert
+      query: { key: "{{ secret.api_key | default('') }}" }
+      json:
+        name: "{{ args.name }}"
+        filters:
+          ip: "{{ args.ips }}"
+        expires: "{{ args.expires }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      size: "{{ response.size }}"
+      created: "{{ response.created }}"
+      expires: "{{ response.expires }}"
+    sample: { id: OYPRB8IR9Z35AZPR, name: DNS Alert, size: 2, created: "2021-01-27T03:44:22.989575", expires: 0 }
+
+  - name: get-alert
+    description: A network alert, with the networks it watches, its triggers and its notifiers.
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+    request:
+      method: GET
+      path: "/shodan/alert/{{ args.id }}/info"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      ips: "{{ response.filters.ip }}"
+      size: "{{ response.size }}"
+      triggers: "{{ response.triggers }}"
+      has_triggers: "{{ response.has_triggers }}"
+      notifiers: "{{ response.notifiers }}"
+      created: "{{ response.created }}"
+      expires: "{{ response.expires }}"
+
+  - name: delete-alert
+    description: Remove a network alert.
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+    request:
+      method: DELETE
+      path: "/shodan/alert/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: update-alert
+    description: Replace the IP addresses and networks a network alert watches.
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: ips, type: list, required: true, description: "The new list of IP addresses or network ranges (CIDR)" }
+    request:
+      method: POST
+      path: "/shodan/alert/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+      json:
+        filters:
+          ip: "{{ args.ips }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      ips: "{{ response.filters.ip }}"
+      size: "{{ response.size }}"
+    sample: { id: 67UQ4JM3NGJKROR9, name: DNS Alert, ips: ["8.8.8.8", "1.1.1.1"], size: 2 }
+
+  - name: list-alerts
+    description: The network alerts that are active on the account.
+    request:
+      method: GET
+      path: /shodan/alert/info
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      alerts: "{{ response }}"
+      ids: "{{ response | pluck('id') }}"
+      count: "{{ response | length }}"
+
+  - name: list-alert-triggers
+    description: The triggers that can be enabled on a network alert, each with its rule.
+    request:
+      method: GET
+      path: /shodan/alert/triggers
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      triggers: "{{ response }}"
+      names: "{{ response | pluck('name') }}"
+
+  - name: enable-alert-trigger
+    description: Get notifications when a trigger is met on a network alert.
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: trigger, type: text, required: true, description: "Trigger names, separated by commas (open_database,iot)" }
+    request:
+      method: PUT
+      path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: disable-alert-trigger
+    description: Stop getting notifications for a trigger of a network alert.
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: trigger, type: text, required: true, description: "Trigger names, separated by commas (open_database,iot)" }
+    request:
+      method: DELETE
+      path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: ignore-alert-service
+    description: Ignore a service when it matches a trigger of a network alert (add it to the whitelist).
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: trigger, type: text, required: true, description: The name of the trigger }
+      - { name: service, type: text, required: true, description: "The service, as ip:port (1.1.1.1:80)" }
+    request:
+      method: PUT
+      path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}/ignore/{{ args.service }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: unignore-alert-service
+    description: Get notifications again for a service that was ignored for a trigger (remove it from the whitelist).
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: trigger, type: text, required: true, description: The name of the trigger }
+      - { name: service, type: text, required: true, description: "The service, as ip:port (1.1.1.1:80)" }
+    request:
+      method: DELETE
+      path: "/shodan/alert/{{ args.id }}/trigger/{{ args.trigger }}/ignore/{{ args.service }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: add-alert-notifier
+    description: Send the notifications of a network alert through a notifier (they are sent only when triggers are enabled).
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: notifier_id, type: text, required: true, description: "The id of the notifier (default is the account's e-mail notifier)" }
+    request:
+      method: PUT
+      path: "/shodan/alert/{{ args.id }}/notifier/{{ args.notifier_id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: remove-alert-notifier
+    description: Stop sending the notifications of a network alert through a notifier.
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the alert }
+      - { name: notifier_id, type: text, required: true, description: The id of the notifier }
+    request:
+      method: DELETE
+      path: "/shodan/alert/{{ args.id }}/notifier/{{ args.notifier_id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  # -------------------------------------------------------------- notifiers --
+  - name: list-notifiers
+    description: The notifiers the user created.
+    request:
+      method: GET
+      path: /notifier
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      notifiers: "{{ response.matches }}"
+      ids: "{{ response.matches | pluck('id') }}"
+      total: "{{ response.total }}"
+
+  - name: list-notifier-providers
+    description: The notification providers there are, each with the parameters a notifier of it needs.
+    request:
+      method: GET
+      path: /notifier/provider
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      providers: "{{ response }}"
+      names: "{{ response | keys }}"
+
+  - name: create-notifier
+    description: >-
+      Create a notifier, a place Shodan sends notifications to. Which of the other arguments are needed
+      depends on the provider: list-notifier-providers says.
+    changes_outside: true
+    idempotent: false
+    arguments:
+      - { name: provider, type: text, required: true, description: "The provider, as list-notifier-providers names it (email, slack, webhook…)" }
+      - { name: description, type: text, required: true, description: A description of the notifier }
+      - { name: to, type: text, description: "email, phone: the address or the number notifications go to" }
+      - { name: url, type: text, description: "webhook: the address notifications are posted to" }
+      - { name: webhook_url, type: text, description: "slack: the address of the incoming webhook" }
+      - { name: routing_key, type: text, description: "pagerduty: the routing key" }
+      - { name: chat_id, type: text, description: "telegram: the id of the chat" }
+      - { name: room_id, type: text, description: "gitter: the id of the room" }
+      - { name: token, type: text, description: "telegram, gitter: the token" }
+    request:
+      method: POST
+      path: /notifier
+      query: { key: "{{ secret.api_key | default('') }}" }
+      form:
+        provider: "{{ args.provider }}"
+        description: "{{ args.description }}"
+        to: "{{ args.to }}"
+        url: "{{ args.url }}"
+        webhook_url: "{{ args.webhook_url }}"
+        routing_key: "{{ args.routing_key }}"
+        chat_id: "{{ args.chat_id }}"
+        room_id: "{{ args.room_id }}"
+        token: "{{ args.token }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      success: "{{ response.success }}"
+    sample: { id: 1VxiaJb93Gn8TUnM, success: true }
+
+  - name: get-notifier
+    description: A notifier, with its provider and what it was given.
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the notifier }
+    request:
+      method: GET
+      path: "/notifier/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      provider: "{{ response.provider }}"
+      description: "{{ response.description }}"
+      args: "{{ response.args }}"
+
+  - name: update-notifier
+    description: Change the parameters of a notifier (those its provider takes).
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the notifier }
+      - { name: to, type: text, description: "email, phone: the address or the number notifications go to" }
+      - { name: url, type: text, description: "webhook: the address notifications are posted to" }
+      - { name: webhook_url, type: text, description: "slack: the address of the incoming webhook" }
+      - { name: routing_key, type: text, description: "pagerduty: the routing key" }
+      - { name: chat_id, type: text, description: "telegram: the id of the chat" }
+      - { name: room_id, type: text, description: "gitter: the id of the room" }
+      - { name: token, type: text, description: "telegram, gitter: the token" }
+    request:
+      method: PUT
+      path: "/notifier/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+      form:
+        to: "{{ args.to }}"
+        url: "{{ args.url }}"
+        webhook_url: "{{ args.webhook_url }}"
+        routing_key: "{{ args.routing_key }}"
+        chat_id: "{{ args.chat_id }}"
+        room_id: "{{ args.room_id }}"
+        token: "{{ args.token }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      success: "{{ response.success }}"
+    sample: { id: 1VxiaJb93Gn8TUnM, success: true }
+
+  - name: delete-notifier
+    description: Remove a notifier.
+    changes_outside: true
+    arguments:
+      - { name: id, type: text, required: true, description: The id of the notifier }
+    request:
+      method: DELETE
+      path: "/notifier/{{ args.id }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  # -------------------------------------------------------------- directory --
+  - name: list-saved-queries
+    description: The search queries users saved in Shodan's directory, read ten a page, 100 at most.
+    arguments:
+      - { name: sort, type: choice, choices: [votes, timestamp], description: The property the list is sorted by }
+      - { name: order, type: choice, choices: [asc, desc], description: Ascending or descending }
+    request:
+      method: GET
+      path: /shodan/query
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        sort: "{{ args.sort }}"
+        order: "{{ args.order }}"
+    pagination:
+      type: page
+      param: page
+      limit: 10
+      items: "{{ response.matches }}"
+      max_pages: 10
+      keep: { total: "{{ response.total }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      queries: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: search-saved-queries
+    description: Search the directory of search queries users saved in Shodan, read ten a page, 100 at most.
+    arguments:
+      - { name: query, type: text, required: true, description: What to look for in the directory (webcam) }
+    request:
+      method: GET
+      path: /shodan/query/search
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        query: "{{ args.query }}"
+    pagination:
+      type: page
+      param: page
+      limit: 10
+      items: "{{ response.matches }}"
+      max_pages: 10
+      keep: { total: "{{ response.total }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      queries: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      total: "{{ response.kept.total }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: list-query-tags
+    description: The most popular tags of the saved search queries.
+    arguments:
+      - { name: size, type: number, description: "How many tags to return (10 when left out)" }
+    request:
+      method: GET
+      path: /shodan/query/tags
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        size: "{{ args.size }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      tags: "{{ response.matches }}"
+      names: "{{ response.matches | pluck('value') }}"
+      total: "{{ response.total }}"
+
+  # -------------------------------------------------------------- bulk data --
+  - name: list-datasets
+    description: The datasets that can be downloaded. Only with a Shodan Enterprise Data license.
+    premium: true
+    request:
+      method: GET
+      path: /shodan/data
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      datasets: "{{ response }}"
+      names: "{{ response | pluck('name') }}"
+
+  - name: list-dataset-files
+    description: >-
+      The files of a dataset, each with its size, SHA-1 and the address it is downloaded from. Only with a
+      Shodan Enterprise Data license.
+    premium: true
+    arguments:
+      - { name: dataset, type: text, required: true, description: "The name of the dataset (raw-daily)" }
+    request:
+      method: GET
+      path: "/shodan/data/{{ args.dataset }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      files: "{{ response }}"
+      names: "{{ response | pluck('name') }}"
+
+  # ----------------------------------------------------------- organisation --
+  - name: get-organization
+    description: >-
+      The organisation of the account: its members, administrators, upgrade and authorised domains. Only for
+      Enterprise accounts.
+    premium: true
+    request:
+      method: GET
+      path: /org
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      id: "{{ response.id }}"
+      name: "{{ response.name }}"
+      admins: "{{ response.admins }}"
+      members: "{{ response.members }}"
+      domains: "{{ response.domains }}"
+      upgrade_type: "{{ response.upgrade_type }}"
+      created: "{{ response.created }}"
+
+  - name: add-organization-member
+    description: Add a Shodan user to the organisation and upgrade the user. Only for Enterprise accounts.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: user, type: text, required: true, description: The user name or the e-mail address of the Shodan user }
+      - { name: notify, type: bool, description: Whether the user is told by e-mail }
+    request:
+      method: PUT
+      path: "/org/member/{{ args.user }}"
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        notify: "{{ args.notify }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  - name: remove-organization-member
+    description: Remove a member from the organisation and downgrade the user. Only for Enterprise accounts.
+    premium: true
+    changes_outside: true
+    arguments:
+      - { name: user, type: text, required: true, description: The user name or the e-mail address of the Shodan user }
+    request:
+      method: DELETE
+      path: "/org/member/{{ args.user }}"
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      success: "{{ response.success }}"
+    sample: { success: true }
+
+  # ---------------------------------------------------------------- account --
+  - name: get-account-profile
+    description: The Shodan account the API key belongs to.
+    request:
+      method: GET
+      path: /account/profile
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      member: "{{ response.member }}"
+      credits: "{{ response.credits }}"
+      display_name: "{{ response.display_name }}"
+      created: "{{ response.created }}"
+
+  - name: get-api-info
+    description: The API plan of the key, with the query credits, scan credits and monitored IPs it has left.
+    request:
+      method: GET
+      path: /api-info
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      plan: "{{ response.plan }}"
+      query_credits: "{{ response.query_credits }}"
+      scan_credits: "{{ response.scan_credits }}"
+      monitored_ips: "{{ response.monitored_ips }}"
+      usage_limits: "{{ response.usage_limits }}"
+      unlocked: "{{ response.unlocked }}"
+      unlocked_left: "{{ response.unlocked_left }}"
+
+  # -------------------------------------------------------------------- DNS --
+  - name: get-domain
+    description: >-
+      The subdomains and the other DNS entries Shodan knows of a domain, 100 entries a page. Uses 1 query
+      credit for each look-up.
+    arguments:
+      - { name: domain, type: text, required: true, description: "The domain name (cnn.com)" }
+      - { name: history, type: bool, description: "True to include historical DNS data (false when left out)" }
+      - { name: type, type: choice, choices: [A, AAAA, CNAME, NS, SOA, MX, TXT], description: Only the entries of this DNS type }
+      - { name: page, type: number, description: "The page to read, 100 entries each (1 when left out)" }
+    request:
+      method: GET
+      path: "/dns/domain/{{ args.domain }}"
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        history: "{{ args.history }}"
+        type: "{{ args.type }}"
+        page: "{{ args.page }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      domain: "{{ response.domain }}"
+      subdomains: "{{ response.subdomains }}"
+      records: "{{ response.data }}"
+      tags: "{{ response.tags }}"
+      more: "{{ response.more }}"
+
+  - name: resolve-hostnames
+    description: The IP address of each host name of a list.
+    arguments:
+      - { name: hostnames, type: text, required: true, description: "Host names, separated by commas (google.com,bing.com)" }
+    request:
+      method: GET
+      path: /dns/resolve
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        hostnames: "{{ args.hostnames }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      addresses: "{{ response }}"
+      ips: "{{ response | values }}"
+
+  - name: reverse-resolve-ips
+    description: The host names defined for each IP address of a list (reverse DNS).
+    arguments:
+      - { name: ips, type: text, required: true, description: "IP addresses, separated by commas (74.125.227.230,204.79.197.200)" }
+    request:
+      method: GET
+      path: /dns/reverse
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        ips: "{{ args.ips }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      hostnames: "{{ response }}"
+
+  # -------------------------------------------------------------- utilities --
+  - name: get-http-headers
+    description: The HTTP headers Shodan sees when Nik connects to it.
+    request:
+      method: GET
+      path: /tools/httpheaders
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      headers: "{{ response }}"
+
+  - name: get-my-ip
+    description: The IP address Nik is seen with from the Internet.
+    request:
+      method: GET
+      path: /tools/myip
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      ip: "{{ response }}"
+
+  # ------------------------------------------- CVEDB (cvedb.shodan.io, no key) --
+  - name: get-cve
+    description: A vulnerability by its CVE id, from Shodan CVEDB, with its CVSS and EPSS scores, whether it is known to be exploited, and the products it affects. No key.
+    arguments:
+      - { name: cve_id, type: text, required: true, description: "The CVE id (CVE-2021-44228)" }
+    request:
+      method: GET
+      path: "https://cvedb.shodan.io/cve/{{ args.cve_id }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      cve_id: "{{ response.cve_id }}"
+      summary: "{{ response.summary }}"
+      cvss: "{{ response.cvss }}"
+      cvss_version: "{{ response.cvss_version }}"
+      epss: "{{ response.epss }}"
+      ranking_epss: "{{ response.ranking_epss }}"
+      kev: "{{ response.kev }}"
+      propose_action: "{{ response.propose_action }}"
+      ransomware_campaign: "{{ response.ransomware_campaign }}"
+      references: "{{ response.references }}"
+      cpes: "{{ response.cpes }}"
+      published_time: "{{ response.published_time }}"
+      euvd: "{{ response.euvd }}"
+      ghsa: "{{ response.ghsa }}"
+
+  - name: get-euvd
+    description: A vulnerability by its id in the European Union Vulnerability Database, from Shodan CVEDB, with the CVE and the GitHub advisory linked to it. No key.
+    arguments:
+      - { name: euvd_id, type: text, required: true, description: "The EUVD id (EUVD-2024-02040)" }
+    request:
+      method: GET
+      path: "https://cvedb.shodan.io/euvd/{{ args.euvd_id }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      euvd_id: "{{ response.euvd_id }}"
+      description: "{{ response.description }}"
+      cvss: "{{ response.cvss }}"
+      cvss_version: "{{ response.cvss_version }}"
+      epss: "{{ response.epss }}"
+      assigner: "{{ response.assigner }}"
+      products: "{{ response.products }}"
+      vendors: "{{ response.vendors }}"
+      references: "{{ response.references }}"
+      published_time: "{{ response.published_time }}"
+      cve: "{{ response.cve }}"
+      ghsa: "{{ response.ghsa }}"
+
+  - name: get-ghsa
+    description: A GitHub Security Advisory by its id, from Shodan CVEDB, with the CVE and the EUVD entry linked to it. No key.
+    arguments:
+      - { name: ghsa_id, type: text, required: true, description: "The GHSA id, in any case (GHSA-wcwp-r3fj-mm3p)" }
+    request:
+      method: GET
+      path: "https://cvedb.shodan.io/ghsa/{{ args.ghsa_id }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      id: "{{ response.id }}"
+      summary: "{{ response.summary }}"
+      details: "{{ response.details }}"
+      github_severity: "{{ response.github_severity }}"
+      github_reviewed: "{{ response.github_reviewed }}"
+      severity: "{{ response.severity }}"
+      affected: "{{ response.affected }}"
+      cwe_ids: "{{ response.cwe_ids }}"
+      references: "{{ response.references }}"
+      published_time: "{{ response.published_time }}"
+      modified_time: "{{ response.modified_time }}"
+      withdrawn_time: "{{ response.withdrawn_time }}"
+      cve: "{{ response.cve }}"
+      euvd: "{{ response.euvd }}"
+
+  - name: list-cpes
+    description: The CPE 2.3 names of a product, from Shodan CVEDB, read 1,000 a page and 5,000 at most. No key.
+    arguments:
+      - { name: product, type: text, required: true, description: "The name of the product (nginx)" }
+    request:
+      method: GET
+      path: https://cvedb.shodan.io/cpes
+      query:
+        product: "{{ args.product }}"
+    pagination:
+      type: offset
+      param: skip
+      limit_param: limit
+      limit: 1000
+      items: "{{ response.cpes }}"
+      max_pages: 5
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      cpes: "{{ response.items }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: count-cpes
+    description: How many CPE 2.3 names a product has in Shodan CVEDB. No key.
+    arguments:
+      - { name: product, type: text, required: true, description: "The name of the product (nginx)" }
+    request:
+      method: GET
+      path: https://cvedb.shodan.io/cpes
+      query:
+        product: "{{ args.product }}"
+        count: "true"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      total: "{{ response.total }}"
+
+  - name: search-cves
+    description: >-
+      The vulnerabilities of a product or of a CPE 2.3 name, from Shodan CVEDB, or the newest ones when
+      neither is given; read 1,000 a page and 5,000 at most. No key.
+    arguments:
+      - { name: product, type: text, description: "The name of the product (nginx); not together with cpe23" }
+      - { name: cpe23, type: text, description: "A CPE 2.3 name, cpe:2.3:part:vendor:product:version; not together with product" }
+      - { name: is_kev, type: bool, description: True to keep only the vulnerabilities known to be exploited (KEV) }
+      - { name: sort_by_epss, type: bool, description: "True to sort by EPSS score, the highest first" }
+      - { name: start_date, type: text, description: "Published from this moment on: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS" }
+      - { name: end_date, type: text, description: "Published up to this moment: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (now when left out)" }
+    request:
+      method: GET
+      path: https://cvedb.shodan.io/cves
+      query:
+        product: "{{ args.product }}"
+        cpe23: "{{ args.cpe23 }}"
+        is_kev: "{{ args.is_kev }}"
+        sort_by_epss: "{{ args.sort_by_epss }}"
+        start_date: "{{ args.start_date }}"
+        end_date: "{{ args.end_date }}"
+    pagination:
+      type: offset
+      param: skip
+      limit_param: limit
+      limit: 1000
+      items: "{{ response.cves }}"
+      max_pages: 5
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      cves: "{{ response.items }}"
+      ids: "{{ response.items | pluck('cve_id') }}"
+      count: "{{ response.items | length }}"
+      truncated: "{{ response.truncated }}"
+
+  - name: count-cves
+    description: How many vulnerabilities a product or a CPE 2.3 name has in Shodan CVEDB. No key.
+    arguments:
+      - { name: product, type: text, description: "The name of the product (nginx); not together with cpe23" }
+      - { name: cpe23, type: text, description: "A CPE 2.3 name, cpe:2.3:part:vendor:product:version; not together with product" }
+      - { name: is_kev, type: bool, description: True to count only the vulnerabilities known to be exploited (KEV) }
+      - { name: start_date, type: text, description: "Published from this moment on: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS" }
+      - { name: end_date, type: text, description: "Published up to this moment: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (now when left out)" }
+    request:
+      method: GET
+      path: https://cvedb.shodan.io/cves
+      query:
+        product: "{{ args.product }}"
+        cpe23: "{{ args.cpe23 }}"
+        is_kev: "{{ args.is_kev }}"
+        start_date: "{{ args.start_date }}"
+        end_date: "{{ args.end_date }}"
+        count: "true"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      total: "{{ response.total }}"
+
+  # --------------------------------------- EntityDB (entitydb.shodan.io, no key) --
+  - name: list-entities
+    description: Every business entity of Shodan EntityDB, each with its id, its SEC number (CIK), its tickers and its name. No key.
+    request:
+      method: GET
+      path: https://entitydb.shodan.io/api/entities
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      entities: "{{ response.entities }}"
+      count: "{{ response.entities | length }}"
+
+  - name: get-entity
+    description: A business entity of Shodan EntityDB by its id, with its addresses, its autonomous systems, its financial reports and its executives. No key.
+    arguments:
+      - { name: id, type: number, required: true, description: "The id of the entity, as list-entities gives it" }
+    request:
+      method: GET
+      path: "https://entitydb.shodan.io/api/entities/{{ args.id }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      entity: "{{ response.entity }}"
+      name: "{{ response.entity.entity_name }}"
+      tickers: "{{ response.entity.tickers }}"
+      hostname: "{{ response.entity.hostname }}"
+      asns: "{{ response.entity.asn_list }}"
+      finance_data: "{{ response.finance_data }}"
+      executives: "{{ response.executives }}"
+
+  - name: get-entity-by-symbol
+    description: A business entity of Shodan EntityDB by its ticker symbol, with its addresses, its autonomous systems, its financial reports and its executives. No key.
+    arguments:
+      - { name: symbol, type: text, required: true, description: "The ticker symbol (GOOGL)" }
+    request:
+      method: GET
+      path: "https://entitydb.shodan.io/api/entities/symbol/{{ args.symbol }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      entity: "{{ response.entity }}"
+      id: "{{ response.entity.id }}"
+      name: "{{ response.entity.entity_name }}"
+      tickers: "{{ response.entity.tickers }}"
+      hostname: "{{ response.entity.hostname }}"
+      asns: "{{ response.entity.asn_list }}"
+      finance_data: "{{ response.finance_data }}"
+      executives: "{{ response.executives }}"
+
+  - name: get-entitydb-last-updated
+    description: When the database of Shodan EntityDB was last built. No key.
+    request:
+      method: GET
+      path: https://entitydb.shodan.io/api/last_updated
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      last_updated: "{{ response.last_updated }}"
+
+  - name: check-entitydb-health
+    description: Whether Shodan EntityDB answers (its health check). No key.
+    request:
+      method: GET
+      path: https://entitydb.shodan.io/health_check
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      status: "{{ status }}"
+      answer: "{{ response }}"
+
+  # ------------------------------------------- GeoNet (geonet.shodan.io, no key) --
+  - name: ping-host
+    description: Ping an IP address or a host name from one of Shodan GeoNet's servers. No key.
+    arguments:
+      - { name: host, type: text, required: true, description: The IP address or the host name to ping }
+    request:
+      method: GET
+      path: "https://geonet.shodan.io/api/ping/{{ args.host }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      ip: "{{ response.ip }}"
+      is_alive: "{{ response.is_alive }}"
+      avg_rtt: "{{ response.avg_rtt }}"
+      min_rtt: "{{ response.min_rtt }}"
+      max_rtt: "{{ response.max_rtt }}"
+      packets_sent: "{{ response.packets_sent }}"
+      packets_received: "{{ response.packets_received }}"
+      packet_loss: "{{ response.packet_loss }}"
+      from_loc: "{{ response.from_loc }}"
+
+  - name: ping-host-worldwide
+    description: Ping an IP address or a host name from every location of Shodan GeoNet, one result for each. No key.
+    arguments:
+      - { name: host, type: text, required: true, description: The IP address or the host name to ping }
+    request:
+      method: GET
+      path: "https://geonet.shodan.io/api/geoping/{{ args.host }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      results: "{{ response }}"
+      alive_from: "{{ response | where('is_alive') | length }}"
+      count: "{{ response | length }}"
+
+  - name: lookup-dns
+    description: Ask one of Shodan GeoNet's servers for the DNS records of a host name. No key.
+    arguments:
+      - { name: hostname, type: text, required: true, description: The host name to look up }
+      - { name: rtype, type: text, description: "The type of record (A when left out): A, AAAA, MX, NS, TXT…" }
+    request:
+      method: GET
+      path: "https://geonet.shodan.io/api/dns/{{ args.hostname }}"
+      query:
+        rtype: "{{ args.rtype }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      answers: "{{ response.answers }}"
+      values: "{{ response.answers | pluck('value') }}"
+      from_loc: "{{ response.from_loc }}"
+
+  - name: lookup-dns-worldwide
+    description: Ask every location of Shodan GeoNet for the DNS records of a host name, to see whether the answer depends on the place. No key.
+    arguments:
+      - { name: hostname, type: text, required: true, description: The host name to look up }
+      - { name: rtype, type: text, description: "The type of record (A when left out): A, AAAA, MX, NS, TXT…" }
+    request:
+      method: GET
+      path: "https://geonet.shodan.io/api/geodns/{{ args.hostname }}"
+      query:
+        rtype: "{{ args.rtype }}"
+    error: { message: "{{ response.detail }}" }
+    outputs:
+      results: "{{ response }}"
+      values: "{{ response[*].answers[*].value | unique }}"
+      count: "{{ response | length }}"
+
+  # --------------------------------- Trends (trends.shodan.io, the key, Enterprise) --
+  - name: search-trends
+    description: >-
+      The month-by-month count of the results of a query in Shodan's historical data, and its facets by
+      month. Only for Enterprise accounts.
+    premium: true
+    arguments:
+      - { name: query, type: text, required: true, description: "A query on the historical data (product:nginx)" }
+      - { name: facets, type: text, description: "Properties to summarise, separated by commas; property:count gives that many values (country:10)" }
+    request:
+      method: GET
+      path: https://trends.shodan.io/api/v1/search
+      query:
+        key: "{{ secret.api_key | default('') }}"
+        query: "{{ args.query }}"
+        facets: "{{ args.facets }}"
+    error: { message: "{{ response.error }}" }
+    outputs:
+      total: "{{ response.total }}"
+      matches: "{{ response.matches }}"
+      facets: "{{ response.facets }}"
+
+  - name: list-trends-filters
+    description: The filters a query on Shodan Trends can use. Only for Enterprise accounts.
+    premium: true
+    request:
+      method: GET
+      path: https://trends.shodan.io/api/v1/search/filters
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      filters: "{{ response }}"
+
+  - name: list-trends-facets
+    description: The facets a query on Shodan Trends can be summarised by. Only for Enterprise accounts.
+    premium: true
+    request:
+      method: GET
+      path: https://trends.shodan.io/api/v1/search/facets
+      query: { key: "{{ secret.api_key | default('') }}" }
+    error: { message: "{{ response.error }}" }
+    outputs:
+      facets: "{{ response }}"
