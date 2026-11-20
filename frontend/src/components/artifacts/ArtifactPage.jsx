@@ -10,6 +10,7 @@ import {
   FileSearch,
   Tag,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
@@ -62,13 +63,30 @@ function Row({ label, children }) {
  *   onNewIncident: (artifact: object) => void,       // create an incident and link this artifact
  * }} props
  */
+/**
+ * The Close of an open artifact (and of a mailbox): back to the page of the artifacts, with none open.
+ * @param {{ onClick: () => void }} props
+ */
+export function CloseArtifact({ onClick }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={X}
+      aria-label="Close the artifact"
+      title="Close the artifact: back to the list of artifacts"
+      onClick={onClick}
+    />
+  )
+}
+
 export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
   const {
     current,
     currentId,
     currentError,
     openArtifact,
-    closeArtifact,
+    leaveArtifact,
     link,
     analyseAs,
     unlink,
@@ -109,7 +127,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           skull="error"
           title="Unable to open the artifact"
           message={currentError}
-          action={<Button onClick={closeArtifact}>Close</Button>}
+          action={<Button onClick={leaveArtifact}>Close</Button>}
         />
       </div>
     )
@@ -134,6 +152,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           onOpenArtifact={openArtifact}
           onOpenIncident={onOpenIncident}
           onDelete={() => setDeleteOpen(true)}
+          onClose={leaveArtifact}
         />
         <Modal
           open={deleteOpen}
@@ -290,6 +309,7 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)}>
             Delete
           </Button>
+          <CloseArtifact onClick={leaveArtifact} />
         </div>
 
         <div className="space-y-2 px-4 py-3">

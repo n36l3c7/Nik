@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, FolderPlus, Inbox, Mail, Paperclip, Trash2 } from 'lucide-react'
+import { Download, FolderPlus, Inbox, Mail, Paperclip, Trash2, X } from 'lucide-react'
 import { api } from '../../services/api.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -305,9 +305,10 @@ function Graph({ messages, selected, onSelect, picked, onPick }) {
 
 /**
  * @param {{ artifact: object, onOpenArtifact: (id: string) => void, onOpenIncident: (id: string) => void,
- *   onDelete: () => void, onExport?: () => void }} props
+ *   onDelete: () => void, onExport?: () => void,
+ *   onClose?: () => void }} props   // its Close: back to the page of the artifacts
  */
-export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, onDelete }) {
+export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, onDelete, onClose }) {
   const { incidents } = useIncidents()
   const { showToast } = useToast()
   const [box, setBox] = useState(null)
@@ -449,6 +450,15 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
           <Button variant="ghost" icon={Trash2} onClick={onDelete}>
             Delete
           </Button>
+          {onClose && (
+            <Button
+              variant="ghost"
+              icon={X}
+              aria-label="Close the artifact"
+              title="Close the artifact: back to the list of artifacts"
+              onClick={onClose}
+            />
+          )}
         </div>
       </div>
 

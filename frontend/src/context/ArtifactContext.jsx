@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, upload } from '../services/api.js'
-import { artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifactRegistry.js'
-import { isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
+import { ARTIFACTS_ROOT, artifactIdFromPath, artifactKind, artifactPath } from '../domain/artifactRegistry.js'
+import { freely, isOverlayPage, onLocationChange, setPath } from '../lib/location.js'
 import { leave } from '../lib/unsaved.js'
 import { useAuth } from './AuthContext.jsx'
 import { transfer } from '../lib/transfers.js'
@@ -121,6 +121,13 @@ export function ArtifactProvider({ children }) {
   const closeArtifact = useCallback(() => setCurrentId(null), [])
 
   /**
+   * Close the artifact, as its own Close button does: back to the page of the artifacts, with none
+   * open. A move like any other: Back returns to the artifact, and from there to where the person
+   * came from (an incident included); what is not saved is asked about first.
+   */
+  const leaveArtifact = useCallback(() => setPath(ARTIFACTS_ROOT), [])
+
+  /**
    * Upload a file as an artifact of the given kind, optionally linked to an
    * incident at once. Resolves with the artifact's summary.
    */
@@ -209,6 +216,9 @@ export function ArtifactProvider({ children }) {
   const remove = useCallback(
     async (id) => {
       await api.del(`/artifacts/${id}`)
+      // Deleted while it was open: its address names nothing any more, and the page of the artifacts
+      // takes its place in the history (the address change is what closes it here).
+      if (idFromUrl() === id) freely(() => setPath(ARTIFACTS_ROOT, { replace: true }))
       setCurrentId((open) => (open === id ? null : open))
       refresh()
     },
@@ -230,6 +240,7 @@ export function ArtifactProvider({ children }) {
       currentError,
       openArtifact,
       closeArtifact,
+      leaveArtifact,
       startAnalysis,
       scanUrl,
       lookup,
@@ -253,6 +264,7 @@ export function ArtifactProvider({ children }) {
       currentError,
       openArtifact,
       closeArtifact,
+      leaveArtifact,
       startAnalysis,
       scanUrl,
       lookup,
