@@ -40,6 +40,28 @@
       </p>
 
       <section class="release">
+        <h3>6.7.0 <span class="date">2026-11-20</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Nik takes its own backups</strong>: encrypted, on a schedule,
+            each one restored into a scratch database to prove it, with a copy on a second host over SFTP.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>An upgrade is rehearsed</strong> on a copy after a snapshot; a
+            failed one leaves the data as it was, and <code>deploy/rollback.sh</code> goes back.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>A second factor at sign-in</strong>, which can be required of
+            administrators; sessions can be seen and ended.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Sessions end when unused (30 minutes for administrators); failed
+            sign-ins wait instead of locking (<a href="deployment.html#upgrading-to-67">Upgrading to 6.7</a>).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.6.1 <span class="date">2026-11-20</span></h3>
         <ul>
           <li>

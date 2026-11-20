@@ -563,6 +563,45 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-67">Upgrading to 6.7</h4>
+      <p>
+        <code>git pull</code> and <code>docker compose up -d --build</code>. The compose file gained one volume,
+        <code>backups</code>; to keep backups on another disk, set <code>NIK_BACKUP_DIR</code> in
+        <code>.env</code> before starting. At the first start the server takes a snapshot of the database, runs the
+        migrations (<code>0048_backups</code>, <code>0049_two_factor</code>) on a copy, and only then on the database
+        itself.
+      </p>
+      <ul>
+        <li>
+          <strong>Set the backup passphrase</strong> in <em>Settings → System → Backup</em> and write it down. No backup
+          is taken until it is set, none can be restored without it, and an administrator is told after a day without
+          one. Then set the second host, if there is one;
+        </li>
+        <li>
+          <strong>an administrator's session that is unused for 30 minutes now ends</strong>, with a warning a minute
+          before; everybody else's after 8 hours. People signed in stay signed in through the upgrade, and nobody is
+          asked for a second factor until <em>Administrators must have a second factor</em> is turned on. Set up your
+          own first;
+        </li>
+        <li>
+          a change of an account's roles signs it out, and the lock of five minutes after ten wrong passwords is
+          replaced by waits that grow;
+        </li>
+        <li>
+          remove any override that sets <code>FORWARDED_ALLOW_IPS=*</code>: the compose file now trusts the web
+          container only;
+        </li>
+        <li>
+          run <code>sudo deploy/install-systemd.sh</code> again to remove the old backup timer, or two backups are taken
+          each night. <code>deploy/backup.sh</code> no longer reads <code>BACKUP_DIR</code> or <code>KEEP_DAYS</code>;
+          the directories it wrote before 6.7 stay where they are, unencrypted;
+        </li>
+        <li>
+          <em>Full backup</em> is <em>Export as one file</em>, and importing one adds to the server instead of replacing
+          it;
+        </li>
+        <li>after a restore or a rollback everybody signs in again.</li>
+      </ul>
       <h4 id="upgrading-to-66">Upgrading to 6.6</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. Migrations

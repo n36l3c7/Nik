@@ -77,7 +77,7 @@ The stack does not start without its secrets and refuses the example
 values, which are public. Upgrading from 2.x: see
 [Upgrading to 3.0](https://n36l3c7.github.io/Nik/deployment.html#upgrading-to-30).
 
-Production, TLS certificates, start on boot, nightly backups and a manual
+Production, TLS certificates, start on boot, backups and a manual
 install on RHEL: see [Deployment](https://n36l3c7.github.io/Nik/deployment.html).
 
 ## Configuration
@@ -196,7 +196,9 @@ send files and their expressions to decide and count, and made the
 reputation of an indicator something only connectors are asked for; 6.6
 made the rail lead home and ask before unsaved work is lost, kept
 credentials once for every instance, gave playbooks nodes for files and
-their analyses, and put the data guard on every look-up.
+their analyses, and put the data guard on every look-up; 6.7 made Nik
+take and test its own backups, rehearse an upgrade before it touches the
+data, and ask for a second factor at sign-in.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.
