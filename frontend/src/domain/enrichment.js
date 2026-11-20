@@ -22,7 +22,7 @@ export function reputationRank(reputation) {
   return (order[reputation.verdict] ?? 0) * 1000 + (reputation.score ?? 0) * 5 + (reputation.flagged ?? 0)
 }
 
-/** "VirusTotal, AbuseIPDB" for the types a provider takes. */
+/** "IP · domain · URL · hash" for the types a source judges. */
 export function typeGroups(types = []) {
   const groups = []
   if (types.includes('ip')) groups.push('IP')
@@ -30,6 +30,69 @@ export function typeGroups(types = []) {
   if (types.includes('url')) groups.push('URL')
   if (types.some((t) => ['md5', 'sha1', 'sha256'].includes(t))) groups.push('hash')
   return groups.join(' · ')
+}
+
+/*
+ * Settings, Threat intelligence: a source is a connector that judges
+ * indicators, asked through an instance of it (GET /api/enrichment/sources).
+ */
+
+/** "4 a minute · 500 a day · answers kept 24 h": the limits of the instance a source is asked through. */
+export function limitsLine(limits) {
+  if (!limits) return ''
+  const parts = []
+  if (limits.perMinute) parts.push(`${limits.perMinute} a minute`)
+  if (limits.perDay) parts.push(`${limits.perDay} a day`)
+  if (limits.cacheHours) parts.push(`answers kept ${limits.cacheHours} h`)
+  return parts.join(' · ')
+}
+
+/**
+ * How a source stands: `{ state: 'on' | 'off' | 'none', badge, color, line }`.
+ * `none`: its connector has no instance at all; `off`: it has some, none on.
+ */
+export function sourceState(source) {
+  if (source.on) {
+    const keys = source.keys > 1 ? `, ${source.keys} keys in rotation` : ''
+    const limits = limitsLine(source.limits)
+    return {
+      state: 'on',
+      badge: 'on',
+      color: 'emerald',
+      line: `Asked through the instance “${source.instance}”${keys}${limits ? ` · ${limits}` : ' · no limit set'}`,
+    }
+  }
+  if (source.instances > 0)
+    return {
+      state: 'off',
+      badge: 'off',
+      color: 'slate',
+      line: 'None of its instances is on: turn one on in Connectors.',
+    }
+  return {
+    state: 'none',
+    badge: 'no instance',
+    color: 'amber',
+    line: source.needsNothing
+      ? 'Not asked: it has no instance. It needs no key, so it can be turned on here.'
+      : 'Not asked: it has no instance. Make one, with its key, in Connectors.',
+  }
+}
+
+/** What an API key kept from before 6.5 waits for, as a sentence (`key` of `oldKeys`). */
+export function oldKeyLine(key) {
+  if (key.state === 'rejected')
+    return 'The vendor had refused this key, so it was not moved. Remove it, or enter it again on an instance.'
+  if (key.state === 'unreadable')
+    return 'It cannot be read since SECRET_KEY changed. Remove it, and enter the key on an instance.'
+  if (key.state === 'unknown') return 'It belongs to a source that does not exist any more. Remove it.'
+  const connectors = key.connectors ?? []
+  const missing = connectors.filter((connector) => !connector.installed).map((connector) => connector.id)
+  if (missing.length)
+    return `It moves to an instance by itself when ${missing.length === 1 ? 'the pack' : 'the packs'} ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} installed (Content packs).`
+  if (connectors.length)
+    return `It could not be moved to ${connectors.map((connector) => connector.id).join(', ')}: enter it on an instance, then remove it here.`
+  return 'It has an instance now.'
 }
 
 /*

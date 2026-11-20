@@ -21,10 +21,12 @@
 # multipart form.
 name: AbuseIPDB
 id: abuseipdb
-version: 2
+version: 3
 description: What AbuseIPDB's users reported of an IP address or a network, its blacklist, and reporting an address.
 api_version: "AbuseIPDB API v2 (api.abuseipdb.com/api/v2)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
 configuration:
   - name: credentials
     type: header

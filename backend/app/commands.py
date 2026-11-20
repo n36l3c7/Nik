@@ -309,7 +309,7 @@ def catalog(db: OrmSession, prefix: str = "") -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = [
         {
             "name": kind,
-            "description": f"What is known of {_WHAT[kind]}: the reputation sources and the connectors that look it up",
+            "description": f"What is known of {_WHAT[kind]}: the sources that are on (the connectors that judge it)",
             "arguments": [{"name": "value", "type": "text", "required": True}],
             "changesOutside": False,
             "needsConnection": False,

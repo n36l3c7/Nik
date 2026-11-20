@@ -6,44 +6,41 @@ import base64
 import csv
 import io
 import json
+import time
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app import ioc_library as lib
+from app.automation import instance_keys
 from app.core.db import SessionLocal
-from app.enrichment import providers, service
+from app.core.models import Connection
+from app.enrichment import service
+from tests import vendor
 from tests.conftest import make_key
 
 IP = "185.220.101.47"
 SHA = "a" * 64
 
 
-@pytest.fixture(autouse=True)
-def fresh_limits(monkeypatch):
-    service.limiter.reset()
-    # The registries (RDAP / WHOIS) are a provider of their own, tested in
-    # test_registration.py: left out here so these tests count the others.
-    monkeypatch.setattr(service, "PROVIDERS", tuple(p for p in service.PROVIDERS if p.id != "registration"))
-    yield
-    service.limiter.reset()
-
-
 @pytest.fixture()
-def fake_http(monkeypatch):
-    calls: list[str] = []
-    answers: dict[str, tuple[int, object]] = {}
+def fake_http(admin: TestClient, outside):
+    """Two sources that are on, Shodan and GreyNoise (neither needs a key), and what they answer:
+    ``answers[address of the vendor] = (status, body)``. ``calls`` is every request that left."""
+    with SessionLocal() as db:
+        vendor.source(db, "shodan")
+        vendor.source(db, "greynoise")
+    for host in ("internetdb.shodan.io", "api.greynoise.io"):
+        outside.host(host)
 
-    def request(url, *, headers=None, form=None, body=None):
-        calls.append(url)
-        for prefix, answer in answers.items():
-            if url.startswith(prefix):
-                return answer
-        return 404, None
+    class Answers(dict):
+        def __setitem__(self, address, answer):
+            super().__setitem__(address, answer)
+            outside.answer(urlsplit(address).hostname, answer[0], json=answer[1])
 
-    monkeypatch.setattr(providers, "_request", request)
-    return answers, calls
+    return Answers(), outside.requests
 
 
 def _incident(client, incident_id, command, tlp=None):
@@ -203,7 +200,7 @@ def test_tags_note_tlp_and_expiry(admin: TestClient):
         assert "TLP:RED" in service.blocked(db, "domain", "evil.example.org", lib.Allowlist([]))
 
 
-def test_export_with_chosen_fields_and_formats(admin: TestClient):
+def test_export_with_chosen_fields_and_formats(admin: TestClient, fake_http):
     listed = admin.post(
         "/api/iocs",
         json={"text": f"{IP}\nhttps://evil.example.org/a\n{SHA}", "tags": ["wave"], "list": {"name": "Wave A"}},
@@ -220,7 +217,8 @@ def test_export_with_chosen_fields_and_formats(admin: TestClient):
         "/api/iocs/export", json={"scope": scope, "fields": ["value", "lists", "per_source"], "defang": True}
     )
     rows = list(csv.reader(io.StringIO(chosen.text)))
-    assert rows[0][:2] == ["value", "lists"] and "virustotal" in rows[0]
+    # One column for each source there is: the connectors that judge indicators.
+    assert rows[0] == ["value", "lists", "greynoise", "shodan"]
     assert "hxxps://evil[.]example[.]org/a" in {row[0] for row in rows[1:]} and rows[1][1] == "Wave A"
 
     text = admin.post("/api/iocs/export", json={"scope": scope, "format": "txt"}).text
@@ -284,7 +282,7 @@ def test_bulk_check_says_what_it_costs_then_works_in_the_background(admin: TestC
     dry = admin.post("/api/iocs/check", json={"scope": scope, "dryRun": True}).json()
     assert dry["check"] is None and calls == []
     assert dry["plan"]["total"] == 3 and dry["plan"]["toAsk"] == 2 and dry["plan"]["neverSent"] == 1
-    assert {s["provider"]: s["needed"] for s in dry["plan"]["sources"]} == {"greynoise": 2, "internetdb": 2}
+    assert {s["provider"]: s["needed"] for s in dry["plan"]["sources"]} == {"greynoise": 2, "shodan": 2}
 
     started = admin.post("/api/iocs/check", json={"scope": scope}).json()["check"]
     assert started["status"] == "running" and started["total"] == 2 and started["done"] == 0
@@ -307,9 +305,12 @@ def test_a_check_out_of_quota_says_so_and_goes_on_later(admin: TestClient, fake_
     answers, _ = fake_http
     answers["https://internetdb.shodan.io/"] = (200, {"ports": [], "tags": []})
     answers["https://api.greynoise.io/"] = (200, {"classification": "benign", "noise": False})
-    greynoise = providers.BY_ID["greynoise"]
-    today = service.datetime.now(service.timezone.utc).date().isoformat()
-    service.limiter.day[service._slot(greynoise, None)] = (today, greynoise.daily - 1)  # one request left
+    # The instance of GreyNoise may ask twice a day, and has asked once: one request left.
+    with SessionLocal() as db:
+        greynoise = db.scalars(select(Connection).where(Connection.connector_id == "greynoise")).one()
+        greynoise.key_policy = instance_keys.clean_policy({"perDay": 2})
+        instance_keys.used(db, greynoise, instance_keys.MAIN, time.time())
+        db.commit()
     admin.post("/api/iocs", json={"text": f"{IP}\n185.220.101.48"})
     check = admin.post("/api/iocs/check", json={"scope": {"filters": {}}}).json()
     source = next(s for s in check["plan"]["sources"] if s["provider"] == "greynoise")
@@ -319,9 +320,11 @@ def test_a_check_out_of_quota_says_so_and_goes_on_later(admin: TestClient, fake_
         service.run_checks(db, admin.get("/api/settings").json(), budget_seconds=5)
     state = admin.get(f"/api/iocs/checks/{check['check']['id']}").json()
     assert state["status"] == "waiting" and state["done"] == 1
-    assert state["message"].startswith("GreyNoise Community: daily quota used")
+    assert state["message"].startswith("GreyNoise: every key is used up")
 
-    service.limiter.reset()  # the next day
+    with SessionLocal() as db:  # the next day
+        instance_keys.forget(db, greynoise.id)
+        db.commit()
     with SessionLocal() as db:
         service.run_checks(db, admin.get("/api/settings").json(), budget_seconds=5)
     assert admin.get(f"/api/iocs/checks/{check['check']['id']}").json()["status"] == "done"

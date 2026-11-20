@@ -28,10 +28,12 @@
 # it is replaced in what a step records.
 name: ThreatFox
 id: threatfox
-version: 2
+version: 3
 description: Indicators of compromise shared on ThreatFox (abuse.ch), looked up by value, file hash, tag or malware family, and submitted.
 api_version: "ThreatFox Community API v1 (threatfox-api.abuse.ch/api/v1)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 3 }
 configuration:
   - name: credentials
     label: Auth-Key

@@ -4,7 +4,6 @@ request from outside; and runs started by hand on those objects."""
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import time
@@ -18,9 +17,9 @@ from app.automation import state, triggers, worker
 from app.core.db import SessionLocal
 from app.core.models import AutomationEvent, Playbook, Run
 from app.core.ratelimit import limiter
-from app.enrichment import service
 from app.events import KNOWN_EVENTS
 from app.routers import automation as automation_routes
+from tests import vendor
 from tests.conftest import make_key
 from tests.test_analysis_links import SCANNED, _scan
 from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fixture
@@ -129,18 +128,11 @@ def test_an_analysed_file_and_a_scanned_address_start_playbooks(admin: TestClien
 # Indicators                                                                  #
 # --------------------------------------------------------------------------- #
 def lookup(verdict: str | Exception, provider: str = "virustotal", value: str = IP) -> None:
-    def answer(kind, value, secret, options):
-        if isinstance(verdict, Exception):
-            raise verdict
-        return {"verdict": verdict, "summary": f"says {verdict}"}
-
-    fake = dataclasses.replace(service.BY_ID[provider], lookup=answer, interval=0)
     with SessionLocal() as db:
-        service.lookup_one(db, fake, "ip", value, None)
+        vendor.said(db, provider, "ip", value, verdict)
 
 
 def test_a_verdict_that_changes_is_an_event_and_one_that_stays_is_not(admin: TestClient):
-    service.limiter.reset()
     pb = on(
         admin,
         "Worse",
@@ -174,7 +166,6 @@ def test_a_verdict_that_changes_is_an_event_and_one_that_stays_is_not(admin: Tes
     lookup("suspicious", value="203.0.113.9")
     known = events("ioc.verdict_changed")[-1].payload
     assert known["data"]["ioc"]["allowlisted"] is True and "allowlisted" in known["classes"]["ioc.value"]
-    service.limiter.reset()
 
 
 def test_a_watched_indicator_in_an_incident_starts_a_playbook_on_the_incident(admin: TestClient):

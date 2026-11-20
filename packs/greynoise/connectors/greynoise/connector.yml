@@ -33,10 +33,12 @@
 # its credential, and an argument is not a secret.
 name: GreyNoise
 id: greynoise
-version: 2
+version: 3
 description: "What GreyNoise knows of an IP address (internet scanner, business service, classification), GNQL searches, CVEs, tags, callback addresses, blocklists, event feeds and the sessions of your own sensors."
 api_version: "GreyNoise API v3 (api.greynoise.io, OpenAPI 3.0.0 of the reference)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
 configuration:
   - name: api_key
     label: API key

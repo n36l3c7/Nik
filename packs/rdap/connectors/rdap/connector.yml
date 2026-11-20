@@ -26,10 +26,13 @@
 # or ask for credentials this connector does not send.
 name: RDAP (registration data)
 id: rdap
-version: 2
+version: 3
 description: Registration data of domains, IP networks, AS numbers, name servers and entities, read from the registries over RDAP.
 api_version: "RDAP: RFC 9082 (queries) and RFC 9083 (JSON answers), rdap_level_0"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3),
+# and that it gives facts rather than a judgement: it is counted only when it flags the value.
+lookups: { weight: 2, informational: true }
 configuration:
   - name: url
     label: RDAP server
@@ -88,6 +91,8 @@ commands:
   - name: get-domain
     description: The registration of a domain as its registry holds it (registrar, dates, status, name servers, DNSSEC), with its age; the verdict is suspicious for a domain registered less than 30 days ago, unknown otherwise.
     reputation: domain
+    # A look-up of a host asks for the domain it is under: the registry knows nothing of www.example.com.
+    reputation_of: registered_domain
     arguments:
       - { name: domain, type: text, required: true, description: "The registered domain name (example.com), not a host under it; an IDN as A-labels or U-labels" }
     request:

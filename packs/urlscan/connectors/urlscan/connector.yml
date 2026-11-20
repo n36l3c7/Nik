@@ -30,10 +30,12 @@
 # dump file.
 name: urlscan.io
 id: urlscan
-version: 2
+version: 3
 description: Scans of web pages on urlscan.io - submit an address, read the result, search what was scanned before - and the urlscan Pro endpoints.
 api_version: "urlscan.io API v1 (OpenAPI description 1.0.0)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 2 }
 configuration:
   - name: api_key
     label: API key

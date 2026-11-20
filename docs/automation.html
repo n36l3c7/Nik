@@ -1764,12 +1764,19 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         </li>
         <li>
           <strong>Reputation.</strong> <code>!ip</code>, <code>!domain</code>, <code>!url</code>, <code>!file</code> (a
-          hash) and <code>!email</code> ask what is known of an indicator: Nik's reputation sources, under the same
-          rules that say what is never sent to them, and every command of a connector that declares
-          <code>reputation: &lt;kind&gt;</code> in its file, on each of its instances. The answers are put together in
-          one verdict and one score, with each source beside them and those that were not asked, with why. What is
-          looked up becomes an indicator of the incident: it is in its Indicators with the source
-          <em>War Room · looked up</em>, and in the library, as one found in its evidence would be.
+          hash) and <code>!email</code> ask what is known of an indicator: the same look-up as <em>Check now</em> on the
+          page of an indicator. Every source that is on is asked, a source being a connector that declares
+          <code>reputation: &lt;kind&gt;</code> on a command of its file, asked through the oldest of its instances that
+          is on, with the keys and the limits of that instance; an answer that still stands is not asked again. What a
+          look-up never sends (a private address, an internal name, an allowlisted or TLP:RED value) is not sent,
+          whatever a playbook was allowed; the data guard of the playbook then judges the value once, for all the
+          sources. The action of the canvas is <em>Reputation of an indicator</em> (<code>nik.reputation</code>:
+          <code>kind</code>, <code>value</code>), with the same outputs as before: <code>verdict</code>,
+          <code>score</code>, <code>sources</code> (each <code>{ source, verdict, summary }</code>, the source by the
+          name of its connector) and <code>skipped</code>. The answers are put together in one verdict and one score,
+          with each source beside them and those that were not asked, with why. What is looked up becomes an indicator
+          of the incident: it is in its Indicators with the source <em>War Room · looked up</em>, and in the library, as
+          one found in its evidence would be.
         </li>
       </ul>
       <p>
@@ -2415,6 +2422,16 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
               </td>
             </tr>
             <tr>
+              <td><code>lookups</code></td>
+              <td>
+                For a connector with a command marked <code>reputation</code>: how its verdicts count in the overall
+                verdict of an indicator. <code>{ weight: 3 }</code>, from 1 to 3 (1 when left out), is how much the
+                source is trusted; <code>informational: true</code> is for a source that gives facts rather than a
+                judgement (who registered a domain), counted only when it flags the value and never for staying silent.
+                Refused in a file that marks no command.
+              </td>
+            </tr>
+            <tr>
               <td><code>ext_fields</code></td>
               <td>
                 What this connector adds to the context of an incident under <code>ext.&lt;id&gt;</code>: a list of
@@ -2658,11 +2675,26 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
             <tr>
               <td><code>reputation</code></td>
               <td>
-                <code>ip</code>, <code>domain</code>, <code>url</code>, <code>file</code> or <code>email</code>: the
-                command says what is known of an indicator of that kind, and the War Room's <code>!ip</code>,
-                <code>!domain</code>… ask it too. Its first argument takes the value; of its outputs,
+                <code>ip</code>, <code>domain</code>, <code>url</code>, <code>file</code> (a hash) or
+                <code>email</code>: the command says what is known of an indicator of that kind. Marking it is what
+                makes the connector a <strong>source</strong>: the look-ups of indicators (<em>Check now</em>, the
+                automatic look-ups, a bulk check, <code>nik.reputation</code> and the War Room's <code>!ip</code>,
+                <code>!domain</code>…) run it on the oldest instance of the connector that is on. Its first argument
+                takes the value, and the others their defaults; of its outputs,
                 <code>verdict</code> (<code>malicious</code>, <code>suspicious</code>, <code>harmless</code>,
-                <code>unknown</code>) is counted and <code>summary</code> is shown.
+                <code>unknown</code>) is counted, <code>summary</code> is the line shown and <code>link</code> the page
+                of the vendor about the value (an <code>https://</code> address), and the rest are the details of the
+                indicator's page. For a kind, the first command of the file that is marked is the one run; one that is
+                <code>premium</code>, that <code>changes_outside</code> or that carries a file is never chosen, and a
+                connector with no other is not a source of that kind. An e-mail address is looked up only by a playbook.
+              </td>
+            </tr>
+            <tr>
+              <td><code>reputation_of</code></td>
+              <td>
+                <code>registered_domain</code>, with <code>reputation: domain</code>, for a source that knows registered
+                domains and not the hosts under them (a registry): a look-up of <code>www.example.co.uk</code> gives the
+                command <code>example.co.uk</code>. A node of a playbook that runs the command sends what it is given.
               </td>
             </tr>
             <tr>

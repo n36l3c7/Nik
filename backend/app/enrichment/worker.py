@@ -2,8 +2,9 @@
 
 Every API process starts one thread; a lease row (``leases``) lets only one
 of them work at a time, so several gunicorn workers do not multiply the
-requests (and the providers' quotas). The thread sleeps between passes; a
-pass checks the indicators not in the cache (``service.run_cycle``).
+requests (and what they take from the keys of the instances). The thread
+sleeps between passes; a pass checks the indicators that have no answer
+that stands (``service.run_cycle``).
 """
 
 from __future__ import annotations

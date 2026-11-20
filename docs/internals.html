@@ -327,90 +327,122 @@
       </p>
       <h2 id="threat-intelligence">Threat intelligence</h2>
       <p>
-        Indicators get a reputation from external services (<code>app/enrichment/</code>). Each provider is one function
-        in <code>providers.py</code> that turns the service's answer into <code>{ verdict, summary, link, data }</code>;
-        <code>verdict</code> is <code>malicious</code>, <code>suspicious</code>, <code>harmless</code> or
-        <code>unknown</code> (not known, or nothing conclusive).
+        Indicators get a reputation from external services (<code>app/enrichment/</code>), and every one of them is
+        asked the same way: a <strong>source</strong> is a <a href="automation.html#connectors">connector</a>, and a
+        look-up is the <strong>reputation command</strong> of that connector, run on an instance of it. Nik has no code
+        of its own for any vendor. The sources it was written with each come in a
+        <a href="automation.html#packs">content pack</a> (VirusTotal, AbuseIPDB, urlscan.io, MalwareBazaar, URLhaus,
+        ThreatFox, AlienVault OTX, GreyNoise, Shodan, Google Safe Browsing, RDAP); a pack installed tomorrow whose
+        connector marks a command takes part without a change to Nik.
       </p>
       <p>
-        Since 6.1 each source is also a <strong>connector</strong>, in a
-        <a href="automation.html#packs">content pack</a> of its own (VirusTotal, AbuseIPDB, urlscan.io, MalwareBazaar,
-        URLhaus, ThreatFox, AlienVault OTX, GreyNoise, Shodan, Google Safe Browsing, RDAP), with every command of its
-        public API as a block of the playbook editor. The automatic look-ups below are still Nik's own code, paced as
-        the table says; what changed is where a key may live: beside the keys set in
-        <em>Settings → Indicators → Threat intelligence</em>, the look-ups use
-        <strong>the keys of the instances</strong> of a source's connector that are on (every key of an instance that
-        holds <a href="automation.html#instance-keys">several</a>; a key that is in both places counts once). abuse.ch
-        gives one key for its three services: an instance of any of the three holds it.
+        <strong>Which command</strong> (<code>sources.py</code>). A command of a connector file marked
+        <code>reputation: ip</code>, <code>domain</code>, <code>url</code> or <code>file</code> judges that kind of
+        indicator (the three hashes are a <code>file</code>): it is given the value as its first argument, its other
+        arguments take their defaults, and among its outputs <code>verdict</code> (<code>malicious</code>,
+        <code>suspicious</code>, <code>harmless</code> or <code>unknown</code>), <code>summary</code> and
+        <code>link</code> are what every source gives. For a kind, the first marked command of the file is the one run.
+        A command that is <code>premium</code>, that <code>changes_outside</code> or that carries a file is never
+        chosen: a look-up nobody approves spends nothing a paid plan gives and changes nothing at the vendor. A command
+        that says <code>reputation_of: registered_domain</code> (a registry) is given the registered domain of a host.
+      </p>
+      <p>
+        <strong>Which instance.</strong> A source is on when an instance of its connector is, and it is asked through
+        the <strong>oldest instance that is on</strong>: one place to look when an answer surprises. Turning that
+        instance off hands the look-ups to the next; a connector with none is a source that is off, listed as such in
+        Settings and on the page of an indicator. The <a href="automation.html#instance-keys">keys</a> of the instance
+        take turns as it says, a key that reached the limit set on the instance (requests a minute, a day) or that the
+        vendor refused with 429 is left alone and the next is tried, and an
+        <a href="automation.html#kept-answers">answer the instance keeps</a> is given back without a request, to a
+        look-up as to a playbook that runs the same command. The look-ups keep no count and no cache of their own. An
+        instance has no limit and keeps no answer until an administrator sets them; one made from a key of before 6.5
+        takes the limits the look-ups kept for that source (the vendor's free tier).
       </p>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Provider</th>
+              <th>Source (connector)</th>
               <th>Types</th>
               <th>Key</th>
-              <th>Free tier (as Nik paces it)</th>
+              <th>Weight</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>VirusTotal</td>
+              <td>VirusTotal (<code>virustotal</code>)</td>
               <td>IP, domain, URL, hash</td>
-              <td>required</td>
-              <td>1 request / 15 s, 500 a day</td>
+              <td>needed</td>
+              <td>3</td>
             </tr>
             <tr>
-              <td>AbuseIPDB</td>
+              <td>AbuseIPDB (<code>abuseipdb</code>)</td>
               <td>IP</td>
-              <td>required</td>
-              <td>1,000 a day</td>
+              <td>needed</td>
+              <td>2</td>
             </tr>
             <tr>
-              <td>abuse.ch: ThreatFox, URLhaus, MalwareBazaar</td>
+              <td>ThreatFox (<code>threatfox</code>)</td>
               <td>IP, domain, URL, hash</td>
-              <td>required (one Auth-Key)</td>
-              <td>—</td>
+              <td>needed (the abuse.ch Auth-Key)</td>
+              <td>3</td>
             </tr>
             <tr>
-              <td>AlienVault OTX</td>
+              <td>URLhaus (<code>urlhaus</code>)</td>
+              <td>domain (the host), URL, hash</td>
+              <td>needed (the same Auth-Key)</td>
+              <td>3</td>
+            </tr>
+            <tr>
+              <td>MalwareBazaar (<code>malwarebazaar</code>)</td>
+              <td>hash</td>
+              <td>needed (the same Auth-Key)</td>
+              <td>3</td>
+            </tr>
+            <tr>
+              <td>AlienVault OTX (<code>otx</code>)</td>
               <td>IP, domain, URL, hash</td>
-              <td>required</td>
-              <td>—</td>
+              <td>needed</td>
+              <td>1</td>
             </tr>
             <tr>
-              <td>urlscan.io (search of public scans, nothing submitted)</td>
+              <td>urlscan.io (<code>urlscan</code>; a search of public scans, nothing submitted)</td>
               <td>domain, URL</td>
               <td>optional</td>
-              <td>1,000 a day</td>
+              <td>2</td>
             </tr>
             <tr>
-              <td>GreyNoise Community</td>
+              <td>GreyNoise (<code>greynoise</code>; the Community answer)</td>
               <td>IP</td>
               <td>optional</td>
-              <td>50 a day</td>
+              <td>2</td>
             </tr>
             <tr>
-              <td>Shodan InternetDB</td>
+              <td>Shodan (<code>shodan</code>; InternetDB)</td>
               <td>IP</td>
-              <td>none</td>
-              <td>—</td>
+              <td>none for this command</td>
+              <td>1</td>
             </tr>
             <tr>
-              <td>Registration (RDAP / WHOIS)</td>
+              <td>RDAP (<code>rdap</code>)</td>
               <td>domain, IP</td>
               <td>none</td>
-              <td>—</td>
+              <td>2, counted only when it flags</td>
             </tr>
             <tr>
-              <td>Google Safe Browsing</td>
+              <td>Google Safe Browsing (<code>safebrowsing</code>)</td>
               <td>domain, URL</td>
-              <td>required</td>
-              <td>10,000 a day</td>
+              <td>needed</td>
+              <td>3</td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p>
+        The weight is not Nik's: the connector file declares it (<code>lookups: { weight, informational }</code>), 1
+        when it says nothing. abuse.ch was one source over three services until 6.5 and is three sources now, each shown
+        and counted on its own.
+      </p>
       <p>
         <strong>What is never sent</strong> (<code>service.blocked</code>), whoever asks: private, loopback and other
         non-public addresses, internal names (no dot, <code>.local</code>, <code>.lan</code>, <code>.internal</code>,
@@ -424,10 +456,10 @@
         <strong>Settings → Threat intelligence</strong>, per type: IP addresses, URLs and domains, file hashes. Every
         API process starts a worker thread (<code>worker.py</code>); a lease row (<code>leases</code>) lets only one of
         them work at a time, so several gunicorn workers do not multiply the requests. Every 30 seconds it checks the
-        indexed indicators not in the cache (newest incidents first) with every enabled provider that takes their type,
-        pacing each provider to its free tier. An answer stands for the retention of its type
-        (<code>retentionDays</code>: 30 days for IP addresses, 30 for URLs and domains, 180 for hashes; 1 to 730), an
-        error is retried after an hour.
+        indexed indicators that have no answer that stands (newest incidents first) with every source that is on and
+        takes their type, as fast as the keys of each instance allow; a source that refused its credentials is left
+        alone for ten minutes. An answer stands for the retention of its type (<code>retentionDays</code>: 30 days for
+        IP addresses, 30 for URLs and domains, 180 for hashes; 1 to 730), an error is retried after an hour.
       </p>
       <p>
         <strong>Mailboxes</strong> (<code>app/mailboxes.py</code>). Whatever is uploaded ends as one mbox in
@@ -458,15 +490,15 @@
         <code>ioc_index</code>, which stays the index of the incidents.
       </p>
       <p>
-        <strong>Registration</strong> (<code>enrichment/registration.py</code>) asks the registries themselves. IANA
-        publishes which RDAP server answers for each top-level domain and address block (the bootstrap files, kept in
-        memory for a day); a host is asked by its registered domain, tried from the shortest suffix. A top-level domain
-        with no RDAP server is asked over WHOIS on port 43 (<code>whois.iana.org</code> names the registry's server) and
-        the text is read for the lines every registry writes; port 43 does not go through <code>HTTPS_PROXY</code>, so
-        behind a proxy that fallback may be unreachable and the source then shows an error. This provider is
-        <em>informational</em>: it counts in the weighted score only when it flags the value (a domain registered less
-        than 30 days ago is <code>suspicious</code>, weight 2), never by staying silent, so an old domain or an
-        address's network leaves the score as it was.
+        <strong>Registration</strong> is the RDAP connector: <code>rdap.get-domain</code> and
+        <code>rdap.get-ip</code> ask <code>rdap.org</code>, which sends to the registry that answers for the name or the
+        address (the registries the connector lists in <code>more_hosts</code>). A host is asked by its registered
+        domain, found with the public suffix list (<code>reputation_of: registered_domain</code>), in one request. There
+        is no WHOIS on port 43 any more: a top-level domain whose registry has no RDAP server gives "the registry has no
+        record", where Nik read its WHOIS text until 6.5. The source is <em>informational</em>: it counts in the
+        weighted score only when it flags the value (a domain registered less than 30 days ago is
+        <code>suspicious</code>, weight 2), never by staying silent, so an old domain or an address's network leaves the
+        score as it was.
       </p>
       <p>
         <strong>The Indicators page</strong> (<code>app/ioc_library.py</code>) is one row per
@@ -479,12 +511,13 @@
       </p>
       <p>
         <strong>A bulk check</strong> is a row of <code>ioc_checks</code> holding what is left to ask (<code
-          >[type, value, [providers]]</code
+          >[type, value, [sources]]</code
         >). The same worker thread works through the checks before the automatic lookups
-        (<code>service.run_checks</code>), with the same keys, limits and "never sent" rules. A check whose remaining
-        sources have all used their daily quota is left <code>waiting</code>, with a message that says which, and goes
-        on when one resets. The plan shown before a check starts counts the requests against what the answering API
-        process has seen used today: with several API processes it is an estimate, and the worker's own count decides.
+        (<code>service.run_checks</code>), through the same instances and under the same "never sent" rules. A check
+        whose remaining sources have all used up their keys is left <code>waiting</code>, with a message that says
+        which, and goes on when a key is free again. The plan shown before a check starts counts the requests against
+        what the instance of each source may still ask today (its limit a day, for each of its keys), which is counted
+        in the database: several API processes see the same numbers.
       </p>
       <p>
         <strong>Watched lists</strong>: when an incident is reindexed, the indicators it did not hold before are
@@ -493,36 +526,42 @@
         <code>ioc.watch_hit</code> webhook. Rebuilding the whole index (a restore) raises no alerts.
       </p>
       <p>
-        <strong>Check now</strong> on the indicator's page asks every usable provider at once (fresh answers are reused
-        unless "Check again"). When the page opens on answers past their retention,
-        <code>GET /api/enrichment</code> lists those providers in <code>refresh</code> and the page asks them again
-        once; with <code>refreshExpired</code> off the list stays empty and the answer is shown as expired. A provider
-        function returns the verdict, a one-line summary, a link, the details the page shows (<code>data</code>), the
-        whole answer (<code>raw</code>, stored up to 1.5 MB and served by <code>/api/enrichment/raw</code>) and how many
-        requests it made, which are charged to the key. The last ten answers per indicator and provider go to
+        <strong>Check now</strong> on the indicator's page asks every source that is on (answers that stand are reused
+        unless "Check again", which also goes past the answers an instance keeps). When the page opens on answers past
+        their retention, <code>GET /api/enrichment</code> lists those sources in <code>refresh</code> and the page asks
+        them again once; with <code>refreshExpired</code> off the list stays empty and the answer is shown as expired.
+        What is stored of an answer (<code>ioc_enrichment</code>, under the id of the connector) is the verdict, the
+        line, the link when it is an address of the web, and the outputs of the command: whole in <code>raw</code> (up
+        to 1.5 MB, served by <code>/api/enrichment/raw</code>), and in <code>data</code> as the page gets them, where a
+        list is cut at 100 entries and a value of more than 60 KB is left out. The server renames nothing, since it
+        knows no vendor: what the page shows of each source (ten reports, the names of AbuseIPDB's categories, dates in
+        one format) is shaped in the browser (<code>domain/sourceDetails.js</code>), and a connector the page has no
+        layout for is shown as plain rows. The last ten answers per indicator and source go to
         <code>ioc_enrichment_history</code>.
       </p>
       <p>
         The <strong>overall verdict</strong> is weighted (<code>overall()</code> in <code>service.py</code>): each
-        provider has a weight (VirusTotal, abuse.ch and Safe Browsing 3; AbuseIPDB, urlscan and GreyNoise 2; OTX and
-        Shodan InternetDB 1), a malicious answer counts in full and a suspicious one half, and the score is the weighted
-        share of the providers that answered, from 0 to 100. It is malicious from 50 with at least one malicious answer,
-        suspicious from 20 or with any malicious answer, harmless when nobody flags and somebody says harmless. The IOCs
-        tab's <strong>Reputation</strong> column shows that verdict and score. VirusTotal's extra sections
-        (<code>virustotal.relations</code>, <code>virustotal.comments</code>) are separate requests and are off by
-        default; <code>virustotal.engines</code> chooses which vendors are listed.
+        source has the weight its connector declares (the table above), a malicious answer counts in full and a
+        suspicious one half, and the score is the weighted share of the sources that answered, from 0 to 100. It is
+        malicious from 50 with at least one malicious answer, suspicious from 20 or with any malicious answer, harmless
+        when nobody flags and somebody says harmless. The IOCs tab's <strong>Reputation</strong> column shows that
+        verdict and score. VirusTotal's report gives both the vendors that flag the value and all of them, and the page
+        lists either; relations and comments are commands of their own, for a playbook or the War Room, and are not part
+        of a look-up.
       </p>
       <p>
-        <strong>Keys</strong> are entered by admins and stored in <code>integration_keys</code>, encrypted with Fernet
-        under a key derived from <code>SECRET_KEY</code> (HKDF, <code>vault.py</code>): the API returns only whether a
-        key is set and its last four characters. A provider can have up to ten keys: the interval and the daily quota
-        are counted per key, a lookup takes the key that is free and was used longest ago (so requests go round them), a
-        key that answers 429 waits an hour while the others carry on, and a key the provider refuses waits ten minutes;
-        after three refusals in a row it is marked <code>rejected</code> with the answer, shown in Settings and left out
-        until an admin removes or replaces it. Whether several keys may be used to raise a free tier's limits is for
-        each provider's terms to say. Changing <code>SECRET_KEY</code> without <code>SECRET_KEY_PREVIOUS</code> makes
-        the stored keys unreadable (Settings says so): enter them again. Requests use the standard library
-        (<code>urllib</code>), so <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> apply; a transparent proxy needs
+        <strong>Keys</strong> are the credentials of the instances, encrypted with Fernet under a key derived from
+        <code>SECRET_KEY</code> (HKDF, <code>vault.py</code>) and never returned. The table
+        <code>integration_keys</code>, where the look-ups kept their own keys until 6.5, is only read now
+        (<code>old_keys.py</code>): when Nik starts and whenever a connector is installed, each stored key whose
+        source's connector is there becomes the key of an instance made for it ("VirusTotal (from Settings)", every key
+        of the source on one instance, on or off as the source was), unless an instance holds that key already. A stored
+        key is deleted once every connector it belongs to has it (the abuse.ch key belongs to three); one the vendor had
+        refused, or that cannot be read since <code>SECRET_KEY</code> changed, is never moved nor deleted: Settings
+        lists it for an administrator to remove. Whether several keys may be used to raise a free tier's limits is for
+        each vendor's terms to say. Requests leave through the egress of the connectors
+        (<code>automation/egress.py</code>), to the hosts the connector names and no other, and
+        <code>HTTPS_PROXY</code> / <code>NO_PROXY</code> of the backend container apply; a transparent proxy needs
         nothing.
       </p>
       <h2 id="attachment-previews-and-the-isolated-browser">Attachment previews and the isolated browser</h2>

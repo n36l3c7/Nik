@@ -275,8 +275,10 @@
 │   └── capa_rules.py               # Admin capa rules (worker validation, store, dependencies)
 ├── network/                        # Network Analysis: store (capture files, browser logs), service (analysis,
 │                                   #   references, browser log sync), pcapng (log → pcapng), har (HAR 1.2)
-├── enrichment/                     # Threat intelligence: providers (one function each), service (what may be
-│                                   #   sent, rate limits, cache), worker (background lookups, lease)
+├── enrichment/                     # Threat intelligence: sources (the connectors that judge indicators, the
+│                                   #   command and the instance a look-up runs), service (what may be sent,
+│                                   #   stored answers, verdict), old_keys (keys of before 6.5 → instances),
+│                                   #   worker (background lookups, lease)
 ├── mail/                           # Mail analysis: parse (.eml/.msg, LZFu RTF), headers (route,
 │                                   #   sender, Authentication-Results), verify (SPF/DKIM/DMARC),
 │                                   #   links, content (nh3, QR, pressure), attachments, analyze
@@ -436,7 +438,7 @@
     │                               #   ErrorBoundary, EvidenceLink: an address from the evidence,
     │                               #   opened only after asking)
     ├── ioc/                        # IocDetail (verdict, sources, "Seen in"; window or page),
-    │                               #   SourceDetails (what each provider returned)
+    │                               #   SourceDetails (what each source returned)
     ├── auth/                       # AuthLayout (banner + live status), FirstRunSetup, LoginScreen,
     │                               #   SessionExpiredDialog (sign in again over the app)
     ├── automation/                 # The Automations area, loaded on first use: AutomationPage, the
@@ -948,7 +950,10 @@
             </tr>
             <tr>
               <td><code>integration_keys</code>, <code>ioc_enrichment</code>, <code>leases</code></td>
-              <td>threat-intelligence API keys (encrypted), cached answers, and the lock of the lookup worker</td>
+              <td>
+                the threat-intelligence API keys of before 6.5 that no instance holds yet (encrypted), the answers of
+                the sources, and the lock of the lookup worker
+              </td>
             </tr>
             <tr>
               <td><code>users</code>, <code>sessions</code>, <code>api_keys</code></td>

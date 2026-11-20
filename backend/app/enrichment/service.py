@@ -1,35 +1,39 @@
-"""Threat-intelligence lookups: what may be sent, to whom, how often, and the cache.
+"""Threat-intelligence look-ups: what may be sent, who is asked, and what is kept.
 
-**What is never sent**, whoever asks (an analyst's "Check now" or the
-background worker):
+**Who is asked.** A look-up of an indicator is the reputation command of a
+source's connector, run on an instance of it (``sources.py``): there is no
+other way out. A source takes part when its connector is installed and one of
+its instances is on; its keys, their limits and the answers it keeps are the
+instance's.
+
+**What is never sent**, whoever asks (an analyst's "Check now", a playbook or
+the background worker):
 
 - private, loopback, link-local and other non-public addresses, internal
   names (no dot, ``.local``, ``.lan``, ``.internal``, ``.corp``,
   ``.home.arpa``…) and URLs on them;
 - values on the IOC allowlist (Settings -> IOC allowlist);
-- values seen in an incident whose report is classified **TLP:RED**.
+- values seen in an incident whose report is classified **TLP:RED**, and
+  values or lists an analyst marked TLP:RED.
 
-**Automatic lookups** (Settings -> Threat intelligence) are off until an
+This is the rule of the look-ups and it is checked here, before a command is
+chosen: no setting loosens it. A look-up a playbook makes is judged by the
+playbook's data guard as well (``automation/guard.py``), once, for all the
+sources together.
+
+**Automatic look-ups** (Settings -> Threat intelligence) are off until an
 analyst turns them on, per type: IP addresses, URLs and domains, file
 hashes. The worker (``worker.py``) checks each new indicator once with
-every enabled provider that takes its type. E-mail addresses are never sent.
+every source that is on and takes its type. E-mail addresses are never sent.
 
-**Retention**: an answer stands for a number of days set per type (IP
-addresses 30, URLs and domains 30, hashes 180 by default). Past it the
-answer is *expired*: it is asked again (by the worker for the types it
-handles, or when someone opens the indicator), unless "refresh expired
-answers" is turned off; then it is kept, marked as expired, until someone
-checks again. The last ten answers of each provider stay in a history.
+**How long an answer stands**: a number of days set per type (IP addresses
+30, URLs and domains 30, hashes 180 by default). Past it the answer is
+*expired*: it is asked again (by the worker for the types it handles, or
+when someone opens the indicator), unless "refresh expired answers" is
+turned off; then it is kept, marked as expired, until someone checks again.
+The last ten answers of each source stay in a history.
 
 **Overall verdict**: a weighted score, see ``overall``.
-
-**Rate limits** follow each provider's free tier (``providers.Provider``):
-a minimum interval between two requests and a daily quota, per API process
-and **per key**. A provider can have several keys: requests go round them
-(the one used longest ago first), and a key that answers 429 waits an hour
-while the others carry on. A key the provider refuses waits ten minutes;
-refused three times in a row it is marked rejected, shown in Settings and
-left out until an admin replaces it.
 """
 
 from __future__ import annotations
@@ -37,10 +41,8 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
-import threading
 import time
 import uuid
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
@@ -48,12 +50,10 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..core import vault
 from ..core.models import (
     Enrichment,
     EnrichmentHistory,
     Incident,
-    IntegrationKey,
     IocCheck,
     IocEntry,
     IocList,
@@ -62,7 +62,8 @@ from ..core.models import (
 )
 from ..core.security import now_iso
 from ..iocs import Allowlist, normalize
-from .providers import BY_ID, HASHES, PROVIDERS, Provider, ProviderError
+from . import sources as src
+from .sources import HASHES, Source
 
 VERDICT_ORDER = ("malicious", "suspicious", "harmless", "unknown")
 LOOKUP_TYPES = ("ip", "domain", "url", *HASHES)
@@ -71,7 +72,6 @@ RUNNING_STALE = timedelta(minutes=10)
 INTERNAL_SUFFIXES = (".local", ".lan", ".internal", ".intranet", ".corp", ".home", ".home.arpa", ".localdomain")
 
 RETENTION_GROUPS = ("ip", "url", "hash")  # url covers domains, hash the three digests
-VT_ENGINES = ("flagged", "all")
 
 DEFAULTS: dict[str, Any] = {
     # Automatic lookups per type (off until an analyst turns them on).
@@ -82,19 +82,14 @@ DEFAULTS: dict[str, Any] = {
     # Ask again when an answer is past its retention (else it is kept and
     # shown as expired until someone checks again).
     "refreshExpired": True,
-    # VirusTotal: the engines listed (those that flag the value, or all) and
-    # the sections that take one more request each from the quota.
-    "virustotal": {"engines": "flagged", "relations": False, "comments": False},
-    # Providers the analysts allow (a provider also needs its key, if any).
-    "providers": {p.id: True for p in PROVIDERS},
 }
 
 
 def config(shared: dict[str, Any]) -> dict[str, Any]:
-    """The ``enrichment`` settings with every default filled in."""
+    """The ``enrichment`` settings with every default filled in. Which sources are asked is not a
+    setting any more: a source is on when an instance of its connector is."""
     raw = shared.get("enrichment") if isinstance(shared.get("enrichment"), dict) else {}
     auto = {**DEFAULTS["auto"], **(raw.get("auto") or {})}
-    providers = {**DEFAULTS["providers"], **(raw.get("providers") or {})}
     retention = dict(DEFAULTS["retentionDays"])
     for group, days in (raw.get("retentionDays") or {}).items():
         try:
@@ -102,17 +97,10 @@ def config(shared: dict[str, Any]) -> dict[str, Any]:
                 retention[group] = min(730, max(1, int(days)))
         except (TypeError, ValueError):
             pass
-    vt = {**DEFAULTS["virustotal"], **(raw.get("virustotal") if isinstance(raw.get("virustotal"), dict) else {})}
     return {
-        "auto": {k: bool(v) for k, v in auto.items()},
+        "auto": {k: bool(v) for k, v in auto.items() if k in DEFAULTS["auto"]},
         "retentionDays": retention,
         "refreshExpired": bool(raw.get("refreshExpired", DEFAULTS["refreshExpired"])),
-        "virustotal": {
-            "engines": vt["engines"] if vt["engines"] in VT_ENGINES else "flagged",
-            "relations": bool(vt["relations"]),
-            "comments": bool(vt["comments"]),
-        },
-        "providers": {k: bool(v) for k, v in providers.items()},
     }
 
 
@@ -135,85 +123,9 @@ def auto_types(cfg: dict[str, Any]) -> set[str]:
     return types
 
 
-# --------------------------------------------------------------------------- #
-# Keys                                                                        #
-# --------------------------------------------------------------------------- #
-@dataclass(frozen=True)
-class Key:
-    """A provider's API key that can be used now (readable, not rejected)."""
-
-    id: str
-    secret: str
-
-
-Keys = dict[str, list[Key]]
-
-
-# The connectors whose instances hold a key of a source (6.1): a source is a connector of its own, and
-# the key an instance of it was given is a key the automatic look-ups may use too. abuse.ch gives one
-# key for its three services.
-SOURCE_CONNECTORS: dict[str, tuple[str, ...]] = {
-    "virustotal": ("virustotal",),
-    "abuseipdb": ("abuseipdb",),
-    "abusech": ("malwarebazaar", "urlhaus", "threatfox"),
-    "otx": ("otx",),
-    "urlscan": ("urlscan",),
-    "greynoise": ("greynoise",),
-    "safebrowsing": ("safebrowsing",),
-}
-
-
-def instance_keys_of(db: OrmSession) -> Keys:
-    """The keys the instances of the sources' connectors hold, by provider: every key of every instance
-    that is on. The id of one says where it is from (``instance:<instance>:<key>``): nothing of it is
-    written to the keys of Settings."""
-    from ..automation import instance_keys
-    from ..core.models import Connection
-
-    out: Keys = {}
-    wanted = {connector: provider for provider, connectors in SOURCE_CONNECTORS.items() for connector in connectors}
-    rows = db.scalars(
-        select(Connection)
-        .where(Connection.connector_id.in_(wanted), Connection.enabled.is_(True))
-        .order_by(Connection.created_at, Connection.id)
-    ).all()
-    for row in rows:
-        for key in instance_keys.keys_of(row):
-            # The key is the one credential such a connector asks for, whatever it calls it.
-            secret = next((value for value in key.secrets.values() if value), "")
-            held = out.setdefault(wanted[row.connector_id], [])
-            if secret and all(other.secret != secret for other in held):
-                held.append(Key(f"instance:{row.id}:{key.id}", secret))
-    return out
-
-
-def keys(db: OrmSession) -> Keys:
-    """The usable keys of each provider: the ones set in Settings, oldest first, then the ones the
-    instances of its connector hold (one that is in both counts once)."""
-    out: Keys = {}
-    for row in db.scalars(select(IntegrationKey).order_by(IntegrationKey.updated_at, IntegrationKey.id)):
-        secret = vault.decrypt(row.secret) if row.status == "ok" else None
-        if secret:
-            out.setdefault(row.provider, []).append(Key(row.id, secret))
-    for provider, found in instance_keys_of(db).items():
-        held = out.setdefault(provider, [])
-        held.extend(key for key in found if all(other.secret != key.secret for other in held))
-    return out
-
-
-def usable(provider: Provider, cfg: dict[str, Any], all_keys: Keys) -> bool:
-    if not cfg["providers"].get(provider.id, True):
-        return False
-    if provider.key == "required":
-        return bool(all_keys.get(provider.id))
-    return True
-
-
-def slots(provider: Provider, all_keys: Keys) -> list[Key | None]:
-    """What a request to the provider can be made with: each of its keys, or
-    no key at all for a provider that takes none (or works without)."""
-    own = list(all_keys.get(provider.id, [])) if provider.key != "none" else []
-    return own or ([None] if provider.key != "required" else [])
+def asked(db: OrmSession, kind: str | None = None) -> list[Source]:
+    """The sources that are on (for a type of indicator, when one is given), by name."""
+    return [source for source in src.sources(db) if source.on and (kind is None or source.supports(kind))]
 
 
 # --------------------------------------------------------------------------- #
@@ -291,85 +203,7 @@ def _classified_red(db: OrmSession, kind: str, value: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# Rate limits (per API process)                                               #
-# --------------------------------------------------------------------------- #
-def _slot(provider: Provider, key: Key | None) -> str:
-    return f"{provider.id}:{key.id if key else ''}"
-
-
-class _Limiter:
-    """The free-tier limits, counted per key: each key of a provider has its
-    own interval, daily quota and back-off."""
-
-    def __init__(self) -> None:
-        self.lock = threading.Lock()
-        self.next_at: dict[str, float] = {}
-        self.day: dict[str, tuple[str, int]] = {}
-        self.cooldown: dict[str, float] = {}
-        self.used_at: dict[str, float] = {}
-
-    def wait_for(self, provider: Provider, key: Key | None = None) -> float:
-        """Seconds before the key may be used (inf: its daily quota is spent)."""
-        slot = _slot(provider, key)
-        now = time.monotonic()
-        with self.lock:
-            if self.cooldown.get(slot, 0) > now:
-                return self.cooldown[slot] - now
-            today = datetime.now(timezone.utc).date().isoformat()
-            day, used = self.day.get(slot, (today, 0))
-            if day == today and provider.daily and used >= provider.daily:
-                return float("inf")
-            return max(0.0, self.next_at.get(slot, 0) - now)
-
-    def take(self, provider: Provider, key: Key | None = None) -> None:
-        slot = _slot(provider, key)
-        now = time.monotonic()
-        with self.lock:
-            self.next_at[slot] = now + provider.interval
-            self.used_at[slot] = now
-            today = datetime.now(timezone.utc).date().isoformat()
-            day, used = self.day.get(slot, (today, 0))
-            self.day[slot] = (today, used + 1 if day == today else 1)
-
-    def charge(self, provider: Provider, key: Key | None, extra: int) -> None:
-        """A lookup that took more than one request: count the others too."""
-        if extra <= 0:
-            return
-        slot = _slot(provider, key)
-        with self.lock:
-            self.next_at[slot] = self.next_at.get(slot, time.monotonic()) + provider.interval * extra
-            day, used = self.day.get(slot, (datetime.now(timezone.utc).date().isoformat(), 0))
-            self.day[slot] = (day, used + extra)
-
-    def back_off(self, provider: Provider, key: Key | None = None, seconds: float = 3600) -> None:
-        with self.lock:
-            self.cooldown[_slot(provider, key)] = time.monotonic() + seconds
-
-    def pick(self, provider: Provider, candidates: list[Key | None]) -> tuple[float, Key | None]:
-        """The key to use next and how long to wait for it: the one free
-        soonest and, among those free now, the one used longest ago, so the
-        requests go round the keys."""
-        if not candidates:
-            return float("inf"), None
-        with self.lock:
-            last = {id(c): self.used_at.get(_slot(provider, c), 0.0) for c in candidates}
-        waits = [(self.wait_for(provider, c), last[id(c)], index, c) for index, c in enumerate(candidates)]
-        wait, _, _, chosen = min(waits, key=lambda w: w[:3])
-        return wait, chosen
-
-    def reset(self) -> None:
-        with self.lock:
-            self.next_at.clear()
-            self.day.clear()
-            self.cooldown.clear()
-            self.used_at.clear()
-
-
-limiter = _Limiter()
-
-
-# --------------------------------------------------------------------------- #
-# Cache                                                                       #
+# The answers that are stored                                                 #
 # --------------------------------------------------------------------------- #
 def _age(row: Enrichment) -> timedelta:
     try:
@@ -395,17 +229,26 @@ def fresh(row: Enrichment | None, cfg: dict[str, Any]) -> bool:
     return _age(row) < ERROR_RETRY
 
 
-def as_dict(row: Enrichment, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    provider = BY_ID.get(row.provider)
+def as_dict(
+    row: Enrichment,
+    cfg: dict[str, Any] | None = None,
+    names: dict[str, str] | None = None,
+    counted: dict[str, tuple[int, bool]] | None = None,
+) -> dict[str, Any]:
+    data = row.data or {}
+    # An answer stored before 6.5 has the details in the shape of that time: its verdict, line and
+    # link stand, and the details come with the next check.
+    current = COMMAND in data
     return {
         "provider": row.provider,
-        "label": provider.label if provider else row.provider,
-        "weight": provider.weight if provider else 1,
+        "label": (names or {}).get(row.provider, row.provider),
+        "weight": (counted or {}).get(row.provider, (1, False))[0],
         "status": row.status,
         "verdict": row.verdict,
         "summary": row.summary,
         "link": row.link,
-        "data": row.data or {},
+        "data": data if current else {},
+        "before65": row.status == "done" and not current,
         "error": row.error,
         "checkedAt": row.checked_at,
         "expired": bool(cfg) and expired(row, cfg),
@@ -414,7 +257,7 @@ def as_dict(row: Enrichment, cfg: dict[str, Any] | None = None) -> dict[str, Any
 
 
 def results(db: OrmSession, kind: str, value: str, cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Each provider's latest answer, with its earlier verdicts (newest first)."""
+    """Each source's latest answer, with its earlier verdicts (newest first), by the name of the source."""
     rows = db.scalars(select(Enrichment).where(Enrichment.type == kind, Enrichment.value == value)).all()
     history: dict[str, list[dict[str, Any]]] = {}
     for past in db.scalars(
@@ -425,11 +268,9 @@ def results(db: OrmSession, kind: str, value: str, cfg: dict[str, Any] | None = 
         history.setdefault(past.provider, []).append(
             {"verdict": past.verdict, "summary": past.summary, "checkedAt": past.checked_at}
         )
-    order = {p.id: i for i, p in enumerate(PROVIDERS)}
-    return [
-        {**as_dict(r, cfg), "history": history.get(r.provider, [])}
-        for r in sorted(rows, key=lambda r: order.get(r.provider, 99))
-    ]
+    names, counted = src.labels(db), src.weights(db)
+    found = [{**as_dict(row, cfg, names, counted), "history": history.get(row.provider, [])} for row in rows]
+    return sorted(found, key=lambda item: (item["label"].lower(), item["provider"]))
 
 
 # What a verdict is worth in the overall score.
@@ -441,32 +282,35 @@ VERDICT_VALUE = {"malicious": 1.0, "suspicious": 0.5, "harmless": 0.0, "unknown"
 MALICIOUS_SCORE, SUSPICIOUS_SCORE = 50, 20
 
 
-def overall(answers: Iterable[tuple[str, str]]) -> dict[str, Any] | None:
-    """The indicator's overall reputation from ``(provider id, verdict)`` of
-    the providers that answered: a score from 0 to 100, each provider's
-    verdict counted by its weight (VirusTotal, abuse.ch and Safe Browsing 3;
-    AbuseIPDB, GreyNoise and urlscan 2; OTX and InternetDB 1).
+def overall(
+    answers: Iterable[tuple[str, str]], counted: dict[str, tuple[int, bool]] | None = None
+) -> dict[str, Any] | None:
+    """The indicator's overall reputation from ``(source id, verdict)`` of the sources that answered:
+    a score from 0 to 100, each source's verdict counted by its weight. ``counted`` says how each
+    source counts, ``{id: (weight, informational)}``, as its connector declares it (``lookups`` of the
+    file: 1 to 3, 1 when it says nothing; ``sources.weights``).
 
-    - **malicious**: score 50 or more, and at least one provider says malicious;
-    - **suspicious**: score 20 or more, or any provider says malicious;
+    - **malicious**: score 50 or more, and at least one source says malicious;
+    - **suspicious**: score 20 or more, or any source says malicious;
     - **harmless**: nobody flags it and somebody vouches for it;
     - **unknown** otherwise.
     """
     answers = list(answers)
     if not answers:
         return None
+    counted = counted or {}
     counts = {v: 0 for v in VERDICT_ORDER}
     weight = points = 0.0
-    counted = 0
-    for provider_id, verdict in answers:
-        provider = BY_ID.get(provider_id)
+    taken = 0
+    for source_id, verdict in answers:
+        own, facts = counted.get(source_id, (1, False))
         # Facts, not a judgement: counted only when they flag the value. So is
         # Nik's own analysis of the value (NIK), which has the highest weight.
-        informational = provider_id == NIK or (provider is not None and provider.informational)
+        informational = source_id == NIK or facts
         if informational and verdict not in ("malicious", "suspicious"):
             continue
-        counted += 1
-        w = NIK_WEIGHT if provider_id == NIK else provider.weight if provider else 1
+        taken += 1
+        w = NIK_WEIGHT if source_id == NIK else own
         weight += w
         points += w * VERDICT_VALUE.get(verdict, 0.0)
         counts[verdict if verdict in counts else "unknown"] += 1
@@ -480,13 +324,13 @@ def overall(answers: Iterable[tuple[str, str]]) -> dict[str, Any] | None:
         verdict = "harmless"
     else:
         verdict = "unknown"
-    if not counted:
+    if not taken:
         return None
-    return {"verdict": verdict, "score": score, "flagged": flagged, "checked": counted, "counts": counts}
+    return {"verdict": verdict, "score": score, "flagged": flagged, "checked": taken, "counts": counts}
 
 
 def summaries(db: OrmSession, pairs: Iterable[tuple[str, str]]) -> dict[tuple[str, str], dict[str, Any]]:
-    """``(type, value) -> {verdict, score, flagged, checked, counts}`` from the cache."""
+    """``(type, value) -> {verdict, score, flagged, checked, counts}`` from the stored answers."""
     wanted = set(pairs)
     values = sorted({v for _, v in wanted})
     answers: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -503,7 +347,8 @@ def summaries(db: OrmSession, pairs: Iterable[tuple[str, str]]) -> dict[tuple[st
 
     for pair, verdict in analysis_links.verdicts(db, wanted).items():
         answers.setdefault(pair, []).append((NIK, verdict))
-    summed = {key: overall(found) for key, found in answers.items()}
+    counted = src.weights(db) if answers else {}
+    summed = {key: overall(found, counted) for key, found in answers.items()}
     return {key: value for key, value in summed.items() if value is not None}
 
 
@@ -512,46 +357,95 @@ def summaries(db: OrmSession, pairs: Iterable[tuple[str, str]]) -> dict[tuple[st
 # --------------------------------------------------------------------------- #
 HISTORY_KEPT = 10
 RAW_MAX_BYTES = 1_500_000
-KEY_REFUSALS = 3  # refusals in a row before a key is marked rejected
-KEY_REFUSED_WAIT = 600  # seconds a refused key waits before it is tried again
+# What the indicator's page is given of an answer (``data``): the outputs of the command, without the
+# three every source gives (verdict, summary, link), a long list cut and a very large value left out.
+# The whole of it is ``raw``, for the JSON download.
+COMMAND = "_command"  # "virustotal.get-ip-report": which command answered; says the shape of the details
+LIST_SHOWN = 100
+VALUE_MAX_BYTES = 60_000
+
+
+def details(source: Source, kind: str, outputs: dict[str, Any]) -> dict[str, Any]:
+    """The outputs of a reputation command as the page of an indicator gets them: nothing of a vendor is
+    known here, so nothing is renamed; the page shapes what it shows (``domain/sourceDetails.js``)."""
+    command = source.commands.get(src.command_kind(kind), "")
+    kept: dict[str, Any] = {COMMAND: f"{source.id}.{command}"}
+    if source.instance is not None:
+        kept["_instance"] = source.instance.name
+    cut: dict[str, int] = {}
+    left_out: list[str] = []
+    for name, value in outputs.items():
+        if name in ("verdict", "summary", "link") or name.startswith("_") or value in (None, "", [], {}):
+            continue
+        if isinstance(value, list) and len(value) > LIST_SHOWN:
+            cut[name] = len(value)
+            value = value[:LIST_SHOWN]
+        if isinstance(value, (dict, list)):
+            try:
+                size = len(json.dumps(value, default=str))
+            except (TypeError, ValueError):
+                size = VALUE_MAX_BYTES + 1
+            if size > VALUE_MAX_BYTES:
+                left_out.append(name)
+                continue
+        kept[name] = value
+    if cut:
+        kept["_cut"] = cut
+    if left_out:
+        kept["_left_out"] = left_out
+    return kept
+
+
+def _link(value: Any) -> str:
+    """The page of the source about the indicator: an address of the web, or nothing."""
+    text = str(value or "").strip()
+    return text[:1000] if text.lower().startswith(("https://", "http://")) else ""
 
 
 def lookup_one(
-    db: OrmSession, provider: Provider, kind: str, value: str, key: Key | None, options: dict | None = None
+    db: OrmSession,
+    source: Source,
+    kind: str,
+    value: str,
+    *,
+    again: bool = False,
+    playbook: Any | None = None,
 ) -> tuple[Enrichment, str]:
-    """Ask one provider now, with one key, and store its answer (or the
-    error). Returns the row and the outcome: ``ok``, ``rate``, ``auth`` or
-    ``error``. An answer that replaces an earlier one goes to the history."""
-    row = db.get(Enrichment, (kind, value, provider.id))
+    """Ask one source now and store its answer (or the error). Returns the row and the outcome:
+    ``ok``, ``wait`` (every key of the instance is used up: nothing was asked and the row is as it
+    was) or ``error``. An answer that replaces an earlier one goes to the history."""
+    row = db.get(Enrichment, (kind, value, source.id))
     before = _verdict_of(db, kind, value)
+    created = row is None
     if row is None:
-        row = Enrichment(type=kind, value=value, provider=provider.id, data={}, checked_at=now_iso())
+        row = Enrichment(type=kind, value=value, provider=source.id, data={}, checked_at=now_iso())
         db.add(row)
     # An answer being asked for again still counts until the new one is in.
+    was = (row.status, row.checked_at)
     was_done = row.status == "done"
     row.status, row.checked_at = "running", now_iso()
     db.commit()
-    limiter.take(provider, key)
     outcome = "ok"
     try:
-        answer = provider.lookup(kind, value, key.secret if key else None, options)
-        limiter.charge(provider, key, int(answer.get("calls", 1)) - 1)
+        outputs = src.ask(db, source, kind, value, playbook=playbook, again=again)
         row.status, row.error = "done", None
-        row.verdict = answer["verdict"]
-        row.summary = answer["summary"][:500]
-        row.link = answer.get("link", "")[:1000]
-        row.data = answer.get("data") or {}
-        row.raw = _bounded(answer.get("raw"))
+        row.verdict = src.verdict_of(outputs)
+        row.summary = str(outputs.get("summary") or "")[:500]
+        row.link = _link(outputs.get("link"))
+        row.data = details(source, kind, outputs)
+        row.raw = _bounded(outputs)
         flag_modified(row, "data")
         flag_modified(row, "raw")
-        _accepted(db, key)
-    except ProviderError as exc:
-        outcome = exc.kind if exc.kind in ("rate", "auth") else "error"
-        if exc.kind == "rate":
-            limiter.back_off(provider, key)
-        elif exc.kind == "auth":
-            _refused(db, provider, key, str(exc))
-        row.status, row.error = "error", str(exc)[:500]
+    except src.Unavailable:
+        if created:
+            db.delete(row)
+        else:
+            row.status, row.checked_at = was
+        db.commit()
+        return row, "wait"
+    except src.Failed as error:
+        outcome = "error"
+        row.status, row.error = "error", error.message[:500]
     except Exception as exc:  # noqa: BLE001 - a malformed answer must not stop the others
         outcome = "error"
         row.status, row.error = "error", f"unexpected answer: {exc}"[:500]
@@ -560,7 +454,7 @@ def lookup_one(
         _remember(db, row)
         _announce_verdict(db, kind, value, before)
     elif was_done:
-        # The provider did not answer this time: what it said before is no longer counted.
+        # The source did not answer this time: what it said before is no longer counted.
         _announce_verdict(db, kind, value, before)
     db.commit()
     return row, outcome
@@ -581,23 +475,23 @@ def _announce_verdict(db: OrmSession, kind: str, value: str, before: str) -> Non
         return
     from ..automation import triggers
 
-    sources = db.scalars(
+    answered = db.scalars(
         select(Enrichment.provider).where(
             Enrichment.type == kind, Enrichment.value == value, Enrichment.status == "done"
         )
     ).all()
     try:
-        triggers.verdict_changed(db, kind, value, before, after, list(sources))
+        triggers.verdict_changed(db, kind, value, before, after, list(answered))
     except Exception:  # noqa: BLE001 - a lookup must not fail because of what listens to it
         logger.exception("The change of verdict of %s %s was not announced", kind, value)
 
 
 def _bounded(raw: Any) -> Any:
-    """The provider's answer, unless it is too large to keep."""
+    """The whole answer of the command, unless it is too large to keep."""
     if raw is None:
         return None
     try:
-        size = len(json.dumps(raw))
+        size = len(json.dumps(raw, default=str))
     except (TypeError, ValueError):
         return None
     return raw if size <= RAW_MAX_BYTES else {"truncated": True, "bytes": size}
@@ -630,77 +524,59 @@ def _remember(db: OrmSession, row: Enrichment) -> None:
         db.delete(old)
 
 
-def _accepted(db: OrmSession, key: Key | None) -> None:
-    stored = db.get(IntegrationKey, key.id) if key else None
-    if stored is not None and stored.failures:
-        stored.failures, stored.error = 0, None
-
-
-def _refused(db: OrmSession, provider: Provider, key: Key | None, message: str) -> None:
-    """A refusal can be a passing fault of the provider: the key waits ten
-    minutes and is tried again. Refused ``KEY_REFUSALS`` times in a row, it is
-    taken out of the rotation and shown as rejected in Settings. Without a
-    key the provider waits six hours."""
-    if key is None:
-        limiter.back_off(provider, None, 6 * 3600)
-        return
-    limiter.back_off(provider, key, KEY_REFUSED_WAIT)
-    stored = db.get(IntegrationKey, key.id)
-    if stored is None:
-        return
-    stored.failures = (stored.failures or 0) + 1
-    stored.error = message[:300]
-    if stored.failures >= KEY_REFUSALS:
-        stored.status = "rejected"
+def _later(seconds: float) -> str:
+    """Why a source was not asked: when a key of its instance is free again."""
+    if seconds == float("inf"):
+        return "no instance that is on"
+    if seconds < 90:
+        return f"every key is used up: retry in {int(seconds) + 1} s"
+    return f"every key is used up: the first is back in {max(1, round(seconds / 60))} min"
 
 
 def ask(
     db: OrmSession,
-    provider: Provider,
+    source: Source,
     kind: str,
     value: str,
-    all_keys: Keys,
     max_wait: float = 0.0,
-    options: dict | None = None,
+    *,
+    again: bool = False,
+    playbook: Any | None = None,
+    automatic: bool = True,
 ) -> str | None:
-    """One lookup, moving to the provider's next key when one is rate-limited
-    or refused. Returns None when it was asked, else why it was not."""
-    candidates = slots(provider, all_keys)
-    while candidates:
-        wait, key = limiter.pick(provider, candidates)
-        if wait > max_wait:
-            return "daily quota used" if wait == float("inf") else f"rate limit: retry in {int(wait) + 1} s"
-        if wait:
-            time.sleep(wait)
-        _, outcome = lookup_one(db, provider, kind, value, key, options)
-        if outcome not in ("rate", "auth"):
-            return None
-        candidates = [c for c in candidates if c is not key]
-        if outcome == "auth" and key is not None:
-            all_keys[provider.id] = [k for k in all_keys.get(provider.id, []) if k.id != key.id]
-    return None  # every key was tried: the stored row says what the last one answered
+    """One look-up. Returns None when the source was asked (its row says what it answered), else why
+    it was not: every key of its instance is waiting for a limit."""
+    seconds = src.wait(db, source, automatic=automatic)
+    if seconds > max_wait:
+        return _later(seconds)
+    if seconds:
+        time.sleep(seconds)
+    _, outcome = lookup_one(db, source, kind, value, again=again, playbook=playbook)
+    if outcome == "wait":
+        return _later(src.wait(db, source, automatic=automatic) or 60.0)
+    return None
 
 
-def wait(provider: Provider, all_keys: Keys) -> float:
-    """Seconds before the provider can be asked with any of its keys."""
-    return limiter.pick(provider, slots(provider, all_keys))[0]
-
-
-def check_now(db: OrmSession, kind: str, value: str, shared: dict[str, Any], force: bool = False) -> dict[str, Any]:
-    """An analyst's "Check now": every usable provider for the type, waiting
-    briefly for an interval but skipping a provider whose keys are all
-    waiting for their rate limit or quota."""
+def check_now(
+    db: OrmSession,
+    kind: str,
+    value: str,
+    shared: dict[str, Any],
+    force: bool = False,
+    *,
+    playbook: Any | None = None,
+) -> dict[str, Any]:
+    """An analyst's "Check now" (or a playbook's): every source that is on for the type, waiting
+    briefly for a limit but skipping a source whose keys are all used up. ``force`` asks also the
+    sources whose answer still stands, and past the answers their instances keep."""
     cfg = config(shared)
-    all_keys = keys(db)
     skipped = []
-    for provider in PROVIDERS:
-        if not provider.supports(kind) or not usable(provider, cfg, all_keys):
+    for source in asked(db, kind):
+        if not force and fresh(db.get(Enrichment, (kind, value, source.id)), cfg):
             continue
-        if not force and fresh(db.get(Enrichment, (kind, value, provider.id)), cfg):
-            continue
-        reason = ask(db, provider, kind, value, all_keys, max_wait=3.0, options=cfg.get(provider.id))
+        reason = ask(db, source, kind, value, max_wait=3.0, again=force, playbook=playbook, automatic=False)
         if reason:
-            skipped.append({"provider": provider.id, "label": provider.label, "reason": reason})
+            skipped.append({"provider": source.id, "label": source.label, "reason": reason})
     return {"results": results(db, kind, value, cfg), "skipped": skipped}
 
 
@@ -719,9 +595,8 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
     types = auto_types(cfg)
     if not types:
         return 0
-    all_keys = keys(db)
-    providers = [p for p in PROVIDERS if usable(p, cfg, all_keys) and any(p.supports(t) for t in types)]
-    if not providers:
+    on = [source for source in asked(db) if any(source.supports(t) for t in types)]
+    if not on:
         return 0
     allowlist = Allowlist(shared.get("iocAllowlist") or [])
     red = red_incidents(db)
@@ -733,17 +608,17 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
         .limit(20_000)
     ).all()
     candidates: dict[tuple[str, str], dict[str, Any]] = {}
-    for kind, value, incident_id, sources in rows:
+    for kind, value, incident_id, seen_in in rows:
         item = candidates.setdefault((kind, value), {"incidents": set(), "sources": []})
         item["incidents"].add(incident_id)
-        item["sources"] += list(sources or [])
+        item["sources"] += list(seen_in or [])
 
     cached: dict[tuple[str, str], dict[str, Enrichment]] = {}
     for row in db.scalars(select(Enrichment).where(Enrichment.type.in_(sorted(types)))):
         cached.setdefault((row.type, row.value), {})[row.provider] = row
 
-    # The work: (provider, type, value) not in the cache, newest incidents first.
-    jobs: list[tuple[Provider, str, str]] = []
+    # The work: (source, type, value) not answered yet, newest incidents first.
+    jobs: list[tuple[Source, str, str]] = []
     for (kind, value), item in candidates.items():
         if item["incidents"] & red:
             continue
@@ -752,27 +627,25 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
         if blocked(db, kind, value, allowlist, red=set()):  # TLP:RED handled above
             continue
         known = cached.get((kind, value), {})
-        jobs += [(p, kind, value) for p in providers if p.supports(kind) and not fresh(known.get(p.id), cfg)]
+        jobs += [(s, kind, value) for s in on if s.supports(kind) and not fresh(known.get(s.id), cfg)]
 
     started, calls = time.monotonic(), 0
     while jobs and calls < max_calls:
         remaining = budget_seconds - (time.monotonic() - started)
         if remaining <= 0:
             break
-        waits = {p.id: wait(p, all_keys) for p in {job[0] for job in jobs}}
-        jobs = [job for job in jobs if waits[job[0].id] != float("inf")]
+        waits = {source.id: src.wait(db, source) for source in {job[0].id: job[0] for job in jobs}.values()}
+        # A source whose keys are not back within this pass is left for the next.
+        jobs = [job for job in jobs if waits[job[0].id] <= remaining]
         ready = next((job for job in jobs if waits[job[0].id] == 0), None)
         if ready is None:
             if not jobs:
                 break
-            soonest = min(waits[job[0].id] for job in jobs)
-            if soonest > remaining:
-                break
-            time.sleep(soonest)
+            time.sleep(min(waits[job[0].id] for job in jobs))
             continue
         jobs.remove(ready)
-        provider, kind, value = ready
-        ask(db, provider, kind, value, all_keys, options=cfg.get(provider.id))
+        source, kind, value = ready
+        ask(db, source, kind, value)
         calls += 1
     return calls
 
@@ -783,29 +656,17 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
 MAX_CHECK_ITEMS = 10_000
 
 
-def _left_today(provider: Provider, all_keys: Keys) -> int | None:
-    """Requests the provider's keys can still make today; None: no stated limit."""
-    if not provider.daily:
-        return None
-    today = datetime.now(timezone.utc).date().isoformat()
-    left = 0
-    with limiter.lock:
-        for key in slots(provider, all_keys):
-            day, used = limiter.day.get(_slot(provider, key), (today, 0))
-            left += max(0, provider.daily - (used if day == today else 0))
-    return left
-
-
 def plan_check(
     db: OrmSession, pairs: Iterable[tuple[str, str]], shared: dict[str, Any], force: bool = False
 ) -> dict[str, Any]:
-    """What a bulk check would ask: per indicator the providers to ask, and
-    per provider how many requests against what is left today."""
+    """What a bulk check would ask: per indicator the sources to ask, and
+    per source how many requests against what its instance may still make today."""
+    from ..automation import instance_keys
+
     cfg = config(shared)
-    all_keys = keys(db)
     allowlist = Allowlist(shared.get("iocAllowlist") or [])
     red = red_incidents(db)
-    providers = [p for p in PROVIDERS if usable(p, cfg, all_keys)]
+    on = asked(db)
     wanted = list(dict.fromkeys(pairs))[:MAX_CHECK_ITEMS]
     cached: dict[tuple[str, str], dict[str, Enrichment]] = {}
     if not force and wanted:
@@ -820,27 +681,29 @@ def plan_check(
             never += 1
             continue
         known = cached.get((kind, value), {})
-        ask_ids = [p.id for p in providers if p.supports(kind) and (force or not fresh(known.get(p.id), cfg))]
+        ask_ids = [s.id for s in on if s.supports(kind) and (force or not fresh(known.get(s.id), cfg))]
         if not ask_ids:
             reused += 1
             continue
         pending.append([kind, value, ask_ids])
-        for provider_id in ask_ids:
-            need[provider_id] = need.get(provider_id, 0) + 1
-    sources, seconds = [], 0.0
-    for provider in providers:
-        count = need.get(provider.id, 0)
+        for source_id in ask_ids:
+            need[source_id] = need.get(source_id, 0) + 1
+    listed, seconds = [], 0.0
+    for source in on:
+        count = need.get(source.id, 0)
         if not count:
             continue
-        left = _left_today(provider, all_keys)
+        left = src.left_today(db, source)
         today = count if left is None else min(count, left)
-        key_count = max(1, len(slots(provider, all_keys)))
-        seconds = max(seconds, today * provider.interval / key_count)
-        sources.append(
+        keys = max(1, src.keys_count(source))
+        per_minute = instance_keys.policy_of(source.instance)["perMinute"]
+        # With a limit a minute the keys set the pace; without one, about a request a second.
+        seconds = max(seconds, today * 60 / (per_minute * keys) if per_minute else float(today))
+        listed.append(
             {
-                "provider": provider.id,
-                "label": provider.label,
-                "keys": len(all_keys.get(provider.id, [])),
+                "provider": source.id,
+                "label": source.label,
+                "keys": keys,
                 "needed": count,
                 "leftToday": left,
                 "today": today,
@@ -853,7 +716,7 @@ def plan_check(
         "reused": reused,
         "neverSent": never,
         "seconds": int(seconds),
-        "sources": sources,
+        "sources": listed,
         "pending": pending,
         "items": [[k, v] for k, v in wanted],
     }
@@ -914,38 +777,38 @@ def check_progress(db: OrmSession, row: IocCheck) -> dict[str, Any]:
 def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 60.0, max_calls: int = 300) -> int:
     """Work through the bulk checks, oldest first; returns the requests made.
 
-    A check whose remaining sources have all used their quota is left
-    ``waiting`` with a message that says so: it goes on when one resets."""
-    cfg = config(shared)
-    all_keys = keys(db)
+    A check whose remaining sources have all used up their keys is left
+    ``waiting`` with a message that says so: it goes on when a key is free again."""
     started, calls = time.monotonic(), 0
     active = db.scalars(
         select(IocCheck).where(IocCheck.status.in_(("running", "waiting"))).order_by(IocCheck.created_at)
     ).all()
+    if not active:
+        return 0
+    by_id = {source.id: source for source in asked(db)}
     for check in active:
         pending = [[k, v, list(ids)] for k, v, ids in check.pending or []]
-        # A provider switched off or left without keys is not waited for.
-        live = {p.id for p in PROVIDERS if usable(p, cfg, all_keys)}
+        # A source that is off now (or that does not exist any more) is not waited for.
         for item in pending:
-            item[2] = [pid for pid in item[2] if pid in live]
+            item[2] = [source_id for source_id in item[2] if source_id in by_id]
         while calls < max_calls:
             remaining = budget_seconds - (time.monotonic() - started)
-            jobs = [(BY_ID[pid], item) for item in pending for pid in item[2]]
+            jobs = [(by_id[source_id], item) for item in pending for source_id in item[2]]
             if not jobs or remaining <= 0:
                 break
-            waits = {p.id: wait(p, all_keys) for p in {job[0] for job in jobs}}
+            waits = {source_id: src.wait(db, by_id[source_id]) for source_id in {job[0].id for job in jobs}}
             ready = next((job for job in jobs if waits[job[0].id] == 0), None)
             if ready is None:
                 soonest = min(waits.values())
-                if soonest == float("inf") or soonest > remaining:
+                if soonest > remaining:
                     break
                 time.sleep(soonest)
                 continue
-            provider, item = ready
-            reason = ask(db, provider, item[0], item[1], all_keys, options=cfg.get(provider.id))
+            source, item = ready
+            reason = ask(db, source, item[0], item[1])
             calls += 1
-            if reason is None or not reason.startswith(("daily quota", "rate limit")):
-                item[2].remove(provider.id)
+            if reason is None:
+                item[2].remove(source.id)
         finished = [item for item in pending if not item[2]]
         pending = [item for item in pending if item[2]]
         check.done = check.total - len(pending)
@@ -957,11 +820,13 @@ def run_checks(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 6
 
             ioc_history.finish(db, check)
         else:
-            waiting = {pid for item in pending for pid in item[2]}
-            spent = sorted(BY_ID[pid].label for pid in waiting if wait(BY_ID[pid], all_keys) == float("inf"))
+            waiting = {source_id for item in pending for source_id in item[2]}
+            spent = sorted(by_id[source_id].label for source_id in waiting if src.wait(db, by_id[source_id]) > 0)
             if len(spent) == len(waiting):
                 check.status = "waiting"
-                check.message = f"{', '.join(spent)}: daily quota used. It goes on by itself when the quota resets."
+                check.message = (
+                    f"{', '.join(spent)}: every key is used up. It goes on by itself when one is free again."
+                )
             else:
                 check.status, check.message = "running", ""
         if finished or check.status != "running":

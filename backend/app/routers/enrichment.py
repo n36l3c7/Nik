@@ -1,9 +1,9 @@
-"""Threat intelligence: provider keys (admin), lookups and cached answers.
+"""Threat intelligence: the sources (the connectors that judge indicators), look-ups and stored answers.
 
-The keys are stored encrypted (``vault.py``) and never returned; the
-providers list says only whether each one is configured and the key's last
-four characters. Lookups refuse private addresses, internal names,
-allowlisted values and values of TLP:RED incidents (``enrichment/service.py``).
+A source is asked through an instance of its connector, with the keys of that
+instance: this router holds no key and returns none. Look-ups refuse private
+addresses, internal names, allowlisted values and values of TLP:RED incidents
+(``enrichment/service.py``).
 """
 
 from __future__ import annotations
@@ -16,16 +16,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import analysis_links
-from ..core import vault
+from ..automation import connector_actions, instance_keys
 from ..core.db import get_db
-from ..core.models import AuditEntry, Enrichment, IntegrationKey, UrlScan
+from ..core.models import AuditEntry, Connector, Enrichment, IntegrationKey, UrlScan
 from ..core.security import Principal, admin_principal, now_iso, reader_principal, writer_principal
-from ..enrichment import service
-from ..enrichment.providers import BY_ID, PROVIDERS
+from ..enrichment import old_keys, service
+from ..enrichment import sources as src
 from ..iocs import Allowlist
 from .settings import read_settings
 
@@ -56,151 +55,54 @@ def _value_or_400(kind: str, value: str) -> str:
     return cleaned
 
 
-MAX_KEYS = 10
-
-
-def _key_out(row: IntegrationKey) -> dict:
-    readable = vault.decrypt(row.secret) is not None
+def _source_out(db: OrmSession, source: src.Source) -> dict:
+    """A source as Settings lists it: what it judges, whether it is on, and through which instance."""
+    asks_for = [param for param in source.connector.configuration if param.required and param.default in (None, "")]
+    policy = instance_keys.policy_of(source.instance) if source.instance is not None else None
     return {
-        "id": row.id,
-        "hint": row.hint,
-        "label": row.label,
-        # ok | rejected (the provider refused it) | unreadable (SECRET_KEY changed)
-        "status": row.status if readable else "unreadable",
-        "error": row.error,
-        "updatedAt": row.updated_at,
-        "updatedBy": row.updated_by,
+        "id": source.id,
+        "label": source.label,
+        "types": source.types,
+        "commands": {kind: f"{source.id}.{name}" for kind, name in source.commands.items() if kind in src.KINDS},
+        "weight": source.weight,
+        "informational": source.informational,
+        "on": source.on,
+        # The instance the look-ups go through (the oldest that is on), and how many the connector has.
+        "instance": source.instance.name if source.instance is not None else None,
+        "instances": source.instances,
+        "keys": src.keys_count(source),
+        "limits": ({key: policy[key] for key in ("perMinute", "perDay", "cacheHours")} if policy is not None else None),
+        # Nothing has to be typed to make an instance: it can be turned on from here.
+        "needsNothing": not asks_for,
+        "logo": connector_actions.logo_path(db.get(Connector, source.id)),
     }
 
 
-@router.get("/providers")
-def list_providers(_caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
-    """Every provider: types, key requirement, its keys' state (never the keys), free-tier limits."""
+@router.get("/sources")
+def list_sources(_caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)) -> dict:
+    """The sources of threat intelligence: every installed connector with a command that judges an
+    indicator (`reputation` in its file), whether it is on (an instance of it is), which instance the
+    look-ups go through and its limits. `oldKeys`: the API keys kept before 6.5 that have no instance
+    yet (never the keys: their last four characters), each with the connectors it waits for."""
     shared = read_settings(db)
-    cfg = service.config(shared)
-    stored: dict[str, list[IntegrationKey]] = {}
-    for row in db.scalars(select(IntegrationKey).order_by(IntegrationKey.updated_at, IntegrationKey.id)):
-        stored.setdefault(row.provider, []).append(row)
-    all_keys = service.keys(db)
-    out = []
-    for p in PROVIDERS:
-        key_rows = [_key_out(row) for row in stored.get(p.id, [])]
-        working = [k for k in key_rows if k["status"] == "ok"]
-        out.append(
-            {
-                "id": p.id,
-                "label": p.label,
-                "types": list(p.types),
-                "key": p.key,
-                "keys": key_rows,
-                "configured": bool(working),
-                # The first working key, as before several keys existed.
-                "keyHint": working[0]["hint"] if working else "",
-                "keyUnreadable": any(k["status"] == "unreadable" for k in key_rows),
-                "enabled": cfg["providers"].get(p.id, True),
-                "usable": service.usable(p, cfg, all_keys),
-                "maxKeys": MAX_KEYS,
-                "signup": p.signup,
-                "note": p.note,
-            }
-        )
-    return {"providers": out, "settings": cfg}
+    return {
+        "sources": [_source_out(db, source) for source in src.sources(db)],
+        "settings": service.config(shared),
+        "oldKeys": old_keys.left(db),
+    }
 
 
-class KeyIn(BaseModel):
-    key: str = Field(min_length=8, max_length=512, pattern=r"^[\x21-\x7e]+$")
-    label: str = Field(default="", max_length=60)
-
-
-def _provider_with_keys(provider_id: str):
-    provider = BY_ID.get(provider_id)
-    if provider is None or provider.key == "none":
-        raise HTTPException(status_code=404, detail="No such provider, or it takes no key")
-    return provider
-
-
-def _store_key(db: OrmSession, provider_id: str, body: KeyIn, actor: str) -> IntegrationKey:
-    row = IntegrationKey(
-        id=uuid.uuid4().hex,
-        provider=provider_id,
-        secret=vault.encrypt(body.key),
-        hint=body.key[-4:],
-        label=" ".join(body.label.split()),
-        status="ok",
-        updated_at=now_iso(),
-        updated_by=actor,
-    )
-    db.add(row)
-    return row
-
-
-@router.post("/providers/{provider_id}/keys", status_code=status.HTTP_201_CREATED)
-def add_key(
-    provider_id: str,
-    body: KeyIn,
-    caller: Principal = Depends(admin_principal),
-    db: OrmSession = Depends(get_db),
-) -> dict:
-    """Add an API key to a provider (**admin**), stored encrypted and never
-    shown again. Lookups rotate over a provider's keys; `409` for a key
-    already stored or past the limit of 10 keys."""
-    provider = _provider_with_keys(provider_id)
-    existing = db.scalars(select(IntegrationKey).where(IntegrationKey.provider == provider_id)).all()
-    if len(existing) >= MAX_KEYS:
-        raise HTTPException(status_code=409, detail=f"A provider takes at most {MAX_KEYS} keys.")
-    if any(vault.decrypt(row.secret) == body.key for row in existing):
-        raise HTTPException(status_code=409, detail="This key is already stored for the provider.")
-    row = _store_key(db, provider_id, body, caller.actor)
-    _audit(db, caller, "enrichment.key", f"Added a {provider.label} API key (…{row.hint})")
-    db.commit()
-    return _key_out(row)
-
-
-@router.delete("/providers/{provider_id}/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_one_key(
-    provider_id: str, key_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
+@router.delete("/old-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_old_key(
+    key_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
-    """Remove one API key of a provider (**admin**)."""
+    """Delete an API key kept from before 6.5 that was not moved to an instance (**admin**)."""
     row = db.get(IntegrationKey, key_id)
-    if row is None or row.provider != provider_id:
-        raise HTTPException(status_code=404, detail="No such key for this provider")
-    label = BY_ID[provider_id].label if provider_id in BY_ID else provider_id
-    _audit(db, caller, "enrichment.key", f"Removed a {label} API key (…{row.hint})")
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such key")
+    label = old_keys.OLD.get(row.provider, {}).get("label", row.provider)
+    _audit(db, caller, "enrichment.key", f"Removed a {label} API key kept from before 6.5 (…{row.hint})")
     db.delete(row)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.put("/providers/{provider_id}/key", status_code=status.HTTP_204_NO_CONTENT)
-def set_key(
-    provider_id: str,
-    body: KeyIn,
-    caller: Principal = Depends(admin_principal),
-    db: OrmSession = Depends(get_db),
-) -> Response:
-    """Replace every key of the provider with this one (**admin**). Kept for
-    clients written for one key per provider; use `POST …/keys` to add one."""
-    provider = _provider_with_keys(provider_id)
-    for row in db.scalars(select(IntegrationKey).where(IntegrationKey.provider == provider_id)):
-        db.delete(row)
-    _store_key(db, provider_id, body, caller.actor)
-    _audit(db, caller, "enrichment.key", f"Set the {provider.label} API key")
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete("/providers/{provider_id}/key", status_code=status.HTTP_204_NO_CONTENT)
-def delete_key(
-    provider_id: str, caller: Principal = Depends(admin_principal), db: OrmSession = Depends(get_db)
-) -> Response:
-    """Remove every API key of a provider (**admin**)."""
-    rows = db.scalars(select(IntegrationKey).where(IntegrationKey.provider == provider_id)).all()
-    if not rows:
-        raise HTTPException(status_code=404, detail="No key stored for this provider")
-    for row in rows:
-        db.delete(row)
-    label = BY_ID[provider_id].label if provider_id in BY_ID else provider_id
-    _audit(db, caller, "enrichment.key", f"Removed the {label} API key{'s' if len(rows) > 1 else ''}")
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -227,10 +129,12 @@ def _analysis(db: OrmSession, row) -> dict:
 
 
 def _detail(db: OrmSession, kind: str, value: str, shared: dict, reason: str | None) -> dict:
-    """What the indicator's page shows: each provider's answer with its
+    """What the indicator's page shows: each source's answer with its
     history, the weighted verdict, and what could still be asked."""
-    cfg, all_keys = service.config(shared), service.keys(db)
-    available = [p.id for p in PROVIDERS if p.supports(kind) and service.usable(p, cfg, all_keys)]
+    cfg = service.config(shared)
+    judging = [source for source in src.sources(db) if source.supports(kind)]
+    names = {source.id: source.label for source in judging}
+    available = [source.id for source in judging if source.on]
     results = service.results(db, kind, value, cfg)
     answered = {r["provider"] for r in results}
     analyses = analysis_links.analyses_for(db, [(kind, value)]).get((kind, value), [])
@@ -244,9 +148,11 @@ def _detail(db: OrmSession, kind: str, value: str, shared: dict, reason: str | N
         "value": value,
         "blocked": reason,
         "providers": available,
-        "notAsked": [{"provider": p, "label": BY_ID[p].label} for p in available if p not in answered],
+        "notAsked": [{"provider": p, "label": names[p]} for p in available if p not in answered],
+        # Installed, but no instance of the connector is on: not asked until one is (Settings, Connectors).
+        "off": [{"provider": source.id, "label": source.label} for source in judging if not source.on],
         "results": results,
-        "summary": service.overall(answers),
+        "summary": service.overall(answers, src.weights(db)),
         # What Nik saw when it analysed this value itself (an artifact), next
         # to what the sources say. ``verdict`` is the analysis in the words of
         # a reputation when it flags the value: it counts among the sources.
@@ -270,11 +176,13 @@ def cached(
     _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
-    """What is known about an indicator: each provider's cached answer
-    (`data` in the provider's shape, `history` of its earlier verdicts,
-    `expired` past the retention of the type), the weighted `summary`
-    (`verdict`, `score` 0-100, `counts`), and `blocked`: why it is never
-    sent, or null."""
+    """What is known about an indicator: each source's stored answer
+    (`provider`: the id of the source's connector; `data`: the outputs of its
+    reputation command, with `_command` naming it; `history` of its earlier
+    verdicts; `expired` past the retention of the type), the weighted `summary`
+    (`verdict`, `score` 0-100, `counts`), `providers`: the sources that can be
+    asked now, `off`: those whose connector has no instance that is on, and
+    `blocked`: why it is never sent, or null."""
     value = _value_or_400(type, value)
     shared = read_settings(db)
     reason = service.blocked(db, type, value, Allowlist(shared.get("iocAllowlist") or []))
@@ -289,11 +197,11 @@ def raw_answer(
     _caller: Principal = Depends(reader_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response:
-    """A provider's own answer about the indicator, as a JSON file."""
+    """A source's whole answer about the indicator (every output of its command), as a JSON file."""
     value = _value_or_400(type, value)
     row = db.get(Enrichment, (type, value, provider))
     if row is None or row.raw is None:
-        raise HTTPException(status_code=404, detail="No stored answer from this provider")
+        raise HTTPException(status_code=404, detail="No stored answer from this source")
     body = {"provider": provider, "type": type, "value": value, "checkedAt": row.checked_at, "response": row.raw}
     return Response(
         json.dumps(body, indent=2, ensure_ascii=False),
@@ -310,14 +218,14 @@ class CheckIn(BaseModel):
 
 @router.post("/check")
 async def check(body: CheckIn, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)) -> dict:
-    """Ask every usable provider about the indicator now ("Check now"); fresh
-    answers are reused unless ``force``. ``422`` when the value must not be sent."""
+    """Ask every source that is on about the indicator now ("Check now"); answers that
+    still stand are reused unless ``force``. ``422`` when the value must not be sent."""
     value = _value_or_400(body.type, body.value)
     shared = read_settings(db)
     reason = service.blocked(db, body.type, value, Allowlist(shared.get("iocAllowlist") or []))
     if reason:
         raise HTTPException(status_code=422, detail=f"Not sent: {reason}.")
     outcome = await run_in_threadpool(service.check_now, db, body.type, value, shared, body.force)
-    _audit(db, caller, "enrichment.check", f"Checked {body.type} {value[:200]} with threat-intelligence providers")
+    _audit(db, caller, "enrichment.check", f"Checked {body.type} {value[:200]} with the threat-intelligence sources")
     db.commit()
     return {**_detail(db, body.type, value, shared, None), "skipped": outcome["skipped"]}

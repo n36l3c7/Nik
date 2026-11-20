@@ -29,10 +29,12 @@
 # left empty, download-export and submit-url fail and the rest works.
 name: URLhaus
 id: urlhaus
-version: 2
+version: 3
 description: Malware distribution URLs tracked by URLhaus (abuse.ch), with the hosts they are on and the payloads they serve, downloaded and submitted.
 api_version: "URLhaus API v1 (urlhaus-api.abuse.ch/v1)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 3 }
 configuration:
   - name: credentials
     label: Auth-Key

@@ -33,10 +33,12 @@
 # why.
 name: VirusTotal
 id: virustotal
-version: 2
+version: 3
 description: "Files, URLs, domains and IP addresses in VirusTotal: reports with a verdict, relationships, comments, votes, behaviour, search, and the premium services (Intelligence, Livehunt, Retrohunt, private scanning, Monitor)."
 api_version: "VirusTotal API v3"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 3 }
 configuration:
   - name: credentials
     label: "API key"

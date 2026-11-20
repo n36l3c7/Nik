@@ -281,12 +281,17 @@
             <tr>
               <td>Threat-intelligence lookups</td>
               <td>
-                when an admin has entered a provider's key; automatic lookups only for the indicator types an admin
-                switched on
+                when the connector of a source is installed and one of its instances is on, and someone asks (<em
+                  >Check now</em
+                >, a bulk check, a playbook); automatic lookups only for the indicator types an admin switched on. Nik
+                has no other way to a source: with no instance, nothing is sent
               </td>
               <td>
-                the indicator (a hash, a domain, an address), to that provider. Never a private or internal value, one
-                on the allowlist, or one of an incident marked TLP:RED
+                the indicator (a hash, a domain, an address), to the hosts the connector of that source names, with the
+                key of the instance, by the one command of its file marked for that kind of indicator: never a command
+                that changes something at the vendor or that needs a paid plan. For a domain a registry is sent the
+                registered domain only. Never a private or internal value, one on the allowlist, or one of an incident
+                marked TLP:RED: no setting and no playbook opens that
               </td>
             </tr>
             <tr>
@@ -545,9 +550,10 @@
           refuses the example values. <code>deploy/init-env.sh</code> generates them.
         </li>
         <li>
-          <code>SECRET_KEY</code> encrypts the threat-intelligence API keys and the TLS key logs stored in the database.
-          It lives in <code>.env</code>, which <code>deploy/backup.sh</code> copies with each backup: a backup directory
-          holds the data, the samples and the key that decrypts the secrets.
+          <code>SECRET_KEY</code> encrypts the credentials of the instances of connectors (the keys of the
+          threat-intelligence sources among them) and the TLS key logs stored in the database. It lives in
+          <code>.env</code>, which <code>deploy/backup.sh</code> copies with each backup: a backup directory holds the
+          data, the samples and the key that decrypts the secrets.
         </li>
         <li>
           Treat a backup as you treat the server: it contains live malware and password hashes. Keep a copy off the

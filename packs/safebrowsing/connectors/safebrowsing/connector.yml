@@ -19,10 +19,12 @@
 # the JSON form of the API has them.
 name: Google Safe Browsing
 id: safebrowsing
-version: 2
+version: 3
 description: Checks URLs and hash prefixes against Google's lists of unsafe web resources, and reads the lists themselves.
 api_version: "Safe Browsing API v4 and v5 (safebrowsing.googleapis.com)"
 verified: false
+# Among the sources of an indicator's reputation: how much the verdict counts in the overall one (1 to 3).
+lookups: { weight: 3 }
 configuration:
   - name: api_key
     label: API key

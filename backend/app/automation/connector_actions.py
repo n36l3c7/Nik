@@ -105,6 +105,11 @@ def install(
     row.updated_at = now
     row.updated_by = actor
     db.flush()
+    if connector.native is None and any(command.reputation for command in connector.commands):
+        # A source of threat intelligence: a key kept for it before 6.5 becomes the key of an instance.
+        from ..enrichment import old_keys
+
+        old_keys.adopt(db)
     return row, connector
 
 

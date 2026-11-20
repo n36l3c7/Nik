@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Boxes, Braces, Clock, Download, ExternalLink, Globe, Radar, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge, Button } from '../ui/index.js'
+import { youngDomainDays } from '../../domain/sourceDetails.js'
 import SourceDetails from './SourceDetails.jsx'
 import { api, apiUrl } from '../../services/api.js'
 import { IOC_TYPES, sourceLabel } from '../../domain/iocs.js'
@@ -39,12 +40,6 @@ const SCORE_TONE = { malicious: 'text-high', suspicious: 'text-med', harmless: '
 
 function Heading({ children }) {
   return <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">{children}</h3>
-}
-
-/** Days since the domain was registered, when the registry says it is a young one; else null. */
-function youngDomainDays(results = []) {
-  const found = results.find((result) => result.provider === 'registration' && result.data?.young)
-  return found ? (found.data.ageDays ?? null) : null
 }
 
 function Verdict({ summary, retentionDays, lookedUp, young = null }) {
@@ -297,6 +292,9 @@ function SourceCard({ result, type, value, onNotice }) {
           </Badge>
         )}
         <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-fg-muted">
+          {result.data?._instance && (
+            <span title="The instance of the connector that was asked">{result.data._instance}</span>
+          )}
           <span title="Checked">{formatDateTime(Date.parse(result.checkedAt))}</span>
           {result.hasRaw && (
             <>
@@ -336,7 +334,13 @@ function SourceCard({ result, type, value, onNotice }) {
         ) : (
           <>
             <p className="font-mono text-xs text-fg">{result.summary}</p>
-            <SourceDetails provider={result.provider} data={result.data} />
+            {result.before65 ? (
+              <p className="font-mono text-xs text-fg-muted">
+                Answered before Nik 6.5: the verdict stands, and the details come with the next check.
+              </p>
+            ) : (
+              <SourceDetails data={result.data} verdict={result.verdict} />
+            )}
           </>
         )}
         {changes.length > 1 && (
@@ -441,6 +445,8 @@ export default function IocDetail({
   const data = intel.data
   const results = useMemo(() => data?.results ?? [], [data])
   const notAsked = data?.notAsked ?? []
+  // Sources that are installed and off: their connector has no instance that is on.
+  const off = data?.off ?? []
   const canCheck = Boolean(data && !data.blocked && data.providers.length > 0)
   // The source shown: the analyst's choice, else the first that flags the value, else the first.
   const current =
@@ -500,12 +506,14 @@ export default function IocDetail({
               {intel.loading && <p className="font-mono text-xs text-fg-muted">Loading…</p>}
               {intel.error && <p className="text-xs text-high">{intel.error}</p>}
               {data?.blocked && <p className="text-xs text-fg-muted">Never sent outside: {data.blocked}.</p>}
-              {data && !data.blocked && data.providers.length === 0 && results.length === 0 && (
+              {data && !data.blocked && data.providers.length === 0 && (
                 <p className="text-xs text-fg-muted">
-                  No source is configured for this type (Settings → Threat intelligence).
+                  {off.length
+                    ? 'No source is on for this type. A source is asked through an instance of its connector: an administrator makes one in Settings, Connectors.'
+                    : 'No source is installed for this type. An administrator installs the pack of a source (Settings, Content packs) and makes an instance of its connector (Settings, Connectors).'}
                 </p>
               )}
-              {(results.length > 0 || notAsked.length > 0 || data?.analysis?.verdict) && (
+              {(results.length > 0 || notAsked.length > 0 || off.length > 0 || data?.analysis?.verdict) && (
                 <ul className="border border-line bg-panel">
                   {results.map((r) => {
                     const m = verdictMeta(r.verdict)
@@ -558,6 +566,20 @@ export default function IocDetail({
                       <span className="font-mono text-[11px] text-fg-subtle">not asked</span>
                     </li>
                   ))}
+                  {off
+                    .filter((p) => !results.some((r) => r.provider === p.provider))
+                    .map((p) => (
+                      <li key={p.provider} className="flex items-center gap-2 px-2.5 py-1.5 text-sm text-fg-subtle">
+                        <span className="h-2 w-2 shrink-0 rounded-full border border-line" aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate">{p.label}</span>
+                        <span
+                          className="font-mono text-[11px]"
+                          title="Its connector has no instance that is on (Settings, Connectors)"
+                        >
+                          off: no instance
+                        </span>
+                      </li>
+                    ))}
                 </ul>
               )}
               {canCheck && results.length === 0 && !intel.loading && (

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import textwrap
 
 import pytest
@@ -15,7 +14,7 @@ from app.automation import worker
 from app.core.db import SessionLocal
 from app.core.models import Connection, Playbook, PlaybookVersion, Run
 from app.core.security import now_iso
-from app.enrichment import service
+from tests import vendor
 from tests.conftest import make_key
 from tests.test_automation_engine import test_actions  # noqa: F401 - a fixture
 from tests.test_fields import incident
@@ -288,34 +287,21 @@ def test_a_command_of_a_connector_names_its_connection_and_writes_to_the_context
     assert "nik-reputation" not in every and not any(name.startswith("flow") for name in every)
 
 
-def test_a_reputation_command_asks_nik_s_sources_and_the_connectors_that_look_it_up(
-    admin: TestClient, desk, monkeypatch
-):
-    service.limiter.reset()
+def test_a_reputation_command_asks_the_sources_that_are_on_and_counts_what_is_known(admin: TestClient, desk):
     incident(admin)
-    fake = dataclasses.replace(
-        service.BY_ID["virustotal"], lookup=lambda *a: {"verdict": "malicious", "summary": "7 engines"}, interval=0
-    )
-
-    def check_now(db, kind, value, shared, force=False):
-        service.lookup_one(db, fake, kind, value, None)
-        return {"results": [], "skipped": [{"provider": "otx", "label": "OTX", "reason": "no key"}]}
-
-    monkeypatch.setattr(service, "check_now", check_now)
+    # Another source answered before, and its answer stands; Acme Desk has a command that judges an
+    # address, and two instances: it is asked through the oldest that is on.
+    with SessionLocal() as db:
+        vendor.said(db, "virustotal", "ip", IP, "malicious", "7 engines")
     desk.answer("desk.example.com", 200, {"verdict": "Suspicious", "note": "seen twice"}, path=f"/intel/{IP}")
     desk.answer("desk2.example.com", 500, {}, path=f"/intel/{IP}")
     detail = ran(admin, f"!ip {IP}")
     out = detail["step"]["output"]
     assert (out["kind"], out["value"], out["verdict"]) == ("ip", IP, "malicious") and out["score"] >= 50
     by_source = {item["source"]: item for item in out["sources"]}
-    assert by_source["Acme Desk (Desk)"] == {
-        "source": "Acme Desk (Desk)",
-        "verdict": "suspicious",
-        "summary": "seen twice",
-    }
+    assert by_source["Acme Desk"] == {"source": "Acme Desk", "verdict": "suspicious", "summary": "seen twice"}
     assert any(item["verdict"] == "malicious" and item["summary"] == "7 engines" for item in out["sources"])
-    reasons = {item["source"]: item["reason"] for item in out["skipped"]}
-    assert reasons["OTX"] == "no key" and "Acme Desk (Desk test)" in reasons
+    assert out["skipped"] == [] and [request["host"] for request in desk.requests] == ["desk.example.com"]
     # One verdict for the indicator, in the context of the incident.
     context = admin.get("/api/incidents/i1/context").json()["context"]
     assert context["IP"] == [{"Address": IP, "Verdict": "malicious", "Score": out["score"]}]
@@ -351,8 +337,10 @@ def test_a_reputation_command_asks_nik_s_sources_and_the_connectors_that_look_it
     sent = len(desk.requests)
     inside = ran(admin, "!ip 10.1.2.3")["step"]["output"]
     assert inside["verdict"] == "" and len(desk.requests) == sent
-    assert inside["skipped"][0]["source"] == "reputation sources"
-    assert any(item["source"].startswith("Acme Desk") for item in inside["skipped"])
+    assert [item["source"] for item in inside["skipped"]] == ["reputation sources"]
+    # A source that gives no answer is among those that were not asked, with what it said.
+    silent = ran(admin, "!ip 185.220.101.99")["step"]["output"]
+    assert [item["source"] for item in silent["skipped"]] == ["Acme Desk"] and silent["skipped"][0]["reason"]
 
     # A file is told by its hash; what is not an indicator of the kind is said.
     assert ran(admin, "!file " + "a" * 64)["step"]["output"]["kind"] == "sha256"
@@ -360,4 +348,3 @@ def test_a_reputation_command_asks_nik_s_sources_and_the_connectors_that_look_it
     assert ran(admin, "!domain not_a_domain")["body"]["error"].startswith("That is not a domain")
     assert typed(admin, "!ip").json()["detail"] == "!ip takes one value: !ip <what to look up>"
     assert typed(admin, "!ip 8.8.8.8 extra=1").status_code == 400
-    service.limiter.reset()

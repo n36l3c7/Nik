@@ -1,16 +1,11 @@
-"""The reputation commands of the sources say what Nik's own look-ups say.
+"""What the reputation commands of the sources say, answer by answer.
 
-Each source of threat intelligence is a connector of its own (6.1), and its
-reputation command is written to give, for the same answer of the vendor, the
-verdict and the line that ``app.enrichment.providers`` gives. Here both are
-given the same answer, the ones the tests of the look-ups use and the edges
-(not found, nothing, one, several), and must agree.
-
-abuse.ch is one look-up over three services and three connectors: a case
-answers one service and leaves the others without a result, so what the
-look-up says is what that service's command must say. When nothing is found
-the look-up names two services in its line and a command names its own: the
-verdict alone is compared there.
+A look-up of an indicator is the reputation command of a source's connector
+(6.5). Each command is given here the answers a vendor gives (found, not
+found, nothing, one, several, the edges of each threshold) and must say the
+verdict, the line and the link written beside the case: they are what the
+indicator's page shows and what the overall verdict is counted from, so a
+connector file that changes one of them changes it here, on purpose.
 """
 
 from __future__ import annotations
@@ -23,7 +18,6 @@ import pytest
 from app.automation import connector_actions as ca
 from app.automation import connector_runtime as rt
 from app.automation import egress
-from app.enrichment import providers, registration
 from tests import vendor
 
 NOW = 1_800_000_000.0  # 2027-01-15T08:00:00Z
@@ -52,115 +46,93 @@ def _vt(stats=None, **more):
     return {"data": {"attributes": {"last_analysis_stats": stats or {}, **more}}}
 
 
-# (name, connector, command, provider, kind, value, {host of the vendor: (status, answer)}, compare the line too)
+# (name, connector, command, kind, value, {host of the vendor: (status, answer)})
 CASES = [
-    # VirusTotal: the answers of test_enrichment, the thresholds, what it does not know.
     (
         "vt ip",
         "virustotal",
         "get-ip-report",
-        "virustotal",
         "ip",
         IP,
         {"www.virustotal.com": (200, _vt(STATS, country="DE"))},
-        True,
     ),
     (
         "vt ip harmless",
         "virustotal",
         "get-ip-report",
-        "virustotal",
         "ip",
         IP,
         {"www.virustotal.com": (200, _vt({"malicious": 0, "harmless": 60, "undetected": 10}))},
-        True,
     ),
     (
         "vt domain two engines",
         "virustotal",
         "get-domain-report",
-        "virustotal",
         "domain",
         "evil.example.com",
         {"www.virustotal.com": (200, _vt({"malicious": 2, "harmless": 60}))},
-        True,
     ),
     (
         "vt domain three engines",
         "virustotal",
         "get-domain-report",
-        "virustotal",
         "domain",
         "evil.example.com",
         {"www.virustotal.com": (200, _vt({"malicious": 3, "harmless": 60}))},
-        True,
     ),
     (
         "vt file suspicious only",
         "virustotal",
         "get-file-report",
-        "virustotal",
         "sha256",
         SHA,
         {"www.virustotal.com": (200, _vt({"malicious": 0, "suspicious": 1, "undetected": 70}))},
-        True,
     ),
     (
         "vt file undetected only",
         "virustotal",
         "get-file-report",
-        "virustotal",
         "sha256",
         SHA,
         {"www.virustotal.com": (200, _vt({"undetected": 70}))},
-        True,
     ),
     (
         "vt file unknown",
         "virustotal",
         "get-file-report",
-        "virustotal",
         "sha256",
         SHA,
         {"www.virustotal.com": (404, {"error": {"code": "NotFoundError"}})},
-        True,
     ),
     (
         "vt url",
         "virustotal",
         "get-url-reputation",
-        "virustotal",
         "url",
         "http://evil.top/x?a=1",
         {"www.virustotal.com": (200, _vt(STATS))},
-        True,
     ),
     (
         "vt url unknown",
         "virustotal",
         "get-url-reputation",
-        "virustotal",
         "url",
         "http://evil.top/x",
         {"www.virustotal.com": (404, {"error": {"code": "NotFoundError"}})},
-        True,
     ),
     # AbuseIPDB.
     (
         "abuseipdb malicious",
         "abuseipdb",
         "check-ip",
-        "abuseipdb",
         "ip",
         IP,
         {"api.abuseipdb.com": (200, {"data": {"abuseConfidenceScore": 100, "totalReports": 42, "isp": "Tor"}})},
-        True,
     ),
     (
         "abuseipdb two reports",
         "abuseipdb",
         "check-ip",
-        "abuseipdb",
         "ip",
         IP,
         {
@@ -169,43 +141,35 @@ CASES = [
                 {"data": {"abuseConfidenceScore": 80, "totalReports": 2, "numDistinctUsers": 2, "isTor": True}},
             )
         },
-        True,
     ),
     (
         "abuseipdb suspicious, one report",
         "abuseipdb",
         "check-ip",
-        "abuseipdb",
         "ip",
         IP,
         {"api.abuseipdb.com": (200, {"data": {"abuseConfidenceScore": 25, "totalReports": 1}})},
-        True,
     ),
     (
         "abuseipdb below",
         "abuseipdb",
         "check-ip",
-        "abuseipdb",
         "ip",
         IP,
         {"api.abuseipdb.com": (200, {"data": {"abuseConfidenceScore": 24, "totalReports": 3}})},
-        True,
     ),
     (
         "abuseipdb whitelisted",
         "abuseipdb",
         "check-ip",
-        "abuseipdb",
         "ip",
         IP,
         {"api.abuseipdb.com": (200, {"data": {"abuseConfidenceScore": 90, "totalReports": 9, "isWhitelisted": True}})},
-        True,
     ),
     (
         "abuseipdb nothing",
         "abuseipdb",
         "check-ip",
-        "abuseipdb",
         "ip",
         IP,
         {
@@ -214,85 +178,69 @@ CASES = [
                 {"data": {"abuseConfidenceScore": None, "totalReports": None, "isWhitelisted": None}},
             )
         },
-        True,
     ),
     # Shodan InternetDB.
     (
         "internetdb c2",
         "shodan",
         "check-ip",
-        "internetdb",
         "ip",
         IP,
         {"internetdb.shodan.io": (200, {"ports": [22, 443], "vulns": ["CVE-1"], "tags": ["c2"]})},
-        True,
     ),
     (
         "internetdb tor",
         "shodan",
         "check-ip",
-        "internetdb",
         "ip",
         IP,
         {"internetdb.shodan.io": (200, {"ports": [22], "cpes": ["cpe:/a:x"], "vulns": [], "tags": ["tor"]})},
-        True,
     ),
     (
         "internetdb tor and botnet",
         "shodan",
         "check-ip",
-        "internetdb",
         "ip",
         IP,
         {"internetdb.shodan.io": (200, {"ports": [], "vulns": ["CVE-1", "CVE-2"], "tags": ["tor", "botnet", "cloud"]})},
-        True,
     ),
     (
         "internetdb many ports",
         "shodan",
         "check-ip",
-        "internetdb",
         "ip",
         IP,
         {"internetdb.shodan.io": (200, {"ports": list(range(20, 32)), "tags": ["a", "b", "c", "d", "e", "f"]})},
-        True,
     ),
     (
         "internetdb unknown",
         "shodan",
         "check-ip",
-        "internetdb",
         "ip",
         IP,
         {"internetdb.shodan.io": (404, {"detail": "No information available"})},
-        True,
     ),
     # GreyNoise Community.
     (
         "greynoise malicious",
         "greynoise",
         "get-community-ip",
-        "greynoise",
         "ip",
         IP,
         {"api.greynoise.io": (200, {"noise": True, "riot": False, "classification": "malicious", "name": "unknown"})},
-        True,
     ),
     (
         "greynoise business service",
         "greynoise",
         "get-community-ip",
-        "greynoise",
         "ip",
         IP,
         {"api.greynoise.io": (200, {"noise": False, "riot": True, "classification": "benign", "name": "Example DNS"})},
-        True,
     ),
     (
         "greynoise benign scanner",
         "greynoise",
         "get-community-ip",
-        "greynoise",
         "ip",
         IP,
         {
@@ -301,13 +249,11 @@ CASES = [
                 {"noise": True, "riot": False, "classification": "benign", "name": "Example Scanner"},
             )
         },
-        True,
     ),
     (
         "greynoise not seen",
         "greynoise",
         "get-community-ip",
-        "greynoise",
         "ip",
         IP,
         {
@@ -316,14 +262,12 @@ CASES = [
                 {"message": "IP not observed scanning the internet or contained in RIOT data set."},
             )
         },
-        True,
     ),
     # urlscan.io: malicious in either shape of the answer.
     (
         "urlscan url",
         "urlscan",
         "get-url-reputation",
-        "urlscan",
         "url",
         "http://evil.top/x",
         {
@@ -339,13 +283,11 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "urlscan domain, one scan",
         "urlscan",
         "get-domain-reputation",
-        "urlscan",
         "domain",
         "evil.top",
         {
@@ -357,24 +299,20 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "urlscan never scanned",
         "urlscan",
         "get-domain-reputation",
-        "urlscan",
         "domain",
         "evil.top",
         {"urlscan.io": (200, {"total": 0, "results": []})},
-        True,
     ),
     # OTX.
     (
         "otx one pulse",
         "otx",
         "get-domain-reputation",
-        "otx",
         "domain",
         "evil.example.com",
         {
@@ -390,23 +328,19 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "otx two pulses",
         "otx",
         "get-ip-reputation",
-        "otx",
         "ip",
         IP,
         {"otx.alienvault.com": (200, {"pulse_info": {"count": 2, "pulses": []}})},
-        True,
     ),
     (
         "otx whitelisted",
         "otx",
         "get-domain-reputation",
-        "otx",
         "domain",
         "example.com",
         {
@@ -418,34 +352,28 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "otx no pulse",
         "otx",
         "get-file-reputation",
-        "otx",
         "sha256",
         SHA,
         {"otx.alienvault.com": (200, {"pulse_info": {"count": 0, "pulses": []}, "validation": []})},
-        True,
     ),
     (
         "otx unknown",
         "otx",
         "get-file-reputation",
-        "otx",
         "sha256",
         SHA,
         {"otx.alienvault.com": (404, {"detail": "Not found."})},
-        True,
     ),
     # abuse.ch, one service at a time.
     (
         "malwarebazaar sample",
         "malwarebazaar",
         "get-file-report",
-        "abusech",
         "sha256",
         SHA,
         {
@@ -454,33 +382,27 @@ CASES = [
                 {"query_status": "ok", "data": [{"sha256_hash": SHA, "signature": "AgentTesla", "tags": ["exe"]}]},
             )
         },
-        True,
     ),
     (
         "malwarebazaar sample without a family",
         "malwarebazaar",
         "get-file-report",
-        "abusech",
         "sha256",
         SHA,
         {"mb-api.abuse.ch": (200, {"query_status": "ok", "data": [{"sha256_hash": SHA, "signature": None}]})},
-        True,
     ),
     (
         "malwarebazaar unknown",
         "malwarebazaar",
         "get-file-report",
-        "abusech",
         "sha256",
         SHA,
         {"mb-api.abuse.ch": (200, {"query_status": "hash_not_found"})},
-        False,
     ),
     (
         "threatfox domain",
         "threatfox",
         "get-domain-report",
-        "abusech",
         "domain",
         "evil.example.com",
         {
@@ -500,13 +422,11 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "threatfox ip without a family",
         "threatfox",
         "get-ip-report",
-        "abusech",
         "ip",
         IP,
         {
@@ -518,23 +438,19 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "threatfox url, bare",
         "threatfox",
         "get-url-report",
-        "abusech",
         "url",
         "http://evil.top/x",
         {"threatfox-api.abuse.ch": (200, {"query_status": "ok", "data": [{"ioc": "http://evil.top/x"}]})},
-        True,
     ),
     (
         "threatfox file",
         "threatfox",
         "get-file-report",
-        "abusech",
         "sha256",
         SHA,
         {
@@ -553,13 +469,11 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "threatfox nothing",
         "threatfox",
         "get-domain-report",
-        "abusech",
         "domain",
         "evil.example.com",
         {
@@ -568,13 +482,11 @@ CASES = [
                 {"query_status": "no_result", "data": "Your search did not yield any results"},
             )
         },
-        False,
     ),
     (
         "urlhaus url",
         "urlhaus",
         "get-url-report",
-        "abusech",
         "url",
         "http://evil.top/x",
         {
@@ -588,33 +500,27 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "urlhaus url, bare",
         "urlhaus",
         "get-url-report",
-        "abusech",
         "url",
         "http://evil.top/x",
         {"urlhaus-api.abuse.ch": (200, {"query_status": "ok"})},
-        True,
     ),
     (
         "urlhaus url unknown",
         "urlhaus",
         "get-url-report",
-        "abusech",
         "url",
         "http://evil.top/x",
         {"urlhaus-api.abuse.ch": (200, {"query_status": "no_results"})},
-        False,
     ),
     (
         "urlhaus host",
         "urlhaus",
         "get-host-report",
-        "abusech",
         "domain",
         "evil.example.com",
         {
@@ -628,44 +534,36 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "urlhaus host, one URL",
         "urlhaus",
         "get-host-report",
-        "abusech",
         "domain",
         "evil.example.com",
         {"urlhaus-api.abuse.ch": (200, {"query_status": "ok", "url_count": 1})},
-        True,
     ),
     (
         "urlhaus host unknown",
         "urlhaus",
         "get-host-report",
-        "abusech",
         "domain",
         "evil.example.com",
         {"urlhaus-api.abuse.ch": (200, {"query_status": "no_results"})},
-        False,
     ),
     # Google Safe Browsing.
     (
         "safebrowsing url",
         "safebrowsing",
         "check-url",
-        "safebrowsing",
         "url",
         "http://evil.top/x",
         {"safebrowsing.googleapis.com": (200, {"matches": [{"threatType": "SOCIAL_ENGINEERING"}]})},
-        True,
     ),
     (
         "safebrowsing domain, two lists",
         "safebrowsing",
         "check-domain",
-        "safebrowsing",
         "domain",
         "evil.top",
         {
@@ -680,34 +578,28 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "safebrowsing not listed",
         "safebrowsing",
         "check-url",
-        "safebrowsing",
         "url",
         "http://example.com/",
         {"safebrowsing.googleapis.com": (200, {})},
-        True,
     ),
     # Registration: the age of a domain is the verdict.
     (
         "rdap young domain",
         "rdap",
         "get-domain",
-        "_registration",
         "domain",
         "example.top",
         {"rdap.org": (200, RDAP_DOMAIN)},
-        True,
     ),
     (
         "rdap domain of one day",
         "rdap",
         "get-domain",
-        "_registration",
         "domain",
         "example.top",
         {
@@ -716,13 +608,11 @@ CASES = [
                 {**RDAP_DOMAIN, "events": [{"eventAction": "registration", "eventDate": "2027-01-14T07:00:00Z"}]},
             )
         },
-        True,
     ),
     (
         "rdap old domain",
         "rdap",
         "get-domain",
-        "_registration",
         "domain",
         "example.top",
         {
@@ -737,13 +627,11 @@ CASES = [
                 },
             )
         },
-        True,
     ),
     (
         "rdap domain of thirty days",
         "rdap",
         "get-domain",
-        "_registration",
         "domain",
         "example.top",
         {
@@ -752,72 +640,248 @@ CASES = [
                 {**RDAP_DOMAIN, "events": [{"eventAction": "registration", "eventDate": "2026-12-16T08:00:00Z"}]},
             )
         },
-        True,
     ),
     (
         "rdap domain without a date",
         "rdap",
         "get-domain",
-        "_registration",
         "domain",
         "example.top",
         {"rdap.org": (200, {"objectClassName": "domain", "ldhName": "example.top"})},
-        True,
     ),
     (
         "rdap domain unknown",
         "rdap",
         "get-domain",
-        "_registration",
         "domain",
         "example.top",
         {"rdap.org": (404, {"errorCode": 404, "title": "Not Found"})},
-        True,
     ),
-    ("rdap network", "rdap", "get-ip", "_registration", "ip", IP, {"rdap.org": (200, RDAP_NETWORK)}, True),
+    ("rdap network", "rdap", "get-ip", "ip", IP, {"rdap.org": (200, RDAP_NETWORK)}),
     (
         "rdap network, bare",
         "rdap",
         "get-ip",
-        "_registration",
         "ip",
         IP,
         {"rdap.org": (200, {"objectClassName": "ip network"})},
-        True,
     ),
     (
         "rdap network unknown",
         "rdap",
         "get-ip",
-        "_registration",
         "ip",
         IP,
         {"rdap.org": (404, {"errorCode": 404, "title": "Not Found"})},
-        True,
     ),
 ]
 
+# What each case must give: (verdict, line, link).
+EXPECTED = {
+    "vt ip": (
+        "malicious",
+        "7/88 engines flag it, 1 suspicious",
+        "https://www.virustotal.com/gui/ip-address/93.184.216.34",
+    ),
+    "vt ip harmless": ("harmless", "0/70 engines flag it", "https://www.virustotal.com/gui/ip-address/93.184.216.34"),
+    "vt domain two engines": (
+        "suspicious",
+        "2/62 engines flag it",
+        "https://www.virustotal.com/gui/domain/evil.example.com",
+    ),
+    "vt domain three engines": (
+        "malicious",
+        "3/63 engines flag it",
+        "https://www.virustotal.com/gui/domain/evil.example.com",
+    ),
+    "vt file suspicious only": (
+        "suspicious",
+        "0/71 engines flag it, 1 suspicious",
+        "https://www.virustotal.com/gui/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ),
+    "vt file undetected only": (
+        "unknown",
+        "0/70 engines flag it",
+        "https://www.virustotal.com/gui/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ),
+    "vt file unknown": (
+        "unknown",
+        "not in VirusTotal",
+        "https://www.virustotal.com/gui/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ),
+    "vt url": (
+        "malicious",
+        "7/88 engines flag it, 1 suspicious",
+        "https://www.virustotal.com/gui/url/aHR0cDovL2V2aWwudG9wL3g_YT0x",
+    ),
+    "vt url unknown": ("unknown", "not in VirusTotal", "https://www.virustotal.com/gui/url/aHR0cDovL2V2aWwudG9wL3g"),
+    "abuseipdb malicious": (
+        "malicious",
+        "confidence 100 %, 42 reports in 90 days",
+        "https://www.abuseipdb.com/check/93.184.216.34",
+    ),
+    "abuseipdb two reports": (
+        "malicious",
+        "confidence 80 %, 2 reports in 90 days",
+        "https://www.abuseipdb.com/check/93.184.216.34",
+    ),
+    "abuseipdb suspicious, one report": (
+        "suspicious",
+        "confidence 25 %, 1 report in 90 days",
+        "https://www.abuseipdb.com/check/93.184.216.34",
+    ),
+    "abuseipdb below": (
+        "unknown",
+        "confidence 24 %, 3 reports in 90 days",
+        "https://www.abuseipdb.com/check/93.184.216.34",
+    ),
+    "abuseipdb whitelisted": (
+        "harmless",
+        "confidence 90 %, 9 reports in 90 days",
+        "https://www.abuseipdb.com/check/93.184.216.34",
+    ),
+    "abuseipdb nothing": (
+        "unknown",
+        "confidence 0 %, 0 reports in 90 days",
+        "https://www.abuseipdb.com/check/93.184.216.34",
+    ),
+    "internetdb c2": ("malicious", "ports 22, 443; 1 CVE; tags c2", "https://www.shodan.io/host/93.184.216.34"),
+    "internetdb tor": ("suspicious", "ports 22; tags tor", "https://www.shodan.io/host/93.184.216.34"),
+    "internetdb tor and botnet": (
+        "malicious",
+        "no open port; 2 CVEs; tags tor, botnet, cloud",
+        "https://www.shodan.io/host/93.184.216.34",
+    ),
+    "internetdb many ports": (
+        "unknown",
+        "ports 20, 21, 22, 23, 24, 25, 26, 27; tags a, b, c, d, e",
+        "https://www.shodan.io/host/93.184.216.34",
+    ),
+    "internetdb unknown": ("unknown", "no open port known to Shodan", "https://www.shodan.io/host/93.184.216.34"),
+    "greynoise malicious": ("malicious", "malicious internet scanner", "https://viz.greynoise.io/ip/93.184.216.34"),
+    "greynoise business service": (
+        "harmless",
+        "common business service (Example DNS)",
+        "https://viz.greynoise.io/ip/93.184.216.34",
+    ),
+    "greynoise benign scanner": (
+        "harmless",
+        "benign internet scanner (Example Scanner)",
+        "https://viz.greynoise.io/ip/93.184.216.34",
+    ),
+    "greynoise not seen": ("unknown", "not seen scanning the internet", "https://viz.greynoise.io/ip/93.184.216.34"),
+    "urlscan url": (
+        "malicious",
+        "37 public scans, 2 judged malicious",
+        "https://urlscan.io/search/#page.url%3A%22http%3A//evil.top/x%22",
+    ),
+    "urlscan domain, one scan": ("unknown", "1 public scan", "https://urlscan.io/search/#page.domain%3A%22evil.top%22"),
+    "urlscan never scanned": (
+        "unknown",
+        "never scanned on urlscan.io",
+        "https://urlscan.io/search/#page.domain%3A%22evil.top%22",
+    ),
+    "otx one pulse": ("suspicious", "in 1 OTX pulse", "https://otx.alienvault.com/indicator/domain/evil.example.com"),
+    "otx two pulses": ("suspicious", "in 2 OTX pulses", "https://otx.alienvault.com/indicator/ipv4/93.184.216.34"),
+    "otx whitelisted": ("harmless", "whitelisted by OTX", "https://otx.alienvault.com/indicator/domain/example.com"),
+    "otx no pulse": (
+        "unknown",
+        "in no OTX pulse",
+        "https://otx.alienvault.com/indicator/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ),
+    "otx unknown": (
+        "unknown",
+        "not in OTX",
+        "https://otx.alienvault.com/indicator/file/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ),
+    "malwarebazaar sample": (
+        "malicious",
+        "MalwareBazaar: AgentTesla",
+        "https://bazaar.abuse.ch/sample/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+    ),
+    "malwarebazaar sample without a family": (
+        "malicious",
+        "MalwareBazaar: known malware sample",
+        "https://bazaar.abuse.ch/sample/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+    ),
+    "malwarebazaar unknown": ("unknown", "not in MalwareBazaar", "https://bazaar.abuse.ch/"),
+    "threatfox domain": ("malicious", "ThreatFox: Cobalt Strike (botnet C2)", "https://threatfox.abuse.ch/ioc/77/"),
+    "threatfox ip without a family": ("malicious", "ThreatFox: botnet_cc", "https://threatfox.abuse.ch/ioc/78/"),
+    "threatfox url, bare": ("malicious", "ThreatFox: known IOC", "https://threatfox.abuse.ch/"),
+    "threatfox file": ("malicious", "ThreatFox: Emotet (payload delivery)", "https://threatfox.abuse.ch/ioc/79/"),
+    "threatfox nothing": ("unknown", "not in ThreatFox", "https://threatfox.abuse.ch/"),
+    "urlhaus url": ("malicious", "URLhaus: malware_download (online)", "https://urlhaus.abuse.ch/url/1/"),
+    "urlhaus url, bare": ("malicious", "URLhaus: malware URL (status unknown)", "https://urlhaus.abuse.ch/"),
+    "urlhaus url unknown": ("unknown", "not in URLhaus", "https://urlhaus.abuse.ch/"),
+    "urlhaus host": (
+        "suspicious",
+        "URLhaus: 4 malware URLs on this host",
+        "https://urlhaus.abuse.ch/host/evil.example.com/",
+    ),
+    "urlhaus host, one URL": ("suspicious", "URLhaus: 1 malware URL on this host", "https://urlhaus.abuse.ch/"),
+    "urlhaus host unknown": ("unknown", "not in URLhaus", "https://urlhaus.abuse.ch/"),
+    "safebrowsing url": (
+        "malicious",
+        "Google Safe Browsing: social engineering",
+        "https://transparencyreport.google.com/safe-browsing/search?url=http%3A%2F%2Fevil.top%2Fx",
+    ),
+    "safebrowsing domain, two lists": (
+        "malicious",
+        "Google Safe Browsing: malware, social engineering",
+        "https://transparencyreport.google.com/safe-browsing/search?url=evil.top",
+    ),
+    "safebrowsing not listed": (
+        "unknown",
+        "not on Google Safe Browsing lists",
+        "https://transparencyreport.google.com/safe-browsing/search?url=http%3A%2F%2Fexample.com%2F",
+    ),
+    "rdap young domain": (
+        "suspicious",
+        "registered 15 days ago (2026-12-30), Example Registrar Inc.",
+        "https://client.rdap.org/?type=domain&object=example.top",
+    ),
+    "rdap domain of one day": (
+        "suspicious",
+        "registered 1 day ago (2027-01-14), Example Registrar Inc.",
+        "https://client.rdap.org/?type=domain&object=example.top",
+    ),
+    "rdap old domain": (
+        "unknown",
+        "registered 1995-08-14, Example Registrar Inc.",
+        "https://client.rdap.org/?type=domain&object=example.top",
+    ),
+    "rdap domain of thirty days": (
+        "unknown",
+        "registered 2026-12-16, Example Registrar Inc.",
+        "https://client.rdap.org/?type=domain&object=example.top",
+    ),
+    "rdap domain without a date": (
+        "unknown",
+        "registered an unknown date",
+        "https://client.rdap.org/?type=domain&object=example.top",
+    ),
+    "rdap domain unknown": (
+        "unknown",
+        "the registry has no record of this domain",
+        "https://client.rdap.org/?type=domain&object=example.top",
+    ),
+    "rdap network": (
+        "unknown",
+        "EXAMPLE-NET · Example Networks · US",
+        "https://client.rdap.org/?type=ip&object=93.184.216.34",
+    ),
+    "rdap network, bare": ("unknown", "registered network", "https://client.rdap.org/?type=ip&object=93.184.216.34"),
+    "rdap network unknown": (
+        "unknown",
+        "the registry has no record of this address",
+        "https://client.rdap.org/?type=ip&object=93.184.216.34",
+    ),
+}
+
 
 @pytest.mark.parametrize("case", CASES, ids=[case[0] for case in CASES])
-def test_a_reputation_command_says_what_the_look_up_says(case, monkeypatch):
-    _name, connector_id, command, provider, kind, value, answers, line_too = case
-
-    def answered(host: str) -> tuple[int, object]:
-        return next((answer for name, answer in answers.items() if host == name), (404, None))
-
-    def request(url, *, headers=None, form=None, body=None):
-        # As the look-ups read an answer: a 404 has no body.
-        status, answer = answered(urlsplit(url).hostname or "")
-        return status, None if status == 404 else answer
-
-    monkeypatch.setattr(providers, "_request", request)
-    # The registries are found through IANA's files by the look-up and through rdap.org by the connector:
-    # here both are asked the one server of the case.
-    monkeypatch.setattr(registration, "domain_server", lambda tld: "https://rdap.org/")
-    monkeypatch.setattr(registration, "ip_server", lambda address: "https://rdap.org/")
-    monkeypatch.setattr(registration.time, "time", lambda: NOW)
-    said = getattr(providers, provider)(kind, value, "the-key")
-
+def test_a_reputation_command_says_this_of_this_answer(case):
+    name, connector_id, command, _kind, value, answers = case
     connector = CONNECTORS[connector_id]
     config = {
         param.name: param.default for param in connector.configuration if not param.is_auth and param.type != "secret"
@@ -825,7 +889,7 @@ def test_a_reputation_command_says_what_the_look_up_says(case, monkeypatch):
 
     def wire(policy, method, url, **sent):
         host = urlsplit(url).hostname or ""
-        status, answer = answered(host)
+        status, answer = next((found for known, found in answers.items() if host == known), (404, None))
         return egress.Response(
             status=status,
             headers={"content-type": "application/json"},
@@ -844,35 +908,12 @@ def test_a_reputation_command_says_what_the_look_up_says(case, monkeypatch):
         clock=lambda: NOW,
     )
     gave = runtime.run(command, {connector.command(command).arguments[0].name: value}).outputs
-    assert gave["verdict"] == said["verdict"]
-    if line_too:
-        assert gave["summary"] == said["summary"]
-        assert gave["link"] == said["link"]
+    assert (gave["verdict"], gave["summary"], gave["link"]) == EXPECTED[name]
 
 
-def test_every_look_up_has_a_command_that_stands_for_it():
-    """Each kind of indicator a source judges has a reputation command in the source's connector."""
-    stands = {
-        "virustotal": {"virustotal": {"ip", "domain", "url", "file"}},
-        "abuseipdb": {"abuseipdb": {"ip"}},
-        "abusech": {
-            "threatfox": {"ip", "domain", "url", "file"},
-            "urlhaus": {"url", "domain", "file"},
-            "malwarebazaar": {"file"},
-        },
-        "otx": {"otx": {"ip", "domain", "url", "file"}},
-        "urlscan": {"urlscan": {"domain", "url"}},
-        "greynoise": {"greynoise": {"ip"}},
-        "internetdb": {"shodan": {"ip"}},
-        "safebrowsing": {"safebrowsing": {"domain", "url"}},
-        "registration": {"rdap": {"domain", "ip"}},
-    }
-    assert set(stands) == set(providers.BY_ID)
-    for provider, connectors in stands.items():
-        judged = set()
-        for connector_id, kinds in connectors.items():
-            have = {command.reputation for command in CONNECTORS[connector_id].commands if command.reputation}
-            assert have == kinds, f"{connector_id}: {sorted(have)}"
-            judged |= kinds
-        wanted = {"file" if kind in providers.HASHES else kind for kind in providers.BY_ID[provider].types}
-        assert judged == wanted, provider
+def test_every_case_is_of_a_command_the_look_ups_would_choose():
+    """A case stands for a look-up: its command is the one marked for the kind of its value."""
+    for _name, connector_id, command, kind, _value, _answers in CASES:
+        found = CONNECTORS[connector_id].command(command)
+        assert found is not None and found.reputation == ("file" if kind == "sha256" else kind), command
+        assert not found.premium and not found.changes_outside, command

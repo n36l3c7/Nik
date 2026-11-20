@@ -324,9 +324,13 @@ class Command(_Strict):
     poll: Poll | None = None
     outputs: dict[str, Any] = Field(default_factory=dict)
     context: list[ContextOutput] = Field(default_factory=list, max_length=20)
-    # A command that says what is known of an indicator of this kind: "!ip", "!domain"… of the
-    # War Room ask it too. Its first argument is the value; its "verdict" output is counted.
+    # A command that says what is known of an indicator of this kind: the look-ups of indicators and
+    # "!ip", "!domain"… of the War Room ask it. Its first argument is the value; its "verdict" output is
+    # counted, and "summary" and "link" are the line and the page shown with it (enrichment/sources.py).
     reputation: Literal["ip", "domain", "url", "file", "email"] | None = None
+    # With ``reputation: domain``, for a source that knows registered domains and not the hosts under
+    # them (a registry): a look-up gives the command ``example.co.uk`` for ``www.example.co.uk``.
+    reputation_of: Literal["registered_domain"] | None = None
     sample: dict[str, Any] | None = None
     timeout: int = Field(default=60, ge=1, le=300)
 
@@ -362,6 +366,8 @@ class Command(_Strict):
                 raise ValueError("two steps have the same name")
         if self.pagination and self.poll:
             raise ValueError("a command pages through a list or polls, not both")
+        if self.reputation_of is not None and self.reputation != "domain":
+            raise ValueError('"reputation_of" is for a command marked "reputation: domain"')
         for where, request, again in (
             ("the command", self.request, self.pagination or self.poll),
             *((f'the step "{step.name}"', step.request, step.poll) for step in self.steps or []),
@@ -557,6 +563,17 @@ class TestSpec(_Strict):
     expect: Success | None = None
 
 
+class Lookups(_Strict):
+    """How the verdicts of this connector's reputation commands count in the overall verdict of an indicator.
+
+    ``weight`` is how much the source is trusted, 1 to 3. ``informational`` is for a source that gives
+    facts rather than a judgement (who registered a domain, what a host exposes): it is counted only when
+    it flags the value, never for staying silent."""
+
+    weight: int = Field(default=1, ge=1, le=3)
+    informational: bool = False
+
+
 class ConnectorFile(_Strict):
     name: str = Field(min_length=1, max_length=80)
     id: str
@@ -582,6 +599,8 @@ class ConnectorFile(_Strict):
     # in the file: never a template, never an address. A command reaches one by giving the full https
     # address as its ``path``; the credentials of the instance are sent to the host of ``base_url`` only.
     more_hosts: list[str] = Field(default_factory=list, max_length=40)
+    # How its reputation commands count among the sources of the look-ups (6.5); weight 1 when left out.
+    lookups: Lookups | None = None
 
     @field_validator("more_hosts")
     @classmethod
@@ -613,6 +632,8 @@ class ConnectorFile(_Strict):
         commands = [command.name for command in self.commands]
         if len(set(commands)) != len(commands):
             raise ValueError("two commands have the same name")
+        if self.lookups is not None and not any(command.reputation for command in self.commands):
+            raise ValueError('"lookups" is for a connector with a command marked "reputation"')
         if self.native is None:
             if not self.base_url:
                 raise ValueError('"base_url" is missing')

@@ -66,20 +66,15 @@ def make_key(admin_client, **body):
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """No test reaches a threat-intelligence provider or a registry: a lookup
-    that is not faked by the test fails at once instead of going out."""
-    from app.enrichment import providers, registration
-
-    def refuse(*args, **kwargs):
-        raise providers.ProviderError("network", "no network in tests")
-
-    monkeypatch.setattr(providers, "_request", refuse)
-    monkeypatch.setattr(registration, "_whois", refuse)
-    registration.reset_cache()
-
-    # Nor does a playbook: its way out (app/automation/egress.py) is closed unless a
-    # test opens it with answers of its own (the `outside` fixture below).
+    """No test reaches a source of threat intelligence, nor anything else: a look-up is a connector
+    command, and the way out of every command and every playbook (app/automation/egress.py) is closed
+    unless a test opens it with answers of its own (the `outside` fixture below)."""
     from app.automation import egress
+    from app.enrichment import sources
+
+    # What the look-ups remember of the connectors and of a source that refused its key is per process.
+    sources.forget()
+    sources.reset()
 
     def closed(*args, **kwargs):
         raise AssertionError("a test tried to reach the network through the automation egress")

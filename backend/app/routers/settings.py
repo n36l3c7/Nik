@@ -20,12 +20,10 @@ from ..core.models import Setting
 from ..core.schemas import SettingsIn, SettingsOut
 from ..core.security import Principal, principal, writer_principal
 from ..defaults import default_settings_doc
-from ..enrichment.providers import BY_ID as _PROVIDERS
 from ..enrichment.service import config as enrichment_config
 from ..iocs import DEFAULT_ALLOWLIST
 
 router = APIRouter(prefix="/settings", tags=["settings"])
-PROVIDER_IDS = set(_PROVIDERS)
 
 # Fixed primary key for the single shared settings row.
 SETTINGS_ID = 1
@@ -98,14 +96,7 @@ def put_settings(
             if body.mail is not None
             else current["mail"]
         ),
-        "enrichment": (
-            {
-                **body.enrichment.model_dump(),
-                "providers": {k: v for k, v in body.enrichment.providers.items() if k in PROVIDER_IDS},
-            }
-            if body.enrichment is not None
-            else current["enrichment"]
-        ),
+        "enrichment": body.enrichment.model_dump() if body.enrichment is not None else current["enrichment"],
     }
     changed = sorted(key for key, value in doc.items() if value != current.get(key))
     # What is a list is written to its list; the document keeps which list that is.

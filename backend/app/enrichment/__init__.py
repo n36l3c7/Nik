@@ -1,1 +1,1 @@
-"""Threat-intelligence enrichment of indicators (``providers``, ``service``, ``worker``)."""
+"""Threat-intelligence look-ups of indicators (``sources``, ``service``, ``old_keys``, ``worker``)."""
