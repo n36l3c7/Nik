@@ -18,7 +18,7 @@ import hashlib
 from typing import Any
 from urllib.parse import urlsplit
 
-from ..core.models import Artifact, Incident, Mail, Sample, UrlScan
+from ..core.models import Artifact, Incident, Mail, NetworkCapture, Sample, SampleCapa, SampleCode, UrlScan
 
 # How many addresses, attachments, rules or hits an event carries at most.
 LIST_MAX = 200
@@ -224,6 +224,97 @@ def file_event(sample: Sample, artifact: Artifact | None, incident: Incident | N
     return data, classes
 
 
+# --------------------------------------------------------------------------- #
+# What the workers make of a file and of a capture                            #
+# --------------------------------------------------------------------------- #
+_CODE = {f"code.{key}": ["verdict"] for key in ("status", "functions", "imports")}
+_CAPABILITIES = {f"capabilities.{key}": ["verdict"] for key in ("status", "count", "names", "attack")}
+_CAPTURE = {
+    "capture.id": ["nik_id"],
+    "capture.artifact_id": ["nik_id"],
+    "capture.url": ["nik_id"],
+    "capture.name": ["attachment_name"],
+    "capture.sha256": ["hash"],
+    **{f"capture.{key}": ["verdict"] for key in ("kind", "status", "size", "packets", "posts", "beacons", "objects")},
+}
+
+
+def code_data(row: SampleCode | None) -> dict[str, Any]:
+    """The disassembly of a file as an event carries it: where it is, and how much it found."""
+    functions = ((row.summary or {}).get("functions") or []) if row is not None else []
+    imports = sum(1 for item in functions if item.get("kind") == "import")
+    return {
+        # done or error when the event is written; none for a file that was never disassembled.
+        "status": row.status if row is not None else "none",
+        "error": str(row.error or "")[:500] if row is not None else "",
+        "functions": len(functions) - imports,
+        "imports": imports,
+    }
+
+
+def capabilities_data(row: SampleCapa | None) -> dict[str, Any]:
+    """What capa found in a file: the names of the capabilities and their ATT&CK techniques."""
+    found = ((row.result or {}).get("capabilities") or []) if row is not None else []
+    techniques: list[str] = []
+    for item in found:
+        for entry in item.get("attack") or []:
+            if entry.get("id") and entry["id"] not in techniques:
+                techniques.append(str(entry["id"]))
+    return {
+        "status": row.status if row is not None else "none",
+        "error": str(row.error or "")[:500] if row is not None else "",
+        "count": len(found),
+        "names": [str(item.get("name") or "")[:200] for item in found][:LIST_MAX],
+        "attack": techniques[:LIST_MAX],
+    }
+
+
+def capture_data(capture: NetworkCapture) -> dict[str, Any]:
+    summary = capture.summary or {}
+    domains: list[str] = []
+    for item in [*(summary.get("dns") or []), *(summary.get("tlsServerNames") or [])]:
+        name = str((item or {}).get("name") or "")
+        if name and name not in domains:
+            domains.append(name)
+    entry = f"pcap-{capture.id}"
+    return {
+        "id": capture.id,
+        "name": capture.file_name or capture.id,
+        "kind": capture.kind,  # pcap, or browser for the network log of an isolated browser session
+        "status": capture.status,  # ready, or error with what the worker said
+        "error": str(capture.error or "")[:500],
+        "size": int(capture.size or 0),
+        "sha256": capture.sha256 or "",
+        "packets": int(capture.packets or 0),
+        "hosts": [str(host["address"]) for host in summary.get("hosts") or [] if host.get("public")][:LIST_MAX],
+        "domains": domains[:LIST_MAX],
+        "posts": len(summary.get("posts") or []),
+        "beacons": len(summary.get("beacons") or []),
+        "objects": len(summary.get("objects") or []),
+        "artifact_id": entry,
+        "url": f"/artifact/{entry}",
+    }
+
+
+def code_event(sample: Sample, artifact: Artifact | None, row: SampleCode | None) -> tuple[dict, dict]:
+    """``code.analysed``: the disassembly of a file ended, well or not (``code.status``)."""
+    return {"file": file_data(sample, artifact), "code": code_data(row)}, {**_FILE, **_CODE}
+
+
+def capabilities_event(sample: Sample, artifact: Artifact | None, row: SampleCapa | None) -> tuple[dict, dict]:
+    """``capabilities.analysed``: capa ended on a file, well or not (``capabilities.status``)."""
+    data = {"file": file_data(sample, artifact), "capabilities": capabilities_data(row)}
+    return data, {**_FILE, **_CAPABILITIES}
+
+
+def capture_event(capture: NetworkCapture, incident: Incident | None = None) -> tuple[dict, dict]:
+    """``capture.analysed``: the analysis of a packet capture ended, well or not (``capture.status``)."""
+    data: dict[str, Any] = {"capture": capture_data(capture)}
+    classes: dict[str, list[str]] = dict(_CAPTURE)
+    _with_incident(data, classes, incident)
+    return data, classes
+
+
 def scan_data(scan: UrlScan) -> dict[str, Any]:
     entry = f"url-{scan.id}"
     return {
@@ -244,7 +335,7 @@ def scan_event(scan: UrlScan) -> tuple[dict, dict]:
 
 
 def artifact_manual(actor: str, db, artifact: Artifact) -> tuple[dict, dict] | None:
-    """A run started by hand on an analysed e-mail, file or address: what its
+    """A run started by hand on an analysed e-mail, file, capture or address: what its
     event carries, and who started it. None for what has no event of its own."""
     found: tuple[dict, dict] | None = None
     if artifact.kind == "mail":
@@ -252,7 +343,16 @@ def artifact_manual(actor: str, db, artifact: Artifact) -> tuple[dict, dict] | N
         found = mail_event(mail) if mail is not None else None
     elif artifact.kind == "file":
         sample = db.get(Sample, artifact.ref)
-        found = file_event(sample, artifact) if sample is not None else None
+        if sample is not None:
+            # What every event about a file carries, so that a playbook that waits for the disassembly
+            # or for capa can be run by hand on a file too.
+            data, classes = file_event(sample, artifact)
+            data["code"] = code_data(db.get(SampleCode, sample.sha256))
+            data["capabilities"] = capabilities_data(db.get(SampleCapa, sample.sha256))
+            found = data, {**classes, **_CODE, **_CAPABILITIES}
+    elif artifact.kind == "pcap":
+        capture = db.get(NetworkCapture, artifact.ref)
+        found = capture_event(capture) if capture is not None else None
     elif artifact.kind == "url":
         scan = db.get(UrlScan, artifact.ref)
         found = scan_event(scan) if scan is not None else None

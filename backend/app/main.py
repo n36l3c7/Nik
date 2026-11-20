@@ -23,7 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from . import urlscan_queue, worker_watch
+from . import artifact_jobs, urlscan_queue, worker_watch
 from .artifacts import backfill as backfill_artifacts
 
 # Import models so their tables are registered on the shared metadata before
@@ -214,6 +214,8 @@ def on_startup() -> None:
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
+        # So does what playbooks ask about files: the worker cannot write to the store nor reach the analysis workers.
+        artifact_jobs.start()
     # The scripts and the connectors Nik ships are there (a release may bring new versions),
     # and the playbooks it ships were added once.
     if app_settings.AUTOMATION_WORKER != "off":

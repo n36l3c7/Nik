@@ -4,6 +4,8 @@ The servers are doubles: an IMAP mailbox held in memory and an SMTP server that
 keeps what it was given. Nobody ran the connector against a real mailbox.
 """
 
+# ruff: noqa: F811 (fixtures are imported)
+
 from __future__ import annotations
 
 import hashlib
@@ -18,6 +20,7 @@ from app.automation import connector_actions as ca
 from app.automation import connectors as files
 from app.automation.connector_runtime import CommandError
 from app.core.config import settings
+from tests.stores import read_only  # noqa: F401 - a fixture
 
 MAIL = next(connector for _text, connector in ca.shipped() if connector.id == "mail")
 CONFIG = {
@@ -924,3 +927,104 @@ def test_a_message_the_listener_read_is_kept_as_an_e_mail_of_its_incident(admin,
     )
     assert "Too large" in by_name() and mails() == 4
     assert "mail" not in admin.get(f"/api/incidents/{by_name()['Too large']}").json()["data"]
+
+
+# --------------------------------------------------------------------------- #
+# A store the worker cannot write to                                          #
+# --------------------------------------------------------------------------- #
+def test_attachments_are_kept_through_the_api_process_when_the_worker_cannot_write_to_the_store(desk, read_only):
+    import time
+
+    from app import artifact_jobs
+    from app.core.db import SessionLocal
+    from app.core.models import ArtifactJob, AuditEntry, Sample
+    from app.malware.samples import read_sample
+
+    admin, box, now = desk.admin, desk.box, time.time()
+    box.folders["INBOX"][5] = [
+        message(5, "Two files", attach=True, more=(("note.txt", NOTE), ("empty.bin", b""))),
+        set(),
+    ]
+    assert admin.post("/api/incidents", json={"id": "case", "name": "Case", "data": {}}).status_code == 201
+
+    # The worker reads the message and hands the files over: the step gives itself back and keeps what it found.
+    waiting = step(desk, "get-attachments", args={"uid": 5}, incident="case", now=now)
+    assert waiting.output is None and waiting.again_at == now + artifact_jobs.WAIT_EVERY
+    read = len(box.calls)
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Sample)) == 0
+        jobs = db.scalars(select(ArtifactJob).order_by(ArtifactJob.created_epoch)).all()
+        assert [(job.kind, job.params["name"], job.params["incident"]) for job in jobs] == [
+            ("store", "invoice.exe", "case"),
+            ("store", "note.txt", "case"),
+        ]
+        assert db.scalars(select(AuditEntry).where(AuditEntry.action == "mail.attachments.keep")).all() == []
+    assert read_only() == 2
+    kept = step(desk, "get-attachments", args={"uid": 5}, incident="case", now=now + 2, state=waiting.state)
+    found = kept.output
+    # The mailbox was not read a second time: the step only waited.
+    assert len(box.calls) == read
+    assert (found["count"], found["stored"]) == (3, 2)
+    assert found["artifacts"] == [f"file-{EXE_SHA}", f"file-{hashlib.sha256(NOTE).hexdigest()}"]
+    assert found["attachments"][0]["linked"] is True and found["attachments"][2]["note"] == "It is empty"
+    assert kept.classes["attachments.name"] == ["attachment_name"]
+    assert read_sample(EXE_SHA) == EXE
+    refs = admin.get("/api/incidents/case").json()["data"]["malware"]["samples"]
+    assert [(ref["fileName"], ref["origin"]) for ref in refs] == [
+        ("invoice.exe", "e-mail “Two files”"),
+        ("note.txt", "e-mail “Two files”"),
+    ]
+    with SessionLocal() as db:
+        said = db.scalars(select(AuditEntry.details).where(AuditEntry.action == "mail.attachments.keep")).one()
+    assert said == 'Kept 2 attachment(s) of the message 5 of INBOX (playbook "Mail desk", run run-1)'
+
+
+def test_a_fetched_message_is_kept_through_the_api_process_when_the_worker_cannot_write(admin, box, read_only):
+    from app import fetch
+    from app.core.db import SessionLocal
+    from app.core.models import ArtifactJob, AuditEntry, Connection, FetchedItem, Mail
+    from app.malware.samples import read_mail
+
+    with SessionLocal() as db:
+        instance(db)
+    with SessionLocal() as db:
+        first = fetch.cycle(db, db.get(Connection, "m" * 32))
+    # The incidents are made; their messages wait for the process that can write them down.
+    assert (first["created"], first["incomplete"]) == (3, 0), first
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Mail)) == 0
+        jobs = db.scalars(select(ArtifactJob)).all()
+        assert len(jobs) == 3 and all(job.params["as"] == "mail" and job.params["incident"] for job in jobs)
+        assert {row.outcome for row in db.scalars(select(FetchedItem))} == {"created"}
+    assert read_only() == 3
+    raw = box.folders["INBOX"][4][0]
+    sha = hashlib.sha256(raw).hexdigest()
+    assert read_mail(sha) == raw
+    by_name = {row["name"]: row["id"] for row in admin.get("/api/incidents?view=summary").json()["incidents"]}
+    (ref,) = admin.get(f"/api/incidents/{by_name['Invoice overdue']}").json()["data"]["mail"]["messages"]
+    assert (ref["sha256"], ref["fileName"], ref["importedBy"]) == (sha, "message-4.eml", "connector:mail")
+    artifact = admin.get(f"/api/artifacts/mail-{sha}").json()
+    assert [item["name"] for item in artifact["incidents"]] == ["Invoice overdue"]
+
+    # What the API process cannot keep after all is written where the incident is read.
+    with SessionLocal() as db:
+        from app.automation import mail_evidence
+        from app.core.models import Incident
+
+        incident = db.get(Incident, by_name["Invoice overdue"])
+        # Not a message: said at once, before any hand-over.
+        assert mail_evidence.keep_message(
+            db, incident, b"\x00\x01 not a message", "x.eml", "connector:mail"
+        ).startswith("The message was not kept as evidence: ")
+        artifact_jobs_before = db.scalar(select(func.count()).select_from(ArtifactJob))
+        from app import artifact_jobs
+
+        artifact_jobs.Keeper(db, "connector:mail").mail(
+            raw, "again.eml", "no-such-incident", report="The message was not kept as evidence"
+        )
+        db.commit()
+        assert db.scalar(select(func.count()).select_from(ArtifactJob)) == artifact_jobs_before + 1
+    assert read_only() == 1
+    with SessionLocal() as db:
+        said = db.scalars(select(AuditEntry.details).where(AuditEntry.action == "evidence.keep")).one()
+    assert said == "The message was not kept as evidence: The incident does not exist"

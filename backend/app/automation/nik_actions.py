@@ -23,7 +23,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from .. import ioc_library as lib
 from ..core import audit
 from ..core.locking import lock_incident
-from ..core.models import Artifact, Incident, IocList, IocListItem, Mail, Sample, UrlScan, User
+from ..core.models import Incident, IocList, IocListItem, UrlScan, User
 from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
 from ..iocs import TYPES, normalize
@@ -924,55 +924,6 @@ def reputation(call: Call) -> Result:
         context=context,
         request={"would": f"look up {value}"} if call.dry_run else None,
     )
-
-
-# --------------------------------------------------------------------------- #
-# Artifacts                                                                   #
-# --------------------------------------------------------------------------- #
-@action(
-    "nik.link-artifact",
-    group="Nik",
-    name="Link an artifact",
-    description="Put an analysed file, e-mail or address in an incident.",
-    arguments=[
-        {
-            "name": "artifact",
-            "type": "text",
-            "required": True,
-            "description": "The artifact's id (file-…, mail-…, url-…)",
-        },
-        INCIDENT_ARG,
-    ],
-    outputs=[{"name": "linked", "type": "bool", "description": "It is in the incident"}],
-)
-def link_artifact(call: Call) -> Result:
-    from .. import urlscan
-    from ..routers import mails as mail_routes
-    from ..routers import samples as sample_routes
-
-    row = call.db.get(Artifact, str(call.args.get("artifact") or ""))
-    if row is None:
-        raise ActionError("The artifact does not exist", retry=False)
-    if row.kind not in ("file", "mail", "url"):
-        raise ActionError("Only a file, an e-mail or an address can be linked by a playbook", retry=False)
-    if call.dry_run:
-        return Result(output={"linked": False}, request={"would": "link the artifact", "artifact": row.id})
-    incident = _incident(call, call.args.get("incident"))
-    if row.kind == "file":
-        sample_routes.attach_sample(call.db, incident, call.db.get(Sample, row.ref), row.name, ACTOR)
-    elif row.kind == "mail":
-        mail_routes.attach_mail(call.db, incident, call.db.get(Mail, row.ref), row.name, ACTOR)
-    else:
-        urlscan.attach(call.db, incident, call.db.get(UrlScan, row.ref), ACTOR)
-    audit.record(
-        call.db,
-        ACTOR,
-        "artifact.link",
-        f"Linked {row.kind} {row.name or row.ref[:12]} to the incident" + signature(call),
-        incident,
-    )
-    triggers.incident_changed(call.db, incident, "incident.updated", ["data"])
-    return Result(output={"linked": True})
 
 
 # --------------------------------------------------------------------------- #

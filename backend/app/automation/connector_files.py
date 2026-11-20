@@ -9,12 +9,19 @@ what happens to them here is decided in this module, for one step of a run:
   file is, in the incident the run works on when there is one. It is stored
   as it came: an archive the vendor protects with a password stays an
   archive, nothing is unpacked. What is over the limit of an upload is not
-  kept, and the step says so.
+  kept, and the step says so. When the command says the file is an archive
+  to unpack (``unpack``), each file inside it is kept as an artifact of its
+  own, taken out of the archive (``unpack.py``): read in memory, never run,
+  never written anywhere but the store.
 - **A file that goes out** is one of the store, named by its artifact id
   (``file-<sha256>``) or its SHA-256. Before it leaves, the data guard judges
   it as it judges an attachment of a message (``outbound.guarded_message``): by
   what it is, never by opening it. One that is not in the store, cannot be
   read or is over the limit is refused whatever the playbook opened.
+
+The worker that runs playbooks reads the store read-only: what it keeps is
+handed to the API process (``artifact_jobs.Keeper``), and the step waits for
+it. A server whose playbooks run in the API process writes at once.
 
 The store holds live malware. A file is written under its SHA-256, read as
 bytes, and never opened by the program it is meant for.
@@ -24,13 +31,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import HTTPException
-
-from .. import artifacts
+from .. import artifact_jobs, artifacts, unpack
 from ..core import audit
 from ..core.config import settings
-from ..core.locking import lock_incident
-from ..core.models import Artifact, Sample
+from ..core.models import Artifact, Incident, Sample
 from ..core.permissions import SYSTEM_USER
 from ..malware.samples import is_sha256, read_sample
 from . import outbound, triggers
@@ -41,8 +45,11 @@ from .connector_runtime import CommandError
 class Store:
     """What the runtime of a connector asks of Nik's store, for one step of a run."""
 
-    def __init__(self, call: Call, connector_name: str, command: str, decided: dict):
+    def __init__(
+        self, call: Call, connector_name: str, command: str, decided: dict, keeper: artifact_jobs.Keeper | None = None
+    ):
         self.call = call
+        self.keeper = keeper or artifact_jobs.Keeper.of(call, SYSTEM_USER)
         self.connector_name = connector_name
         self.command = command
         self.decided = decided  # what the guard said of the arguments: what it says of a file is added
@@ -57,42 +64,69 @@ class Store:
         return settings.SAMPLE_MAX_MB * 1024 * 1024
 
     # ------------------------------------------------------------------ in --
-    def keep(self, data: bytes, name: str, kind: str) -> dict[str, Any]:
+    def keep(self, data: bytes, name: str, kind: str, unpack_as: dict[str, Any] | None = None) -> dict[str, Any]:
         """Keep the bytes a command received as a file artifact, and say what it is: ``name``, ``type``,
-        ``size``, ``sha256``, ``artifact`` and whether an incident references it (``linked``)."""
-        from ..routers import samples as sample_routes
+        ``size``, ``sha256``, ``artifact`` and whether an incident references it (``linked``).
 
-        call, db = self.call, self.call.db
+        ``unpack_as`` (``{format, password}``) says the file is an archive to unpack: the archive is
+        kept as it came, each file inside it as an artifact of its own, and what describes them is
+        given too: ``files`` (each ``name``, ``type``, ``size``, ``sha256``, ``artifact``), ``count``
+        and ``skipped`` (each ``name`` and ``reason``). An archive that cannot be unpacked (not one,
+        a password that does not open it, more inside than an archive may hold) fails the step, and
+        nothing is kept."""
+        call, db, keeper = self.call, self.call.db, self.keeper
         if len(data) > self.limit:
             raise CommandError(f"The file is larger than the {self.limit_mb} MB limit of a sample: it was not kept")
+        found = None
+        if unpack_as is not None:
+            try:
+                found = unpack.members(
+                    data, str(unpack_as.get("password") or ""), limit=self.limit, fmt=str(unpack_as.get("format"))
+                )
+            except unpack.UnpackError as error:
+                raise CommandError(error.message, retry=False, sent=True) from None
         incident_id = str(call.run.incident_id or "")
-        incident = lock_incident(db, incident_id) if incident_id else None
+        if incident_id and db.get(Incident, incident_id) is None:
+            incident_id = ""
         origin = f"{self.connector_name} ({self.command})"
         try:
-            row, _ref = sample_routes.keep_sample(db, incident, data, name, SYSTEM_USER, origin)
-        except HTTPException as error:
-            raise CommandError(f"The file was not kept: {error.detail}") from None
-        artifact = artifacts.artifact_id("file", row.sha256)
+            kept = keeper.file(data, name, incident_id, origin)
+            files = []
+            for member in found.members if found is not None else ():
+                inside = keeper.file(
+                    member.data,
+                    unpack.file_name(member.name),
+                    incident_id,
+                    f"{name or kept['sha256'][:12]} ({origin})",
+                    parent=(kept["artifact"], "unpacked"),
+                )
+                files.append(
+                    {"name": member.name, **{key: inside[key] for key in ("type", "size", "sha256", "artifact")}}
+                )
+        except artifact_jobs.JobError as error:
+            raise CommandError(f"The file was not kept: {error}") from None
         playbook = (call.run.trigger or {}).get("playbook", "")
         who = f", approved by {call.approved_by}" if call.approved_by else ""
-        audit.record(
-            db,
-            SYSTEM_USER,
+        inside = f" and the {len(files)} file(s) inside it" if found is not None else ""
+        keeper.audit(
             "connector.file.keep",
-            f"Kept the file {name or row.sha256} ({row.sha256[:12]}…) that {origin} gave"
+            f"Kept the file {name or kept['sha256']} ({kept['sha256'][:12]}…){inside} that {origin} gave"
             f' (playbook "{playbook}", run {call.run.id}{who})',
-            incident,
+            incident_id,
         )
-        if incident is not None:
-            triggers.incident_changed(db, incident, "incident.updated", ["data"])
-        return {
-            "name": name or row.sha256,
-            "type": kind or row.type_label or "",
-            "size": row.size,
-            "sha256": row.sha256,
-            "artifact": artifact,
-            "linked": incident is not None,
+        if incident_id and keeper.direct:
+            triggers.incident_changed(db, db.get(Incident, incident_id), "incident.updated", ["data"])
+        described = {
+            "name": name or kept["sha256"],
+            "type": kind or kept["type"],
+            "size": kept["size"],
+            "sha256": kept["sha256"],
+            "artifact": kept["artifact"],
+            "linked": kept["linked"],
         }
+        if found is not None:
+            described.update(files=files, count=len(files), skipped=found.skipped)
+        return described
 
     # ----------------------------------------------------------------- out --
     def describe(self, wanted: Any) -> dict[str, Any]:

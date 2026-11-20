@@ -17,6 +17,7 @@ import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 const EDGES = {
   Flow: 'border-l-med-line',
   Nik: 'border-l-accent',
+  Files: 'border-l-accent',
   Scripts: 'border-l-violet-line',
 }
 

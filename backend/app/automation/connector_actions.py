@@ -32,12 +32,31 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import artifact_jobs
 from ..core import audit, vault
 from ..core.models import Connection, Connector
+from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
-from . import actions, connector_files, connector_logo, credentials, egress, instance_keys, mail_evidence, outbound
+from . import (
+    actions,
+    connector_files,
+    connector_logo,
+    credentials,
+    egress,
+    instance_keys,
+    mail_evidence,
+    outbound,
+)
 from . import expressions as ex
-from .connector_runtime import AUTH_FIELDS, FILE_SAMPLE, CommandError, NotSent, Runtime, forget_tokens
+from .connector_runtime import (
+    AUTH_FIELDS,
+    FILE_SAMPLE,
+    UNPACKED_SAMPLE,
+    CommandError,
+    NotSent,
+    Runtime,
+    forget_tokens,
+)
 from .connectors import Command, ConnectorError, ConnectorFile, Problem, load
 
 SEED_DIR = Path(__file__).parent / "seed" / "connectors"
@@ -458,7 +477,14 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     args = {**said, **{key: args[key] for key in where}}
     now = call.now or time.time()
     classes = {"": sorted(call.classes)} if call.classes else {}
+    if isinstance((call.state or {}).get("kept"), dict):
+        # The command is done; what it kept was handed to the API process, and the step waits for it.
+        return _when_kept(call, call.state, now)
     state = _unseal(call.state)
+    # What the command keeps goes to the store from here, or through the API process when this one
+    # cannot write to it: the step then waits for the files before it gives its outputs.
+    keeper = artifact_jobs.Keeper.of(call, SYSTEM_USER)
+    asked_before = list((state or {}).get("keeping") or [])
     # The keys of the instance take turns (instance_keys.py). Not in a dry run, which sends nothing, and
     # not for a connector Nik speaks for, which has its own way in.
     turns = connector.native is None and not call.dry_run
@@ -506,17 +532,17 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
                 # of this run.
                 runtime.judge = lambda quoted, found: outbound.guarded_message(call, quoted, found, decided)
                 runtime.keep = lambda found, message, wanted: mail_evidence.keep_attachments(
-                    call, found, message, wanted
+                    call, found, message, wanted, keeper
                 )
             else:
                 # A file a command gives is kept there, one it sends is read from there once the guard
                 # has judged it: what the guard says is added to what it said of the arguments.
-                runtime.store = connector_files.Store(call, connector.name, command_name, decided)
+                runtime.store = connector_files.Store(call, connector.name, command_name, decided, keeper)
             if call.dry_run:
                 would = {**runtime.would_send(command_name, args), "held": decided, "connection": connection.name}
                 sample = command.sample if command.sample is not None else dict.fromkeys(command.outputs)
                 if command.sample is None and not command.outputs and command.gives_file:
-                    sample = dict(FILE_SAMPLE)
+                    sample = {**FILE_SAMPLE, **(UNPACKED_SAMPLE if command.unpacks else {})}
                 return actions.Result(output=sample, request=would)
             answer = runtime.run(command_name, args, state)
             break
@@ -553,19 +579,65 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
     record = {**_record(answer.records, decided), "connection": connection.name}
     if key is not None and len(instance_keys.keys_of(connection)) > 1:
         record["key"] = key.name
+    asked = [*asked_before, *keeper.pending]
     if not answer.done:
-        waiting = {**(answer.state or {}), "key": key.id} if key is not None else answer.state
+        waiting = {**(answer.state or {}), "key": key.id} if key is not None else dict(answer.state or {})
+        if asked:
+            # A step of the command kept a file and the command waits for something else: the files
+            # asked for so far are waited for when it ends.
+            waiting["keeping"], waiting["keeping_audits"] = asked, [*_audits(state), *keeper.audits]
         return actions.Result(again_at=answer.again_at, state=_seal(waiting), request=record)
     if keeps:
         instance_keys.keep_answer(db, connection, command_name, args, answer.outputs, answer.context, now)
     # What comes back may repeat what was sent: it keeps the classes of what went out, beside those
     # the command gives its own outputs (the name of an attachment).
-    return actions.Result(
+    result = actions.Result(
         output=answer.outputs,
         classes={**answer.classes, **classes},
         request=record,
         context=answer.context,
         context_source=f"connector:{connector_id}",
+    )
+    if not asked:
+        return result
+    kept = {
+        "jobs": asked,
+        "until": now + artifact_jobs.WAIT_FOR,
+        "audits": [*_audits(state), *keeper.audits],
+        "output": result.output,
+        "classes": result.classes,
+        "request": result.request,
+        "context": [list(pair) for pair in result.context],
+        "source": result.context_source,
+    }
+    return _when_kept(call, {"kept": kept}, now)
+
+
+def _audits(state: dict | None) -> list:
+    return list((state or {}).get("keeping_audits") or [])
+
+
+def _when_kept(call: actions.Call, state: dict, now: float) -> actions.Result:
+    """The result of a command whose files the API process keeps: given once they are kept, and the
+    step looks again until then. A file that could not be kept fails the step."""
+    kept = state["kept"]
+    try:
+        done = artifact_jobs.kept(call.db, kept, SYSTEM_USER, now)
+    except artifact_jobs.JobError as error:
+        raise actions.ActionError(str(error), retry=False, request=kept.get("request")) from None
+    if not done:
+        return actions.Result(
+            again_at=now + artifact_jobs.WAIT_EVERY,
+            state=state,
+            request=kept.get("request"),
+            log="Waiting for the server to keep the file",
+        )
+    return actions.Result(
+        output=kept.get("output"),
+        classes=kept.get("classes") or {},
+        request=kept.get("request"),
+        context=[tuple(pair) for pair in kept.get("context") or []],
+        context_source=str(kept.get("source") or ""),
     )
 
 
@@ -580,18 +652,49 @@ _FILE_OUTPUTS = (
 )
 
 
+# And when the file is an archive that is unpacked: the files that were inside it.
+_UNPACKED_OUTPUTS = (
+    {
+        "name": "files",
+        "type": "list",
+        "description": "The files that were in the archive: {name, type, size, sha256, artifact}",
+        "shape": [
+            {"name": "[0].name", "type": "text", "description": "The name of the first file, as the archive says it"},
+            {"name": "[0].type", "type": "text", "description": "What it is, as Nik detected it"},
+            {"name": "[0].size", "type": "number", "description": "Its size in bytes"},
+            {"name": "[0].sha256", "type": "text", "description": "Its SHA-256"},
+            {"name": "[0].artifact", "type": "text", "description": "The artifact it was kept as (file-…)"},
+        ],
+    },
+    {"name": "count", "type": "number", "description": "How many files were taken out"},
+    {
+        "name": "skipped",
+        "type": "list",
+        "description": "What was in the archive and was not taken out, and why: {name, reason}",
+        "shape": [
+            {"name": "[0].name", "type": "text", "description": "The name of the first that was left"},
+            {"name": "[0].reason", "type": "text", "description": "Why"},
+        ],
+    },
+)
+
+
 def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
     connector_id, name = connector.id, command.name
     described = command.gives_file and not command.outputs
+    secret = command.secret_arguments
     return actions.Spec(
         id=f"{connector.id}.{command.name}",
         group=connector.name,
         name=command.name,
         description=command.description,
-        arguments=tuple(argument.model_dump(exclude_none=True) for argument in command.arguments),
+        arguments=tuple(
+            {**argument.model_dump(exclude_none=True), **({"secret": True} if argument.name in secret else {})}
+            for argument in command.arguments
+        ),
         outputs=tuple({"name": key, "type": "any", "description": ""} for key in command.outputs)
         or (
-            _FILE_OUTPUTS
+            (*_FILE_OUTPUTS, *(_UNPACKED_OUTPUTS if command.unpacks else ()))
             if described
             else ({"name": "response", "type": "any", "description": "The answer, as it came"},)
         ),

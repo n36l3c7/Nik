@@ -78,7 +78,7 @@ def _preview(db: OrmSession, run: Run, shape: dict, node: dict, step: RunStep) -
             spec = actions.lookup(db, str(config.get("action") or ""))
             rendered = ex.render(config.get("args") or {}, scope)
             args = actions.argument_values(spec, rendered) if spec is not None else rendered.data
-            return {"action": str(config.get("action") or ""), "args": engine._cut(args)}
+            return {"action": str(config.get("action") or ""), "args": engine._cut(actions.shown_arguments(spec, args))}
         if node["kind"] in ("script", "playbook"):
             rendered = ex.render(config.get("args") or {}, scope)
             return {"args": engine._cut(rendered.data if isinstance(rendered.data, dict) else {})}

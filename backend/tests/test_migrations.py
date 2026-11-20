@@ -1148,3 +1148,32 @@ def test_migration_0046_adds_the_stored_credentials_and_touches_no_instance(tmp_
     with engine.connect() as conn:
         assert not set(CREDENTIAL_TABLES) & set(sa.inspect(conn).get_table_names())
         assert conn.execute(sa.text("SELECT secrets FROM connections")).scalar() == "encrypted-as-it-was"
+
+
+def test_migration_0047_adds_what_a_playbook_asks_about_a_file(tmp_path, monkeypatch):
+    from app.core.models import PLAYBOOK_FILE_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE samples (sha256 VARCHAR(64) PRIMARY KEY)"))
+        conn.execute(sa.text("INSERT INTO samples (sha256) VALUES ('" + "a" * 64 + "')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0046_credentials")
+    command.upgrade(cfg, "0047_playbook_files")
+    with engine.connect() as conn:
+        assert set(PLAYBOOK_FILE_TABLES) <= set(sa.inspect(conn).get_table_names())
+        columns = {column["name"] for column in sa.inspect(conn).get_columns("artifact_jobs")}
+        assert {"id", "kind", "status", "params", "result", "error", "run_id", "depth"} <= columns
+        parts = {column["name"] for column in sa.inspect(conn).get_columns("artifact_job_parts")}
+        assert parts == {"job_id", "seq", "data"}
+        assert conn.execute(sa.text("SELECT count(*) FROM samples")).scalar() == 1
+    command.stamp(cfg, "0046_credentials")
+    command.upgrade(cfg, "0047_playbook_files")  # again: the table is there, nothing to do
+    command.downgrade(cfg, "0046_credentials")
+    with engine.connect() as conn:
+        assert not set(PLAYBOOK_FILE_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT count(*) FROM samples")).scalar() == 1

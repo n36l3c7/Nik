@@ -138,6 +138,19 @@ class SaveAs(_Strict):
     type: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class Unpack(_Strict):
+    """A file that comes back is an archive, and the files inside it are what is wanted.
+
+    The archive is kept as it came and each file inside it becomes an artifact of its own, taken out
+    of the archive: read in memory, never run, never written anywhere but the store. ``password`` is a
+    template over what is sent (``args``, ``config``, ``secret``): an archive of collected files is
+    usually protected, and the password is the one the request asked for. It is treated as a secret:
+    an argument it reads is not shown in the run."""
+
+    format: Literal["zip"] = "zip"
+    password: str | None = Field(default=None, min_length=1, max_length=500)
+
+
 class FilePart(_Strict):
     """A file Nik holds, as a request sends it: which one, under what name, as what type.
 
@@ -175,6 +188,8 @@ class RequestSpec(_Strict):
     # bytes are kept as an artifact and {{ response }} describes it.
     answer: Literal["auto", "text", "file"] = "auto"
     save_as: SaveAs | None = None
+    # The file that comes back is an archive: the files inside it are kept as artifacts too.
+    unpack: Unpack | None = None
 
     @model_validator(mode="after")
     def _one_body(self):
@@ -194,6 +209,8 @@ class RequestSpec(_Strict):
             raise ValueError(f"a {self.method} request has no body")
         if self.save_as is not None and self.answer != "file":
             raise ValueError('"save_as" belongs to a request whose answer is a file: answer: file')
+        if self.unpack is not None and self.answer != "file":
+            raise ValueError('"unpack" belongs to a request whose answer is a file: answer: file')
         return self
 
     @property
@@ -345,6 +362,19 @@ class Command(_Strict):
     @property
     def gives_file(self) -> bool:
         return any(request.answer == "file" for request in self.requests())
+
+    @property
+    def unpacks(self) -> bool:
+        return any(request.unpack is not None for request in self.requests())
+
+    @property
+    def secret_arguments(self) -> set[str]:
+        """The arguments the password of an archive is read from: not shown in a run."""
+        found: set[str] = set()
+        for request in self.requests():
+            if request.unpack is not None and request.unpack.password:
+                found.update(re.findall(r"\bargs\.([a-z][a-z0-9_]*)", request.unpack.password))
+        return found
 
     @property
     def sends_file(self) -> bool:

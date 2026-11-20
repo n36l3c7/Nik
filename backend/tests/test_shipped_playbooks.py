@@ -36,6 +36,7 @@ NAMES = {
     "block-malicious-indicator": "Malicious indicator to a block list",
     "incident-to-ticket": "Incident to ticketing",
     "storage-low-notice": "Disk almost full notice",
+    "mail-attachments": "Analyse the attachments of an e-mail",
 }
 
 
@@ -87,7 +88,7 @@ def dry(admin: TestClient, playbook_id: str, **body) -> dict:
 # --------------------------------------------------------------------------- #
 # Shipping                                                                    #
 # --------------------------------------------------------------------------- #
-def test_five_playbooks_ship_and_each_file_is_a_playbook_as_export_writes_it():
+def test_six_playbooks_ship_and_each_file_is_a_playbook_as_export_writes_it():
     assert {key: source["name"] for key, source in FILES.items()} == NAMES
     for path in sorted([*shipped.SEED_DIR.glob("*.json"), *vendor.REPO_PACKS.glob("*/playbooks/*.json")]):
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -110,16 +111,21 @@ def test_five_playbooks_ship_and_each_file_is_a_playbook_as_export_writes_it():
 
 
 def test_they_are_added_once_and_off_and_are_the_teams_from_then_on(admin: TestClient, library):
-    # Three are part of Nik; two come with the pack of the product they are about.
-    assert library == 3 + len(vendor.folders())
+    # Four are part of Nik; two come with the pack of the product they are about.
+    assert library == 4 + len(vendor.folders())
     listed = by_name(admin)
     assert set(NAMES.values()) <= set(listed)
     own = {source["name"] for _key, source in shipped.files()}
-    assert len(own) == 3
+    assert len(own) == 4
     assert all(listed[name]["builtin"] == (name in own) and not listed[name]["enabled"] for name in NAMES.values())
     # What needs nothing chosen has a version and can be turned on; the others are drafts that say what is missing.
     ready = {name for name in NAMES.values() if listed[name]["version"] == 1}
-    assert ready == {"Phishing triage", "Weekly re-check of the watched lists", "Disk almost full notice"}
+    assert ready == {
+        "Phishing triage",
+        "Weekly re-check of the watched lists",
+        "Disk almost full notice",
+        "Analyse the attachments of an e-mail",
+    }
     for name in ("Malicious indicator to a block list", "Incident to ticketing"):
         row = listed[name]
         assert row["version"] is None and row["hasDraft"] is True
@@ -150,7 +156,7 @@ def test_a_name_already_taken_is_left_to_whoever_took_it(admin: TestClient):
         scripts.seed(db)
         connector_actions.seed(db)
         db.flush()
-        assert shipped.seed(db) == 2
+        assert shipped.seed(db) == 3
         # No description sends to a place of Settings that is gone.
         for shipped_row in db.scalars(select(Playbook).where(Playbook.builtin.is_(True))).all():
             assert "Settings, Connections" not in shipped_row.description
@@ -517,3 +523,31 @@ def test_a_recheck_waits_for_its_answers_but_not_for_ever(admin: TestClient):
         and out["output"]["total"] == 1
     )
     assert out["output"]["before"] == out["output"]["after"]
+
+
+def test_the_attachments_of_an_e_mail_in_a_dry_run_and_for_real(admin: TestClient, library, no_dns):  # noqa: F811
+    from app import artifact_jobs
+
+    mail = admin.post("/api/artifacts/mails", files={"file": ("reported.eml", phishing_message())}).json()
+    row = by_name(admin)["Analyse the attachments of an e-mail"]
+    assert row["trigger"] == "mail.analysed, by hand"
+    run = dry(admin, row["id"], objectKind="artifact", objectId=mail["id"])
+    assert run["status"] == "done", errors(run)
+    done = steps(run)
+    assert done["each"]["output"]["count"] == 2 and done["each"]["output"]["failed"] == 0
+    assert done["take"]["request"]["would"] == "add the attachment"
+    assert done["analyse"]["request"]["would"] == "analyse the artifact"
+    # Nothing was kept and nothing was started.
+    assert [item["kind"] for item in admin.get("/api/artifacts").json()["artifacts"]] == ["mail"]
+
+    run_id = start(admin, row["id"], objectKind="artifact", objectId=mail["id"])
+    for index in range(8):
+        worker.drain(T0 + index * 5)
+        artifact_jobs.run_due(threads=False)
+    run = run_of(admin, run_id)
+    assert run["status"] == "done", errors(run)
+    assert steps(run)["each"]["output"] == {**steps(run)["each"]["output"], "count": 2, "failed": 0}
+    # Each attachment is a file of its own, taken out of the e-mail.
+    shown = admin.get(f"/api/artifacts/{mail['id']}").json()
+    assert sorted(child["name"] for child in shown["children"]) == ["Fattura.zip", "attached-message.eml"]
+    assert all(child["relation"] == "attachment" and child["kind"] == "file" for child in shown["children"])

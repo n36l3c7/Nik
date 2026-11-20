@@ -1,10 +1,28 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, Download, FolderOpen, FolderPlus, Link2, Plus, Tag, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Boxes,
+  Download,
+  FolderOpen,
+  FolderPlus,
+  Link2,
+  Plus,
+  FileSearch,
+  Tag,
+  Trash2,
+} from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { getTabById } from '../../config/tabs.js'
-import { artifactKind, parseTags, standaloneIncident, verdictBadge } from '../../domain/artifactRegistry.js'
+import {
+  RELATION_LABELS,
+  analyseAsActions,
+  artifactKind,
+  parseTags,
+  standaloneIncident,
+  verdictBadge,
+} from '../../domain/artifactRegistry.js'
 import { formatDateTime, anyToMs } from '../../lib/time.js'
 import { AsciiSkull, Badge, Button, Chip, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
@@ -29,8 +47,6 @@ import { useUnsavedChanges } from '../../lib/unsaved.js'
  * artifact through a stand-in incident (see standaloneIncident()).
  */
 
-const RELATION_LABELS = { attachment: 'attachment', extracted: 'extracted object', session: 'browser session' }
-
 function Row({ label, children }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -47,8 +63,19 @@ function Row({ label, children }) {
  * }} props
  */
 export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
-  const { current, currentId, currentError, openArtifact, closeArtifact, link, unlink, setTags, setExpiry, remove } =
-    useArtifacts()
+  const {
+    current,
+    currentId,
+    currentError,
+    openArtifact,
+    closeArtifact,
+    link,
+    analyseAs,
+    unlink,
+    setTags,
+    setExpiry,
+    remove,
+  } = useArtifacts()
   const { incidents, activeIncidentId, retryActiveIncident } = useIncidents()
   const { showToast } = useToast()
   const { setFilters, filters } = useArtifacts()
@@ -175,6 +202,14 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
       showToast({ message: `Linked to ${name}.`, action: { label: 'Open', run: () => onOpenIncident(linkTarget) } })
     }, 'Link')
 
+  // A file that is a message or a capture: the e-mail or the capture is made from it, and opened.
+  const handleAnalyseAs = (action) =>
+    run(async () => {
+      const made = await analyseAs(artifact.id, action.as)
+      showToast({ message: `Analysed as ${action.made}. The file stays as it is.` })
+      openArtifact(made.id)
+    }, action.label)
+
   const handleUnlink = (target) =>
     run(async () => {
       await unlink(artifact.id, target.id)
@@ -234,6 +269,11 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
           <Button size="sm" icon={FolderPlus} disabled={!canLink} onClick={() => onNewIncident(artifact)}>
             New incident from this
           </Button>
+          {analyseAsActions(artifact).map((action) => (
+            <Button key={action.as} size="sm" icon={FileSearch} disabled={busy} onClick={() => handleAnalyseAs(action)}>
+              {action.label}
+            </Button>
+          ))}
           <Button variant="ghost" size="sm" icon={Download} onClick={() => setExportOpen(true)}>
             Export
           </Button>

@@ -32,6 +32,31 @@ export function artifactId(kind, ref) {
   return `${kind}-${ref}`
 }
 
+/* ---- A file analysed as what it is ---- */
+
+const ANALYSE_AS = {
+  mail: { as: 'mail', label: 'Analyse as an e-mail', made: 'an e-mail' },
+  capture: { as: 'capture', label: 'Analyse as a capture', made: 'a capture' },
+}
+
+/**
+ * What a file can be analysed as besides a file: the server says which (`analyseAs`), by the name of
+ * the file in a list and by its first bytes on its own page. Nothing for what is not a file.
+ */
+export function analyseAsActions(artifact) {
+  if (artifact?.kind !== 'file') return []
+  return (artifact.analyseAs ?? []).map((kind) => ANALYSE_AS[kind]).filter(Boolean)
+}
+
+/** Where an artifact comes from, or what was made of it, in a word or two. */
+export const RELATION_LABELS = {
+  attachment: 'attachment',
+  extracted: 'extracted object',
+  session: 'browser session',
+  unpacked: 'unpacked file',
+  analysed: 'analysis',
+}
+
 /* ---- Verdict ---- */
 
 const VERDICTS = {

@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import analysis_links, artifact_expiry, artifact_transfer, artifacts, query, urlscan
+from .. import analysis_links, artifact_convert, artifact_expiry, artifact_transfer, artifacts, query, urlscan
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
@@ -108,6 +108,8 @@ def _summary(row: Artifact, incidents: list[dict[str, str]]) -> dict[str, Any]:
         "incidents": incidents,
         # The day it is deleted on, when someone gave it one (artifact_expiry.py).
         **artifact_expiry.out(row),
+        # What a file could be analysed as besides a file, by its name: "mail", "capture" (artifact_convert.py).
+        "analyseAs": artifact_convert.by_name(row),
     }
 
 
@@ -116,6 +118,8 @@ def _one(db: OrmSession, row: Artifact) -> dict[str, Any]:
     return {
         **_summary(row, _incidents_of(db, [row.id])[row.id]),
         "indicator": analysis_links.indicator_of(db, row),
+        # One artifact is looked at: what it can be analysed as is read from its first bytes, not its name.
+        "analyseAs": artifact_convert.fitting(row),
     }
 
 
@@ -327,6 +331,39 @@ async def object_to_file(
         (row.id, "extracted"),
     )
     return _one(db, _artifact_or_404(db, artifacts.artifact_id("file", sample.sha256)))
+
+
+class AnalyseAsIn(BaseModel):
+    # What the file is analysed as: an e-mail (.eml, .msg) or a packet capture (.pcap, .pcapng).
+    kind: Literal["mail", "capture"] = Field(alias="as")
+    incident: Optional[str] = Field(default=None, max_length=64)
+
+
+@router.post("/artifacts/{artifact_id}/analyse-as", status_code=status.HTTP_201_CREATED)
+def analyse_file_as(
+    artifact_id: str,
+    body: AnalyseAsIn,
+    caller: Principal = Depends(writer_principal),
+    db: OrmSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+) -> dict:
+    """Analyse a file artifact as an e-mail or as a packet capture: the artifact an upload of the
+    same file would have made, recorded as made from the file. It goes to the incident that is
+    named, or to those the file is in (a capture to the one incident, when there is just one).
+    Nothing is run or opened; the file stays as it is."""
+    row = _artifact_or_404(db, artifact_id)
+    try:
+        if body.kind == "mail":
+            made = artifact_convert.as_mail(db, row, caller.actor, body.incident or "")
+        else:
+            made = artifact_convert.as_capture(db, row, caller.actor, background_tasks, body.incident or "")
+    except artifact_convert.ConvertError as error:
+        db.rollback()
+        raise HTTPException(status_code=error.status, detail=error.message) from None
+    what = "an e-mail" if body.kind == "mail" else "a capture"
+    _audit(db, caller, "artifact.analyse_as", f"Analysed the file {row.name or row.ref[:12]} as {what}")
+    db.commit()
+    return _one(db, made)
 
 
 # --------------------------------------------------------------------------- #

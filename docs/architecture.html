@@ -252,6 +252,7 @@
 │   ├── worker.py                   # The loop of the automation container (lease, claim, reclaim, prune)
 │   ├── triggers.py, payloads.py    # Events (an outbox), schedules, limits; what an event carries
 │   ├── actions.py, nik_actions.py  # The registry of actions; what a playbook does inside Nik
+│   ├── file_actions.py             # The nodes for files and artifacts: add, link, analyse, read an analysis
 │   ├── outbound.py, egress.py      # HTTP and e-mail nodes; the one module that opens connections
 │   ├── mail_runtime.py             # Mail as a connector: its commands over IMAP and SMTP, the listener
 │   ├── connector_logo.py           # The logo of a connector: a PNG, or an SVG that is a drawing only
@@ -322,6 +323,9 @@
 │                                   #   lists, export with chosen fields, alerts of watched lists
 ├── urlscan.py                      # URL scans: the isolated browser's visit, the findings and the verdict
 ├── urlscan_queue.py                # The scans a playbook asked for, taken and run by the API process
+├── artifact_jobs.py                # What a playbook asked about a file (keep it, analyse it), done by the API process
+├── artifact_convert.py             # A file artifact analysed as the e-mail or the capture it is
+├── unpack.py                       # The files of a zip archive, in memory: bounded, a name never a path
 ├── worker_watch.py                 # Workers that stop answering: the check, and the notices to the admins
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,
 │                                   #   links to incidents, relations, tags
@@ -955,6 +959,13 @@
             <tr>
               <td><code>mails</code>, <code>network_captures</code>, <code>url_scans</code></td>
               <td>the analysis of each e-mail, capture (and isolated browser session) and scanned address</td>
+            </tr>
+            <tr>
+              <td><code>artifact_jobs</code>, <code>artifact_job_parts</code></td>
+              <td>
+                what a playbook asked the backend to do with a file (keep it, analyse it again), with the bytes of a
+                file only until it is kept; a row is dropped after a day
+              </td>
             </tr>
             <tr>
               <td><code>artifacts</code>, <code>artifact_links</code>, <code>artifact_relations</code></td>

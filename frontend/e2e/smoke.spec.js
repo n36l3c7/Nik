@@ -2334,7 +2334,7 @@ test('a playbook is drawn on the canvas, checked by the server and saved as a ve
   await expect(page).toHaveURL(/\/automation\/playbooks$/)
   // The playbooks Nik ships are there from the first start, off: nothing runs until someone turns one on.
   const shipped = area.getByRole('row').filter({ hasText: 'shipped with Nik' })
-  await expect(shipped).toHaveCount(3)
+  await expect(shipped).toHaveCount(4)
   await expect(shipped.filter({ hasText: 'Phishing triage' })).toHaveCount(1)
   const listed = (await (await page.request.get('/api/automation/playbooks')).json()).playbooks
   expect(listed.filter((playbook) => playbook.enabled)).toEqual([])
@@ -3185,6 +3185,175 @@ test('a playbook is run on an artifact from its menu, and started from outside a
 
   for (const id of [onFile, onMail, outside]) {
     expect((await page.request.delete(`/api/automation/playbooks/${id}`)).status()).toBe(204)
+  }
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()
+})
+
+test('a playbook adds a file from a content and analyses it: the nodes are in the library, the file in the Evidence tab', async () => {
+  test.setTimeout(180_000)
+  const before = page.url()
+  const incidentId = before.match(/\/incident\/([^/?#]+)/)[1]
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Keeps a report' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const action = (id, name, y, what, args) => ({
+    id,
+    kind: 'action',
+    name,
+    position: { x: 40, y },
+    config: { action: what, args },
+  })
+  const report = 'host,verdict\nwks-7,see http://files.playbook.example/stage.bin\n'
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      action('add', 'Keep the report', 160, 'nik.add-file', { content: report, name: 'triage-report.csv' }),
+      action('analyse', 'Analyse it', 280, 'nik.analyse-artifact', {
+        artifact: '{{ add.artifact }}',
+        analysis: 'static',
+      }),
+      action('read', 'What it found', 400, 'nik.get-analysis', { artifact: '{{ add.artifact }}' }),
+    ],
+    edges: [
+      { from: 'start', to: 'add' },
+      { from: 'add', to: 'analyse' },
+      { from: 'analyse', to: 'read' },
+    ],
+  }
+  const saved = await page.request.post(`/api/automation/playbooks/${playbookId}/versions`, { data: { graph } })
+  expect(saved.status(), await saved.text()).toBe(201)
+
+  // The editor: the nodes for files are a group of the library, and a node takes the artifact another gave.
+  await page.goto(`/automation/playbooks/${playbookId}`)
+  const area = page.getByRole('region', { name: 'Automations' })
+  const library = area.getByRole('complementary', { name: 'Node library' })
+  const inspector = area.getByRole('complementary', { name: 'Inspector' })
+  await expect(library.getByRole('button', { name: 'Add a file', exact: true })).toBeHidden()
+  await library.locator('summary').filter({ hasText: 'Files' }).click()
+  for (const name of ['Add a file', 'Analyse an artifact', 'Read an analysis', 'List the artifacts of an incident']) {
+    await expect(library.getByRole('button', { name, exact: true })).toBeVisible()
+  }
+  await area.getByTestId('playbook-canvas').locator('.react-flow__node').filter({ hasText: 'What it found' }).click()
+  await expect(inspector.getByRole('textbox', { name: 'artifact *' })).toHaveValue('{{ add.artifact }}')
+  await inspector.getByRole('button', { name: 'Pick a value' }).first().click()
+  const picker = page.getByRole('dialog', { name: 'Pick a value' })
+  const kept = picker.getByRole('group', { name: 'Keep the report' })
+  await expect(kept.getByText('add.artifact', { exact: true })).toBeVisible()
+  await expect(kept.getByText('add.sha256', { exact: true })).toBeVisible()
+  const analysed = picker.getByRole('group', { name: 'Analyse it' })
+  await expect(analysed.getByText('analyse.finished', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveCount(0)
+
+  // A dry run keeps nothing: the step says what it would have done.
+  const run = async (body) => {
+    const started = await page.request.post(`/api/automation/playbooks/${playbookId}/run`, { data: body })
+    expect(started.status(), await started.text()).toBe(201)
+    const id = (await started.json()).id
+    let found = null
+    await expect(async () => {
+      found = await (await page.request.get(`/api/automation/runs/${id}`)).json()
+      const said = JSON.stringify(found.steps.map((step) => [step.node, step.status, step.error]))
+      expect(found.status, said).toBe('done')
+    }).toPass({ timeout: 90_000 })
+    return Object.fromEntries(found.steps.map((step) => [step.node, step]))
+  }
+  const dry = await run({ objectKind: 'incident', objectId: incidentId, dryRun: true })
+  expect(dry.add.request.would).toBe('add the file')
+  expect(dry.analyse.output.asked).toBe(false)
+  expect((await page.request.get(`/api/artifacts/${dry.add.output.artifact}`)).status()).toBe(404)
+
+  // For real: the API process keeps the file and analyses it, the run reads what was found.
+  const steps = await run({ objectKind: 'incident', objectId: incidentId })
+  const artifact = steps.add.output.artifact
+  expect(steps.add.output).toMatchObject({ name: 'triage-report.csv', kind: 'file', linked: true, known: false })
+  expect(artifact).toBe(dry.add.output.artifact)
+  expect(steps.analyse.output).toMatchObject({ asked: true, finished: true, started: ['static'] })
+  expect(steps.read.output.found).toBe(true)
+  expect(steps.read.output.indicators).toContainEqual({
+    type: 'url',
+    value: 'http://files.playbook.example/stage.bin',
+  })
+  expect(JSON.stringify(steps.read.output)).not.toContain('wks-7')
+
+  // The incident holds the file as one an analyst added.
+  await page.goto(before)
+  await openEvidence('Malware Analysis')
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('triage-report.csv', { timeout: 20_000 })
+  const files = page.getByRole('navigation', { name: 'Evidence' }).getByRole('list', {
+    name: 'Files of Malware Analysis',
+  })
+  await expect(files.getByRole('button', { name: 'triage-report.csv' })).toBeVisible()
+
+  // A person deletes it: a playbook has no node that deletes evidence.
+  const nodes = (await (await page.request.get('/api/automation/catalog')).json()).nodes
+  expect(nodes.filter((entry) => entry.group === 'Files').map((entry) => entry.id)).not.toContain('nik.delete-artifact')
+  expect((await page.request.delete(`/api/artifacts/${artifact}`)).status()).toBe(204)
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  await page.goto(before)
+  await openEvidence('Malware Analysis')
+  await expect(page.getByRole('list', { name: 'Samples' })).not.toContainText('triage-report.csv')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' }).click()
+})
+
+test('a file that is a message is analysed as an e-mail from its page; the new nodes and events are offered', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  // A message held as a file, as a connector or an archive leaves it.
+  const message = [
+    'From: "Anna" <anna@partner.example>',
+    'To: soc@acme.example',
+    'Subject: Kept as a file first',
+    'Date: Tue, 10 Nov 2026 09:00:00 +0100',
+    'Message-ID: <e2e-as-mail@partner.example>',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    'Please see the attached notes.',
+    '',
+  ].join('\r\n')
+  const uploaded = await page.request.post('/api/artifacts/files', {
+    multipart: {
+      file: { name: 'kept-as-a-file.eml', mimeType: 'application/octet-stream', buffer: Buffer.from(message) },
+    },
+  })
+  expect(uploaded.status(), await uploaded.text()).toBe(201)
+  const file = await uploaded.json()
+  expect(file.kind).toBe('file')
+  expect(file.analyseAs).toEqual(['mail'])
+
+  // Its page offers what it can be analysed as, and nothing it cannot.
+  await page.goto(`/artifact/${file.id}`)
+  await expect(page.getByRole('button', { name: 'Analyse as a capture' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Analyse as an e-mail' }).click()
+  await expect(page).toHaveURL(new RegExp(`/artifact/mail-${file.ref}$`))
+  await expect(page.getByText('analysis of file “kept-as-a-file.eml”')).toBeVisible()
+  const made = await (await page.request.get(`/api/artifacts/mail-${file.ref}`)).json()
+  expect(made.kind).toBe('mail')
+  expect(made.name).toBe('Kept as a file first')
+  expect(made.parents.map((parent) => [parent.id, parent.relation])).toEqual([[file.id, 'analysed']])
+  // The file stays what it was, and shows what was made of it.
+  await page.goto(`/artifact/${file.id}`)
+  await expect(page.getByText('analysis: Kept as a file first')).toBeVisible()
+
+  // The library and the trigger offer what 6.6 added.
+  const nodes = (await (await page.request.get('/api/automation/catalog')).json()).nodes
+  const files = nodes.filter((entry) => entry.group === 'Files').map((entry) => entry.name)
+  expect(files).toEqual(expect.arrayContaining(['Download a file', 'Unpack an archive', 'Analyse an artifact']))
+  const playbook = await page.request.post('/api/automation/playbooks', { data: { name: 'Waits for a capture' } })
+  const playbookId = (await playbook.json()).id
+  await page.goto(`/automation/playbooks/${playbookId}`)
+  const area = page.getByRole('region', { name: 'Automations' })
+  await area.getByTestId('playbook-canvas').locator('.react-flow__node').first().click()
+  const events = area.getByRole('complementary', { name: 'Inspector' }).getByLabel('On an event')
+  for (const event of ['code.analysed', 'capabilities.analysed', 'capture.analysed']) {
+    await expect(events.locator(`option[value="${event}"]`)).toHaveCount(1)
+  }
+
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  for (const id of [`mail-${file.ref}`, file.id]) {
+    expect((await page.request.delete(`/api/artifacts/${id}`)).status()).toBe(204)
   }
   await page.goto(before)
   await expect(page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary' })).toBeEnabled()

@@ -1,7 +1,27 @@
 import { useEffect, useState } from 'react'
-import { Boxes, Bug, Download, FolderOpen, Inbox, Link2, Mail, Network, Plus, Tag, Upload } from 'lucide-react'
+import {
+  Boxes,
+  Bug,
+  Download,
+  FolderOpen,
+  Inbox,
+  Link2,
+  Mail,
+  Network,
+  Plus,
+  FileSearch,
+  Tag,
+  Upload,
+} from 'lucide-react'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
-import { ARTIFACT_KINDS, artifactMeta, artifactPath, verdictBadge } from '../../domain/artifactRegistry.js'
+import {
+  ARTIFACT_KINDS,
+  analyseAsActions,
+  artifactMeta,
+  artifactPath,
+  verdictBadge,
+} from '../../domain/artifactRegistry.js'
+import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
 import { Badge, Button, MicroSkull } from '../ui/index.js'
 import { useItemMenu } from '../menu/useRowMenu.js'
@@ -43,8 +63,20 @@ function Chip({ active, onClick, children }) {
  * @param {{ width: number, onNewAnalysis: () => void, onHide?: () => void }} props
  */
 export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
-  const { artifacts, counts, filters, setFilters, loading, error, queryError, currentId, openArtifact, refresh } =
-    useArtifacts()
+  const {
+    artifacts,
+    counts,
+    filters,
+    setFilters,
+    loading,
+    error,
+    queryError,
+    currentId,
+    openArtifact,
+    analyseAs,
+    refresh,
+  } = useArtifacts()
+  const { showToast } = useToast()
   const { can, currentUser } = useAuth()
   const schema = useQuerySchema('artifacts')
   // "mine" is a condition of the query: the artifacts this account added.
@@ -69,6 +101,18 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
           icon: Download,
           onSelect: () => setTransfer(exportRequest([artifact])),
         },
+        // A file whose name says it is a message or a capture: what it is analysed as opens.
+        ...(can('write') ? analyseAsActions(artifact) : []).map((action) => ({
+          label: action.label,
+          icon: FileSearch,
+          onSelect: async () => {
+            try {
+              openArtifact((await analyseAs(artifact.id, action.as)).id)
+            } catch (error) {
+              showToast({ message: `${action.label}: ${error.message}` })
+            }
+          },
+        })),
         ...artifact.tags.slice(0, 5).map((tag) => ({
           label: `Filter by #${tag}`,
           icon: Tag,

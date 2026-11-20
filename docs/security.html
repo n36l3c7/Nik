@@ -421,6 +421,56 @@
           allowlisted values typed by hand.
         </li>
         <li>
+          <strong>Files.</strong> The nodes that work on files (<a href="automation.html#file-nodes">Automation</a>) add
+          no way of running or opening one. A file a playbook adds is stored as it came, under its SHA-256, within the
+          size of an upload, and gets the analyses an upload gets; an analysis a playbook starts is one Nik already
+          makes of an artifact. The automation container still reads the store read-only and reaches no analysis worker:
+          a node writes what it wants as a row of the database, and the backend, which serves the same thing to an
+          analyst, does it. A file is passed between nodes by its id: what an analysis found is given bounded, and no
+          byte, string or body of a sample or a message enters what a run keeps. None of these nodes sends anything out;
+          what they give carries its class (a file name, a subject, an e-mail address), and the artifact made from a
+          content carries the classes of that content. No node deletes an artifact, downloads a sample or exports one: a
+          playbook can take an artifact out of an incident, tag it and give it a day to expire on, each written to the
+          audit log under <code>nik-automation</code> with the run.
+        </li>
+        <li>
+          <strong>The store and the worker.</strong> Everything a playbook keeps is written by the backend. The
+          <code>automation</code> container mounts the store read-only and is on no network with the analysis workers,
+          and nothing was added to either: the file a connector's command gives, the files of an archive, the
+          attachments of a message, a message a fetch made an incident from and a file a node downloads are handed over
+          through the database (<code>artifact_jobs</code>, the bytes in parts of 4 MB in
+          <code>artifact_job_parts</code>, deleted once the file is in the store or the job is given up) and the step
+          waits. The backend treats them as it treats an upload: the same size limit, the same analyses.
+        </li>
+        <li>
+          <strong>Archives.</strong> A connector's command (<code>unpack</code>) and the node
+          <em>Unpack an archive</em> take the files out of a zip, plain or protected (ZipCrypto, WinZip AES; read with
+          <code>pyzipper</code>, which Nik already used to write protected downloads). Unpacking happens in memory, in
+          the process that has the archive, and does nothing else: no member is run, opened by a viewer or written to a
+          disk; each is stored under its SHA-256 as an upload is. A member's name is never made a path: a name with
+          <code>..</code>, an absolute path or a device name is kept as text and shown as text. Links are skipped,
+          directories passed over, an archive inside the archive is stored and not unpacked. The limits are 200 members,
+          a total no larger than an upload, and 200 times as the most a member may inflate; sizes written in the archive
+          are not believed, reading stops at the limit. The password is given by an expression, never written to a
+          record, an output or a dry run, replaced by a mark in the arguments a run keeps, and not sent to the backend:
+          the worker unpacks, the files travel. A wrong password is said without repeating it.
+        </li>
+        <li>
+          <strong>A file from an address.</strong> <em>Download a file</em> is the one node that brings a file in
+          without a connector. It sends a <code>GET</code> with no credentials through the same guarded path as every
+          request of a playbook: only to a listed host (or any, when an admin allowed that), a redirect only to such a
+          host, an address inside the network only when that very host is listed, the address judged by the data guard,
+          the size of an upload enforced while reading, a time limit. What comes back is stored as it came and never
+          opened; the audit log names the host. The screens have no such action.
+        </li>
+        <li>
+          <strong>A file analysed as an e-mail or a capture.</strong> <em>Analyse as an e-mail</em> and
+          <em>Analyse as a capture</em> (the page and the menu of a file,
+          <code>POST /api/artifacts/{id}/analyse-as</code>, write permission; the node <em>Analyse an artifact</em>) run
+          the analysis an upload of the same file would get, on bytes Nik already holds: the mail parser, or the packet
+          capture worker under <code>PCAP_MAX_MB</code>. Nothing new reads a file.
+        </li>
+        <li>
           <strong>Expressions.</strong> The <code>{{ }}</code> language compares, counts and chooses, and is still not
           code: it is read by a parser written for it, a name is a path into the data or one of four functions, and
           nothing in it reaches Python (no attribute of an object, no call that is not in its table of filters). Its
