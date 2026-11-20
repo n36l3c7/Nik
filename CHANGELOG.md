@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.1] - 2026-11-20
+
+### Added
+
+- **An open artifact has a Close button**, and a mailbox too: it returns
+  to the Artifacts page with none open. The browser's Back returns to the
+  artifact, and from there to the incident it was opened from.
+
+### Changed
+
+- An artifact deleted while it is open, and the Close of "Unable to open
+  the artifact", leave the Artifacts page in its place instead of the
+  incident or the list of incidents.
+
 ## [6.6.0] - 2026-11-20
 
 Moving around Nik and not losing work on the way; credentials kept once
@@ -3443,7 +3457,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.6.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.6.1...HEAD
+[6.6.1]: https://github.com/n36l3c7/Nik/compare/v6.6.0...v6.6.1
 [6.6.0]: https://github.com/n36l3c7/Nik/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/n36l3c7/Nik/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/n36l3c7/Nik/compare/v6.3.0...v6.4.0
