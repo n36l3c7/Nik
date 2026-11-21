@@ -36,7 +36,7 @@ from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import fields as field_registry
-from .. import incident_quick, incident_tags, query, work
+from .. import incident_quick, incident_tags, indicators_found, query, work
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
@@ -421,6 +421,8 @@ def create_incident(
     triggers.incident_changed(db, incident, "incident.created")
     if field_changes:
         _set_fields(db, incident, field_changes, caller)
+    # The incident is whole: its fields and its context are read for indicators (indicators_found.py).
+    indicators_found.scan(db, incident, "api" if caller.actor.startswith("api:") else "hand")
     db.commit()
     emit(db, background_tasks, "incident.created", {"id": incident_id, "name": doc.get("name")})
     response.headers["ETag"] = _etag(incident.rev)
@@ -561,6 +563,7 @@ def delete_incident(
         from ..core.models import WarRoomEntry
 
         incident_context.forget(db, incident_id)
+        indicators_found.forget(db, incident_id)
         db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
         db.delete(row)
         db.commit()

@@ -279,6 +279,40 @@ class IocEntry(Base):
     last_seen: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
 
+class FoundIndicator(Base):
+    """An indicator found by itself in what an incident was made of (``indicators_found.py``).
+
+    One row per incident and indicator: where in the fields or the context it was read
+    (``path``, as a playbook writes it), by which door the incident came in, and when. A row a
+    person removed stays, with who removed it: that is how the same value is not found again at
+    the next update of the incident.
+    """
+
+    __tablename__ = "found_indicators"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    value: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    path: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+    door: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    found_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    removed_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    removed_by: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+
+class FoundScan(Base):
+    """The last time an incident was read for indicators, and what came of it: ``{found, kept,
+    leftOut: {private, benign…}, over, removed, unread}``. An incident with no row was never
+    read: it came in before 6.10, or finding was off."""
+
+    __tablename__ = "found_scans"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    at: Mapped[str] = mapped_column(String(40), nullable=False)
+    door: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class AuditEntry(Base):
     """Immutable audit-log entry; actor is stamped server-side from the session."""
 
@@ -2023,3 +2057,6 @@ AUDIT_CHAIN_TABLES = ("audit_chain",)
 # The entries of the audit log are numbered and linked when their transaction commits: the
 # listeners live with the chain, and are there for every session that can hold an entry.
 from ..auditlog import chain as _audit_chain  # noqa: E402, F401
+
+# Created by migration 0054_indicators_found where missing.
+FOUND_TABLES = ("found_indicators", "found_scans")

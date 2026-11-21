@@ -780,6 +780,17 @@ Content-Type: application/json
               <td><code>added</code>, <code>known</code></td>
             </tr>
             <tr>
+              <td><a href="#make-indicators">Make indicators of a text</a></td>
+              <td>
+                <code>text</code> (a value, a list of values, or a text that holds them), <code>type</code> (when you
+                know it), <code>tags</code>, <code>note</code>, <code>leave_out_harmless</code>, <code>incident</code>
+              </td>
+              <td>
+                <code>indicators</code> (each <code>{type, value, new, marks}</code>), <code>created</code>,
+                <code>linked</code>, <code>not_recognised</code> (each <code>{text, reason}</code>)
+              </td>
+            </tr>
+            <tr>
               <td>Tag indicators</td>
               <td><code>indicators</code>, <code>tags</code></td>
               <td><code>tagged</code></td>
@@ -1237,6 +1248,40 @@ Content-Type: application/json
         leads somewhere. <code>indicators</code> are those an incident that holds the artifact lists: there is no node
         that "adds the indicators to the incident", because an artifact in an incident gives it its indicators at once,
         as on the screens. To keep them in the library, give them to <em>Add indicators</em>.
+      </p>
+      <h3 id="make-indicators">Making indicators of a text</h3>
+      <p>
+        <em>Make indicators of a text</em> (<code>nik.make-indicators</code>) takes a value as it is written anywhere, a
+        ticket, a mail, the output of a command, and works out by itself what it is: an IP address (IPv4 or IPv6), a
+        domain, a URL, an e-mail address, an MD5, SHA-1 or SHA-256. A defanged value is read as meant
+        (<code>hxxp://</code>, <code>[.]</code>, <code>(.)</code>, <code>[at]</code>, <code>[:]</code>). A
+        <strong>URL gives two indicators</strong>: the URL, and its host, a domain or an address. An e-mail address
+        gives the address alone. A longer text gives every indicator in it; a list is read item by item.
+      </p>
+      <pre><code>!nik-make-indicators hxxps://login-portal[.]top/a?id=7
+!nik-make-indicators text="C2 at 185.220.101[.]47 and update-cdn[.]net, dropper 44d88612fea8a8f36de82e1278abb02f"
+!nik-make-indicators text=${context.ext.proofpoint.clicked} tags=phishing
+!nik-make-indicators text=update.pl type=domain</code></pre>
+      <p>
+        On the canvas, give <code>text</code> an expression: <code>{{ fetch_alert.alert.description }}</code>, or a list
+        such as <code>{{ context.Mail[*].From }}</code>. With an incident (the incident of the run, or the one named in
+        <code>incident</code>) the indicators become <strong>the incident's</strong>, seen in the War Room or made by a
+        playbook; with none they are kept on the Indicators page. <code>tags</code> and <code>note</code> are kept on
+        the Indicators page in both cases. It is safe to run twice: an indicator Nik knows is linked and not made again
+        (<code>new</code> is false, <code>created</code> and <code>linked</code> count only what was not there). Nothing
+        is sent anywhere: no source is asked about what is made, and the outputs carry the data classes of what went in,
+        so the <a href="#data-guard">data guard</a> judges a later node that would send them.
+      </p>
+      <p>
+        What is not an indicator is listed in <code>not_recognised</code> with the reason, in words:
+        <code>install.sh</code> <em>reads as a file name</em>, <code>1.2.3</code> <em>reads as a version number</em>, a
+        SHA-512 <em>is not a type Nik keeps</em>. When you know better, say the <code>type</code>: the value is then
+        that or nothing (<code>update.pl</code> is a script to the recogniser and a Polish domain to you). Private
+        addresses, names kept for documentation, your organisation's own domains and the IOC allowlist are made
+        indicators like the rest when you ask for them, each with its <code>marks</code> (<code>private</code>,
+        <code>benign</code>, <code>own</code>, <code>allowlisted</code>); <code>leave_out_harmless=true</code> leaves
+        them out, as the <a href="guide.html#found-indicators">finding of indicators in a new incident</a> does. A dry
+        run makes nothing and shows what it would have made.
       </p>
       <p id="files-and-the-guard">
         <strong>The data guard.</strong> None of these nodes sends anything out, so none is held. What they give carries
@@ -2400,7 +2445,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
 !ip 185.220.101.47
 !servicenow-get-incident number=INC0012345
 !sentinelone-isolate-agent agent_id=${context.Host[0].AgentID} using="SentinelOne EU"
-!ExtractDomains text={{ context.Mail[0].Subject }}</code></pre>
+!ExtractDomains text={{ context.Mail[0].Subject }}
+!nik-make-indicators hxxp://update-cdn[.]net/gate.php</code></pre>
       <div class="table-wrap">
         <table>
           <thead>

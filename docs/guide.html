@@ -845,6 +845,50 @@
         a colour. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
         <strong>allowlist</strong> (right-click → Add to the allowlist).
       </p>
+      <h4 id="found-indicators">Indicators found by themselves</h4>
+      <p>
+        When an incident comes in (fetched from a connector, the Mail connector included; made by hand; made through the
+        API; made by a playbook) Nik reads its fields and its context and makes an indicator of every address, domain,
+        URL, e-mail address and hash it recognises there. Such an indicator says <em>Found</em> and the path it was read
+        at in its <em>Seen in</em> column (<code>Found · context.URL[0].Data</code>): the same path the Context tab
+        shows. Defanged values are read as meant (<code>hxxp://</code>, <code>[.]</code>, <code>[at]</code>), and a URL
+        gives two indicators, the URL and its host. The War Room keeps <strong>one line</strong> for it, not one per
+        indicator: <em>12 indicators found: 5 domains, 4 URLs, 3 hashes; 40 left out as private or benign</em>.
+      </p>
+      <p>
+        So that an alert with hundreds of strings does not fill the incident, some things are recognised and
+        <strong>left out</strong>: private and reserved addresses and URLs on internal names; names kept for
+        documentation (<code>example.com</code>), the hosts XML and JSON documents name as their schema, your
+        organisation's own domains and the IOC allowlist. Keys that are noise by nature are never read (identifiers,
+        versions, console links, the other system's address of its own ticket or alert). And an incident is given
+        <strong>50</strong> indicators at most this way: past that the line of the War Room says how many more there
+        were, and none of them is kept. A file name, a version number or a word of code is not an indicator:
+        <code>kernel32.dll</code>, <code>10.0.19041.1</code> and <code>this.name</code> are left alone.
+      </p>
+      <p>
+        An indicator that is in the incident only because it was found has an <strong>×</strong> at the end of its row.
+        Removing it is remembered: it does not come back when the incident is updated by a mirror or read again. Under
+        the table, <em>Found by themselves</em> says what the last reading came to, lists what was removed (with
+        <strong>Put back</strong>), and <strong>Find indicators now</strong> reads the incident as it is at this moment:
+        for an incident that came in before incidents were read, or whose context has grown since. What a playbook
+        writes to the context later is not read by itself; a playbook that wants indicators of a value asks for them
+        with <a href="automation.html#make-indicators"><em>Make indicators of a text</em></a
+        >.
+      </p>
+      <p>
+        Finding an indicator asks nothing of any threat-intelligence source. The automatic look-ups leave out what an
+        incident holds only because it was found, unless an administrator says otherwise; <strong>Check now</strong> and
+        <strong>Check all</strong> ask about them like any other.
+      </p>
+      <p id="found-settings">
+        <strong>Settings → Indicators found</strong> (administrators) holds all of it: whether incidents are read at all
+        (on, unless turned off), the types that are kept, the two kinds of things left out, the number an incident may
+        be given (1 to 500), the paths that are never read, and whether the automatic look-ups ask about what was found.
+        A path is written one a line: a word alone is the name of a key wherever it is (<code>*uuid</code>,
+        <code>console*</code>), and with dots it is a whole path as the Context tab shows it, without the numbers of a
+        list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything. Under the form, every
+        instance that fetches follows the setting or is told apart: <em>Read</em>, <em>Not read</em>.
+      </p>
       <h4 id="held-look-ups">When a look-up is held</h4>
       <p>
         Two things decide whether a value is sent to the sources. The first never changes: a private address, an
@@ -1700,7 +1744,22 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         <li>
           <strong>The Context tab</strong> shows what playbooks read of the incident, as a tree to search: its fields,
           and the files, e-mails, addresses, tickets and hosts known for it. Choosing a value gives the path to write in
-          a playbook, and says who set it: Nik's analysis, a connector, a run.
+          a playbook, and says who set it: Nik's analysis, a connector, a run. <span id="context-copy"></span>Everything
+          in it can be copied. A value is text: select it with the mouse, in the tree or, whole, in the box under it
+          (the tree shows a long value on one line, cut; the box and the copy hold all of it). Under the tree,
+          <strong>Copy the value</strong> copies the chosen value (a text as it is, a branch as JSON with everything
+          under it), <strong>Copy the path</strong> copies it as a playbook writes it,
+          <code>{{ context.File[0].SHA256 }}</code>, and the button beside the second path as the command line of the
+          War Room does, <code>${context.File[0].SHA256}</code>. A key that is not a plain word is written between
+          brackets and quotes, <code>context.ext["check-point"]["a key"]</code>, and an item of a list by its number.
+          The same three copies are in the right-click menu of every row. With the keyboard: Tab reaches the tree, the
+          arrows walk it (right opens a branch, left closes it), Enter chooses, and Ctrl&nbsp;C (⌘&nbsp;C) copies the
+          value of the row when no text is selected.
+        </li>
+        <li>
+          In the War Room, the line of a fetched alert shows <strong>the item as it came</strong> when it is opened, and
+          what a command or a step of a playbook was given, sent and gave: each box has a button that copies it whole,
+          and so have the boxes of a step on the page of a run.
         </li>
         <li>
           A note written by a playbook is marked <em>automation</em> and signed <code>nik-automation</code>; the mark

@@ -36,6 +36,9 @@ organisation's domains change what the value is.
 analyst turns them on, per type: IP addresses, URLs and domains, file
 hashes. The worker (``worker.py``) checks each new indicator once with
 every source that is on and takes its type. E-mail addresses are never sent.
+An indicator incidents hold only because it was found in them as they came
+in (``indicators_found.py``) is left out of the automatic look-ups unless
+the setting of the finding says to ask about those too.
 
 **How long an answer stands**: a number of days set per type (IP addresses
 30, URLs and domains 30, hashes 180 by default). Past it the answer is
@@ -714,6 +717,11 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
     cached: dict[tuple[str, str], dict[str, Enrichment]] = {}
     for row in db.scalars(select(Enrichment).where(Enrichment.type.in_(sorted(types)))):
         cached.setdefault((row.type, row.value), {})[row.provider] = row
+    # What incidents hold only because it was found in them as they came in is asked about when
+    # the setting of the finding says so, and not before: nobody chose those values.
+    from .. import indicators_found
+
+    found_too = indicators_found.config(db)["lookUps"]
 
     # The work: (source, type, value) not answered yet, newest incidents first.
     jobs: list[tuple[Source, str, str]] = []
@@ -721,6 +729,8 @@ def run_cycle(db: OrmSession, shared: dict[str, Any], budget_seconds: float = 45
         if item["incidents"] & red:
             continue
         if kind in ("md5", "sha1") and _hash_from_files(item["sources"]):
+            continue
+        if not found_too and indicators_found.only_found(item["sources"]):
             continue
         if blocked(db, kind, value, allowlist, red=set()):  # TLP:RED handled above
             continue

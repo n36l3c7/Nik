@@ -25,6 +25,7 @@ import Canvas from './Canvas.jsx'
 import DebugPanel, { DebugStepTools } from './DebugPanel.jsx'
 import { SectionTitle } from './fields.jsx'
 import { numberedName } from '../../domain/incidentName.js'
+import JsonBlock from '../ui/JsonBlock.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 
 /*
@@ -53,9 +54,7 @@ function Json({ label, value }) {
   return (
     <div className="flex flex-col gap-1">
       <SectionTitle>{label}</SectionTitle>
-      <pre className="max-h-64 overflow-auto border border-line bg-sunken p-2 font-mono text-xs text-fg">
-        {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
-      </pre>
+      <JsonBlock value={value} what={label.toLowerCase()} className="max-h-64 border border-line bg-sunken text-xs" />
     </div>
   )
 }

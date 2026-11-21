@@ -22,6 +22,7 @@ from typing import Any, Iterable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from . import recognise
 from .core.models import Incident, IocAlert, IocEntry, IocList, IocListItem, IocRecord
 from .enrichment import service
 from .enrichment import sources as lookup_sources
@@ -61,20 +62,8 @@ DEFAULT_FIELDS = ("type", "value", "verdict", "score", "tags", "first_seen")
 # --------------------------------------------------------------------------- #
 # Reading what is pasted or dropped                                           #
 # --------------------------------------------------------------------------- #
-_REFANG = (
-    (re.compile(r"\bh(?:xx|XX)p(s?)://", re.IGNORECASE), r"http\1://"),
-    (re.compile(r"\[(?:\.|dot)\]|\((?:\.|dot)\)|\{\.\}", re.IGNORECASE), "."),
-    (re.compile(r"\[(?:@|at)\]|\(at\)", re.IGNORECASE), "@"),
-    (re.compile(r"\[:\]"), ":"),
-    (re.compile(r"\[://\]"), "://"),
-)
-
-
-def refang(text: str) -> str:
-    """``hxxps://evil[.]example`` as it is meant: ``https://evil.example``."""
-    for pattern, replacement in _REFANG:
-        text = pattern.sub(replacement, text)
-    return text
+# The defanged forms are read in one place (recognise.py): ``hxxps://evil[.]example`` as it is meant.
+refang = recognise.refang
 
 
 def defang(kind: str, value: str) -> str:

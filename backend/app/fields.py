@@ -577,6 +577,11 @@ def update(
     from . import mirror
 
     mirror.on_fields_changed(db, incident, changed, source or f"user:{actor}", time.time())
+    if changed:
+        # What a connector brings to an incident that was read for indicators is read again.
+        from . import indicators_found
+
+        indicators_found.after_update(db, incident, source or "")
     return changed
 
 

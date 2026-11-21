@@ -468,6 +468,19 @@
         since it was planned and says how many in its <code>message</code>.
       </p>
       <p>
+        <strong>Indicators found at ingestion</strong> (<code>app/indicators_found.py</code>,
+        <code>app/recognise.py</code>): every door an incident is made by ends with <code>scan</code>, in the
+        transaction that makes it (a fetch, the API and a person, <code>nik.create-incident</code>); what a connector
+        writes later to an incident that was read once (<code>context.apply</code> and <code>fields.update</code> with a
+        <code>connector:</code> source: a mirror update) is read again. The rows are in
+        <code>found_indicators</code> (one per incident and indicator, with the path; a removed row stays, marked) and
+        <code>found_scans</code> (the last reading); <code>reindex_incident</code> adds them to the index with the
+        source <code>found:&lt;path&gt;</code>. The setting is row 80 of <code>settings</code>. The recogniser is the
+        one place that says what a text holds: the action <code>nik.make-indicators</code>, the scan and the reader of
+        pasted lists (<code>refang</code>) use it. The automatic lookups below skip a value whose every source is a
+        finding, unless the setting says to ask.
+      </p>
+      <p>
         <strong>Automatic lookups</strong> are off until an analyst turns them on in
         <strong>Settings → Threat intelligence</strong>, per type: IP addresses, URLs and domains, file hashes. Every
         API process starts a worker thread (<code>worker.py</code>); a lease row (<code>leases</code>) lets only one of

@@ -504,8 +504,10 @@ def ingest(
     made = candidate(db, connection, connector, item)
     decided = preprocess.decide(db, connection, connector, item, item_id, made, now)
     outcome, note, incident_id = decided["outcome"], decided.get("note", ""), decided.get("incident_id")
+    created: Incident | None = None
     if outcome == "create":
         incident, problems = create_incident(db, connection, connector, item, item_id, occurred, made, now)
+        created = incident
         mapped: mapping.Mapped = made["mapped"]
         missing = list(mapped.missing)
         if not made["mapper"]:
@@ -525,6 +527,12 @@ def ingest(
         if unkept:
             note = "; ".join(part for part in (note, unkept) if part)
             outcome = "incomplete" if outcome == "created" else outcome
+    if created is not None:
+        # The incident is whole, and what it was made of is kept and analysed: its fields and its
+        # context are read for the indicators it does not hold yet (indicators_found.py).
+        from . import indicators_found
+
+        indicators_found.scan(db, created, "fetch")
     db.add(
         FetchedItem(
             connection_id=connection.id,
