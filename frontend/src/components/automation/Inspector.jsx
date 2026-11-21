@@ -26,6 +26,7 @@ import {
   updateNode,
 } from '../../domain/automation/graph.js'
 import { ROLES } from '../../domain/permissions.js'
+import { safeToRepeatHelp } from '../../domain/restarts.js'
 import { useFields } from '../../context/FieldsContext.jsx'
 import ExpressionInput from './ExpressionInput.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
@@ -846,7 +847,7 @@ function KindSettings({
           )}
           <Field
             label="On a schedule"
-            hint="Five fields, as in cron: minute hour day month weekday. Every 5 minutes at most. Empty: no schedule."
+            hint="Five fields, as in cron: minute hour day month weekday. Every 5 minutes at most. Empty: no schedule. A time that passes while the server is stopped runs once when it starts again, however many were missed: the run reads when it was due in trigger.due, and how many in trigger.missed."
             problem={problemAt('cron')}
           >
             {(id) => (
@@ -1145,6 +1146,23 @@ function KindSettings({
             />
           ))}
           <OnError config={config} onConfig={onConfig} disabled={disabled} />
+          {node.kind === 'action' && config.action === 'http.request' && (
+            <>
+              <SectionTitle>After a restart</SectionTitle>
+              <div className="flex items-start gap-2">
+                <Switch
+                  label="Safe to repeat"
+                  checked={config.safe_to_repeat === true}
+                  disabled={disabled}
+                  onChange={(safe) => onConfig({ safe_to_repeat: safe || undefined })}
+                />
+                <span className="text-xs text-fg-muted">
+                  {safeToRepeatHelp(config.safe_to_repeat === true)}
+                  {problemAt('safe_to_repeat') ? ` ${problemAt('safe_to_repeat')}` : ''}
+                </span>
+              </div>
+            </>
+          )}
           {node.kind === 'action' && (
             <>
               <SectionTitle>Approval before this node</SectionTitle>

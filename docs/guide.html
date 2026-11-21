@@ -95,6 +95,11 @@
         before, Nik says so and offers <strong>Stay signed in</strong>. When a session does end, what is on screen
         stays: a dialog asks for the password (and the code) again, and what was not saved yet is saved then.
       </p>
+      <p>
+        A server that is one of a pair of hosts can show a sentence in the place of the sign-in, such as
+        <em>This server is the standby</em>: <a href="#server-does-not-serve">When a server does not serve</a> says what
+        each one means.
+      </p>
 
       <h2 id="incidents">Incidents</h2>
       <p>
@@ -1598,12 +1603,29 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           you want: the run goes on by your answer, and your name is on it.
         </li>
         <li>
+          <strong>A run interrupted by a restart.</strong> When the server was restarted while a step was changing
+          something in another system (opening a ticket, sending a mail), Nik does not know whether it happened and does
+          not do it twice by guessing. The run waits, with the badge <em>interrupted</em>, and who started it is told by
+          the bell. Its page shows the step, what it was about to send, and three buttons: <em>It happened, go on</em>,
+          <em>It did not, do it again</em>, <em>Stop the run</em>. Look at the other system first. Every step says under
+          <em>Restarts</em> what a restart did to it and when: "Interrupted by a restart at …", "Started again at …".
+          <strong>Automations → Runs</strong> has <em>interrupted</em> among its statuses.
+        </li>
+        <li>
           <strong>Run a playbook…</strong> in the right-click menu of an incident, or on its
           <strong>Automation</strong> tab, starts one by hand on that incident. The same entry is in the menu of an
           analysed e-mail, file or address and of an indicator, wherever they are shown, and offers the playbooks made
           for that kind of object. Tick <em>Dry run</em> to see what it would do without anything being sent or changed.
         </li>
         <li><strong>An artifact's page</strong> lists the playbooks that ran on it, each opening its run.</li>
+        <li>
+          <strong>An analysis and a restart.</strong> A disassembly, capa, a capture, a scan or a mailbox being read
+          when the server or a worker restarts starts again by itself, and says so where its progress is shown:
+          "Interrupted by a restart at 10:02, started again at 10:03 (try 2 of 3)". While it runs the same line says how
+          far the worker is, when the worker tells ("reading the packets (1 of 2)"). One that was interrupted three
+          times is set aside with that reason; the button that started it starts it again. An upload that was cut stays
+          in the tray at the foot of the window with <em>Try again</em>.
+        </li>
         <li>
           <strong>Five playbooks are there from the start</strong>, marked <em>shipped with Nik</em> and off: phishing
           triage, the weekly re-check of the watched lists, a malicious indicator to a block list, an incident to
@@ -1927,7 +1949,11 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
                 disk. On a server that came from a version before 6.8 it shows the files being encrypted in the
                 background (how many and how much are done, how long is left), with <em>Pause</em> and <em>Go on</em>,
                 the files that could not be encrypted and why, and <em>Check again</em> afterwards. A file found damaged
-                is listed there: it is not served, and comes back from a backup.
+                is listed there: it is not served, and comes back from a backup. The line
+                <em>Deleted, kept for recovery</em> appears once something was deleted on a server that archives the log
+                of its database: files that were deleted are kept until no
+                <a href="#recovery-screen">recovery to a moment</a> can go back to them (two days, unless set
+                otherwise), and take their room until then.
               </td>
             </tr>
             <tr>
@@ -1990,13 +2016,13 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <h3 id="health">Health</h3>
       <p>
         <em>Settings → System → Health</em> (admins). One row for each thing an operator would otherwise go and look at,
-        in groups: the disks, the database, the queues, the workers, the backups, the certificate, the audit log, the
-        sign-in, the keys and the encryption of the store, the server. A row has a value (<em
-          >62% used, 118 GB free of 320 GB</em
-        >), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or <em>not known</em> when it could not be
-        measured), since when it is in that state, what to do when it is not fine, and a link to the page that has the
-        whole story: Storage, Workers, Backup and the audit log are summed up here, not repeated. What is not fine is
-        listed again at the top, the problems first.
+        in groups: the disks, the database, the queues, the work in progress (what restarts left behind: steps that wait
+        for a person, work that was set aside, work nobody holds), the workers, the backups, the recovery, the
+        certificate, the audit log, the sign-in, the keys and the encryption of the store, the server. A row has a value
+        (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or
+        <em>not known</em> when it could not be measured), since when it is in that state, what to do when it is not
+        fine, and a link to the page that has the whole story: Storage, Workers, Backup and the audit log are summed up
+        here, not repeated. What is not fine is listed again at the top, the problems first.
       </p>
       <ul>
         <li>
@@ -2017,6 +2043,92 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           metrics answer to that token and to nobody else, a signed-in administrator included.
         </li>
       </ul>
+      <p id="health-recovery">
+        The group <strong>Recovery</strong> is there on a server that archives the log of its database (the Compose
+        stack). Its rows lead to the Backup page, where <a href="#recovery-screen">Recovery to a moment</a> has the
+        whole story; the row of the recovery service leads to Workers. The metrics behind each are in the
+        <a href="deployment.html#health-and-metrics">deployment guide</a>.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Row</th>
+              <th>What it says</th>
+              <th>When it is not fine</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Archive volume (<code>disk.archive</code>)</td>
+              <td>The disk the archive is on: how full, how fast it fills, when it will be full at that rate.</td>
+              <td>By the thresholds of the disks.</td>
+            </tr>
+            <tr>
+              <td>Role of this server (<code>recovery.role</code>)</td>
+              <td>
+                <em>The server</em>, with the date when it was promoted from standby; <em>Standby</em>;
+                <em>Replaced</em>.
+              </td>
+              <td>
+                A problem when the server was replaced, and when the second host holds a file that says so and that no
+                key of this server signed (it is not obeyed). Attention when it started without being able to ask the
+                second host whether it was replaced.
+              </td>
+            </tr>
+            <tr>
+              <td>Archive of the log (<code>recovery.archive</code>)</td>
+              <td>
+                <em>Last segment 3 minutes ago</em>, <em>On, no segment yet</em>, <em>Stuck</em> or <em>Off</em>, and
+                how many segments wait to be archived when more than one does.
+              </td>
+              <td>
+                Attention as soon as a segment fails; a problem when PostgreSQL has not been able to archive for five
+                minutes, or does not archive at all.
+              </td>
+            </tr>
+            <tr>
+              <td>Base backups (<code>recovery.base</code>)</td>
+              <td>
+                How many are kept, how old and how large the last one is, and the oldest moment one can go back to.
+                <em>None yet</em> before the first.
+              </td>
+              <td>
+                A problem when the last base backup failed, when there is none a day after the archive started, or when
+                the archive volume has no room for the next.
+              </td>
+            </tr>
+            <tr>
+              <td>Recovery proven (<code>recovery.test</code>)</td>
+              <td>
+                To which moment the last recovery test that passed went, and how long ago. <em>Not yet</em> before.
+              </td>
+              <td>A problem when the last test failed.</td>
+            </tr>
+            <tr>
+              <td>Recovery service (<code>recovery.service</code>)</td>
+              <td><em>Answers</em> or <em>Does not answer</em>.</td>
+              <td>Attention when it does not answer; a problem after ten minutes.</td>
+            </tr>
+            <tr>
+              <td>Second host (<code>recovery.copies</code>)</td>
+              <td>
+                Only when copies are sent: how far behind the second host is, in time and at most in bytes of log, and
+                how many files of the store wait; <em>Not reached</em>; <em>Nothing sent yet</em>; or
+                <em>Nothing is sent: the copies point at this host</em>.
+              </td>
+              <td>
+                A problem when the second host has not been reached for ten minutes, when what it holds is older than
+                the limit set on the Backup page, or when a promoted server still sends its copies to itself.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A standby serves no page, so it has no health page: its state is read on its host, with
+        <code>deploy/standby.sh status</code>.
+      </p>
 
       <h3 id="audit-log">Audit log</h3>
       <p>
@@ -2115,6 +2227,138 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         (<code>deploy/restore.sh</code>; <code>deploy/rollback.sh</code> for a snapshot taken before an upgrade): see
         <a href="deployment.html#restore-a-backup">Restoring</a>.
       </p>
+      <h4 id="recovery-screen">Recovery to a moment</h4>
+      <p>
+        At the foot of the Backup page (admins). Besides its backups, a server of the Compose stack archives the log of
+        its database as it is written and takes a base backup on a schedule: with the two it can be brought back to any
+        moment since the oldest base backup, and a second host can hold a copy of all of it, ready to take over. This
+        part of the page is where that is watched and set. How it works and what an operator does with it is in the
+        <a href="deployment.html#recovery-to-a-moment">deployment guide</a>. The page reads the server again by itself
+        every half minute, and every few seconds while a base backup or a test is running.
+      </p>
+      <ul>
+        <li>
+          <strong>What is wrong</strong> comes first, in red, in the words of the notice the administrators received.
+        </li>
+        <li>
+          <strong>This server</strong>: <em>The server</em>, with the date when it was promoted from standby; or
+          <em>Replaced on … by …</em>, in red. Under it, its generation (1, and one more for each promotion), the name
+          it is known by to the other host, and when the other host was last asked whether it replaced this one.
+        </li>
+        <li>
+          <strong>Archive of the log</strong>: <em>on</em> or <em>off</em>, and <em>Last segment 3 minutes ago</em>,
+          <em>On, no segment yet</em> or <em>Stuck</em>; the name of the last segment archived and when; how many
+          segments wait to be archived; a segment that could not be archived; how often a segment is closed at least
+          (<em>the most that is lost if this host dies before its last segment left it</em>); and whether the recovery
+          service answers.
+        </li>
+        <li>
+          <strong>The moments one can go back to</strong>: <em>You can go back to any moment from … to …</em>, and under
+          it the command that goes back to a minute before the last segment, with <strong>Copy the command</strong>.
+          Change the moment in it to the one you want. It is run on the server, as the user that runs the stack. It
+          carries <code>--replace</code>, because the server it is typed on holds a database: the command asks before it
+          replaces the database and keeps the one that is there aside (<a href="deployment.html#go-back-to-a-moment"
+            >Go back to a moment</a
+          >). Nothing on the screen goes back to a moment.
+        </li>
+        <li>
+          <strong>The second host</strong>, once a passphrase and a destination are set in the part of the page above
+          (the same ones as for the backups): where the copies go; how far behind it is (<em>Up to date</em>,
+          <em>40 seconds behind</em> with at most how much log, <em>Not reached since …</em>, <em>Nothing sent yet</em>,
+          or <em>Nothing is sent: the copies point at this server itself</em> on a server that was promoted); the last
+          segment sent and how many in all; the files of the store that wait to be copied and how many were; and whether
+          the link worked at the last try. Without a destination the page says <em>No second host</em>: until then the
+          archive is on this server only.
+        </li>
+        <li>
+          <strong>Base backups</strong>: each with when it was taken (and by whom, when somebody asked), its size, its
+          state (<em>being taken</em>, <em>done</em>, <em>failed</em> with the reason), whether it was checked against
+          its manifest, and its copy (<em>On this server only</em>, <em>Waits to be sent</em>, on the second host since
+          a date, or <em>Not sent</em> with the reason). <strong>Take a base backup now</strong> asks for one more; the
+          page waits with it.
+        </li>
+        <li>
+          <strong>Recovery test</strong>: <em>Recovery to … proven on …</em> and how long it took, or
+          <em>Not proven yet</em>, and above it the last test when it failed, with the reason.
+          <strong>Test the recovery now</strong> asks for one at once: the latest base backup and the archive are
+          replayed into a scratch server, to a moment a minute before the last segment archived. The server itself is
+          not touched. The button waits while a test runs, and until there is a base backup.
+        </li>
+        <li>
+          <strong>Room the archive takes</strong>: the log, the base backups, the deleted files kept for recovery, the
+          room left on the volume, and what it all leads to once the archive has run for the days it keeps, at the
+          amount of log a day seen so far.
+        </li>
+      </ul>
+      <p><strong>The settings</strong>, saved with <strong>Save the recovery settings</strong>:</p>
+      <ul>
+        <li>
+          <strong>Base backups</strong>: <em>Take base backups on a schedule</em>, on or off; <em>Every day</em>,
+          <em>Every week</em> on a day, or <em>Every few hours</em> (1 to 23); at a time, in a time zone. A server
+          starts with one every day at 03:30 UTC;
+        </li>
+        <li>
+          <strong>Days one can go back</strong> (1 to 60; 2 to start with). The base backups and the log from before
+          those days are removed, and with them the deleted files that were kept for a recovery to those days;
+        </li>
+        <li>
+          <strong>What is watched</strong>: after how many minutes behind the second host the administrators are told (2
+          to 1440; 15 to start with); every how many hours the archive is proven (1 to 720; 24 to start with); and the
+          <em>name of this server for the other host</em>, which is what the page of a replaced server shows (left
+          empty: the name of the machine).
+        </li>
+      </ul>
+      <p>
+        <strong>The notices.</strong> Every administrator gets one notification when a problem appears and one when it
+        is solved, nothing in between; each leads to this page. The problems: PostgreSQL has not been able to archive
+        its log for five minutes (it keeps every segment meanwhile, and its disk fills); PostgreSQL does not archive at
+        all; the recovery service does not answer; the last base backup failed, or there is none a day after the archive
+        started; the archive volume has no room for the next base backup; the last recovery test failed; the second host
+        has not been reached for ten minutes; what the second host holds is older than the limit set; this server was
+        promoted and still sends its copies to itself; this server started without being able to ask the second host
+        whether it was replaced.
+      </p>
+      <p>
+        <strong>Promoting a standby is not on this page</strong>, nor on any other: it is a command on the host of the
+        standby (<code>deploy/standby.sh promote</code>). A server without an archive (an installation without
+        containers) says so here and shows nothing else.
+      </p>
+      <h4 id="server-does-not-serve">When a server does not serve</h4>
+      <p>
+        A server that is one of a pair can answer with one sentence in the place of the application. The page shows it
+        where the sign-in would be, to anybody; the administrator of the server finds what to do in the deployment guide
+        (<a href="deployment.html#standby-host">A standby host</a>).
+      </p>
+      <ul>
+        <li>
+          <em
+            >This server is the standby: it follows the first host and serves nothing. It becomes the server when an
+            operator runs deploy/standby.sh promote on this host.</em
+          >
+          Nothing is wrong: use the address of the server.
+        </li>
+        <li>
+          <em
+            >This server was replaced on … by …: the standby was promoted and is the server now. It serves nothing,
+            fetches nothing and runs no playbook, so that the two never work at once. What was written here after the
+            last copy reached the other host is not on it. To make this host the standby of the new server:
+            deploy/standby.sh rejoin.</em
+          >
+          Use the address of the server that took over.
+        </li>
+        <li>
+          <em
+            >This standby is being promoted: it starts as the server as soon as deploy/standby.sh promote has finished.
+            If that command was interrupted, or the database was promoted by hand, run it again on this host.</em
+          >
+          Wait; if it stays, tell the operator.
+        </li>
+        <li>
+          <em>Nik is starting: it asks the second host whether this server was replaced while it was away.</em> It lasts
+          some seconds, three quarters of a minute at most; then the sign-in comes, or the sentence that says the server
+          was replaced.
+        </li>
+      </ul>
       <h3 id="accounts">Accounts</h3>
       <p>An admin adds an account under <strong>Accounts</strong> and changes it with the pencil on its row:</p>
       <ul>

@@ -23,9 +23,12 @@ const COLOURS = {
   urls: '#79c0ff',
   rules: '#ffa657',
   database: '#ff9bce',
+  kept: '#56d4dd',
   other: '#8b949e',
 }
 const ELSEWHERE = '#484f58'
+// A group this page does not know yet is drawn as "other", under the label the server gives it.
+const colourOf = (group) => COLOURS[group.id] ?? COLOURS.other
 const GROUP_NAMES = { mailboxes: 'Mailbox', captures: 'Packet capture', samples: 'File', mails: 'E-mail' }
 
 const share = (bytes, total) => (total > 0 ? (bytes / total) * 100 : 0)
@@ -225,7 +228,7 @@ export default function StorageSection({ onOpenArtifact }) {
   const full = share(disk.used, disk.total)
   const tone = full >= 90 ? 'danger' : full >= 75 ? 'warn' : 'ok'
   const segments = [
-    ...groups.filter((group) => group.bytes > 0).map((group) => ({ ...group, colour: COLOURS[group.id] })),
+    ...groups.filter((group) => group.bytes > 0).map((group) => ({ ...group, colour: colourOf(group) })),
     { id: 'elsewhere', label: 'Everything else on the disk', bytes: usage.elsewhere, colour: ELSEWHERE },
   ]
 
@@ -296,7 +299,7 @@ export default function StorageSection({ onOpenArtifact }) {
               <tr key={group.id} className="border-b border-line-soft align-top">
                 <td className="py-1.5">
                   <span className="flex items-center gap-2">
-                    <i className="h-2.5 w-2.5 shrink-0" style={{ background: COLOURS[group.id] }} aria-hidden="true" />
+                    <i className="h-2.5 w-2.5 shrink-0" style={{ background: colourOf(group) }} aria-hidden="true" />
                     {group.label}
                   </span>
                   <span className="block pl-[1.125rem] text-xs text-fg-muted">{group.about}</span>

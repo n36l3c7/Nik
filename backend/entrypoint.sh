@@ -45,6 +45,21 @@ fi
 # The automation container shares this image: the backend applies the
 # migrations, and two containers applying them at once would trip over each other.
 if [ "${NIK_SKIP_MIGRATIONS:-}" != "1" ]; then
+    # Whether this server serves at all (app/recovery/gate.py). A standby stays here, answering
+    # every request with what it is while it follows the first host, and goes on from here when it
+    # is promoted; a server that was replaced by its standby stays here for good. The server
+    # itself passes at once.
+    #
+    # A standby stays in this step for as long as it is one, so the step is what must hear a stop
+    # (docker compose stop, restart, deploy/standby.sh): it runs beside the shell, which waits
+    # for it and ends it when the container is asked to stop. Run in the foreground, the shell
+    # would hear nothing until the step ended, and the engine would kill the container at the end
+    # of its stop_grace_period. What the standby was taking in is taken in again when it starts.
+    python -m app.recovery.gate &
+    gate=$!
+    trap 'kill "$gate" 2>/dev/null || true; wait "$gate" 2>/dev/null || true; exit 0' TERM INT
+    wait "$gate"
+    trap - TERM INT
     echo "entrypoint: bringing the database to this version (snapshot, rehearsal, migrations)…" >&2
     python -m app.backups.upgrade
     # The store key against the store it is given: a key that is not the one the

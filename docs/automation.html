@@ -49,6 +49,7 @@
           <li><a href="#nodes">The nodes</a></li>
           <li><a href="#expressions">Expressions</a></li>
           <li><a href="#failures">When a step fails</a></li>
+          <li><a href="#restarts">Across a restart</a></li>
           <li><a href="#approvals">Approvals</a></li>
           <li><a href="#runs">Runs, dry runs and limits</a></li>
           <li><a href="#outside">What a playbook may reach and send</a></li>
@@ -330,7 +331,11 @@
           <strong>On a schedule</strong>: five fields as in cron (<code>0 8 * * 1-5</code> is 08:00 from Monday to
           Friday), in the time zone you name (UTC when empty). A schedule cannot fire more often than every five
           minutes. A firing that finds the run of the last one still going is skipped; times missed while the server was
-          down are not made up for one by one (the schedule fires once when it is back).
+          down are not made up for one by one: the schedule fires <strong>once</strong> when it is back, however many of
+          its times went by, so a server that was down a week does not start a week of runs. That run reads when it was
+          due and how late it is: <code>{{ trigger.due }}</code>, <code>{{ trigger.late_seconds }}</code>, and
+          <code>{{ trigger.missed }}</code>, how many other times passed without a run. The inspector says the same
+          under the field.
         </li>
         <li>
           <strong>From outside</strong>: a request another system sends to the playbook's own address. See
@@ -1278,6 +1283,8 @@ Content-Type: application/json
         <code>status</code>, <code>ok</code>, <code>json</code> (when the answer is JSON) and <code>text</code>. An
         answer larger than 5 MB is refused; three redirects are followed, each checked like the first address. Anything
         but a GET changes something on the other side, and <a href="#approvals">asks first</a> by default.
+        <strong>Safe to repeat</strong>, off by default, says that sending the request twice does no harm: see
+        <a href="#interrupted">what a restart does to it</a>.
       </p>
 
       <h3 id="email-node">E-mail</h3>
@@ -1698,8 +1705,141 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       </p>
       <p>
         One case is not tried again by itself: an HTTP request that changes something and whose answer never came. Nik
-        cannot know whether the other side did it, so the step fails and says so, rather than doing it twice.
+        cannot know whether the other side did it, so the step fails and says so, rather than doing it twice (unless the
+        node says it is <a href="#interrupted">safe to repeat</a>). A step that was cut by a restart of the server is
+        another matter, and has a section of its own: <a href="#restarts">Across a restart</a>.
       </p>
+
+      <h2 id="restarts">Across a restart</h2>
+      <p>
+        The server is restarted for an upgrade, the host is rebooted, a container is killed, the server moves to its
+        standby host. A run is rows of the database and nothing else: the worker that starts next, on this host or on
+        another, goes on with it. What happens to the step that was being taken at that moment depends on what the step
+        was doing.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>The step was</th>
+              <th>After the restart</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Waiting: a time, an approval, a task, a question, another playbook, a file being analysed</td>
+              <td>It waits on, and goes on when what it waits for comes.</td>
+              <td>A wait holds no worker. A time that ran out while the server was down is over when it is back.</td>
+            </tr>
+            <tr>
+              <td>Working inside Nik: a condition, a script, an incident it creates, a note, a field, a tag</td>
+              <td><strong>Done again</strong>, from its beginning.</td>
+              <td>
+                What a step does inside Nik is committed in one piece with its result: it happened whole, or not at all.
+                A script runs in the sandbox and changes nothing by itself.
+              </td>
+            </tr>
+            <tr>
+              <td>Calling another system to <em>read</em> (a look-up, a GET)</td>
+              <td><strong>Done again.</strong></td>
+              <td>Reading twice changes nothing.</td>
+            </tr>
+            <tr>
+              <td>
+                Calling another system to <em>change</em> something that may be repeated (isolate this host, close this
+                ticket: a command that is <code>idempotent</code>, or that sends an idempotency key)
+              </td>
+              <td><strong>Done again.</strong></td>
+              <td>The command says that twice is as once.</td>
+            </tr>
+            <tr>
+              <td>
+                Calling another system to change something that may <em>not</em> be repeated (open a ticket, send a
+                mail, post a comment; every HTTP request that is not a GET)
+              </td>
+              <td><strong>Interrupted.</strong> The run stops at that step and waits for a person.</td>
+              <td>
+                The call may have been made, or not: the worker stopped before it kept the answer. Nik cannot ask the
+                other system and does not guess.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="interrupted">Interrupted: it is not known whether this happened</h3>
+      <p>
+        Before a call that changes something outside, a step writes down that it is about to make it; after the answer,
+        that it is done. A step found with only the first of the two was cut in between. That is the one case Nik cannot
+        settle by itself: sending the call again could open a second ticket or mail a customer twice; taking it as done
+        could leave a host that was never isolated. So the step becomes <em>interrupted</em>, the run waits, and whoever
+        started the run is told (everyone who may run playbooks, for a run an event or a schedule started). The page of
+        the run shows the step, what it was about to send, and three answers:
+      </p>
+      <ul>
+        <li>
+          <strong>It happened, go on</strong>: you looked at the other system and the ticket is there. The step is taken
+          as done and the run goes on from the next node. The step has no result of its own: what the other system
+          answered was never received, so a later node that reads it (the number of the ticket) finds nothing.
+        </li>
+        <li><strong>It did not, do it again</strong>: the step is taken again from its beginning.</li>
+        <li><strong>Stop the run</strong>: the run stops there; what was done before stays done.</li>
+      </ul>
+      <p>
+        Anyone who may run playbooks answers; who answered and what is on the step and in the audit log. The time a run
+        waits for this answer does not count against its longest duration. <strong>Automations → Runs</strong> has the
+        status <em>interrupted</em> to find these runs, and the health page counts them. This is what "at most once"
+        means for something outside that cannot be undone: a restart at the wrong moment costs a question to a person,
+        never a second ticket.
+      </p>
+      <ul>
+        <li>
+          A step that had only been <em>taken</em> by the worker and had not begun its call is simply done: nothing had
+          left.
+        </li>
+        <li>
+          <strong>An HTTP request node</strong> is a call Nik knows nothing of but its method: a GET is sent again, and
+          any other method is taken as one that may not be repeated. When sending the request twice does no harm (a PUT
+          that sets a state, a POST to a system that ignores what it already has), turn on
+          <strong>Safe to repeat</strong> in the node, under <em>After a restart</em>: a request of that node cut by a
+          restart is then sent again instead of waiting for a person, and one whose answer was lost on the way is tried
+          again as the node allows. It is off unless somebody turns it on, and it travels with the playbook when it is
+          exported. Only this node has it: a command of a connector says the same thing in the connector
+          (<code>idempotent</code>).
+        </li>
+        <li>
+          A step that was cut three times while it ran is not started a fourth time: it fails with that reason, as a
+          step that takes its worker down every time, and the run follows its <em>on error</em> line or fails. A stop
+          that was asked for (a restart, an upgrade) is not counted: the worker says it was asked to stop before it
+          leaves, and the step it left unfinished did not bring it down.
+        </li>
+        <li>
+          <strong>A script whose sandbox was restarting</strong> (or busy) is taken again by itself after ten seconds,
+          then twenty, then thirty, whatever <em>If it fails</em> says for the node, and without using one of its tries:
+          a script computes on what it is given, so nothing is lost by running it a moment later. A sandbox that is
+          still away after that fails the step as before.
+        </li>
+        <li>
+          The first worker of 6.9 after an upgrade treats every action that was being taken when the old version stopped
+          as one that had begun its call: those that may not be repeated wait for a person.
+        </li>
+        <li>
+          <strong>Events and schedules.</strong> The event that starts a playbook is written with the change that causes
+          it, and the runs it starts are written with its mark of done: an incident created just before a restart starts
+          its playbook once, not twice and not never. A schedule whose time passed while the server was down runs once
+          when it is back (see <a href="#trigger">Trigger</a>).
+        </li>
+        <li>
+          <strong>What a playbook asked about a file</strong> (keep it, analyse it, scan an address) is done by the
+          server, and is started again there when the server is the one that restarted: the step that waits for it waits
+          on.
+        </li>
+        <li>
+          <strong>Mirroring.</strong> A change of fields being sent to the other system is sent again (it writes the
+          fields as they are). A comment being sent is not: it is marked failed with "it is not known whether the
+          comment reached the other side", on the incident and in the queue, where a person sends it again or leaves it.
+        </li>
+      </ul>
 
       <h2 id="approvals">Approvals</h2>
       <p>A run asks a person in two ways:</p>
@@ -1734,10 +1874,13 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       <p>
         <strong>Automations → Runs</strong> lists every run; a playbook's <em>Runs</em> tab and an incident's
         <em>Automation</em> tab list their own. A run opens on its page: the canvas of the version it used, each node
-        coloured by what happened to it (done, running, waiting, failed, skipped, not reached), and the steps in the
-        order they were taken. Select a step, or its node, to see what went in, what came out, what was sent, the tries
-        and the log. <strong>Stop the run</strong> skips what is still to do; a step already talking to another system
-        finishes and what it gives is discarded.
+        coloured by what happened to it (done, running, waiting, interrupted, failed, skipped, not reached), and the
+        steps in the order they were taken. Select a step, or its node, to see what went in, what came out, what was
+        sent, the tries, the log, and under <em>Restarts</em> what a restart of the server did to it and when (<a
+          href="#restarts"
+          >Across a restart</a
+        >). <strong>Stop the run</strong> skips what is still to do; a step already talking to another system finishes
+        and what it gives is discarded.
       </p>
       <p>
         <strong>A dry run</strong> (tick <em>Dry run</em> when running by hand) sends nothing outside Nik and changes
@@ -3371,8 +3514,24 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
             <tr>
               <td><code>idempotent</code></td>
               <td>
-                <code>false</code> when sending it twice does it twice (opening a ticket): after a failure whose outcome
-                is unknown, such a command is not tried again by itself. Default <code>true</code>.
+                <code>false</code> when sending it twice does it twice (opening a ticket, posting a comment): after a
+                failure whose outcome is unknown, such a command is not tried again by itself, and a step cut by a
+                restart of the server while it made the call waits for a person instead of making it again (<a
+                  href="#restarts"
+                  >Across a restart</a
+                >). <code>true</code>, the default, says that twice leaves the other side as once: say
+                <code>false</code> for every command that creates something.
+              </td>
+            </tr>
+            <tr>
+              <td><code>idempotency_key</code></td>
+              <td>
+                <code>true</code> for a product that takes a key with a request and acts once per key. The command sends
+                <code>{{ idempotency.key }}</code> where the product wants it (a header such as
+                <code>Idempotency-Key</code>, a field of the body); Nik gives every try of the same step of a run the
+                same key, 32 hexadecimal characters, and another to every other step. Such a command is done again after
+                a restart whatever <code>idempotent</code> says. The file is refused when no request of the command
+                sends the key. Default <code>false</code>.
               </td>
             </tr>
             <tr>
@@ -3537,9 +3696,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       </div>
       <p>
         Templates read <code>config</code>, <code>args</code>, <code>steps</code>, <code>secret</code> (in what is sent
-        only) and <code>now</code>, the moment the command runs on the clock of the run: <code>now.iso</code>,
-        <code>now.epoch</code> (seconds), <code>now.epoch_ms</code>. Once there is an answer they read
-        <code>response</code>, <code>status</code> and <code>headers</code> too.
+        only), <code>idempotency.key</code> (in what is sent only: the key of this step, see
+        <code>idempotency_key</code> above) and <code>now</code>, the moment the command runs on the clock of the run:
+        <code>now.iso</code>, <code>now.epoch</code> (seconds), <code>now.epoch_ms</code>. Once there is an answer they
+        read <code>response</code>, <code>status</code> and <code>headers</code> too.
       </p>
 
       <h4 id="connector-files">Files</h4>
@@ -4270,7 +4430,8 @@ commands:
                 <code>email.send</code>…), <code>args</code>, <code>on_error</code> (<code>{"mode": "stop"}</code> or
                 <code>{"mode": "retry", "times": 3}</code>), <code>approval</code> (<code
                   >{"ask": true, "wait_seconds": 3600, "on_expire": "skip" | "stop"}</code
-                >).
+                >), and for <code>http.request</code> alone <code>safe_to_repeat</code> (<code>true</code> or
+                <code>false</code>).
               </td>
             </tr>
             <tr>

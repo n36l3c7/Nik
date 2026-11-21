@@ -29,7 +29,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -547,34 +547,90 @@ def _run_args(db: OrmSession, connection: Connection, connector: ConnectorFile, 
     return answer.outputs or {}
 
 
-def run_push(job_id: str, now: float | None = None) -> None:
-    """Send one queued thing, in a session of its own (the worker's pool)."""
+UNKNOWN = "it is not known whether the comment reached the other side. Look there, and send it again if it did not"
+
+
+def run_push(job_id: str, now: float | None = None, holder: str | None = None) -> None:
+    """Send one queued thing, in a session of its own (the worker's pool).
+
+    **Across a restart.** The job is marked ``sending``, with who sends it, in a commit of its own
+    before the request leaves, and ``done`` in the commit that keeps what the send changed here.
+    A job another worker finds ``sending`` was cut in between (``take_back``):
+
+    - an **update** writes the fields of the incident as they are when it is sent. Sending it twice
+      leaves the other side as sending it once: it is **sent again**;
+    - a **comment** sent twice is two comments, and nobody here can tell whether the first
+      arrived: it is **not sent again**. The job fails with a sentence that says so, on the
+      incident and in the queue, where a person sends it again or leaves it.
+
+    The same holds for a comment whose request left and got no answer."""
     from .core.db import SessionLocal
 
     now = time.time() if now is None else now
+    if holder is None:
+        from .automation import worker
+
+        holder = worker.HOLDER
     with SessionLocal() as db:
-        job = db.get(MirrorJob, job_id)
-        if job is None or job.status != "pending":
+        won = db.execute(
+            update(MirrorJob)
+            .where(MirrorJob.id == job_id, MirrorJob.status == "pending")
+            .values(status="sending", holder=holder)
+        ).rowcount
+        db.commit()
+        if not won:
             return
+        job = db.get(MirrorJob, job_id)
+        db.refresh(job)
+        unknown = False
         try:
             push(db, job, now)
-            job.status, job.error = "done", ""
+            job.status, job.error, job.holder = "done", "", None
             db.commit()
             return
         except (MirrorError, CommandError, ex.ExpressionError) as error:
             message = getattr(error, "message", str(error))
+            unknown = (
+                job.kind == "comment" and bool(getattr(error, "sent", False)) and bool(getattr(error, "retry", False))
+            )
         except Exception:  # noqa: BLE001 - the worker must survive a bad send
             logger.exception("Mirror: sending job %s failed", job_id)
             message = "Sending failed for a reason Nik did not expect: see the server's log"
         db.rollback()
         job = db.get(MirrorJob, job_id)
         job.attempts = (job.attempts or 0) + 1
-        job.error = message[:500]
-        if job.attempts >= ATTEMPTS_MAX:
+        job.error, job.holder = message[:500], None
+        if unknown:
+            job.status, job.error = "failed", f"No answer came back: {UNKNOWN}"[:500]
+        elif job.attempts >= ATTEMPTS_MAX:
             job.status = "failed"
         else:
+            job.status = "pending"
             job.next_at = now + min(BACKOFF_MAX, 60 * (2**job.attempts))
         db.commit()
+
+
+def take_back(db: OrmSession, now: float, holder: str) -> int:
+    """The jobs that were being sent by a worker that is gone (this one holds the lease, so a job
+    ``sending`` under another name lost its worker), by the rule of ``run_push``. Commits. Returns
+    how many."""
+    lost = db.scalars(
+        select(MirrorJob).where(
+            MirrorJob.status == "sending", or_(MirrorJob.holder.is_(None), MirrorJob.holder != holder)
+        )
+    ).all()
+    for job in lost:
+        job.holder = None
+        if job.kind == "update":
+            job.status, job.next_at = "pending", now
+            job.error = "Interrupted by a restart: sent again"
+        else:
+            job.status = "failed"
+            job.error = f"Interrupted by a restart: {UNKNOWN}"[:500]
+        logger.warning("Mirror: job %s (%s) was being sent when the worker stopped: %s", job.id, job.kind, job.status)
+    if lost:
+        db.commit()
+    return len(lost)
 
 
 def queue(db: OrmSession, limit: int = 200) -> list[dict[str, Any]]:

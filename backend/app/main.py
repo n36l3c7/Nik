@@ -76,6 +76,7 @@ from .routers import (
     preprocess,
     previews,
     query,
+    recovery,
     report,
     samples,
     script_signatures,
@@ -168,7 +169,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="6.8.0",
+    version="6.9.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -259,6 +260,13 @@ def on_startup() -> None:
         # Their copies off the server leave from the process that runs playbooks: this one only when it does.
         if app_settings.AUTOMATION_WORKER == "inline":
             backup_scheduler.start_shipper()
+        # The archive of the log of PostgreSQL: base backups, what is kept, the proof (one process at
+        # a time, see recovery/archive.py); its copies leave from the process that runs playbooks.
+        from .recovery import scheduler as recovery_scheduler
+
+        recovery_scheduler.start()
+        if app_settings.AUTOMATION_WORKER == "inline":
+            recovery_scheduler.start_shipper()
         # The chain of the audit log is walked here every few minutes (one process at a time, see
         # auditlog/chain.py); the log leaves for syslog from the process that runs playbooks.
         from .auditlog import chain as audit_chain
@@ -271,6 +279,17 @@ def on_startup() -> None:
         from .health import watch as health_watch
 
         health_watch.start()
+    # What this process does outside a request is held, and what lost its holder is found (work.py):
+    # the analyses, the scans, the mailboxes, what playbooks ask about files.
+    from . import work
+    from .automation import worker as automation_loop
+    from .core import leases
+
+    work.starting()
+    leases.starting()
+    automation_loop._stopping.clear()
+    if app_settings.API_BACKGROUND:
+        work.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -328,6 +347,21 @@ def on_startup() -> None:
         from .automation import worker as automation_worker
 
         automation_worker.start_inline()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    """The process was asked to stop and its requests are over (or were given their time,
+    app/serving.py): the loops take nothing new, the work this process holds is handed back as
+    wanted, and every lease it took is given back. The process that starts next, here or on
+    another host, takes all of it at once instead of waiting for it to run out."""
+    from . import work
+    from .automation import worker as automation_worker
+    from .core import leases
+
+    automation_worker._stopping.set()
+    work.release_all()
+    leases.release_all()
 
 
 @app.get("/api/health", tags=["health"])
@@ -431,6 +465,8 @@ app.include_router(system_keys.router, prefix="/api")
 app.include_router(system_keys.internal, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
+app.include_router(recovery.router, prefix="/api")
+app.include_router(recovery.internal, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(worker_status.router, prefix="/api")
 app.include_router(health_details.router, prefix="/api")

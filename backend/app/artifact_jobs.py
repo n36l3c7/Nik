@@ -40,6 +40,17 @@ writes to the store when this process can (the API process, a server whose
 playbooks run in it) and asks for a ``store`` job when it cannot, and says
 which jobs the step has to wait for.
 
+**Across a restart: started again.** A job is a row, and so is who does it
+(``work.py``, kind ``artifact-job``): written with the row in the transaction
+of the step that asks, taken by one API process, which says it is alive while
+it works. When that process is gone the job goes back to ``queued`` and is
+taken again. Doing a job twice makes nothing twice: a file is kept under its
+hash, an e-mail under its own, a capture made from a file under an id worked
+out from the file, an analysis replaces itself, a file deleted is deleted. A
+job that was interrupted ``work.MAX_ATTEMPTS`` times fails with that reason,
+and the step that waits for it fails with it. The bytes a job carries stay in
+the database until the job is done, so the process that takes it again has them.
+
 Nothing here runs or opens a file. A file is written under its SHA-256 and
 read as bytes by the analyses the product already has.
 """
@@ -56,7 +67,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifacts
+from . import artifacts, work
 from .core import audit, vault
 from .core.locking import lock_incident
 from .core.models import (
@@ -80,6 +91,7 @@ KEPT_SECONDS = 86400
 PART_BYTES = 4 * 1024 * 1024  # the bytes of a file cross the database in parts of this size
 PARTS = b"artifact job parts"  # what the key that encrypts those parts is derived for (core/vault.py)
 ANALYSES = ("static", "code", "capabilities")
+KIND = "artifact-job"
 _started = False
 
 
@@ -110,13 +122,13 @@ class _Later:
             triggers.current_run.reset(token)
 
     def start(self, threads: bool) -> None:
-        for work, args in self.tasks:
+        for task, args in self.tasks:
             if threads:
                 threading.Thread(
-                    target=self._caused, args=(work, args), name="nik-artifact-analysis", daemon=True
+                    target=self._caused, args=(task, args), name="nik-artifact-analysis", daemon=True
                 ).start()
             else:
-                self._caused(work, args)
+                self._caused(task, args)
 
 
 def ask(
@@ -143,6 +155,7 @@ def ask(
     )
     db.add(row)
     db.flush()
+    work.want(db, KIND, row.id, now=now)
     for seq, start in enumerate(range(0, len(data or b""), PART_BYTES)):
         part = vault.seal_bytes(data[start : start + PART_BYTES], PARTS, f"{row.id}:{seq}".encode())
         db.add(ArtifactJobPart(job_id=row.id, seq=seq, data=part))
@@ -433,6 +446,48 @@ _WORK = {"store": _store, "attachment": _attachment, "analyse": _analyse, "conve
 
 
 def _run(job_id: str, threads: bool) -> None:
+    """Do one job this process took, holding it. One another process holds is left alone and goes
+    back to waiting."""
+    try:
+        with work.hold(KIND, job_id):
+            _do(job_id, threads)
+    except work.Taken:
+        from .core.db import SessionLocal
+
+        with SessionLocal() as db:
+            db.execute(
+                update(ArtifactJob)
+                .where(ArtifactJob.id == job_id, ArtifactJob.status == "running")
+                .values(status="queued")
+            )
+            db.commit()
+
+
+def _fail_job(db: OrmSession, job_id: str, sentence: str) -> None:
+    job = db.get(ArtifactJob, job_id)
+    if job is None or job.status not in ("queued", "running"):
+        return
+    job.status, job.error, job.result, job.finished_epoch = "error", sentence, {}, time.time()
+    _drop_parts(db, job_id)
+
+
+def _again(job_id: str, _params: dict[str, Any]) -> bool | None:
+    """Put a job whose process is gone back among those that wait: the loop of any API process takes it."""
+    from .core.db import SessionLocal
+
+    with SessionLocal() as db:
+        job = db.get(ArtifactJob, job_id)
+        if job is None or job.status not in ("queued", "running"):
+            return False
+        job.status = "queued"
+        db.commit()
+    return None
+
+
+work.register(work.Kind(KIND, "what a playbook asked about a file", "again", start=_again, fail=_fail_job))
+
+
+def _do(job_id: str, threads: bool) -> None:
     from .automation import triggers
     from .core.db import SessionLocal
 
@@ -450,7 +505,11 @@ def _run(job_id: str, threads: bool) -> None:
         except JobError as failed:
             db.rollback()
             result, error = {}, str(failed)
-        except Exception:  # noqa: BLE001 - one bad job must not stop the others
+        except Exception as failed:  # noqa: BLE001 - one bad job must not stop the others
+            from .core.db import connection_lost
+
+            if connection_lost(failed):
+                raise  # the database went away: the job did nothing wrong, and is done again (work.py)
             db.rollback()
             logger.exception("The job %s a playbook asked for failed", job_id)
             result, error = {}, "It failed for a reason Nik did not expect: see the server's log"
@@ -476,7 +535,7 @@ def run_due(limit: int = 20, *, threads: bool = True, now: float | None = None) 
     from .core.db import SessionLocal
 
     done = 0
-    while done < limit:
+    while done < limit and not work.stopping():
         with SessionLocal() as db:
             taken = take(db, now)
         if taken is None:
@@ -613,7 +672,7 @@ def kept(db: OrmSession, waiting: dict[str, Any], actor: str, now: float) -> boo
 def _loop() -> None:
     time.sleep(15)  # let the API start
     pruned = 0.0
-    while True:
+    while not work.stopping():
         try:
             run_due()
             if time.time() - pruned > 3600:

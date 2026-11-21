@@ -222,7 +222,9 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
       </div>
       <p className="text-xs text-fg-muted">
         When it is on, the automation worker reads {connector.name} again and again, and each alert it has not seen
-        becomes an incident, of the type the classifier gives and with the fields the mapper gives.
+        becomes an incident, of the type the classifier gives and with the fields the mapper gives. A cycle whose time
+        passed while the server was stopped runs once when it is back, and asks from where the last one reached: an
+        alert becomes one incident, whatever was restarted in between.
       </p>
 
       <label className="flex flex-col gap-1 text-fg-muted" htmlFor="fetch-interval">

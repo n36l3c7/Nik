@@ -605,6 +605,64 @@ class Backup(Base):
     offsite: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class RecoveryBase(Base):
+    """A base backup of the database: the physical copy a recovery to a moment starts from
+    (app/recovery).
+
+    ``id`` is the name of its folder in the archive volume (``base-20261121-033000``). The
+    recovery service takes it with ``pg_basebackup``; this row is what the server knows of it:
+    the first segment of the log a recovery from it needs (``start_wal``), whether its folder is
+    still on the server, and where its copy on the second host stands. As for a backup, the API
+    process writes every column but ``offsite``, which belongs to the process that sends the copies.
+    """
+
+    __tablename__ = "recovery_bases"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    # requested | done | failed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="requested")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    timeline: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    start_wal: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # What the recovery service said of it: how long it took, that it was checked against its manifest.
+    facts: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    local: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    # "" (no copy asked for) | pending | copied | failed | delete (the copy is to be removed)
+    offsite_state: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    offsite: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class StoreCopy(Base):
+    """A file of the store and where its copy on the second host stands (app/recovery).
+
+    ``name`` is its path inside the store. A file is copied as it is on the disk, sealed. When
+    it is deleted here (``gone_at``) its copy stays for as long as a recovery could still need
+    it, and is then removed (``removed_at``): a standby reads the same row to remove its own.
+    """
+
+    __tablename__ = "store_copies"
+
+    name: Mapped[str] = mapped_column(String(500), primary_key=True)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    mtime: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # pending | copied | failed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    seen_at: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    copied_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gone_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    removed_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    __table_args__ = (Index("ix_store_copies_state", "state"),)
+
+
+RECOVERY_TABLES = ("recovery_bases", "store_copies")
+
+
 class SampleCode(Base):
     """Disassembly of a sample by the analyzer worker (rizin): one row per sample.
 
@@ -1113,6 +1171,7 @@ class Run(Base):
         Index("ix_runs_playbook", "playbook_id", "started_at"),
         Index("ix_runs_status", "status"),
         Index("ix_runs_incident", "incident_id"),
+        Index("ux_runs_event_key", "event_key", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -1141,6 +1200,9 @@ class Run(Base):
     # A run of the debugger: it stops before nodes, counts for no limit and no statistic, and is
     # shown to who started it. ``state["debug"]`` says where it stops.
     debug: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # "<event id>:<playbook id>" for a run an event started, and unique: the same event never
+    # starts the same playbook twice, whatever happened between its run and its mark of done.
+    event_key: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
 
 
 class RunStep(Base):
@@ -1154,7 +1216,10 @@ class RunStep(Base):
     node_id: Mapped[str] = mapped_column(String(32), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     kind: Mapped[str] = mapped_column(String(12), nullable=False)
-    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    # pending → running → done | failed | skipped; ``waiting`` for a time, a person or another run;
+    # ``interrupted`` when the worker stopped while the step called outside and nobody knows whether
+    # the call happened: a person says (engine.resolve).
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     next_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -1173,6 +1238,13 @@ class RunStep(Base):
     item_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # What the step waits for while it is `waiting`: {"kind": "approval" | "wait" | "run" | "each", ...}
     waiting: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # When this try began a call that changes something outside Nik, written and committed before
+    # the call leaves; emptied with the result. A step found ``running`` with this set, by a
+    # worker that did not claim it, may or may not have made the call.
+    calling_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # What restarts did to the step, oldest first: [{"at", "what", "by"?, "note"?}] with ``what``
+    # interrupted | again | waiting | happened | stopped.
+    restarts: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
 
 class Approval(Base):
@@ -1608,10 +1680,13 @@ class MirrorJob(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     next_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    status: Mapped[str] = mapped_column(String(8), nullable=False, default="pending")  # pending | done | failed
+    # pending → sending → done | failed. ``sending`` is written and committed before the request
+    # leaves, with who sends it: a job found so by another worker was cut by a restart.
+    status: Mapped[str] = mapped_column(String(8), nullable=False, default="pending")
     error: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    holder: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
 
 class Dashboard(Base):
@@ -1813,6 +1888,47 @@ class ArtifactJobPart(Base):
     seq: Mapped[int] = mapped_column(Integer, primary_key=True)
     data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
+
+class WorkClaim(Base):
+    """Who holds a piece of work the API process does outside a request (``work.py``).
+
+    One row per piece of work, by its kind and the id of what it works on: the disassembly of a
+    sample, capa, the analysis of a capture, a scan of an address, an upload being parsed, a
+    mailbox being read, what a playbook asked about a file. ``state`` is ``wanted`` (written with
+    the request, in its transaction: nobody took it yet), ``held`` (``holder`` does it, and says
+    so every few seconds in ``beat_at``), then ``done``, ``failed`` or ``aside`` (it was
+    interrupted too many times and is not tried again). ``attempts`` counts how many times it was
+    taken; ``interrupted_at`` and ``resumed_at`` are what the screens say of the last restart.
+    A finished row is kept a week, for that sentence.
+    """
+
+    __tablename__ = "work_claims"
+    __table_args__ = (Index("ix_work_claims_state", "state", "beat_at"),)
+
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    ref: Mapped[str] = mapped_column(String(120), primary_key=True)
+    state: Mapped[str] = mapped_column(String(8), nullable=False, default="wanted")
+    holder: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    beat_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    wanted_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    interrupted_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    resumed_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    finished_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # How far a long piece of work is, as its worker says it ("packets read: 40%").
+    progress: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # What starting it again needs besides its id (who asked, for which run).
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+# Created by migration 0053_jobs where missing; the columns it adds.
+JOB_TABLES = ("work_claims",)
+JOB_COLUMNS = {
+    "runs": ("event_key",),
+    "run_steps": ("calling_at", "restarts"),
+    "mirror_queue": ("holder",),
+}
 
 # Created by migration 0049_two_factor where missing, in this order; the columns it adds.
 TWO_FACTOR_TABLES = ("user_factors", "recovery_codes", "signin_tickets", "signin_attempts")

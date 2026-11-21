@@ -38,7 +38,7 @@
 # Not run against the real services: see "verified" below.
 name: Shodan
 id: shodan
-version: 3
+version: 4
 description: >-
   Hosts, searches, on-demand scans, network alerts and DNS of Shodan, the search engine of what is exposed
   on the Internet, with InternetDB, CVEDB, EntityDB, GeoNet and Trends.
@@ -390,6 +390,7 @@ commands:
   - name: delete-alert
     description: Remove a network alert.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
     request:
@@ -403,6 +404,7 @@ commands:
   - name: update-alert
     description: Replace the IP addresses and networks a network alert watches.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: ips, type: list, required: true, description: "The new list of IP addresses or network ranges (CIDR)" }
@@ -444,6 +446,7 @@ commands:
   - name: enable-alert-trigger
     description: Get notifications when a trigger is met on a network alert.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: trigger, type: text, required: true, description: "Trigger names, separated by commas (open_database,iot)" }
@@ -458,6 +461,7 @@ commands:
   - name: disable-alert-trigger
     description: Stop getting notifications for a trigger of a network alert.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: trigger, type: text, required: true, description: "Trigger names, separated by commas (open_database,iot)" }
@@ -472,6 +476,7 @@ commands:
   - name: ignore-alert-service
     description: Ignore a service when it matches a trigger of a network alert (add it to the whitelist).
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: trigger, type: text, required: true, description: The name of the trigger }
@@ -487,6 +492,7 @@ commands:
   - name: unignore-alert-service
     description: Get notifications again for a service that was ignored for a trigger (remove it from the whitelist).
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: trigger, type: text, required: true, description: The name of the trigger }
@@ -502,6 +508,7 @@ commands:
   - name: add-alert-notifier
     description: Send the notifications of a network alert through a notifier (they are sent only when triggers are enabled).
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: notifier_id, type: text, required: true, description: "The id of the notifier (default is the account's e-mail notifier)" }
@@ -516,6 +523,7 @@ commands:
   - name: remove-alert-notifier
     description: Stop sending the notifications of a network alert through a notifier.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the alert }
       - { name: notifier_id, type: text, required: true, description: The id of the notifier }
@@ -601,6 +609,7 @@ commands:
   - name: update-notifier
     description: Change the parameters of a notifier (those its provider takes).
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the notifier }
       - { name: to, type: text, description: "email, phone: the address or the number notifications go to" }
@@ -630,6 +639,7 @@ commands:
   - name: delete-notifier
     description: Remove a notifier.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: id, type: text, required: true, description: The id of the notifier }
     request:
@@ -754,6 +764,7 @@ commands:
     description: Add a Shodan user to the organisation and upgrade the user. Only for Enterprise accounts.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: user, type: text, required: true, description: The user name or the e-mail address of the Shodan user }
       - { name: notify, type: bool, description: Whether the user is told by e-mail }
@@ -771,6 +782,7 @@ commands:
     description: Remove a member from the organisation and downgrade the user. Only for Enterprise accounts.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: user, type: text, required: true, description: The user name or the e-mail address of the Shodan user }
     request:

@@ -46,7 +46,9 @@ def declared() -> dict[int, set[str]]:
 def test_no_two_modules_claim_the_same_settings_row():
     rows = declared()
     # What this test reads is what is there: the rows known when it was written are all found.
-    assert {1, 2, 3, 4, 5, 20, 21, 22, 23, 40, 41, 42, 43, 44, 45, 46, 50, 51} <= set(rows), sorted(rows)
+    assert {1, 2, 3, 4, 5, 20, 21, 22, 23, 40, 41, 42, 43, 44, 45, 46, 50, 51, 60, 61, 62, 63, 64} <= set(rows), sorted(
+        rows
+    )
     twice = {row: sorted(owners) for row, owners in rows.items() if len(owners) > 1 and owners != SHARED.get(row)}
     assert twice == {}, f"the same row of settings is claimed by several modules: {twice}"
 

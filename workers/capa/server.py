@@ -1,6 +1,7 @@
 """HTTP front of the Nik capa worker (standard library only).
 
     GET  /health                       → {"status": "ok", "engine": "capa x.y.z"}
+    GET  /jobs/<name>                  → whether the worker still has a job (``jobs.py``)
     PUT  /files/<sha256>.bin           → the worker is given a sample (the body)
     POST /analyze {"sha256", "rules"}  → the capabilities of the sample <sha256>.bin
     POST /validate {"source", "others"} → whether a capa rule parses and fits the rule set
@@ -19,6 +20,11 @@ Only the Nik backend talks to this server: it is not published outside the
 container network, and every request must carry the shared token in
 ``X-Analyzer-Token``. capa is CPU-bound, so at most ``CAPA_MAX_JOBS``
 analyses run at once (default 1); extra requests get 503.
+
+On SIGTERM the worker stops taking requests, lets the ones it runs finish for
+``CAPA_STOP_GRACE`` seconds, and exits. Everything it knows is in memory: a
+worker that starts again answers "unknown job" for what it was doing
+(``jobs.py``), and the backend hands that out again with its file.
 """
 
 from __future__ import annotations
@@ -28,11 +34,13 @@ import json
 import os
 import re
 import shutil
+import signal
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import given
+import jobs
 from nik_capa import CapaError, CapaTimeout, analyze, capa_version, validate_rule
 
 TOKEN = given.secret("CAPA_TOKEN")
@@ -42,7 +50,9 @@ PORT = int(os.environ.get("CAPA_PORT", "8710"))
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 RULE_FILE = re.compile(r"^[0-9a-f]{32}\.yml$")
 MAX_VALIDATE_BYTES = 4 * 1024 * 1024  # one rule plus the other admin rules it may depend on
+STOP_GRACE = float(os.environ.get("CAPA_STOP_GRACE", "20"))
 _slots = threading.BoundedSemaphore(MAX_JOBS)
+JOBS = jobs.Jobs()
 WORK_DIR = os.environ.get("CAPA_WORK_DIR", "/tmp/nik-given")
 GIVEN = given.Given(
     WORK_DIR,
@@ -78,9 +88,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path == "/health":
-            self._send(200, {"status": "ok", "engine": f"capa {capa_version()}"})
-        else:
-            self._send(404, {"detail": "Not found"})
+            return self._send(200, {"status": "ok", "engine": f"capa {capa_version()}", "started": JOBS.started})
+        if not self._authorized():
+            return self._send(401, {"detail": "Missing or wrong analyzer token"})
+        self._send(*(JOBS.answer(self.path) or (404, {"detail": "Not found"})))
 
     def _body(self, limit: int) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -133,7 +144,8 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(WORK_DIR, exist_ok=True)
         folder = tempfile.mkdtemp(prefix="rules-", dir=WORK_DIR)
         try:
-            with GIVEN.hold([name]):
+            with GIVEN.hold([name]), JOBS.running(self.headers.get(jobs.HEADER)) as say:
+                say("matching the rules")
                 path = GIVEN.path(name)
                 if path is None:
                     answer = (409, {"detail": "The worker does not hold this sample", "missing": [name]})
@@ -161,4 +173,10 @@ if __name__ == "__main__":
     GIVEN.clear()
     shutil.rmtree(WORK_DIR, ignore_errors=True)
     print(f"nik-capa listening on :{PORT} (capa {capa_version()})", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    # A request in flight is not cut by the stop of the server: its thread goes on for the grace.
+    server.daemon_threads = True
+    signal.signal(signal.SIGTERM, lambda *_: jobs.stop_politely(server))
+    signal.signal(signal.SIGINT, lambda *_: jobs.stop_politely(server))
+    server.serve_forever()
+    jobs.drain(JOBS, STOP_GRACE)

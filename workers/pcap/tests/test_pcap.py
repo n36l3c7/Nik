@@ -212,3 +212,46 @@ def test_a_flood_of_warnings_does_not_block_tshark(tmp_path, monkeypatch):
         for row in nik_pcap._tshark_rows("capture.pcap", None):
             rows.append(row)
     assert len(rows) == 1
+
+
+def test_a_named_analysis_says_how_far_it_is_and_a_restarted_worker_does_not_know_it(worker, monkeypatch):
+    import jobs
+
+    monkeypatch.setattr(server, "JOBS", jobs.Jobs())
+    name = f"_captures/{CAPTURE_ID}/capture.pcapng"
+    body = {"id": CAPTURE_ID, "path": name}
+    with open(FIXTURE, "rb") as handle:
+        assert _give(worker, name, handle.read()) == 200
+    job = f"capture:{CAPTURE_ID}:1"
+    seen, summarize = [], nik_pcap.summarize
+
+    def asked() -> dict:
+        request = urllib.request.Request(f"{worker}/jobs/{job}", headers={"X-Pcap-Token": "test-token"})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            return json.loads(exc.read())
+
+    def watched(path, keylog):
+        seen.append(asked())  # the backend asks while tshark reads
+        return summarize(path, keylog)
+
+    monkeypatch.setattr(nik_pcap, "summarize", watched)
+    request = urllib.request.Request(
+        f"{worker}/analyze", data=json.dumps(body).encode(), headers={"X-Pcap-Token": "test-token", jobs.HEADER: job}
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        assert response.status == 200 and json.loads(response.read())["objects"]
+    assert seen[0]["state"] == "running" and seen[0]["progress"] == "reading the packets (1 of 2)"
+    assert asked()["state"] == "finished"
+    # Killed and started again: it knows nothing of the job, and holds no capture.
+    monkeypatch.setattr(server, "JOBS", jobs.Jobs())
+    server.GIVEN.clear()
+    assert asked() == {"detail": "Unknown job", "unknown": True, "started": server.JOBS.started}
+    status, lacking = _post(f"{worker}/analyze", body)
+    assert status == 409 and lacking["missing"] == [name]
+    wrong = urllib.request.Request(f"{worker}/jobs/{job}", headers={"X-Pcap-Token": "wrong"})
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(wrong, timeout=30)
+    assert refused.value.code == 401

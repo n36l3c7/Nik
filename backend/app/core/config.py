@@ -218,6 +218,17 @@ class Settings:
         # Before a release changes the database its migrations are tried on a copy; false skips
         # that rehearsal (never the snapshot) on a database too large to copy at every upgrade.
         self.UPGRADE_REHEARSAL: bool = _get_bool("NIK_UPGRADE_REHEARSAL", True)
+        # Recovery to a moment and the standby (app/recovery). The archive volume PostgreSQL
+        # writes its log to, as this process sees it; empty on a server without one (a
+        # development server, the tests): nothing of the recovery then runs.
+        self.WAL_ARCHIVE_DIR: str = os.getenv("WAL_ARCHIVE_DIR", "").strip()
+        # How often PostgreSQL closes a segment while something is written (deploy/db-entrypoint.sh
+        # reads the same variable): what the screens say can be lost comes from it.
+        self.ARCHIVE_TIMEOUT: int = max(10, _get_int("NIK_ARCHIVE_TIMEOUT", 300))
+        # On a standby: the directory the first host sends its copies to, as this process sees it.
+        self.STANDBY_INBOX: str = os.getenv("STANDBY_INBOX", "").strip()
+        # The name this server gives itself to the other host of a pair.
+        self.SERVER_NAME: str = os.getenv("NIK_SERVER_NAME", "").strip()[:120]
 
     @property
     def is_sqlite(self) -> bool:

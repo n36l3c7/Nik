@@ -1,6 +1,7 @@
 """HTTP front of the Nik document viewer worker (standard library only).
 
     GET  /health                    -> {"status": "ok"}
+    GET  /jobs/<name>               -> whether the worker still has a job (``jobs.py``)
     POST /render {"name", "data"}   -> the first pages as PNG (``nik_docview.render``)
     POST /pst    (the file as body) -> the mailbox as one mbox (``readpst``)
 
@@ -14,6 +15,11 @@ have to fit in memory. Before it starts, the worker checks that the disk has
 room for both (about two and a half times the PST) and answers 507 when it
 does not. Without a work directory it converts in ``/tmp``, which is memory,
 and takes only a PST small enough for that.
+
+On SIGTERM the worker stops taking requests, lets the ones it runs finish for
+``DOCVIEW_STOP_GRACE`` seconds, and exits. Everything it knows is in memory: a
+worker that starts again answers "unknown job" for what it was doing
+(``jobs.py``), and the backend hands that out again with its file.
 """
 
 from __future__ import annotations
@@ -24,11 +30,13 @@ import hmac
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import jobs
 from nik_docview import PreviewError, render
 
 
@@ -55,7 +63,9 @@ TOKEN = secret("DOCVIEW_TOKEN")
 PORT = int(os.environ.get("DOCVIEW_PORT", "8720"))
 MAX_JOBS = int(os.environ.get("DOCVIEW_MAX_JOBS", "2"))
 MAX_BYTES = int(os.environ.get("DOCVIEW_MAX_MB", "50")) * 1024 * 1024
+STOP_GRACE = float(os.environ.get("DOCVIEW_STOP_GRACE", "20"))
 _slots = threading.BoundedSemaphore(MAX_JOBS)
+JOBS = jobs.Jobs()
 PST_MAX_BYTES = int(os.environ.get("DOCVIEW_PST_MAX_MB", "4096")) * 1024 * 1024
 PST_TIMEOUT = int(os.environ.get("DOCVIEW_PST_TIMEOUT", "3600"))
 # Where a PST is converted when it is there and can be written: a disk, not memory.
@@ -145,9 +155,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path == "/health":
-            self._send(200, {"status": "ok"})
-        else:
-            self._send(404, {"detail": "Not found"})
+            return self._send(200, {"status": "ok", "started": JOBS.started})
+        if not (TOKEN and hmac.compare_digest(self.headers.get("X-Docview-Token", ""), TOKEN)):
+            return self._send(401, {"detail": "Missing or wrong docview token"})
+        self._send(*(JOBS.answer(self.path) or (404, {"detail": "Not found"})))
 
     def _pst(self) -> None:
         """The PST comes as the request body and the mbox goes back as the
@@ -160,19 +171,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(503, {"detail": "The document worker is busy; try again later"})
         work = tempfile.mkdtemp(prefix="nik-pst-", dir=work_dir())
         try:
-            source = os.path.join(work, "mailbox.pst")
-            with open(source, "wb") as out:
-                left = length
-                while left > 0:
-                    chunk = self.rfile.read(min(1024 * 1024, left))
-                    if not chunk:
-                        break
-                    out.write(chunk)
-                    left -= len(chunk)
-            output = os.path.join(work, "out")
-            os.mkdir(output)
-            parts = pst_to_mbox(source, output)
-            os.unlink(source)
+            with JOBS.running(self.headers.get(jobs.HEADER)) as say:
+                source = os.path.join(work, "mailbox.pst")
+                with open(source, "wb") as out:
+                    left = length
+                    while left > 0:
+                        chunk = self.rfile.read(min(1024 * 1024, left))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        left -= len(chunk)
+                        say(f"receiving the PST: {100 * (length - left) // length}%")
+                output = os.path.join(work, "out")
+                os.mkdir(output)
+                say("reading the PST (readpst)")
+                parts = pst_to_mbox(source, output)
+                os.unlink(source)
+                say("sending the messages back")
             self.send_response(200)
             self.send_header("Content-Type", "application/mbox")
             self.send_header("Content-Length", str(sum(os.path.getsize(p) + 1 for p in parts)))
@@ -224,4 +239,10 @@ if __name__ == "__main__":
         # An empty token, or the public one of the example file, protects nothing.
         raise SystemExit("DOCVIEW_TOKEN is not set (or is the example value): refusing to start.")
     print(f"nik-docview listening on :{PORT}", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    # A request in flight is not cut by the stop of the server: its thread goes on for the grace.
+    server.daemon_threads = True
+    signal.signal(signal.SIGTERM, lambda *_: jobs.stop_politely(server))
+    signal.signal(signal.SIGINT, lambda *_: jobs.stop_politely(server))
+    server.serve_forever()
+    jobs.drain(JOBS, STOP_GRACE)

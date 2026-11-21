@@ -25,6 +25,7 @@ Nothing is run or opened: both analyses are those of an upload.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from fastapi import HTTPException
@@ -150,12 +151,25 @@ def as_capture(db: OrmSession, row: Artifact, actor: str, background_tasks: Any,
         return known
     data = _file(db, row)
     targets = _incidents(db, row, incident_id, one=True)
-    try:
-        capture = capture_routes.keep_capture(
-            db, targets[0] if targets else None, data, row.name, actor, background_tasks, f"file {row.ref[:12]}…"
-        )
-    except HTTPException as error:
-        raise ConvertError(str(error.detail), error.status_code) from None
+    # The capture made from a file has an id worked out from the file. Its row is committed with the
+    # start of its analysis, before it is tied to the file below: a conversion cut between the two
+    # (a restart) finds the capture again by this id instead of making a second one.
+    capture_id = hashlib.sha256(b"capture made from " + row.id.encode()).hexdigest()[:32]
+    capture = db.get(NetworkCapture, capture_id)
+    if capture is None:
+        try:
+            capture = capture_routes.keep_capture(
+                db,
+                targets[0] if targets else None,
+                data,
+                row.name,
+                actor,
+                background_tasks,
+                f"file {row.ref[:12]}…",
+                capture_id=capture_id,
+            )
+        except HTTPException as error:
+            raise ConvertError(str(error.detail), error.status_code) from None
     made = db.get(Artifact, artifacts.artifact_id("pcap", capture.id))
     artifacts.relate(db, row.id, made.id, RELATION)
     db.commit()

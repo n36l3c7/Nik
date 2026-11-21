@@ -5,6 +5,7 @@ import { useAutomation } from '../../../context/AutomationContext.jsx'
 import { api } from '../../../services/api.js'
 import { automationPath } from '../../../domain/automationNav.js'
 import { RUN_COLORS, duration, isFinished, triggerLabel } from '../../../domain/automation/runs.js'
+import { runStatus } from '../../../domain/restarts.js'
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
@@ -157,7 +158,7 @@ export default function AutomationTab({ incident }) {
                     )}
                   </th>
                   <td className="border-b border-line-soft px-3 py-2">
-                    <Badge color={RUN_COLORS[run.status] ?? 'slate'}>{run.status}</Badge>
+                    <Badge color={RUN_COLORS[run.status] ?? 'slate'}>{runStatus(run)}</Badge>
                     {run.error && <span className="ml-2 text-high-fg">{run.error}</span>}
                   </td>
                   <td className="border-b border-line-soft px-3 py-2 text-fg-muted">

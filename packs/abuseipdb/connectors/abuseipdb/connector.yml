@@ -21,7 +21,7 @@
 # multipart form.
 name: AbuseIPDB
 id: abuseipdb
-version: 3
+version: 4
 description: What AbuseIPDB's users reported of an IP address or a network, its blacklist, and reporting an address.
 api_version: "AbuseIPDB API v2 (api.abuseipdb.com/api/v2)"
 verified: false
@@ -222,6 +222,7 @@ commands:
   - name: clear-address
     description: Delete the reports your own account made of an IP address. The reports of other users stay.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: ip, type: text, required: true, description: "An IPv4 or IPv6 address" }
     request:

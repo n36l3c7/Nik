@@ -29,7 +29,7 @@
 # left empty, download-export and submit-url fail and the rest works.
 name: URLhaus
 id: urlhaus
-version: 3
+version: 4
 description: Malware distribution URLs tracked by URLhaus (abuse.ch), with the hosts they are on and the payloads they serve, downloaded and submitted.
 api_version: "URLhaus API v1 (urlhaus-api.abuse.ch/v1)"
 verified: false
@@ -315,6 +315,7 @@ commands:
       submission policy first: active malware distribution only, no phishing, no adware, no redirectors. Needs
       "Auth-Key, for submissions and exports" in the instance: the request goes to urlhaus.abuse.ch.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: url, type: text, required: true, description: "The URL as it is seen on the wire, answering 200: https://evil.example/payload.exe" }
       - { name: tags, type: list, description: "Tags, letters, digits, dot, dash and space only: [Emotet, doc]" }

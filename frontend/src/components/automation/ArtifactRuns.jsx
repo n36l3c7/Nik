@@ -4,6 +4,7 @@ import { useAutomation } from '../../context/AutomationContext.jsx'
 import { api } from '../../services/api.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { RUN_COLORS, artifactTarget, isFinished } from '../../domain/automation/runs.js'
+import { runStatus } from '../../domain/restarts.js'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -76,7 +77,7 @@ export default function ArtifactRuns({ artifact }) {
           className="inline-flex items-center gap-1.5 border border-line bg-canvas px-2 py-0.5 text-xs text-fg hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <span className="max-w-[220px] truncate">{run.playbook || 'A playbook'}</span>
-          <Badge color={RUN_COLORS[run.status] ?? 'slate'}>{run.dryRun ? `dry · ${run.status}` : run.status}</Badge>
+          <Badge color={RUN_COLORS[run.status] ?? 'slate'}>{run.dryRun ? `dry · ${run.status}` : runStatus(run)}</Badge>
         </button>
       ))}
       {total > SHOWN && <span className="text-xs text-fg-muted">and {total - SHOWN} more</span>}

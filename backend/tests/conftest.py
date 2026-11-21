@@ -77,6 +77,23 @@ def store_as_new():
 
 
 @pytest.fixture(autouse=True)
+def a_process_that_runs():
+    """A test that closes a client stops the application, as a server that is asked to stop does:
+    its loops take no more work (main.on_shutdown). The next test is another process."""
+    from app import work
+    from app.automation import worker
+    from app.core import leases
+    from app.recovery import role
+
+    work.starting()
+    leases.starting()
+    role.forget_may_work()
+    worker._stopping.clear()
+    worker._in_flight.clear()
+    worker._fetching.clear()
+
+
+@pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """No test reaches a source of threat intelligence, nor anything else: a look-up is a connector
     command, and the way out of every command and every playbook (app/automation/egress.py) is closed

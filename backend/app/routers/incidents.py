@@ -36,7 +36,7 @@ from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import fields as field_registry
-from .. import incident_quick, incident_tags, query
+from .. import incident_quick, incident_tags, query, work
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
@@ -635,6 +635,38 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
         db.close()
 
 
+def _held_upload_job(job_id: str, *args) -> None:
+    """``_process_upload_job`` while holding it. **Across a restart: failed loudly.** What was being
+    parsed was the body of a request, held in memory: nothing is left to go on with. The job is
+    marked failed with "interrupted by a restart" (``GET /api/jobs/{id}`` says it), never left
+    queued or running for ever, and the file is uploaded again: the parse merges into the document
+    under a lock and is committed whole, so a job that was cut wrote nothing."""
+    try:
+        with work.hold("upload", job_id):
+            _process_upload_job(job_id, *args)
+    except work.Taken:
+        return
+
+
+def _fail_upload_job(db: OrmSession, job_id: str, sentence: str) -> None:
+    job = db.get(Job, job_id)
+    if job is None or job.status not in ("queued", "running"):
+        return
+    job.status, job.updated_at = "error", now_iso()
+    job.error = "Interrupted by a restart of the server before the file was parsed: upload the file again."
+
+
+work.register(
+    work.Kind(
+        "upload",
+        "an upload parsed in the background",
+        "fail",
+        start=lambda _ref, _params: False,
+        fail=_fail_upload_job,
+    )
+)
+
+
 @router.post("/{incident_id}/upload", tags=["incidents/upload"])
 async def upload_artifact(
     incident_id: str,
@@ -684,9 +716,12 @@ async def upload_artifact(
             updated_at=now,
         )
         db.add(job)
+        # Held from here on (work.py). The bytes are in the memory of this process: a restart cannot
+        # go on with them, so the job then fails with a sentence that says to upload the file again.
+        work.want(db, "upload", job.id)
         db.commit()
         background_tasks.add_task(
-            _process_upload_job, job.id, incident_id, tab, params, data, file.filename or "upload", caller.actor
+            _held_upload_job, job.id, incident_id, tab, params, data, file.filename or "upload", caller.actor
         )
         return JSONResponse({"jobId": job.id, "status": "queued"}, status_code=202)
 

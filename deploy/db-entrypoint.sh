@@ -16,6 +16,21 @@
 #    when that file holds it (the secrets directory), else from the environment
 #    (.env). A database that exists is started with no password in the
 #    environment of its processes at all.
+#
+# 3. It turns on the archive of the log (6.9). Every finished segment of the
+#    write-ahead log is kept in the archive volume (deploy/db/wal-archive.sh),
+#    and one is finished at least every NIK_ARCHIVE_TIMEOUT seconds while
+#    something is written: with the base backups the `recovery` service takes,
+#    that is what brings the database back to any moment
+#    (deploy/restore.sh --to) and what a standby replays (deploy/standby.sh).
+#    The settings are given on the command line of PostgreSQL, so they hold on
+#    a database made by any earlier release and nothing is written into its
+#    configuration. NIK_WAL_ARCHIVE=off in .env turns the archive off.
+#
+# 4. It lets a restore say how far to replay. deploy/db/pitr.sh leaves
+#    recovery.signal and nik-recovery.conf in the data directory; the lines of
+#    that file are settings of this one start, and it is removed once the
+#    recovery is over.
 set -eu
 
 OLD=/var/lib/postgresql-16
@@ -40,5 +55,30 @@ elif [ -z "${POSTGRES_PASSWORD:-}" ]; then
   exit 1
 fi
 unset DB_PASSWORD_FILE
+
+ARCHIVE=/wal-archive
+LIB=/usr/local/lib/nik
+
+if [ "${1:-}" = "postgres" ] && [ "${NIK_WAL_ARCHIVE:-on}" != "off" ] && [ -d "$ARCHIVE" ]; then
+  # The folders of the archive volume, with the owners its three users need.
+  sh "$LIB/prepare-archive.sh"
+  timeout=${NIK_ARCHIVE_TIMEOUT:-300}
+  case "$timeout" in
+    *[!0-9]* | "") timeout=300 ;;
+  esac
+  set -- "$@" -c archive_mode=on -c "archive_command=sh $LIB/wal-archive.sh %p %f"     -c "archive_timeout=$timeout" -c "restore_command=sh $LIB/wal-restore.sh %f %p" -c hot_standby=on
+fi
+
+if [ "${1:-}" = "postgres" ] && [ -f "$PGDATA/nik-recovery.conf" ]; then
+  if [ -f "$PGDATA/recovery.signal" ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        recovery_target_time=* | recovery_target_action=*) set -- "$@" -c "$line" ;;
+      esac
+    done <"$PGDATA/nik-recovery.conf"
+  else
+    rm -f "$PGDATA/nik-recovery.conf"
+  fi
+fi
 
 exec docker-entrypoint.sh "$@"

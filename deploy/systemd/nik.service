@@ -13,6 +13,9 @@ ExecStart=@COMPOSE@ up -d
 ExecStop=@COMPOSE@ down
 # The first start after an update may build images.
 TimeoutStartSec=1800
+# Every container is given its time to stop (stop_grace_period in docker-compose.yml: the workers
+# and the server hand back what they hold, PostgreSQL archives its last segment). One after the
+# other in the order they depend on each other, that is under three minutes at the worst.
 TimeoutStopSec=300
 
 [Install]

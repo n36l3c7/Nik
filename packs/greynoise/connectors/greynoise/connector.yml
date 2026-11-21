@@ -36,7 +36,7 @@
 # its credential, and an argument is not a secret.
 name: GreyNoise
 id: greynoise
-version: 4
+version: 5
 description: "What GreyNoise knows of an IP address (internet scanner, business service, classification), GNQL searches, CVEs, tags, callback addresses, blocklists, event feeds and the sessions of your own sensors."
 api_version: "GreyNoise API v3 (api.greynoise.io, OpenAPI 3.0.0 of the reference)"
 verified: false
@@ -772,6 +772,7 @@ commands:
     description: "Every address matching a GNQL query as one CSV file GreyNoise builds and keeps current. The first request for a query subscribes to it, which counts against the limit of the workspace, and waits for the file to be built. Nik keeps the first 200 000 characters. Needs an Advanced or Elite licence."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: query, type: text, required: true, description: "The GNQL query that selects the addresses, 4 096 characters at most. Each query is a subscription of its own" }
       - { name: profile, type: text, description: "The layout of the columns, as id or id@version: ngsiem when left out. list-feed-profiles gives the others" }
@@ -806,6 +807,7 @@ commands:
     description: "Delete the subscription download-gnql-file made for a query, at once: it stops counting against the limit of the workspace."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: query, type: text, required: true, description: "The GNQL query the subscription was made for" }
       - { name: profile, type: text, description: "The profile it was fetched with, as id or id@version: ngsiem when left out. With a version, it is deleted only while it is pinned to that version" }
@@ -826,6 +828,7 @@ commands:
     description: "Describe the file download-gnql-file would give for a query, without the file: its status, when it was built and how many addresses it holds. Like the download, the first request for a query subscribes to it. Needs an Advanced or Elite licence."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: query, type: text, required: true, description: "The GNQL query that selects the addresses, 4 096 characters at most" }
       - { name: profile, type: text, description: "The layout of the columns, as id or id@version: ngsiem when left out. list-feed-profiles gives the others" }
@@ -1317,6 +1320,7 @@ commands:
     description: "Change a blocklist: its GNQL query, its name, how many addresses it gives, whether it is active."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
       - { name: blocklist_id, type: text, required: true, description: "The UUID of the blocklist" }
@@ -1370,6 +1374,7 @@ commands:
     description: "Delete a blocklist."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: workspace_id, type: text, required: true, description: "The UUID of the workspace: in the GreyNoise Visualizer, the user menu, Plan details, under the name of the workspace" }
       - { name: blocklist_id, type: text, required: true, description: "The UUID of the blocklist" }
@@ -1462,6 +1467,7 @@ commands:
     description: "Tell GreyNoise that the events up to a cursor were dealt with: the consumer moves there and the next fetch gives what comes after. Acknowledging the same or an older cursor again changes nothing."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
       - { name: cursor, type: text, required: true, description: "The cursor fetch-feed-events gave" }
@@ -1498,6 +1504,7 @@ commands:
     description: "Create a consumer of a feed: a place in the feed GreyNoise keeps under a name, starting at the oldest event it still has. A feed has 25 consumers at most."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
       - { name: consumer, type: text, required: true, description: "The name: it starts with a letter or a digit and holds only letters, digits, . _ and -" }
@@ -1520,6 +1527,7 @@ commands:
     description: "Send a consumer back to the oldest event the feed still has: the next fetch gives again events it already had."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
       - { name: consumer, type: text, required: true, description: "The name of the consumer" }
@@ -1540,6 +1548,7 @@ commands:
     description: "Delete a consumer of a feed."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: feed_id, type: text, required: true, description: "The UUID of the feed, which belongs to the workspace of the key" }
       - { name: consumer, type: text, required: true, description: "The name of the consumer" }

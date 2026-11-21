@@ -177,7 +177,11 @@ def forget() -> None:
 # Walking the store                                                           #
 # --------------------------------------------------------------------------- #
 def _files(root: Path) -> Iterator[tuple[str, Path]]:
-    """Every regular file of the store as ``(name, path)``, in a steady order."""
+    """Every regular file of the store as ``(name, path)``, in a steady order. A deleted file that
+    is kept for a recovery (``app/recovery/kept.py``) is one of them, under the name it had: it is
+    sealed, and follows a change of the store key, like the others."""
+    from .recovery import kept
+
     for folder, folders, names in os.walk(root, followlinks=False):
         folders.sort()
         for name in sorted(names):
@@ -187,7 +191,7 @@ def _files(root: Path) -> Iterator[tuple[str, Path]]:
                     continue
             except OSError:
                 continue
-            yield path.relative_to(root).as_posix(), path
+            yield kept.real_name(path.relative_to(root).as_posix()), path
 
 
 def _is_leftover(name: str) -> bool:
@@ -353,29 +357,11 @@ def _acquire(now: float | None = None, holder: str = HOLDER) -> bool:
     """Take or renew the lease of the loop; False while another process holds it. It is short: a
     server that was killed (a restart is part of every change of key) is taken over from within
     ``LEASE_SECONDS``, not after minutes."""
-    from sqlalchemy import insert, or_, update
-    from sqlalchemy.exc import IntegrityError
-
+    from .core import leases
     from .core.db import SessionLocal
-    from .core.models import Lease
 
-    now = time.time() if now is None else now
     with SessionLocal() as db:
-        taken = db.execute(
-            update(Lease)
-            .where(Lease.name == LEASE, or_(Lease.holder == holder, Lease.expires_at < now))
-            .values(holder=holder, expires_at=now + LEASE_SECONDS)
-        ).rowcount
-        if taken:
-            db.commit()
-            return True
-        try:
-            db.execute(insert(Lease).values(name=LEASE, holder=holder, expires_at=now + LEASE_SECONDS))
-            db.commit()
-            return True
-        except IntegrityError:
-            db.rollback()
-            return False
+        return leases.take(db, LEASE, holder, LEASE_SECONDS, now)
 
 
 class _Renewing:

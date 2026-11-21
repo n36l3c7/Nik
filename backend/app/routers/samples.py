@@ -19,7 +19,7 @@ from sqlalchemy import String, cast, delete, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import artifacts
+from .. import artifacts, work
 from ..automation import triggers as automation_triggers
 from ..core import audit
 from ..core.config import settings
@@ -129,6 +129,8 @@ def _queue_code(db: OrmSession, background_tasks: BackgroundTasks, sha256: str, 
         db.add(row)
     row.status, row.error, row.finished_at = "queued", None, None
     row.requested_at, row.requested_by = now_iso(), actor
+    # Written with the row: the job exists even if this process stops before its thread starts.
+    work.want(db, "code", sha256)
     db.commit()
     background_tasks.add_task(analyzer.run_code_job, sha256)
     return row
@@ -147,6 +149,8 @@ def _code_state(row: SampleCode | None) -> dict[str, Any]:
         "requestedAt": row.requested_at,
         "requestedBy": row.requested_by,
         "finishedAt": row.finished_at,
+        # What restarts did to the job, and how far it is: {attempts, interruptedAt, resumedAt, progress, note}.
+        "work": work.of(row, "code", row.sha256),
     }
     if row.status == "done":
         state.update(row.summary)
@@ -170,6 +174,8 @@ def _queue_capa(db: OrmSession, background_tasks: BackgroundTasks, sample: Sampl
     row.status, row.error, row.result = ("queued" if supported else "unsupported"), None, {}
     row.requested_at, row.requested_by = now_iso(), actor
     row.started_at = row.finished_at = None
+    if supported:
+        work.want(db, "capa", sample.sha256)
     db.commit()
     if supported:
         background_tasks.add_task(capa.run_capa_job, sample.sha256)
@@ -191,6 +197,7 @@ def _capa_state(row: SampleCapa | None, sample: Sample, custom: set[str] | None 
         "requestedBy": row.requested_by,
         "startedAt": row.started_at,
         "finishedAt": row.finished_at,
+        "work": work.of(row, "capa", row.sha256),
     }
     if row.status == "done":
         state.update(row.result)

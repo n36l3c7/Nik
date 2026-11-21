@@ -203,3 +203,46 @@ def test_without_a_work_volume_only_a_small_pst_is_taken(monkeypatch, tmp_path):
     assert server.pst_refusal(0) == (400, "Empty file")
     monkeypatch.setattr(server, "PST_MAX_BYTES", 500)
     assert server.pst_refusal(900)[0] == 413
+
+
+def test_a_pst_being_read_says_how_far_it_is_and_a_restarted_worker_does_not_know_it(worker, monkeypatch, tmp_path):
+    import jobs
+
+    monkeypatch.setattr(server, "TOKEN", "test-token")
+    monkeypatch.setattr(server, "JOBS", jobs.Jobs())
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(server, "WORK_DIR", str(work))
+    job, seen = "mailbox:" + "c" * 32 + ":1", []
+
+    def asked(token="test-token"):
+        request = urllib.request.Request(f"{worker}/jobs/{job}", headers={"X-Docview-Token": token})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read())
+
+    def fake_readpst(source, folder):
+        seen.append(asked())  # the backend asks while readpst works
+        part = os.path.join(folder, "Inbox")
+        with open(part, "wb") as out:
+            out.write(b"From a\n\nhello\n")
+        return [part]
+
+    monkeypatch.setattr(server, "pst_to_mbox", fake_readpst)
+    request = urllib.request.Request(
+        f"{worker}/pst",
+        data=b"!BDN" + b"\x00" * 2000,
+        headers={"X-Docview-Token": "test-token", "Content-Type": "application/octet-stream", jobs.HEADER: job},
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        assert response.status == 200 and response.read() == b"From a\n\nhello\n\n"
+    assert seen == [
+        (200, {"state": "running", "seconds": seen[0][1]["seconds"], "progress": "reading the PST (readpst)"})
+    ]
+    assert asked()[1]["state"] == "finished" and asked(token="wrong")[0] == 401
+    # Killed and started again: the job is unknown, said at once.
+    monkeypatch.setattr(server, "JOBS", jobs.Jobs())
+    status, unknown = asked()
+    assert status == 404 and unknown["unknown"] is True and unknown["detail"] == "Unknown job"

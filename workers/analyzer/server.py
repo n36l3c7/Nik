@@ -1,6 +1,7 @@
 """HTTP front of the Nik analyzer worker (standard library only).
 
     GET  /health                       → {"status": "ok", "engine": "rizin x.y.z"}
+    GET  /jobs/<name>                  → whether the worker still has a job (``jobs.py``)
     PUT  /files/<name>                 → the worker is given a file (the body)
     POST /analyze {"sha256"}           → the analysis of the sample <sha256>.bin
     POST /decompile {"sha256", "addr"} → the pseudo-C of one function
@@ -18,6 +19,11 @@ decompilations on demand that follow an analysis.
 Only the Nik backend talks to this server: it is not published outside the
 container network, and every request must carry the shared ``X-Analyzer-Token``.
 At most ``MAX_JOBS`` requests run at once; extra requests get 503.
+
+On SIGTERM the worker stops taking requests, lets the ones it runs finish for
+``ANALYZER_STOP_GRACE`` seconds, and exits. Everything it knows is in memory:
+a worker that starts again answers "unknown job" for what it was doing, and
+the backend hands that out again with its file.
 """
 
 from __future__ import annotations
@@ -26,11 +32,13 @@ import hmac
 import json
 import os
 import re
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import given
+import jobs
 from nik_analyzer import AnalysisError, AnalysisTimeout, WarmSessions, analyze, decompile_one, rizin_version
 
 TOKEN = given.secret("ANALYZER_TOKEN")
@@ -46,7 +54,9 @@ WARM = WarmSessions(
 PORT = int(os.environ.get("ANALYZER_PORT", "8700"))
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SIGNATURE = re.compile(r"^_flirt/[0-9a-f]{32}\.(sig|pat)$")
+STOP_GRACE = float(os.environ.get("ANALYZER_STOP_GRACE", "20"))
 _slots = threading.BoundedSemaphore(MAX_JOBS)
+JOBS = jobs.Jobs()
 # What the backend gave: in memory, and for a little longer than a warm session lives.
 GIVEN = given.Given(
     os.environ.get("ANALYZER_WORK_DIR", "/tmp/nik-given"),
@@ -72,9 +82,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path == "/health":
-            self._send(200, {"status": "ok", "engine": f"rizin {rizin_version()}"})
-        else:
-            self._send(404, {"detail": "Not found"})
+            return self._send(200, {"status": "ok", "engine": f"rizin {rizin_version()}", "started": JOBS.started})
+        if not self._authorized():
+            return self._send(401, {"detail": "Missing or wrong analyzer token"})
+        self._send(*(JOBS.answer(self.path) or (404, {"detail": "Not found"})))
 
     def do_PUT(self) -> None:  # noqa: N802
         given.take_request(self, GIVEN, self._authorized())
@@ -107,7 +118,8 @@ class Handler(BaseHTTPRequestHandler):
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The analyzer is busy; try again later"})
         try:
-            with GIVEN.hold(names):
+            with GIVEN.hold(names), JOBS.running(self.headers.get(jobs.HEADER)) as say:
+                say("disassembling" if self.path == "/analyze" else "decompiling")
                 self._run(names, sha256, addr, signatures)
         finally:
             _slots.release()
@@ -148,4 +160,10 @@ if __name__ == "__main__":
     GIVEN.clear()
     print(f"nik-analyzer listening on :{PORT} (rizin {rizin_version()})", flush=True)
     threading.Thread(target=_expire_warm_sessions, name="warm-sessions", daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    # A request in flight is not cut by the stop of the server: its thread goes on for the grace.
+    server.daemon_threads = True
+    signal.signal(signal.SIGTERM, lambda *_: jobs.stop_politely(server))
+    signal.signal(signal.SIGINT, lambda *_: jobs.stop_politely(server))
+    server.serve_forever()
+    jobs.drain(JOBS, STOP_GRACE)

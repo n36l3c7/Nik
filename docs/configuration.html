@@ -373,6 +373,78 @@
               </td>
             </tr>
             <tr>
+              <td><code>NIK_WAL_ARCHIVE</code></td>
+              <td><code>on</code></td>
+              <td>
+                The archive of the log of PostgreSQL, which
+                <a href="deployment.html#recovery-to-a-moment">brings the database back to a moment</a> and is what a
+                standby replays. <code>off</code> starts the database without it: no recovery to a moment, no standby.
+                Read by the <code>db</code> container.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_ARCHIVE_TIMEOUT</code></td>
+              <td><code>300</code></td>
+              <td>
+                Seconds after which PostgreSQL closes a segment of its log while something is written: the most that is
+                lost when the host dies and its last segments had not left it. Lower loses less and writes more small
+                files. The screens take what they say can be lost from the same variable, and count no less than 10.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_WAL_ARCHIVE_DIR</code></td>
+              <td><em>the volume</em> <code>wal-archive</code></td>
+              <td>
+                A directory of the host where the archive and the base backups are kept, in place of the volume of the
+                stack: another disk than the data. What it holds is in clear, like the data directory of the database.
+                Inside the backend it is <code>/app/wal-archive</code> (<code>WAL_ARCHIVE_DIR</code>; empty on an
+                installation without containers, where nothing of the recovery runs).
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_STANDBY_INBOX</code></td>
+              <td><em>empty</em></td>
+              <td>
+                On a <a href="deployment.html#standby-host">standby</a>: the directory of this host the first host sends
+                its copies to. <code>deploy/standby.sh init</code> and <code>rejoin</code> write it; do not set it by
+                hand. Empty, an empty folder of the repository is mounted in its place.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_SERVER_NAME</code></td>
+              <td><code>TLS_HOSTNAME</code></td>
+              <td>
+                What this server calls itself to the other host of a pair, at most 120 characters: it is in the file a
+                promotion leaves, and in the sentence a replaced server shows. A name set on the Backup page wins over
+                it; with neither, the name of the machine is used.
+              </td>
+            </tr>
+            <tr>
+              <td><code>RECOVERY_MEMORY</code> · <code>RECOVERY_CPUS</code></td>
+              <td><code>1g</code> · <code>2</code></td>
+              <td>
+                The limits of the <code>recovery</code> container, which takes the base backups and runs the recovery
+                test.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_RECOVERY_WAIT</code></td>
+              <td><code>3600</code></td>
+              <td>
+                Read by <code>deploy/restore.sh --to</code> and <code>deploy/standby.sh</code> from the environment of
+                the shell, not from <code>.env</code>: how many seconds a replay of the log is waited for.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_TRANSFER_PASSPHRASE</code></td>
+              <td>—</td>
+              <td>
+                Read by <code>deploy/standby.sh secrets export</code> and <code>import</code> from the environment of
+                the shell, when nobody is there to type it: the passphrase the file of keys is sealed under, 12
+                characters or more. Never put it in <code>.env</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>AUTOMATION_WORKER</code></td>
               <td><code>container</code></td>
               <td>
@@ -730,6 +802,20 @@
               <td>Analyses each worker runs at once; more are answered "busy".</td>
             </tr>
             <tr>
+              <td>
+                <code>API_STOP_GRACE</code>, <code>ANALYZER_STOP_GRACE</code>, <code>CAPA_STOP_GRACE</code>,
+                <code>DOCVIEW_STOP_GRACE</code>, <code>PCAP_STOP_GRACE</code>
+              </td>
+              <td><code>20</code> each</td>
+              <td>
+                Seconds a process that is asked to stop gives what it has in flight (the requests of the backend, the
+                analyses of a worker) before it exits. Each is read in the environment of its own container, and has to
+                stay under the <code>stop_grace_period</code> of that service in the Compose file (40 s for the backend,
+                30 s for the workers): see
+                <a href="deployment.html#stopping-and-restarting">Stopping and restarting the stack</a>.
+              </td>
+            </tr>
+            <tr>
               <td><code>DOCVIEW_TIMEOUT</code>, <code>DOCVIEW_MAX_PAGES</code>, <code>DOCVIEW_MAX_MB</code></td>
               <td><code>90</code>, <code>20</code>, <code>50</code></td>
               <td>Seconds a preview may take, pages rendered, largest document.</td>
@@ -823,7 +909,10 @@
           <p>
             Everyone changes their own password under My account and reads the audit log, which the server writes.
             Backups are set in Settings → System → Backup, by admins: their schedule, what is kept, the passphrase and
-            the copy off the server (<a href="deployment.html#backups">Backups</a>).
+            the copy off the server (<a href="deployment.html#backups">Backups</a>). At the foot of the same page,
+            Recovery to a moment: when the base backups are taken, how many days one can go back, the delay of the
+            second host that is warned about, how often the archive is proven, and the name of this server for the other
+            host (<a href="guide.html#recovery-screen">the screen</a>).
           </p>
         </div>
       </div>

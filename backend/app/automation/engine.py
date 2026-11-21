@@ -24,6 +24,37 @@ Failure of a step: tried again with growing waits while it has tries left,
 then the ``error`` port when one is drawn, else the run fails. An action
 that changes something outside and timed out with no answer is not tried
 again unless it says it is idempotent: its outcome is unknown.
+
+**Across a restart** (the worker stopped, was killed, or the server moved to
+another host: all that is left is the database):
+
+- A step is *started* and *done* in separate commits. The claim of the worker
+  (``running``, by whom) is committed before the step does anything. A step
+  about to make a call that changes something outside Nik (it isolates a host,
+  sends a mail, opens a ticket) first writes and commits ``calling_at``. Its
+  result is applied in one commit, which empties the mark.
+- What a step does inside Nik (an incident it creates, a task, a note, the
+  next steps, the event that starts other playbooks) is in that same last
+  commit: it happened whole or not at all, so a step found ``running`` with
+  no mark did nothing that lasts and is simply **tried again**.
+- A step found ``running`` *with* the mark may have made its call. It is
+  **tried again** only when the action says a second call does no harm
+  (``idempotent``, or a command that sends the vendor an idempotency key).
+  Otherwise nobody knows whether the host was isolated or the mail sent, and
+  Nik does not guess: the step becomes ``interrupted`` and the run waits for a
+  person, who says on the run's page *it happened, go on*, *it did not, do it
+  again* or *stop the run* (``resolve``). That is what at-most-once means for
+  something outside that cannot be asked.
+- A step that was interrupted ``MAX_RESTARTS`` times while it ran is not
+  started again: it fails, as a step that takes its worker down every time.
+  A worker that was asked to stop and left a step unfinished did not fall
+  because of the step: that interruption is noted and not counted.
+- Waits (a time, a person, another run, a job of the API process) hold no
+  worker and are rows: they go on where they were.
+- The database going away under a step (it is restarted, or killed) is the
+  same case seen from the other side: the worker lives and cannot write. The
+  step is not failed for it; it stays claimed and is taken back by the rules
+  above once the database answers.
 """
 
 from __future__ import annotations
@@ -56,7 +87,13 @@ POLL_EVERY = 30
 BACKOFF_CAP = 900
 RECLAIM_GRACE = 30
 MATCH_TIMEOUT = 0.5
-ACTIVE = ("pending", "running", "waiting")
+MAX_RESTARTS = 3
+RESTARTS_KEPT = 20
+# A step whose worker was away (the sandbox restarts) is taken again after this long, then twice
+# and three times this long: about a minute in all before it fails as it always did.
+AWAY_WAIT = 10
+ACTIVE = ("pending", "running", "waiting", "interrupted")
+ANSWERS = ("happened", "again", "stop")
 FINISHED = ("done", "failed", "stopped")
 TIMEOUTS = {"action": 60, "script": 10, "playbook": 30}
 
@@ -81,12 +118,23 @@ def new_id() -> str:
 class StepFailed(Exception):
     """A step that did not do its work: a sentence safe to show, and whether trying again can help."""
 
-    def __init__(self, message: str, *, retry: bool = True, request: dict | None = None, log: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry: bool = True,
+        request: dict | None = None,
+        log: str | None = None,
+        away: bool = False,
+    ):
         super().__init__(message)
         self.message = message
         self.retry = retry
         self.request = request
         self.log = log
+        # The worker that does the step's work was not there (the sandbox was restarting): nothing
+        # of the step ran, and it is taken again by itself a few times.
+        self.away = away
 
 
 @dataclass
@@ -112,9 +160,13 @@ script_runner = None
 # --------------------------------------------------------------------------- #
 # Reading a run                                                               #
 # --------------------------------------------------------------------------- #
-def locked_run(db: OrmSession, run_id: str) -> Run | None:
+def locked_run(db: OrmSession, run_id: str, *, wait: bool = True) -> Run | None:
+    """The run, locked. With ``wait`` off, None as well when another session holds it now."""
     return db.scalars(
-        select(Run).where(Run.id == run_id).with_for_update().execution_options(populate_existing=True)
+        select(Run)
+        .where(Run.id == run_id)
+        .with_for_update(skip_locked=not wait)
+        .execution_options(populate_existing=True)
     ).one_or_none()
 
 
@@ -228,6 +280,7 @@ def start_run(
     debug: dict | None = None,
     shape: dict | None = None,
     branch: dict | None = None,
+    event_key: str | None = None,
     now: float,
 ) -> Run:
     """Create a run of the playbook's current version and its first steps (the caller commits).
@@ -278,6 +331,7 @@ def start_run(
         parent_run_id=parent[0].id if parent else None,
         parent_step_id=parent[1].id if parent else None,
         depth=(parent[0].depth + 1) if parent else 0,
+        event_key=event_key,
     )
     db.add(run)
     db.flush()
@@ -504,6 +558,7 @@ def _complete(
     step.finished_at = iso(now)
     step.next_at = None
     step.waiting = None
+    step.calling_at = None
     _outputs(run, loop, index)[step.node_id] = stored
     if not skipped:
         # A line in the War Room of the incident the run works on.
@@ -546,11 +601,20 @@ def _fail(
     retry: bool = True,
     request: dict | None = None,
     log: str | None = None,
+    away: bool = False,
 ) -> None:
     """The step failed: try again, or leave by the error port, or fail what holds it."""
     step.error = message[:2000]
     step.request = request or step.request
     step.log = log or step.log
+    step.calling_at = None
+    waited = sum(1 for line in step.restarts or [] if line.get("what") == "away")
+    if away and waited < MAX_RESTARTS:
+        # Its worker was away: taken again later, without counting against the tries of the node.
+        _noted(step, now, "away")
+        step.attempt = max(0, (step.attempt or 0) - 1)
+        step.status, step.next_at, step.claimed_by = "pending", now + AWAY_WAIT * (waited + 1), None
+        return
     if retry and step.attempt < step.max_attempts:
         step.status = "pending"
         step.next_at = now + backoff(step.attempt)
@@ -846,6 +910,8 @@ def _perform(
             )
             outcome.input = shown
             return outcome
+        if not dry and spec.changes(args):
+            run = _mark_calling(db, run, step, now)
         call = actions.Call(
             db=db, args=args, classes=rendered.classes, arg_classes=arg_classes, dry_run=dry,
             run=run, playbook=playbook, step_id=step.id, approved_by=approved_by, now=now,
@@ -856,11 +922,12 @@ def _perform(
         try:
             result = spec.run(call)
         except actions.ActionError as error:
-            unknown = error.unknown_outcome and spec.changes(args) and not spec.idempotent
+            unknown = error.unknown_outcome and spec.changes(args) and not safe_to_repeat(spec, config)
             message = f"{error.message} (outcome unknown: it is not tried again)" if unknown else error.message
             raise StepFailed(message, retry=error.retry and not unknown, request=error.request) from None
         if result.again_at is not None:
             # The action is not finished (it waits for the other side): the step is called again then.
+            step.calling_at = None
             return Outcome(
                 wait={"kind": "again", "state": result.state or {}, "approved_by": approved_by},
                 next_at=max(now + 1, float(result.again_at)), request=result.request, log=result.log, input=shown,
@@ -969,10 +1036,29 @@ def _is_try(step: RunStep) -> bool:
     return not (step.waiting or {}).get("kind")
 
 
-def execute(db: OrmSession, step_id: str, now: float) -> None:
-    """Do the work of a step the worker claimed, and apply the result."""
+class _Gone(Exception):
+    """The run ended, or the step was taken from this worker, while the step was about to call."""
+
+
+def _mark_calling(db: OrmSession, run: Run, step: RunStep, now: float) -> Run:
+    """Write down, and commit, that this try is about to make a call that changes something
+    outside Nik: *started*, in a commit of its own, before the call leaves. The commit lets go of
+    the run, so it is locked again and looked at again: a run that ended meanwhile makes no call."""
+    step.calling_at = now
+    db.commit()
+    run = locked_run(db, step.run_id)
+    db.refresh(step)
+    if run is None or run.status in FINISHED or step.status != "running":
+        raise _Gone
+    return run
+
+
+def execute(db: OrmSession, step_id: str, now: float, holder: str | None = None) -> None:
+    """Do the work of a step the worker claimed, and apply the result. ``holder`` is the worker
+    that claimed it: a step that is no longer its own (it was taken back after this worker was
+    thought gone) is left alone, so that a worker that comes back late applies nothing twice."""
     step = db.get(RunStep, step_id)
-    if step is None or step.status != "running":
+    if step is None or step.status != "running" or (holder is not None and step.claimed_by != holder):
         return
     run = db.get(Run, step.run_id)
     if run is None:
@@ -988,6 +1074,7 @@ def execute(db: OrmSession, step_id: str, now: float) -> None:
     if _is_try(step):
         step.attempt = (step.attempt or 0) + 1
         step.started_at = step.started_at or iso(now)
+    tried = step.attempt
     outcome: Outcome | None = None
     failure: StepFailed | None = None
     with serial(db):
@@ -1007,11 +1094,22 @@ def execute(db: OrmSession, step_id: str, now: float) -> None:
                     db.commit()
                     return
             outcome = _perform(db, run, playbook, shape, node, step, now)
+        except _Gone:
+            db.rollback()
+            return
         except StepFailed as error:
             failure = error
         except ex.ExpressionError as error:
             failure = StepFailed(error.message, retry=False)
-        except Exception:  # noqa: BLE001 - a step must never take the worker down
+        except Exception as error:  # noqa: BLE001 - a step must never take the worker down
+            from ..core.db import connection_lost
+
+            if connection_lost(error):
+                # The database went away under the step. That is not a failure of the step, and
+                # nothing can be written now: it stays claimed, and is taken back by the rule of a
+                # step whose worker stopped (done again, or a person is asked when it had made a
+                # call that may not be repeated).
+                raise
             logger.exception("Step %s of run %s failed unexpectedly", step.node_id, step.run_id)
             failure = StepFailed("The step failed for a reason Nik did not expect: see the server's log", retry=True)
         if failure is not None:
@@ -1019,8 +1117,13 @@ def execute(db: OrmSession, step_id: str, now: float) -> None:
             db.rollback()
             step = db.get(RunStep, step_id)
             run = locked_run(db, step.run_id)
+            db.refresh(step)
+            if step.status != "running" or (holder is not None and step.claimed_by != holder):
+                db.rollback()
+                return  # taken back meanwhile: what this worker found is not written over it
             if _is_try(step):
-                step.attempt = (step.attempt or 0) + 1
+                # Counted again when the rollback undid it; not when the mark of a call committed it.
+                step.attempt = max(step.attempt or 0, tried or 0)
                 step.started_at = step.started_at or iso(now)
             if run.status not in FINISHED:
                 _fail(
@@ -1033,11 +1136,24 @@ def execute(db: OrmSession, step_id: str, now: float) -> None:
                     retry=failure.retry,
                     request=failure.request,
                     log=failure.log,
+                    away=failure.away,
                 )
             db.commit()
             return
+        if holder is not None and not _still_ours(db, step_id, holder):
+            db.rollback()
+            return
         _apply(db, run, shape, step, outcome, now)
         db.commit()
+
+
+def _still_ours(db: OrmSession, step_id: str, holder: str) -> bool:
+    """Whether the step is still claimed by this worker, read from the database under its lock:
+    the last look before its result is applied."""
+    found = db.execute(
+        select(RunStep.status, RunStep.claimed_by).where(RunStep.id == step_id).with_for_update()
+    ).first()
+    return found is not None and found[0] == "running" and found[1] == holder
 
 
 def _apply(db: OrmSession, run: Run, shape: dict, step: RunStep, outcome: Outcome, now: float) -> None:
@@ -1057,6 +1173,7 @@ def _apply(db: OrmSession, run: Run, shape: dict, step: RunStep, outcome: Outcom
         return
     if outcome.wait is not None:
         step.status = "waiting"
+        step.calling_at = None
         # What who debugs the run said of this step stays with it while it waits.
         kept = {key: value for key, value in (step.waiting or {}).items() if key in ("released", "override", "real")}
         step.waiting = {**kept, **outcome.wait}
@@ -1148,7 +1265,137 @@ def _waiting_people(db: OrmSession, run: Run) -> int:
     tasks = db.scalar(
         select(func.count()).select_from(Task).where(Task.run_id == run.id, Task.status.in_(("open", "overdue")))
     )
-    return (approvals or 0) + (tasks or 0)
+    asked = db.scalar(
+        select(func.count()).select_from(RunStep).where(RunStep.run_id == run.id, RunStep.status == "interrupted")
+    )
+    return (approvals or 0) + (tasks or 0) + (asked or 0)
+
+
+# --------------------------------------------------------------------------- #
+# A step cut by a restart                                                     #
+# --------------------------------------------------------------------------- #
+def _noted(step: RunStep, now: float, what: str, **more: Any) -> None:
+    """Add a line to what restarts did to the step (the last ``RESTARTS_KEPT`` are kept)."""
+    step.restarts = [*(step.restarts or []), {"at": iso(now), "what": what, **more}][-RESTARTS_KEPT:]
+    flag_modified(step, "restarts")
+
+
+# The one action whose author is the person who drew the node: a request to an address, of
+# which Nik knows nothing but its method. The node itself may say that sending it twice is safe.
+HTTP_REQUEST = "http.request"
+
+
+def safe_to_repeat(spec: Any, config: dict | None = None) -> bool:
+    """Whether making the call of this action a second time does no harm: it changes nothing
+    outside, or says it is idempotent (by its nature, or by the key it sends the vendor), or it
+    is an HTTP request whose node was ticked *Safe to repeat* (``safe_to_repeat`` in its
+    settings: off unless somebody turned it on)."""
+    if spec is None or not spec.changes_outside or bool(spec.idempotent):
+        return True
+    return spec.id == HTTP_REQUEST and (config or {}).get("safe_to_repeat") is True
+
+
+def take_back(db: OrmSession, step: RunStep, now: float, *, counted: bool = True) -> str:
+    """A step that was ``running`` when its worker stopped (the caller found it and commits).
+    Returns what was done with it: ``again`` | ``interrupted`` | ``failed`` | ``skipped``, or
+    ``busy`` when the run is locked: the session that does the step is still connected, so the
+    worker is not gone (it finishes, or its connection drops and the next pass finds the step).
+    ``counted`` is off for a step whose worker was asked to stop: the step is not what stopped it."""
+    with serial(db):
+        run = locked_run(db, step.run_id, wait=False)
+        if run is None and db.get(Run, step.run_id) is not None:
+            return "busy"
+        db.refresh(step)
+        if step.status != "running":
+            return "skipped"
+        if run is None or run.status in FINISHED:
+            step.status, step.finished_at, step.calling_at = "skipped", iso(now), None
+            return "skipped"
+        shape = graph_of(db, run)
+        node = graph.nodes_of(shape).get(step.node_id) or {}
+        spec = (
+            actions.lookup(db, str((node.get("config") or {}).get("action") or "")) if step.kind == "action" else None
+        )
+        _noted(step, now, "interrupted", **({} if counted else {"asked": True}))
+        if step.calling_at is not None and not safe_to_repeat(spec, node.get("config")):
+            _interrupt(db, run, node, step, now)
+            return "interrupted"
+        cut = sum(1 for line in step.restarts or [] if line.get("what") == "interrupted" and not line.get("asked"))
+        if cut >= MAX_RESTARTS:
+            _fail(
+                db, run, shape, step,
+                f"Interrupted by a restart {cut} times while it ran: it is not started again. "
+                "It may be what stops the worker",
+                now, retry=False,
+            )  # fmt: skip
+            _touch(run)
+            return "failed"
+        # Nothing of this try lasted (or doing it twice does no harm): it is done again, and the
+        # try that was cut does not count against the tries the node allows (it was counted in
+        # the commit of the mark, when there is one).
+        if step.calling_at is not None and _is_try(step):
+            step.attempt = max(0, (step.attempt or 0) - 1)
+        step.status, step.next_at, step.claimed_by, step.calling_at = "pending", now, None, None
+        _noted(step, now, "again")
+        return "again"
+
+
+def _interrupt(db: OrmSession, run: Run, node: dict, step: RunStep, now: float) -> None:
+    """The step may have made its call and nobody can tell: the run waits for a person to say."""
+    name = str(node.get("name") or step.node_id)
+    step.status, step.next_at, step.claimed_by = "interrupted", None, None
+    step.error = "Interrupted by a restart: it is not known whether this happened"
+    _noted(step, now, "waiting")
+    if run.status == "running":
+        run.status = "waiting"
+    _touch(run)
+    from .. import tasks, war_room
+
+    tasks.notify_interrupted(db, run, name)
+    war_room.step_done(db, run, step, node, error=f"{step.error}. Say what happened on the page of the run")
+
+
+def resolve(db: OrmSession, step_id: str, answer: str, by: str, now: float) -> bool:
+    """A person says what happened to a step a restart interrupted (the caller commits):
+
+    - ``happened``: the call was made. The step is done with no result of its own (what it would
+      have given is not known) and the run goes on by its ``out`` port;
+    - ``again``: it was not. The step is tried again from the beginning;
+    - ``stop``: the run stops here.
+
+    False when the step waits for no such answer any more."""
+    if answer not in ANSWERS:
+        raise ValueError("The answer is happened, again or stop")
+    step = db.get(RunStep, step_id)
+    if step is None:
+        return False
+    with serial(db):
+        run = locked_run(db, step.run_id)
+        db.refresh(step)
+        if run is None or run.status in FINISHED or step.status != "interrupted":
+            return False
+        cut = next((line for line in reversed(step.restarts or []) if line.get("what") == "waiting"), None)
+        # Time spent waiting for a person does not count against the longest run.
+        waited = max(0.0, now - datetime.fromisoformat(cut["at"]).timestamp()) if cut else 0.0
+        run.waited_seconds = (run.waited_seconds or 0) + waited
+        run.deadline = (run.deadline or now) + waited
+        _noted(step, now, {"happened": "happened", "again": "again", "stop": "stopped"}[answer], by=by)
+        step.calling_at = None
+        if answer == "stop":
+            _finish(db, run, "stopped", f"Stopped by {by} at a step a restart interrupted", now)
+            return True
+        shape = graph_of(db, run)
+        if answer == "again":
+            step.status, step.next_at, step.error = "pending", now, None
+            step.attempt = max(0, (step.attempt or 0) - 1)
+        else:
+            step.error = None
+            output = {"interrupted": True, "resolved": "happened", "by": by, "at": iso(now)}
+            _complete(db, run, shape, step, "out", output, now)
+        if run.status == "waiting" and not _waiting_people(db, run):
+            run.status = "running"
+        _touch(run)
+        return True
 
 
 def resume(db: OrmSession, step_id: str, port: str, output: Any, now: float) -> bool:

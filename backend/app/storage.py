@@ -29,6 +29,7 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
     ("previews", "Document previews", "Pages rendered from attachments: made again when needed."),
     ("urls", "URL screenshots", "The pictures of the pages visited."),
     ("rules", "Rules and signatures", "capa rules and FLIRT signatures added by admins."),
+    ("kept", "Deleted, kept for recovery", "Files that were deleted: kept until no recovery can go back to them."),
     ("database", "Database", "Incidents, analyses, indicators, the audit log."),
 )
 _FOLDERS = {
@@ -38,6 +39,7 @@ _FOLDERS = {
     "_urls": "urls",
     "_flirt": "rules",
     "_capa_rules": "rules",
+    ".kept": "kept",
 }
 _SUFFIXES = {".bin": "samples", ".mail": "mails"}
 # The kind of artifact behind an object of a group, to name and open it.
@@ -125,7 +127,7 @@ def usage(db: OrmSession) -> dict[str, Any]:
     groups = [
         {"id": group, "label": label, "about": about, **totals[group]}
         for group, label, about in GROUPS
-        if totals[group]["bytes"] or group != "rules"
+        if totals[group]["bytes"] or group not in ("rules", "kept")
     ]
     if totals["other"]["bytes"]:
         groups.append(

@@ -440,6 +440,13 @@ def _check_node(node: dict, library: Library, problems: list[Problem]) -> None:
                 elif not wanted and len(known) != 1:
                     problems.append(Problem("Choose the connection to send through", node_id, "connection"))
         _check_on_error(node, problems)
+        if "safe_to_repeat" in config:
+            # What a node of an HTTP request may say of itself (engine.safe_to_repeat): nothing else
+            # may, a command of a connector says it in the connector.
+            if config.get("action") != "http.request":
+                problems.append(Problem('Only an HTTP request has "Safe to repeat"', node_id, "safe_to_repeat"))
+            elif not isinstance(config["safe_to_repeat"], bool):
+                problems.append(Problem('"Safe to repeat" is on or off', node_id, "safe_to_repeat"))
         approval = config.get("approval")
         if approval is not None:
             if not isinstance(approval, dict):

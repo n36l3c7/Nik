@@ -5,6 +5,16 @@ response is sent (fire-and-forget, short timeout). Each POST is signed with the
 subscription's secret so the receiver can verify it:
 
     HMAC-SHA256(secret, raw_body)  →  header ``X-Nik-Signature: sha256=<hex>``
+
+**When.** A webhook is told of a change only once the change is committed:
+``emit`` runs after the response of the request that made it, and
+``emit_detached``, for callers that are not a request, waits for the commit
+of the session it is given and is dropped when that transaction is rolled
+back. So a webhook never hears of something that did not happen. Delivery is
+then tried once: a server that stops between the commit and the request has
+not told the webhook, and does not tell it later (at most once; what must
+not be missed is a playbook's work, which reads the outbox of
+``automation/triggers.py`` exactly once).
 """
 
 from __future__ import annotations
@@ -82,12 +92,33 @@ def emit_now(db: OrmSession, event: str, data: dict) -> None:
         _deliver(hook.url, hook.secret, event, data)
 
 
-def emit_detached(db: OrmSession, event: str, data: dict) -> None:
-    """Deliver from a thread of its own, for callers with no BackgroundTasks."""
+_PENDING = "nik_webhooks_pending"
+
+
+def _send_pending(session) -> None:
     import threading
 
-    for hook in _subscribers(db, event):
-        threading.Thread(target=_deliver, args=(hook.url, hook.secret, event, data), daemon=True).start()
+    for url, secret, event, data in session.info.pop(_PENDING, []):
+        threading.Thread(target=_deliver, args=(url, secret, event, data), daemon=True).start()
+
+
+def _drop_pending(session) -> None:
+    session.info.pop(_PENDING, None)
+
+
+def emit_detached(db: OrmSession, event: str, data: dict) -> None:
+    """Deliver from a thread of its own, for callers with no BackgroundTasks: once the transaction
+    of ``db`` is committed, and not at all when it is rolled back."""
+    from sqlalchemy import event as sa_event
+
+    hooks = [(hook.url, hook.secret, event, data) for hook in _subscribers(db, event)]
+    if not hooks:
+        return
+    if _PENDING not in db.info and not db.info.get(_PENDING + "_listening"):
+        db.info[_PENDING + "_listening"] = True
+        sa_event.listen(db, "after_commit", _send_pending)
+        sa_event.listen(db, "after_rollback", _drop_pending)
+    db.info.setdefault(_PENDING, []).extend(hooks)
 
 
 def _subscribers(db: OrmSession, event: str):

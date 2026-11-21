@@ -40,13 +40,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .core import leases
 from .core.config import settings
-from .core.models import Lease, Setting, User
+from .core.models import Setting, User
 from .core.permissions import stored_roles
 
 logger = logging.getLogger("nik.workers")
@@ -204,22 +204,7 @@ def record(db: OrmSession, answers: dict[str, bool], now: float | None = None) -
 
 def acquire(db: OrmSession, holder: str = HOLDER, now: float | None = None) -> bool:
     """Take or renew the lease of the watch; False while another process holds it."""
-    now = time.time() if now is None else now
-    taken = db.execute(
-        update(Lease)
-        .where(Lease.name == LEASE, or_(Lease.holder == holder, Lease.expires_at < now))
-        .values(holder=holder, expires_at=now + LEASE_SECONDS)
-    ).rowcount
-    if taken:
-        db.commit()
-        return True
-    try:
-        db.execute(insert(Lease).values(name=LEASE, holder=holder, expires_at=now + LEASE_SECONDS))
-        db.commit()
-        return True
-    except IntegrityError:
-        db.rollback()
-        return False
+    return leases.take(db, LEASE, holder, LEASE_SECONDS, now)
 
 
 def check(now: float | None = None, holder: str = HOLDER) -> list[str]:
