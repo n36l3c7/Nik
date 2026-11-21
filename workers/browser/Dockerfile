@@ -1,7 +1,7 @@
 # Nik isolated browser worker: Chromium (Playwright's headless shell) driven
 # by screenshots, behind a small Python HTTP front (standard library). The
 # analyst's browser only ever receives images; the pages run here.
-FROM docker.io/library/python:3.12-slim
+FROM docker.io/library/python:3.15-slim
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 # libatomic1: needed by the Node.js driver bundled with Playwright.

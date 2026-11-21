@@ -3,7 +3,7 @@
 # Objects) behind a small Python HTTP front (standard library). It is given the
 # captures it reads (the store of files is sealed and it does not see it) and
 # runs on the internal network only.
-FROM docker.io/library/python:3.12-slim
+FROM docker.io/library/python:3.15-slim
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark \
