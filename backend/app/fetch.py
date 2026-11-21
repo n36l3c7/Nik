@@ -480,7 +480,7 @@ def ingest(
 ) -> str:
     """What becomes of one new item (the caller commits): the outcome kept in ``fetched_items``.
     ``runtime`` is the one that fetched it, asked for what is kept as evidence."""
-    from . import mirror, preprocess
+    from . import indicators_found, mirror, preprocess
 
     # An item that goes on with a conversation an incident mirrored in holds (a reply to a message)
     # is a line of that incident, and what it was made of is evidence of it: it makes no incident.
@@ -490,6 +490,11 @@ def ingest(
         if taken["fresh"]:
             unkept = _evidence(db, runtime, connector, item, taken["incident_id"])
             note = "; ".join(part for part in (note, unkept) if part)
+            # As for an item that makes an incident: once what it was made of is kept and analysed,
+            # what the reply says is read for the indicators its incident does not hold yet.
+            joined = db.get(Incident, taken["incident_id"])
+            if joined is not None:
+                indicators_found.after_update(db, joined, f"connector:{connector.id}", [taken["text"]])
         db.add(
             FetchedItem(
                 connection_id=connection.id,
@@ -530,8 +535,6 @@ def ingest(
     if created is not None:
         # The incident is whole, and what it was made of is kept and analysed: its fields and its
         # context are read for the indicators it does not hold yet (indicators_found.py).
-        from . import indicators_found
-
         indicators_found.scan(db, created, "fetch")
     db.add(
         FetchedItem(

@@ -242,6 +242,11 @@ def push_all(now: float = T0) -> None:
         mirror.run_push(job_id, now, "test")
 
 
+def audited(db, action: str) -> list[AuditEntry]:
+    """The entries of the audit log for one action, in the order they were written."""
+    return list(db.scalars(select(AuditEntry).where(AuditEntry.action == action).order_by(AuditEntry.seq)))
+
+
 def status_of(admin: TestClient, incident_id: str) -> str:
     return admin.get(f"/api/incidents/{incident_id}/fields").json()["fields"]["status"]
 
@@ -352,7 +357,7 @@ def test_in_out_the_incident_follows_the_other_side_and_the_other_side_follows_i
     assert changed.json()["fetch"]["mirror"]["direction"] == "both"
     with SessionLocal() as db:
         assert db.get(Connection, connection["id"]).fetch_settings == {"mirror": "both"}
-        entry = db.scalars(select(AuditEntry).where(AuditEntry.action == "connection.update")).all()[-1]
+        entry = audited(db, "connection.update")[-1]
         assert "mirroring None → In-out" in entry.details
     assert fetch_now(admin, connection)["created"] == 2
     one = fetched("101")
@@ -554,7 +559,7 @@ def test_the_choice_is_given_to_what_was_fetched_before_only_when_asked(admin: T
     assert shown(admin, ids["101"])["mirrored"] is False and jobs() == [("update", "failed")]
     assert shown(admin, ids["103"])["mirrored"] is True
     with SessionLocal() as db:
-        applied = [entry.details for entry in db.scalars(select(AuditEntry).where(AuditEntry.action == "mirror.apply"))]
+        applied = [entry.details for entry in audited(db, "mirror.apply")]
     assert len(applied) == 4 and applied[0] == (
         'Applied mirroring In of "Helpdesk prod" to the open incidents it fetched: 2 started, 1 skipped'
     )
@@ -593,7 +598,7 @@ def test_what_an_instance_lets_its_mirrors_send(admin: TestClient, outside):
     opened = choose(admin, connection, mirrorAllow=["email_address", "incident_text"])
     assert opened.status_code == 200 and opened.json()["fetch"]["mirror"]["allow"] == ["email_address", "incident_text"]
     with SessionLocal() as db:
-        entry = db.scalars(select(AuditEntry).where(AuditEntry.action == "connection.update")).all()[-1]
+        entry = audited(db, "connection.update")[-1]
         assert "its mirrors may send: email_address, incident_text" in entry.details
     assert shown(admin, one)["dataAllow"] == []
     world.tickets["T-106"] = {"id": "106", "key": "T-106", "title": "Phish from bob@evil.example", "state": "new"}
@@ -659,9 +664,7 @@ def test_the_direction_is_changed_on_one_incident_and_is_then_set_here(admin: Te
     ]
     assert admin.patch(path, json={"direction": "sideways"}).status_code == 422
     with SessionLocal() as db:
-        said = [
-            entry.details for entry in db.scalars(select(AuditEntry).where(AuditEntry.action == "mirror.direction"))
-        ]
+        said = [entry.details for entry in audited(db, "mirror.direction")]
     assert said[0] == "Mirroring with Helpdesk prod, object T-101: direction both → in"
     assert said[-1].endswith("direction both → out, sending email_address")
     lines = [entry["body"].get("text", "") for entry in admin.get(f"/api/incidents/{one}/war-room").json()["entries"]]

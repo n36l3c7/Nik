@@ -21,13 +21,11 @@ from ..core import audit
 from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Connection, Incident
-from ..core.permissions import CONNECTORS_MANAGE
-from ..core.security import Principal, admin_principal, reader_principal, require, writer_principal
+from ..core.security import Principal, admin_principal, manager_principal, reader_principal, writer_principal
 from ..events import emit
 from ..iocs import TYPES
 
 router = APIRouter(tags=["indicators found"])
-manager_principal = require(CONNECTORS_MANAGE)
 
 
 def _settings_out(cfg: dict[str, Any]) -> dict[str, Any]:

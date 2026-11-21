@@ -5736,12 +5736,44 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   await expect(applying).toContainText('No open incident was fetched from this instance: there is nothing to change.')
   await expect(applying.getByRole('button', { name: 'Mirror them In' })).toBeDisabled()
   await applying.getByRole('button', { name: 'Cancel' }).click()
+  // Indicators found: the instance is told apart from the setting here, and nowhere else. The choice
+  // is saved at once: Save has nothing to do with it.
+  const foundInstances = () =>
+    page.evaluate(async () => {
+      const found = await (await fetch('/api/iocs/found/settings', { credentials: 'include' })).json()
+      return Object.values(found.instances)
+    })
+  const reading = fetching.getByRole('group', { name: 'Indicators found' })
+  await expect(reading).toContainText('This choice is saved at once: it does not wait for Save.')
+  const choice = reading.getByLabel('Indicators in the incidents of Acme test')
+  await expect(choice).toHaveValue('setting')
+  await expect(choice.getByRole('option', { name: 'As the setting says (read)' })).toHaveCount(1)
+  await choice.selectOption('off')
+  await expect.poll(foundInstances).toEqual([false])
   // And back to None, as it was.
   await mirroring.getByRole('radio', { name: /^None / }).check()
   await pane.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(pane).toHaveCount(0)
   await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
   await expect(row.getByRole('button', { name: /^Fetching of Acme test/ })).toHaveCount(0)
+  // Settings, Indicators found: the setting, and under it the instances told apart, to read.
+  await sections.getByText('Indicators found', { exact: true }).click()
+  await expect(settings.getByRole('heading', { name: 'Indicators found', level: 2 })).toBeVisible()
+  await expect(settings.getByLabel('Paths that are never read')).toHaveValue(/\*uuid/)
+  await expect(settings.getByText('Nothing was changed.')).toBeVisible()
+  const apart = settings.getByRole('list', { name: 'Instances told apart' }).getByRole('listitem')
+  await expect(apart).toHaveCount(1)
+  await expect(apart).toContainText('Acme test')
+  await expect(apart).toContainText('Not read')
+  // Back in its form, it follows the setting again.
+  await sections.getByText('Connectors', { exact: true }).click()
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  await tabs.getByRole('tab', { name: 'Fetch' }).click()
+  await expect(choice).toHaveValue('off')
+  await choice.selectOption('setting')
+  await expect.poll(foundInstances).toEqual([])
+  await pane.getByRole('button', { name: 'Close the instance' }).click()
+  await expect(pane).toHaveCount(0)
   // Who is told when a connection fails: the bell holds it, and it leads to the instance.
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: /^Notifications/ }).click()

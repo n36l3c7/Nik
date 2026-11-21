@@ -4,7 +4,6 @@ import {
   appliedText,
   applyText,
   choiceLabel,
-  directionText,
   DIRECTIONS,
   mirrorAbilities,
   mirrorChoiceProblem,
@@ -23,7 +22,6 @@ import {
   lastText,
   limitText,
   mirrorProblem,
-  needingCare,
   nextText,
   outcomeBadge,
   stateBadge,
@@ -37,12 +35,6 @@ test('the state of a connection that can fetch', () => {
   assert.equal(stateBadge({ state: 'paused' }).label, 'paused')
   assert.equal(stateBadge({ state: 'off' }).label, 'off')
   assert.equal(stateBadge(null).label, 'off')
-  assert.deepEqual(
-    needingCare([{ state: 'ok' }, { state: 'failing', id: 1 }, { state: 'off' }, { state: 'paused', id: 2 }]).map(
-      (connection) => connection.id,
-    ),
-    [1, 2],
-  )
 })
 
 test('what the last cycle found, and when the next is', () => {
@@ -78,8 +70,6 @@ test('what became of an item', () => {
 })
 
 test('mirroring: which way, why it cannot start, what waits to be sent', () => {
-  assert.equal(directionText('in'), 'read from there')
-  assert.equal(directionText('both'), 'both ways')
   const desk = { id: 'c1', name: 'Desk prod', connector: 'Desk', out: true }
   const readOnly = { ...desk, connector: 'Read only', out: false }
   assert.equal(

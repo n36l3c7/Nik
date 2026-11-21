@@ -48,8 +48,6 @@ import hashlib
 import logging
 import re
 import time
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import or_, select, update
@@ -57,14 +55,15 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import context as incident_context
+from . import fetch, indicators_found, mapping, war_room
 from . import fields as registry
-from . import mapping, war_room
 from .automation import connector_actions as store
 from .automation import expressions as ex
 from .automation import guard
 from .automation.connector_runtime import CommandError
 from .automation.connectors import ConnectorFile, MirrorCall, MirrorSpec, can_send
-from .core import audit
+from .core import audit, clock
+from .core.ids import new_id
 from .core.locking import lock_incident
 from .core.models import Connection, Connector, FetchedItem, Incident, MirrorJob, WarRoomEntry
 from .core.security import now_iso
@@ -78,7 +77,7 @@ CHOICES = (NONE, *DIRECTIONS)
 LABELS = {NONE: "None", "in": "In", "out": "Out", "both": "In-out"}
 TAG = "mirror"  # a note with this tag is sent to the other side as a comment
 ATTEMPTS_MAX = 8
-BACKOFF_MAX = 3600
+BACKOFF_MAX = fetch.BACKOFF_MAX  # an hour at most between two tries, as for a fetch
 AFTER_CLOSE = 86_400  # a closed incident is read for a day more
 SEEN_MAX = 300
 THREAD_MAX = 200  # the ids of a conversation an incident keeps
@@ -642,13 +641,8 @@ def due(db: OrmSession, now: float) -> list[str]:
 
 
 def _closed_lately(incident: Incident, now: float) -> bool:
-    try:
-        closed = datetime.fromisoformat(str(incident.closed_at).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return False
-    if closed.tzinfo is None:
-        closed = closed.replace(tzinfo=timezone.utc)
-    return now - closed.timestamp() < AFTER_CLOSE
+    closed = clock.stamp(incident.closed_at)
+    return bool(closed) and now - closed < AFTER_CLOSE
 
 
 def _digest(text: str) -> str:
@@ -718,28 +712,30 @@ def pull(db: OrmSession, incident: Incident, now: float) -> dict[str, Any]:
     )
     problems += mapped.problems
     current = registry.read(db, incident)
-    for name, value in mapped.fields.items():
-        if name in mapping._SOURCE or current.get(name) == value:
-            continue
-        last = registry.source_of(db, incident, name)
-        if not incident_context.may_overwrite(last, source, name in mapped.authoritative):
-            kept.append(name)  # a person set it in Nik: it stays
-            continue
-        try:
-            # A value the registry keeps another way (a tag in lower case) may be what is there already.
-            if registry.update(db, incident, {name: value}, source, source):
-                changed.append(name)
-        except registry.FieldError as error:
-            problems.append(error.message)
-    if mapped.context:
-        try:
-            incident_context.apply(db, incident, list(mapped.context), source, source)
-        except incident_context.ContextError as error:
-            problems.append(f"Context: {error.message}")
-
     comments = 0
-    if spec.comments is not None:
-        comments = _comments_in(db, incident, connection, connector, spec.comments, state, values)
+    # Fields, context and comments are one update: what it brought is read for indicators once,
+    # when it is whole, and leaves one line (indicators_found.py).
+    with indicators_found.together(db, incident):
+        for name, value in mapped.fields.items():
+            if name in mapping._SOURCE or current.get(name) == value:
+                continue
+            last = registry.source_of(db, incident, name)
+            if not incident_context.may_overwrite(last, source, name in mapped.authoritative):
+                kept.append(name)  # a person set it in Nik: it stays
+                continue
+            try:
+                # A value the registry keeps another way (a tag in lower case) may be what is there already.
+                if registry.update(db, incident, {name: value}, source, source):
+                    changed.append(name)
+            except registry.FieldError as error:
+                problems.append(error.message)
+        if mapped.context:
+            try:
+                incident_context.apply(db, incident, list(mapped.context), source, source)
+            except incident_context.ContextError as error:
+                problems.append(f"Context: {error.message}")
+        if spec.comments is not None:
+            comments = _comments_in(db, incident, connection, connector, spec.comments, state, values)
     stamp = now_iso()
     state.update(
         lastSync=stamp,
@@ -796,6 +792,8 @@ def _comments_in(
             },
             f"connector:{connector.id}",
         )
+        # What the other side said is read for indicators with the update it came in.
+        indicators_found.after_update(db, incident, f"connector:{connector.id}", [text[:COMMENT_MAX]])
         latest = max(latest, at)
         added += 1
     state["seen"] = seen[-SEEN_MAX:]
@@ -818,7 +816,8 @@ def absorb(
     """A fetched item that goes on with a conversation an incident holds, for a connector whose
     mirror is fed by its fetch: it becomes a line of the War Room of that incident and makes none of
     its own (the caller commits). None when it belongs to no incident mirrored in with this
-    instance. ``fresh`` is false for an item that was there already (the same message twice).
+    instance. ``fresh`` is false for an item that was there already (the same message twice);
+    ``text`` is what the line says, for whoever reads it for indicators once its evidence is kept.
 
     An item belongs to an incident when it names an id of its conversation, or is itself named
     there (a reply that came before what it answers). The incident mirrored the longest wins."""
@@ -849,14 +848,16 @@ def absorb(
         return None
     seen = list(state.get("seen") or [])
     fresh = not own or own not in seen
+    text = ""
     if fresh:
         scope = ex.Scope(values={"item": item, "config": {}, "state": {}})
+        text = _read(spec.thread.text, scope)[:COMMENT_MAX]
         war_room.add(
             db,
             incident.id,
             "mirror",
             {
-                "text": (_read(spec.thread.text, scope) or "(nothing written)")[:COMMENT_MAX],
+                "text": text or "(nothing written)",
                 "from": _read(spec.thread.author, scope),
                 "at": _read(spec.thread.at, scope),
                 "direction": "in",
@@ -876,7 +877,7 @@ def absorb(
     )
     _keep(incident, state)
     db.flush()  # as in start_fetched: the evidence is kept on the incident read again
-    return {"incident_id": incident.id, "fresh": fresh}
+    return {"incident_id": incident.id, "fresh": fresh, "text": text}
 
 
 def run_pull(incident_id: str, now: float | None = None) -> None:
@@ -931,7 +932,7 @@ def _reads(rules: list | None) -> set[str]:
 def _enqueue(db: OrmSession, incident: Incident, state: dict, kind: str, payload: dict, actor: str, now: float) -> None:
     db.add(
         MirrorJob(
-            id=uuid.uuid4().hex,
+            id=new_id(),
             incident_id=incident.id,
             connection_id=state["connection"],
             kind=kind,

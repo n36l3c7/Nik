@@ -79,10 +79,6 @@ export function limitText(connection) {
   return `${made} of ${limit} incidents this hour`
 }
 
-/** The connections that need someone: failing or paused. */
-export const needingCare = (connections) =>
-  (connections ?? []).filter((connection) => connection.state === 'failing' || connection.state === 'paused')
-
 /* ------------------------------------------------- how an instance fetches */
 
 const UNITS = { minute: 60, hour: 3600, day: 86400 }
@@ -190,13 +186,6 @@ export const DIRECTIONS = [
   { id: 'out', label: 'Out', hint: 'What changes here is sent to the other side.' },
   { id: 'both', label: 'In-out', hint: 'Each side follows the other.' },
 ]
-
-/** The direction of a mirror, in words. */
-export function directionText(direction) {
-  if (direction === 'in') return 'read from there'
-  if (direction === 'out') return 'sent from here'
-  return direction === 'both' ? 'both ways' : String(direction ?? '')
-}
 
 /** Why a mirror cannot be started as the form stands (a sentence), or null. */
 export function mirrorProblem({ connection, mirrorId, direction, canSend }) {

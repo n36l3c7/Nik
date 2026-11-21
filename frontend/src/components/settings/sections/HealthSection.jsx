@@ -13,6 +13,7 @@ import {
 } from '../../../domain/health.js'
 import { safeLink } from '../../../domain/timers.js'
 import { useToast } from '../../../context/ToastContext.jsx'
+import { copyText } from '../../../lib/download.js'
 import { setPath } from '../../../lib/location.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { formatDateTime, formatRelative } from '../../../lib/time.js'
@@ -162,14 +163,8 @@ function Metrics({ token, onChanged }) {
   const [error, setError] = useState(null)
   const config = scrapeConfig(typeof window === 'undefined' ? '' : window.location.origin)
 
-  const copy = async (text, what) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      showToast({ message: `${what} copied.` })
-    } catch {
-      showToast({ message: 'The browser refused to copy.' })
-    }
-  }
+  const copy = async (text, what) =>
+    showToast({ message: (await copyText(text)) ? `${what} copied.` : 'The browser refused to copy.' })
   const make = async () => {
     setBusy(true)
     setError(null)

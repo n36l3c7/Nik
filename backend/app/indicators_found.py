@@ -15,6 +15,14 @@ command writes to the context is **not** read: a playbook that wants
 indicators of a value asks for them (``nik.make-indicators``), and nothing a
 run writes can start the run again through here.
 
+**One reading for one update.** A mirror's read writes field after field,
+then the context, then the comments that came: inside ``together`` all of it
+is read once, at the end, and only when something changed. What the other
+side *said* (a comment a mirror brought, a reply a mailbox mirror took in as
+a line of the War Room) is read with it, under the path ``warroom.mirror``:
+it is in neither the fields nor the context. Reading writes no field of the
+incident, so nothing it finds is ever sent to the other side.
+
 It is part of the transaction that makes or updates the incident: no thread, no
 queue, nothing a restart can lose. It is bounded instead: 5,000 strings and
 2 MB of an incident are read, and what was not is said.
@@ -48,7 +56,7 @@ from __future__ import annotations
 import fnmatch
 import re
 from collections.abc import Iterator
-from datetime import datetime
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -56,7 +64,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import recognise
-from .core import audit
+from .core import audit, clock
 from .core.models import Connection, FoundIndicator, FoundScan, Incident, IocEntry, Setting
 from .core.security import now_iso
 from .iocs import TYPES
@@ -70,6 +78,11 @@ STRING_MAX = 20_000  # characters of one string
 BYTES_MAX = 2_000_000  # characters of one incident, all strings together
 SKIP_MAX = 100
 PATH_MAX = 400
+SAID_MAX = 200  # things the other side said that one reading takes
+# Where something the other side said was read: a line of the War Room a mirror brought.
+SAID_PATH = "warroom.mirror"
+# The mark, on a session, of an update that is read once when it is whole (``together``).
+_HELD = "indicators_found.together"
 DOORS = ("fetch", "api", "hand", "playbook", "mirror", "asked")
 
 # Keys that are noise by their nature. An entry with no dot is the name of a key, wherever it is;
@@ -244,7 +257,8 @@ def _skipped(root: str, keys: tuple, skip: list[str]) -> bool:
 
 def strings(material: dict[str, Any], skip: list[str]) -> Iterator[tuple[str, str]]:
     """``(path, text)`` for every string of an incident that is read, in the order they are
-    kept when there are too many: the common schema of the context, the fields, then ``ext``."""
+    kept when there are too many: the common schema of the context, the fields, ``ext``, then
+    what the other side said in this update."""
     context = material.get("context") if isinstance(material.get("context"), dict) else {}
     fields = material.get("incident") if isinstance(material.get("incident"), dict) else {}
     parts = [("context", (key,), value) for key, value in context.items() if key != "ext"]
@@ -262,6 +276,9 @@ def strings(material: dict[str, Any], skip: list[str]) -> Iterator[tuple[str, st
         elif isinstance(value, list):
             if not _skipped(root, keys, skip):
                 stack.extend((root, (*keys, index), item) for index, item in reversed(list(enumerate(value))))
+    for text in material.get("said") or []:
+        if isinstance(text, str) and text:
+            yield SAID_PATH, text
 
 
 def known_of(db: OrmSession) -> recognise.Known:
@@ -351,15 +368,20 @@ def sentence(summary: dict[str, Any]) -> str:
     return text + "."
 
 
-def scan(db: OrmSession, incident: Incident, door: str, *, asked: bool = False) -> dict[str, Any] | None:
+def scan(
+    db: OrmSession, incident: Incident, door: str, *, asked: bool = False, said: list[str] | None = None
+) -> dict[str, Any] | None:
     """Read an incident for indicators and keep the new ones (the caller commits). Returns what
     came of it, or None when incidents from where this one came are not read. ``asked``: a
-    person asked for this incident, whatever the setting says of the others."""
+    person asked for this incident, whatever the setting says of the others. ``said``: what the
+    other side said in the update that is read (comments, a reply), read after the rest."""
     cfg = config(db)
     if not asked and not on_for(cfg, incident):
         return None
     db.flush()  # the session does not flush by itself: what the door just wrote is read below
-    result = read(material_of(db, incident), cfg, known_of(db))
+    material = material_of(db, incident)
+    material["said"] = list(said or [])[:SAID_MAX]
+    result = read(material, cfg, known_of(db))
     rows = {
         (row.type, row.value): row
         for row in db.scalars(select(FoundIndicator).where(FoundIndicator.incident_id == incident.id))
@@ -428,25 +450,49 @@ def scan(db: OrmSession, incident: Incident, door: str, *, asked: bool = False) 
     return summary
 
 
-def after_update(db: OrmSession, incident: Incident, source: str) -> None:
+def after_update(db: OrmSession, incident: Incident, source: str, said: list[str] | None = None) -> None:
     """What a connector wrote to an incident that was read once is read again (a mirror update).
     An incident that was never read is left alone: it is being made, and its door reads it when
-    it is whole, or it came in before incidents were read at all."""
+    it is whole, or it came in before incidents were read at all. ``said``: what the other side
+    said with it. Inside ``together`` nothing is read yet: the update is noted, and read whole."""
     if not str(source or "").startswith("connector:"):
+        return
+    held = db.info.get(_HELD)
+    if held is not None and held["incident"] == incident.id:
+        held["changed"] = True
+        held["said"] += list(said or [])
         return
     if db.get(FoundScan, incident.id) is None:
         return
-    scan(db, incident, "mirror")
+    scan(db, incident, "mirror", said=said)
+
+
+@contextmanager
+def together(db: OrmSession, incident: Incident) -> Iterator[None]:
+    """One update of an incident by a connector, made of several writes (a mirror's read: its
+    fields one by one, its context, its comments): the incident is read once when the block ends,
+    and only when a write changed something. So an update leaves one line in the War Room, not one
+    for each part. An update that fails is not read: its transaction is rolled back."""
+    if db.info.get(_HELD) is not None:
+        yield  # an update inside another: the outer one reads
+        return
+    held = db.info[_HELD] = {"incident": incident.id, "changed": False, "said": []}
+    try:
+        yield
+    except BaseException:
+        db.info.pop(_HELD, None)
+        raise
+    db.info.pop(_HELD, None)
+    if held["changed"] and db.get(FoundScan, incident.id) is not None:
+        scan(db, incident, "mirror", said=held["said"])
 
 
 # --------------------------------------------------------------------------- #
 # What an incident was given, and a person's no                               #
 # --------------------------------------------------------------------------- #
-def _ms(stamp: str) -> int | None:
-    try:
-        return int(datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).timestamp() * 1000)
-    except (TypeError, ValueError):
-        return None
+def _ms(text: str) -> int | None:
+    at = clock.stamp(text)
+    return int(at * 1000) if at else None
 
 
 def add_to(db: OrmSession, incident_id: str, items: dict[tuple[str, str], dict[str, Any]], limit: int) -> None:

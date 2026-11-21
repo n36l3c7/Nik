@@ -16,7 +16,8 @@ import {
   Undo2,
 } from 'lucide-react'
 import { fieldItems, generalItems, linkItems, selectionItems, textItems } from '../../domain/contextMenu.js'
-import { runFieldEntry, writeClipboard } from '../../lib/textField.js'
+import { copyText } from '../../lib/download.js'
+import { runFieldEntry } from '../../lib/textField.js'
 
 /*
  * The sections of the right-click menu that belong to no page: selected text,
@@ -63,8 +64,7 @@ const ICONS = {
  */
 export function ambientItems(kind, under, app, say) {
   const rights = { canRead: Boolean(app.signedIn && app.canRead), canWrite: Boolean(app.signedIn && app.canWrite) }
-  const copy = async (text, what) =>
-    say((await writeClipboard(text)) ? `${what} copied.` : 'The browser refused to copy.')
+  const copy = async (text, what) => say((await copyText(text)) ? `${what} copied.` : 'The browser refused to copy.')
   const lookup = (item) => ({
     whereSeen: () => app.openIoc?.(item.match.kind, item.match.value),
     searchFor: () => app.openSearch?.(item.match.value),

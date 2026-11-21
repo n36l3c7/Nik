@@ -97,7 +97,7 @@ export function scanWords(scan, on) {
   }
   const left = Object.values(scan.leftOut ?? {}).reduce((sum, count) => sum + count, 0)
   const parts = [`${scan.kept} kept`]
-  if (left) parts.push(`${left} left out as private or harmless`)
+  if (left) parts.push(`${left} left out as private or benign`)
   if (scan.over) parts.push(`${scan.over} over the limit of ${scan.cap} and not kept`)
   if (scan.removed) parts.push(`${scan.removed} removed by a person and not found again`)
   if (scan.unread) parts.push(`${scan.unread} values not read`)
@@ -107,3 +107,15 @@ export function scanWords(scan, on) {
 /** What an instance says of its own incidents: "on", "off" or "setting" (it follows the setting). */
 export const instanceChoice = (enabled) => (enabled === true ? 'on' : enabled === false ? 'off' : 'setting')
 export const choiceValue = (choice) => (choice === 'on' ? true : choice === 'off' ? false : null)
+
+/**
+ * The instances told apart from the setting, by name: `[{ id, name, read }]`. `said` is what the
+ * setting holds (`{ id: true | false }`), `fetching` the instances that fetch as GET /api/fetch
+ * lists them; one that is not listed there (it cannot be seen, or fetches no more) keeps its id.
+ */
+export function toldApart(said, fetching) {
+  const names = new Map((fetching ?? []).map((instance) => [instance.instanceId, instance.connection]))
+  return Object.entries(said ?? {})
+    .map(([id, read]) => ({ id, name: names.get(id) || id, read: Boolean(read) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}

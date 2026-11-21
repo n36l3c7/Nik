@@ -516,7 +516,7 @@
         verdict and origin, and sorts by any column. A row is tinted by its verdict only. Click a value for the
         indicator's page.
       </p>
-      <h3>Add one or many</h3>
+      <h3 id="indicators-add">Add one or many</h3>
       <p>
         <strong>Add</strong> opens one box for one indicator or thousands: type, paste, or choose a file. Defanged
         values (<code>hxxps://evil[.]example</code>) are read as they are meant and the type is recognised by itself.
@@ -531,7 +531,7 @@
         past its date is marked expired and left out of exports and feeds. An indicator the library already has is kept
         as it is, and joins the list too.
       </p>
-      <h3>Lists</h3>
+      <h3 id="indicator-lists">Lists</h3>
       <p>
         A list is a named group with its own page and address (<code>/iocs/lists/&lt;id&gt;</code>). The same indicator
         can be in several lists; <em>Take out of the list</em> leaves it in the library. <strong>Remove</strong> takes
@@ -552,7 +552,7 @@
         indicators it had and how many of each verdict. In the table, a row the last check changed says so under its
         verdict. A check of a selection, or of a filter, is not a check of the list and writes nothing here.
       </p>
-      <h3>Analysed or not</h3>
+      <h3 id="indicators-analysed">Analysed or not</h3>
       <p>
         The <strong>Analysis</strong> column shows what Nik saw when it analysed the value itself, and opens it.
         Indicators of artifacts not linked to any incident are in the library too (origin <em>artifact</em>).
@@ -561,7 +561,7 @@
         (analysed already, allowlisted, internal, TLP:RED), and visits at most 20, one after the other, once you
         confirm. A visit is seen by the site.
       </p>
-      <h3>Bulk check and export</h3>
+      <h3 id="indicators-bulk">Bulk check and export</h3>
       <p>
         Tick rows (or <em>select all</em> of a filter), or use the buttons of a list or of the whole view.
         <strong>Check</strong> first shows what it costs: how many indicators are asked, how many answers are still
@@ -813,7 +813,7 @@
           the War Room.
         </li>
       </ul>
-      <h3>Timeline</h3>
+      <h3 id="timeline-tab">Timeline</h3>
       <p>
         Every timestamped event of every tab in one chronological list: browser visits and downloads, commands, endpoint
         artifacts, Windows events, samples, e-mails and network captures. Filter by source, by text or by severity; the
@@ -867,8 +867,13 @@
       </p>
       <p>
         An indicator that is in the incident only because it was found has an <strong>×</strong> at the end of its row.
-        Removing it is remembered: it does not come back when the incident is updated by a mirror or read again. Under
-        the table, <em>Found by themselves</em> says what the last reading came to, lists what was removed (with
+        Removing it is remembered: it does not come back when the incident is updated by a mirror or read again. An
+        update a mirror brings is read too, once for the whole update and only when it changed something: the fields and
+        the context as above, and what the other side <em>said</em>, a comment or a note it added, or a reply to the
+        message of a mailbox mirrored <em>In</em>. What was said is in the War Room and not in the context, so its path
+        is <code>Found · warroom.mirror</code>. The limit and the removals hold for it as for the rest, and one update
+        leaves one line. Nothing that was found is sent to the other side. Under the table,
+        <em>Found by themselves</em> says what the last reading came to, lists what was removed (with
         <strong>Put back</strong>), and <strong>Find indicators now</strong> reads the incident as it is at this moment:
         for an incident that came in before incidents were read, or whose context has grown since. What a playbook
         writes to the context later is not read by itself; a playbook that wants indicators of a value asks for them
@@ -886,8 +891,10 @@
         be given (1 to 500), the paths that are never read, and whether the automatic look-ups ask about what was found.
         A path is written one a line: a word alone is the name of a key wherever it is (<code>*uuid</code>,
         <code>console*</code>), and with dots it is a whole path as the Context tab shows it, without the numbers of a
-        list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything. Under the form, every
-        instance that fetches follows the setting or is told apart: <em>Read</em>, <em>Not read</em>.
+        list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything. An instance that fetches
+        follows the setting unless it is told apart, <em>Read</em> or <em>Not read</em>: that is chosen in the
+        <em>Fetch</em> tab of the instance (<a href="automation.html#fetch-status">Connectors</a>), where it is saved at
+        once, and the instances told apart are listed under this form.
       </p>
       <h4 id="held-look-ups">When a look-up is held</h4>
       <p>
@@ -944,7 +951,7 @@
         These four are kinds of evidence, opened from the list of the <a href="#evidence-tab">Evidence</a> tab. The list
         of each closes with the button in its corner, and stays closed the next time.
       </p>
-      <h3>Mail Analysis</h3>
+      <h3 id="mail-analysis">Mail Analysis</h3>
       <p>
         Drop the reported e-mail (<code>.eml</code> or Outlook <code>.msg</code>). Nik gives a
         <strong>verdict</strong> and a score with the reasons, and shows:
@@ -967,7 +974,7 @@
         <img src="img/mail.png" alt="The Mail Analysis tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Mail Analysis: verdict, reasons and the message's parts.</figcaption>
       </figure>
-      <h3>Malware Analysis</h3>
+      <h3 id="malware-analysis">Malware Analysis</h3>
       <p>
         Drop a suspicious file. It is stored on the server under its SHA-256, read-only and never executed, and analysed
         statically: hashes, type, <strong>entropy</strong> per block, <strong>structure</strong> of PE, ELF and Mach-O
@@ -980,7 +987,7 @@
         <img src="img/malware.png" alt="The Malware Analysis tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Malware Analysis: a sample's overview, with the other views as tabs.</figcaption>
       </figure>
-      <h3>Network Analysis</h3>
+      <h3 id="network-analysis">Network Analysis</h3>
       <p>Drop a <code>.pcap</code> or <code>.pcapng</code> (up to 500 MB). Wireshark's own engine reads it:</p>
       <ul>
         <li>
@@ -1027,7 +1034,7 @@
         />
         <figcaption>The capture's summary: hosts, DNS, HTTP, submissions and beacons.</figcaption>
       </figure>
-      <h3>URL Analysis</h3>
+      <h3 id="url-analysis">URL Analysis</h3>
       <p>
         Give Nik a link from an e-mail or a chat (defanged text such as <code>hxxps://evil[.]top</code> works): the
         <strong>isolated browser</strong> visits it for you, with network access but never your own network, and types,
@@ -1100,7 +1107,7 @@
         may not change the incident is told so, and can only go back. Until 6.2 these pages showed the paths of Windows
         for an incident with no system, as if it had been said.
       </p>
-      <h3>Endpoint Artifacts</h3>
+      <h3 id="endpoint-artifacts">Endpoint Artifacts</h3>
       <p>
         Four categories: <strong>program execution</strong>, <strong>persistence</strong>,
         <strong>file and folder access</strong> and <strong>removable devices</strong>. Each source (BAM, Run keys,
@@ -1111,7 +1118,7 @@
         <img src="img/endpoint.png" alt="The Endpoint Artifacts tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Endpoint Artifacts: program execution from a BAM export.</figcaption>
       </figure>
-      <h3>Event Logs</h3>
+      <h3 id="event-logs">Event Logs</h3>
       <p>
         Upload Windows <code>.evtx</code> files (parsed on the server, including records left after a log clear) or the
         JSON of the collection script. About fifty event IDs that matter are kept: logons, process creation, services,
@@ -1123,7 +1130,7 @@
         <img src="img/event-logs.png" alt="The Event Logs tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Event Logs: failed logons from one address, then a successful one.</figcaption>
       </figure>
-      <h3>Browser Forensics</h3>
+      <h3 id="browser-forensics">Browser Forensics</h3>
       <p>
         One sub-tab per browser (Chrome, Firefox, Edge, Brave, Opera, Safari), each with several
         <strong>profiles</strong>. Import the history, downloads, bookmarks and omnibox shortcuts as the browser keeps
@@ -1133,7 +1140,7 @@
         <img src="img/browser.png" alt="The Browser Forensics tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Browser Forensics: the bookmarks of a Chrome profile.</figcaption>
       </figure>
-      <h3>Command History</h3>
+      <h3 id="command-history">Command History</h3>
       <p>
         One sub-tab per shell (Bash, Zsh, Fish, PowerShell). Import the native history file; commands with a timestamp
         join the timeline, and the detection engine marks download-and-execute, encoded payloads, reverse shells and

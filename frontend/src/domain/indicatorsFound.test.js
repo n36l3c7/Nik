@@ -11,6 +11,7 @@ import {
   problemsOf,
   scanWords,
   skipLines,
+  toldApart,
 } from './indicatorsFound.js'
 
 const SETTINGS = {
@@ -96,7 +97,7 @@ test('the last reading in a sentence', () => {
       { door: 'mirror', kept: 50, leftOut: { private: 3, benign: 4 }, over: 12, cap: 50, removed: 1, unread: 2 },
       true,
     ),
-    'Last read at an update from the other system: 50 kept, 7 left out as private or harmless, ' +
+    'Last read at an update from the other system: 50 kept, 7 left out as private or benign, ' +
       '12 over the limit of 50 and not kept, 1 removed by a person and not found again, 2 values not read.',
   )
   assert.equal(doorWords('asked'), 'when someone asked')
@@ -106,4 +107,19 @@ test('the last reading in a sentence', () => {
 test('what an instance says of its own incidents', () => {
   assert.deepEqual([true, false, null, undefined].map(instanceChoice), ['on', 'off', 'setting', 'setting'])
   assert.deepEqual(['on', 'off', 'setting'].map(choiceValue), [true, false, null])
+})
+
+test('the instances told apart from the setting are listed by name', () => {
+  const fetching = [
+    { instanceId: 'b2', connection: 'SOC mailbox' },
+    { instanceId: 'a1', connection: 'Radar prod' },
+    { instanceId: 'c3', connection: 'Follows the setting' },
+  ]
+  assert.deepEqual(toldApart({ b2: false, a1: true, gone: true }, fetching), [
+    { id: 'gone', name: 'gone', read: true },
+    { id: 'a1', name: 'Radar prod', read: true },
+    { id: 'b2', name: 'SOC mailbox', read: false },
+  ])
+  assert.deepEqual(toldApart(undefined, fetching), [])
+  assert.deepEqual(toldApart({}, undefined), [])
 })

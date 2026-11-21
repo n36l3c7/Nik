@@ -2857,8 +2857,19 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <code>12 hours</code> or <code>3 days</code> (a month at most). Changed later, it counts from the next time
           the last run is reset;
         </li>
-        <li><strong>Look-back</strong>, in minutes: see below.</li>
+        <li><strong>Look-back</strong>, in minutes: see below;</li>
+        <li>
+          <strong>Mirroring</strong>: the direction the incidents it fetches are <a href="#mirroring">mirrored</a> in,
+          and the classes of data those mirrors may send.
+        </li>
       </ul>
+      <p>
+        One choice of this tab is <strong>saved at once</strong> and does not wait for Save, and the tab says so:
+        <strong>Indicators found</strong>, whether the incidents of this instance are read for
+        <a href="guide.html#found-indicators">indicators</a> as they come in and at each update a mirror brings: as the
+        setting says, always, or never. It is kept with the setting (<em>Settings → Indicators found</em>, which lists
+        the instances told apart), not in the instance, and this tab is the one place where it is chosen.
+      </p>
       <p>
         Under them, <em>How it goes</em>: fetching, failing or paused and why, when it last fetched and will next, what
         its last cycle found, and the moment the next cycle asks from. These are done at once and are not part of the
@@ -3017,8 +3028,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         log with who gave it, and what is sent passes the <a href="#data-guard">data guard</a> with no class of data
         opened unless one was opened for this mirror, which needs the permission that opens classes for playbooks. It
         reaches the host of its instance and nothing else. A loop is not possible: what the mirror's own connector wrote
-        is never sent back, and a comment Nik sent is recognised when it comes back. Choosing a direction that sends in
-        an instance is the same standing permission for every incident it will fetch: it takes the permission to manage
+        is never sent back, and a comment Nik sent is recognised when it comes back. What a read brings (fields,
+        context, comments) is read once for <a href="guide.html#found-indicators">indicators</a>, when something
+        changed; an indicator found is no change of a field, and is never sent. Choosing a direction that sends in an
+        instance is the same standing permission for every incident it will fetch: it takes the permission to manage
         connectors, and is written in the audit log with the instance.
       </p>
       <p>What mirrors with the connectors Nik ships:</p>

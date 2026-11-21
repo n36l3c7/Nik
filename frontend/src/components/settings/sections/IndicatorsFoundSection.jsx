@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RotateCcw, Save, ScanSearch } from 'lucide-react'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../services/api.js'
-import { TYPE_LABELS, changesOf, formOf, problemsOf } from '../../../domain/indicatorsFound.js'
+import { TYPE_LABELS, changesOf, formOf, problemsOf, toldApart } from '../../../domain/indicatorsFound.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { ErrorNote } from '../../auth/SecondFactorParts.jsx'
 import { Button, Wait } from '../../ui/index.js'
-import FindIndicatorsSwitch from './FindIndicatorsSwitch.jsx'
 import Switch from './Switch.jsx'
 
 /*
@@ -18,7 +17,8 @@ import Switch from './Switch.jsx'
  * context of a new incident are read for indicators, which types are kept,
  * what is left out, which paths are never read, how many an incident may be
  * given, and whether the automatic look-ups ask about what was found. Under
- * it, the instances that fetch: each follows the setting or is told apart.
+ * it, the instances that are told apart from the setting, to read: that is
+ * chosen in the form of each instance (InstanceFetch.jsx), in one place only.
  */
 
 const HEADING_CLASS = 'mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted'
@@ -83,6 +83,7 @@ export default function IndicatorsFoundSection() {
     load()
   }, [load])
 
+  const apart = useMemo(() => toldApart(found?.instances, instances), [found, instances])
   const problems = useMemo(() => (form && found ? problemsOf(form, found) : {}), [form, found])
   const changes = useMemo(() => (form && found ? changesOf(form, found) : {}), [form, found])
   const dirty = Object.keys(changes).length > 0
@@ -160,7 +161,7 @@ export default function IndicatorsFoundSection() {
           Private and reserved addresses (10.0.0.0/8, 192.168.0.0/16, 127.0.0.1, link-local…) and URLs on internal names
         </Check>
         <Check checked={form.leaveOutBenign} onChange={set('leaveOutBenign')}>
-          What is known to be harmless: names kept for documentation (example.com), the hosts of XML and JSON schemas
+          What is known to be benign: names kept for documentation (example.com), the hosts of XML and JSON schemas
           (w3.org, schemas.microsoft.com…), the organisation&apos;s own domains (Mail analysis) and the IOC allowlist
         </Check>
         <p className="max-w-prose text-sm text-fg-muted">
@@ -241,27 +242,25 @@ export default function IndicatorsFoundSection() {
         {!dirty && <span className="text-sm text-fg-muted">Nothing was changed.</span>}
       </div>
 
-      {instances.length > 0 && (
-        <div>
-          <h3 className={HEADING_CLASS}>Instances that fetch</h3>
-          <p className="mb-2 max-w-prose text-sm text-fg-muted">
-            Each follows the setting above unless it is told apart here. A choice is saved at once.
-          </p>
-          <ul aria-label="Instances that fetch" className="divide-y divide-line-soft border border-line bg-panel">
-            {instances.map((instance) => (
-              <li key={instance.instanceId} className="flex flex-wrap items-center gap-3 px-3 py-2">
-                <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{instance.connector}</span>
-                {/* Drawn again when the setting changes: its first choice says what the setting is. */}
-                <FindIndicatorsSwitch
-                  key={`${instance.instanceId}-${found.enabled}`}
-                  connectionId={instance.instanceId}
-                  name={instance.connection}
-                />
+      <div>
+        <h3 className={HEADING_CLASS}>Instances told apart</h3>
+        <p className="mb-2 max-w-prose text-sm text-fg-muted">
+          An instance of a connector that fetches follows this setting unless it is told apart, in the Fetch part of its
+          own form (Connectors, the instance, Indicators found).
+        </p>
+        {apart.length === 0 ? (
+          <p className="text-sm text-fg-muted">None is told apart: every instance follows the setting.</p>
+        ) : (
+          <ul aria-label="Instances told apart" className="divide-y divide-line-soft border border-line bg-panel">
+            {apart.map((instance) => (
+              <li key={instance.id} className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate text-fg">{instance.name}</span>
+                <span className="text-fg-muted">{instance.read ? 'Read' : 'Not read'}</span>
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   )
 }

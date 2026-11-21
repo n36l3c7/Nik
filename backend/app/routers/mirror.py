@@ -23,11 +23,10 @@ from ..core import audit
 from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Connection, Incident, MirrorJob
-from ..core.permissions import AUTOMATION_OPEN, AUTOMATION_RUN, CONNECTORS_MANAGE
-from ..core.security import Principal, reader_principal, require, writer_principal
+from ..core.permissions import AUTOMATION_OPEN, AUTOMATION_RUN
+from ..core.security import Principal, manager_principal, reader_principal, writer_principal
 
 router = APIRouter(tags=["mirroring"])
-manager_principal = require(CONNECTORS_MANAGE)
 
 
 class DirectionIn(BaseModel):

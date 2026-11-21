@@ -1553,7 +1553,9 @@
           migration: the column is a document), a mapper that names both the object and the direction being obeyed
           first. A connector whose mirror is fed by its fetch (<code>mirror.thread</code>, the mailbox) is never read at
           an interval: <code>fetch.ingest</code> asks <code>mirror.absorb</code> first, and an item that goes on with a
-          conversation an incident holds becomes a line of it.
+          conversation an incident holds becomes a line of it. The indicators of a new incident are found last, once
+          what it was made of is kept (<code>indicators_found.scan</code>); a read of a mirror, or a reply taken in, is
+          read once for the whole update.
         </li>
       </ul>
       <p>

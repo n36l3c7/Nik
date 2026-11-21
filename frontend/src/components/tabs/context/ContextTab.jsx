@@ -21,7 +21,7 @@ import {
 import { copyText } from '../../../lib/download.js'
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
-import { Button, SearchInput } from '../../ui/index.js'
+import { Button, SearchInput, Wait } from '../../ui/index.js'
 
 /*
  * ============================================================================
@@ -169,11 +169,7 @@ export default function ContextTab({ incident }) {
           {error}
         </p>
       )}
-      {!answer && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the context…
-        </p>
-      )}
+      {!answer && !error && <Wait>Loading the context…</Wait>}
       {answer && (
         <>
           <ul

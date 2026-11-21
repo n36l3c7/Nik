@@ -53,9 +53,9 @@ from ..parsing.registry import apply_upload
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
-SEVERITIES = ("low", "medium", "high", "critical")
+SEVERITIES = field_registry.SEVERITIES
 # Where the work on an incident stands; an incident with no status is open.
-STATUSES = ("open", "in_progress", "closed")
+STATUSES = field_registry.STATUSES
 
 
 def _timers(db: OrmSession, incident: Incident) -> None:
@@ -626,7 +626,7 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
             job.updated_at = now_iso()
         db.commit()
         emit_now(db, "upload.completed", {"incidentId": incident_id, **summary})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:  # noqa: BLE001 - whatever a parser raises, the job says that it failed
         db.rollback()
         job = db.get(Job, job_id)
         if job is not None:

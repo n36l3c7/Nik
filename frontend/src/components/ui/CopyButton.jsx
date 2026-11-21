@@ -5,8 +5,9 @@ import { copyText } from '../../lib/download.js'
 /*
  * The small button that copies a text and shows a check for a moment.
  *
- * Nothing is drawn when there is no text. Where the browser refuses the
- * clipboard (a page not served over HTTPS) the click does nothing.
+ * Nothing is drawn when there is no text. It copies through copyText
+ * (lib/download.js), so it works on a server reached over plain HTTP too;
+ * where the browser refuses all the same, the click does nothing.
  */
 
 const BASE =

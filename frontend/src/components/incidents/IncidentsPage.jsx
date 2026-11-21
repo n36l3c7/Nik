@@ -44,6 +44,7 @@ import { tagsInUse, withTag } from '../../domain/incidentTags.js'
 import { tryParse } from '../../domain/query/parse.js'
 import { filterPayload, filterView, isChanged } from '../../domain/savedFilters.js'
 import { isTypingTarget } from '../../domain/search.js'
+import { copyText } from '../../lib/download.js'
 import { hasModalLayer } from '../../lib/layers.js'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
@@ -289,12 +290,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
           icon: Link,
           onSelect: async () => {
             const url = `${window.location.origin}/incident/${encodeURIComponent(row.id)}`
-            try {
-              await navigator.clipboard.writeText(url)
-              showToast({ message: 'Link copied.' })
-            } catch {
-              showToast({ message: 'The browser refused to copy.' })
-            }
+            showToast({ message: (await copyText(url)) ? 'Link copied.' : 'The browser refused to copy.' })
           },
         },
         ...(canAutomate

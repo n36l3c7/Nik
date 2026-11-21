@@ -22,14 +22,15 @@ from typing import Any, Iterable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from . import recognise
+from . import artifacts, recognise
+from .core.clock import iso
 from .core.models import Incident, IocAlert, IocEntry, IocList, IocListItem, IocRecord
 from .enrichment import service
 from .enrichment import sources as lookup_sources
 from .iocs import TYPES, Allowlist, misp_event, normalize, stix_bundle, text_iocs
 
 TLPS = ("clear", "green", "amber", "red")
-TAG_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,39}")
+TAG_RE = artifacts.TAG_RE  # one way to write a tag, whatever carries it
 TAGS_MAX = 12
 NOTE_MAX = 2000
 MAX_BATCH = 10_000
@@ -328,7 +329,7 @@ def _iso_ms(ms: int | None) -> str | None:
     if not ms:
         return None
     try:
-        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+        return iso(ms / 1000)
     except (ValueError, OverflowError, OSError):
         return None
 
@@ -337,7 +338,7 @@ def never_sent(kind: str, value: str, allowlist: Allowlist, red: bool) -> str | 
     """Why the indicator is not sent to the sources, without a query per row."""
     if red:
         return "it is classified TLP:RED"
-    return service.blocked(None, kind, value, allowlist, red=set())  # type: ignore[arg-type]
+    return service.blocked(None, kind, value, allowlist, red=set())  # type: ignore[arg-type] - no session: it is read only to find the TLP:RED values, given here
 
 
 def red_pairs(db: OrmSession) -> set[Pair]:

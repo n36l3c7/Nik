@@ -513,14 +513,6 @@ def _announce(db: OrmSession, row: Incident, before: set, after: set) -> None:
         emit_detached(db, "ioc.watch_hit", {"incident": hits[0]["incident"], "hits": hits[:200]})
 
 
-def reindex_all(db: OrmSession) -> int:
-    """Rebuild the whole index (backup restore)."""
-    count = 0
-    for row in db.scalars(select(Incident)):
-        count += reindex_incident(db, row, alerts=False)
-    return count
-
-
 def backfill(session_factory) -> int:
     """Index the incidents of a database that has no index yet (the first start
     after the upgrade that added it). One transaction per incident, so several

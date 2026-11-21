@@ -20,6 +20,7 @@ import {
   stateBadge,
 } from '../../../domain/fetch.js'
 import { Badge, Button, Modal, Wait } from '../../ui/index.js'
+import FindIndicatorsSwitch from './FindIndicatorsSwitch.jsx'
 import Switch from './Switch.jsx'
 
 /*
@@ -34,9 +35,11 @@ import Switch from './Switch.jsx'
  *
  * What is done at once, and is not part of the save: fetching now, letting a
  * paused or failing instance go on, resetting the last run, looking at what
- * it fetched lately with what became of each item, and giving the saved
+ * it fetched lately with what became of each item, giving the saved
  * direction to the open incidents fetched before (the choice itself is for
- * those fetched from then on).
+ * those fetched from then on), and whether the incidents of this instance are
+ * read for indicators (FindIndicatorsSwitch.jsx: it is kept with the setting
+ * of Settings, Indicators found, not with the instance, and says so).
  */
 
 const INPUT =
@@ -376,6 +379,24 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
             Mirroring is {choiceLabel(saved)} until the instance is saved. Saving changes nothing for the incidents
             already fetched: that is asked for apart, below.
           </p>
+        )}
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-1.5 border-t border-line-soft pt-3">
+        <legend className="float-left mb-1 w-full font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+          Indicators found
+        </legend>
+        <p className="text-xs text-fg-muted">
+          Whether the incidents this instance fetches are read for indicators as they come in, and at each update a
+          mirror brings. It follows the setting (Platform settings, Indicators found) unless it is told apart here.
+        </p>
+        {instance ? (
+          <>
+            <FindIndicatorsSwitch connectionId={instance.id} name={instance.name} />
+            <p className="text-xs text-fg-muted">This choice is saved at once: it does not wait for Save.</p>
+          </>
+        ) : (
+          <p className="text-xs text-fg-muted">It is chosen here once the instance is made.</p>
         )}
       </fieldset>
 

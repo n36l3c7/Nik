@@ -73,8 +73,7 @@ COMMAND_RE = re.compile(r"^[a-z][a-z0-9-]{1,48}$")
 METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")
 OPERATORS = ("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in", "exists", "empty")
 
-# What a connection is asked for. The first six are plain values; the others are credentials.
-VALUE_TYPES = ("url", "text", "number", "bool", "choice", "secret")
+# The credentials a connection can be asked for; anything else it is asked for is a plain value.
 AUTH_TYPES = ("basic", "bearer", "header", "query", "oauth2_client", "session", "zscaler")
 # The commands Nik's own code has for each kind of native connector (automation/mail_runtime.py).
 NATIVE: dict[str, frozenset[str]] = {
@@ -94,7 +93,6 @@ NATIVE: dict[str, frozenset[str]] = {
         }
     ),
 }
-ARGUMENT_TYPES = ("text", "number", "bool", "list", "object", "any", "choice", "file")
 
 MAX_PAGES = 100
 PAGE_MAX = 1000

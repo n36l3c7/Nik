@@ -10,6 +10,7 @@ from __future__ import annotations
 from sqlalchemy import false, func, select
 
 from .. import fields as registry
+from .. import ioc_library
 from ..core.models import (
     Approval,
     Artifact,
@@ -32,7 +33,7 @@ ARTIFACT_KINDS = ("file", "mail", "pcap", "url", "mailbox")
 INDICATOR_TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
 VERDICTS = ("unknown", "harmless", "suspicious", "malicious")
 ORIGINS = ("incident", "manual", "import", "artifact")
-TLPS = ("clear", "green", "amber", "red")
+TLPS = ioc_library.TLPS
 
 
 # --------------------------------------------------------------------------- #

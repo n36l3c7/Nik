@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Boxes, Braces, Clock, Download, ExternalLink, Globe, Radar, RefreshCw, ShieldCheck } from 'lucide-react'
-import { Badge, Button } from '../ui/index.js'
+import { Badge, Button, Wait } from '../ui/index.js'
 import { youngDomainDays } from '../../domain/sourceDetails.js'
 import SourceDetails from './SourceDetails.jsx'
 import { api, apiUrl } from '../../services/api.js'
@@ -17,6 +17,7 @@ import {
   verdictMeta,
   verdictShares,
 } from '../../domain/enrichment.js'
+import { copyText } from '../../lib/download.js'
 import { formatDateTime, formatRelative } from '../../lib/time.js'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -103,7 +104,7 @@ function Verdict({ summary, retentionDays, lookedUp, young = null, held = null }
 }
 
 function SeenIn({ lookup, activeIncidentId, onOpenIncident, onOpenArtifact }) {
-  if (lookup.loading) return <p className="font-mono text-xs text-fg-muted">Searching every incident…</p>
+  if (lookup.loading) return <Wait className="text-xs">Searching every incident…</Wait>
   if (lookup.error) return <p className="text-xs text-high">{lookup.error}</p>
   const incidents = lookup.data?.incidents ?? []
   // Artifacts analysed on their own (no incident) that hold the value.
@@ -281,13 +282,15 @@ function SourceCard({ result, type, value, onNotice }) {
   const changes = verdictChanges(result.history)
   const rawPath = `/enrichment/raw?${new URLSearchParams({ type, value, provider: result.provider })}`
   const copyJson = async () => {
+    let body
     try {
-      const body = await api.get(rawPath)
-      await navigator.clipboard.writeText(JSON.stringify(body, null, 2))
-      onNotice(`${result.label}: JSON copied.`)
+      body = await api.get(rawPath)
     } catch (err) {
-      onNotice(`${result.label}: ${err.message || 'the browser refused to copy'}`)
+      onNotice(`${result.label}: ${err.message || 'the answer could not be read'}`)
+      return
     }
+    const done = await copyText(JSON.stringify(body, null, 2))
+    onNotice(`${result.label}: ${done ? 'JSON copied.' : 'the browser refused to copy'}`)
   }
   return (
     <article aria-label={result.label} className="min-w-0 border border-line bg-panel">
@@ -340,7 +343,7 @@ function SourceCard({ result, type, value, onNotice }) {
         {result.status === 'error' ? (
           <p className="font-mono text-xs text-med">{result.error}</p>
         ) : result.status === 'running' ? (
-          <p className="font-mono text-xs text-fg-muted">Waiting for the answer…</p>
+          <Wait className="text-xs">Waiting for the answer…</Wait>
         ) : (
           <>
             <p className="font-mono text-xs text-fg">{result.summary}</p>
@@ -525,7 +528,7 @@ export default function IocDetail({
           {lookedUp && (
             <section aria-label="Sources" className="space-y-1.5">
               <Heading>Sources</Heading>
-              {intel.loading && <p className="font-mono text-xs text-fg-muted">Loading…</p>}
+              {intel.loading && <Wait className="text-xs">Loading…</Wait>}
               {intel.error && <p className="text-xs text-high">{intel.error}</p>}
               {data?.blocked && <p className="text-xs text-fg-muted">Never sent outside: {data.blocked}.</p>}
               {held && (

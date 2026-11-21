@@ -48,8 +48,6 @@ function plain(record) {
   return Object.fromEntries(Object.entries(record ?? {}).filter(([key]) => !INTERNAL.test(key)))
 }
 
-const writeClipboard = copyText
-
 export function useItemMenu(incident) {
   const { openMenu, askText } = useContextMenu()
   const { toggleFlag, addFlagComment } = useIncidents()
@@ -69,7 +67,7 @@ export function useItemMenu(incident) {
       const canFlag = Boolean(incident?.id)
       const flaggable = spec.flaggable ?? (ioc ? indicatorFlaggable(ioc.type, ioc.value) : null)
       const notify = async (content, what) =>
-        showToast({ message: (await writeClipboard(content)) ? `${what} copied.` : 'The browser refused to copy.' })
+        showToast({ message: (await copyText(content)) ? `${what} copied.` : 'The browser refused to copy.' })
 
       const sections = [
         actions,

@@ -7,7 +7,8 @@ import { Select } from '../../ui/index.js'
 /**
  * Whether the incidents one instance of a connector brings in are read for indicators: as the
  * setting says (Settings, Indicators found), always, or never. It keeps itself: it reads what
- * the instance says and saves a choice at once.
+ * the instance says and saves a choice at once. It is drawn in the Fetch part of the form of an
+ * instance, which is narrow: the choice goes under its name when the two do not fit on a line.
  *
  * @param {{ connectionId: string, name?: string, onChanged?: () => void }} props
  */
@@ -52,6 +53,7 @@ export default function FindIndicatorsSwitch({ connectionId, name = '', onChange
       onChange={choose}
       options={options}
       disabled={busy}
+      className="flex-wrap"
     />
   )
 }
