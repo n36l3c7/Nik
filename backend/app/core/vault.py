@@ -30,7 +30,7 @@ from sqlalchemy import select
 
 from .config import settings
 
-_logger = logging.getLogger("nik.vault")
+logger = logging.getLogger("nik.vault")
 
 
 def _key(secret: str) -> Fernet:
@@ -128,7 +128,9 @@ def _rotate_automation(db) -> int:
         if token:
             row.secret = token
             moved += 1
-    settings_row = db.get(Setting, 2)  # automation/state.py
+    from ..automation.state import SETTINGS_ID as AUTOMATION_ROW
+
+    settings_row = db.get(Setting, AUTOMATION_ROW)
     smtp = ((settings_row.doc if settings_row else None) or {}).get("smtp") or {}
     token = _rotated(smtp["password"]) if smtp.get("password") else None
     if token:
@@ -142,9 +144,10 @@ def _rotate_backups(db) -> int:
     """The secrets of the backups (backups/config.py): the passphrase, the earlier ones, the key of the destination."""
     from sqlalchemy.orm.attributes import flag_modified
 
+    from ..backups.config import SETTINGS_ID as BACKUPS_ROW
     from .models import Setting
 
-    row = db.get(Setting, 20)
+    row = db.get(Setting, BACKUPS_ROW)
     doc = dict((row.doc if row else None) or {})
     moved = 0
     token = _rotated(doc.get("passphrase"))
@@ -234,10 +237,13 @@ def inventory(db) -> list[tuple[str, str]]:
         found += [("secret of a connector instance", getattr(row, column)) for column in ("secrets", "extra_keys")]
     for row in db.scalars(select(Credential)):
         found.append(("credential", row.secret))
-    automation = db.get(Setting, 2)
+    from ..automation.state import SETTINGS_ID as AUTOMATION_ROW
+    from ..backups.config import SETTINGS_ID as BACKUPS_ROW
+
+    automation = db.get(Setting, AUTOMATION_ROW)
     smtp = ((automation.doc if automation else None) or {}).get("smtp") or {}
     found.append(("SMTP password", smtp.get("password")))
-    backups = db.get(Setting, 20)
+    backups = db.get(Setting, BACKUPS_ROW)
     doc = (backups.doc if backups else None) or {}
     found.append(("backup passphrase", doc.get("passphrase")))
     found += [("earlier backup passphrase", kept) for kept in doc.get("previous") or []]
@@ -298,5 +304,5 @@ def reencrypt(session_factory) -> int:
         moved += _rotate_forwarding(db)
         db.commit()
     if moved:
-        _logger.info("re-encrypted %d stored secret(s) with the current SECRET_KEY", moved)
+        logger.info("Re-encrypted %d stored secret(s) with the current SECRET_KEY", moved)
     return moved

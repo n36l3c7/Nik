@@ -138,7 +138,7 @@ export default function TimelineTab({ incident }) {
 
   useEffect(() => {
     setRange({ start: incident?.suspiciousStart ?? null, end: incident?.suspiciousEnd ?? null })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only another incident resets the range, not an edit of its window
   }, [incident?.id])
 
   useEffect(() => {

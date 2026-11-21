@@ -217,11 +217,7 @@ function Inspector({ base, pane: paneName, entry, raw, canMark, onClose, onChang
             <JsonBlock value={entry.body.item} what="the item" />
           </section>
         )}
-        {!detail && (
-          <p role="status" className="font-mono text-xs text-fg-muted">
-            Loading…
-          </p>
-        )}
+        {!detail && <Wait className="text-xs">Loading…</Wait>}
         {step && (
           <>
             {step.error && (

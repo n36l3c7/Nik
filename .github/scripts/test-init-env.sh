@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tests of deploy/init-env.sh: what it writes for a new install, for an
 # existing one with an .env, and for an existing one that never had an .env.
+# And that every script of deploy/ reads a value of the env file alike.
 # The container engine is a stand-in that lists the volumes each case needs.
 set -euo pipefail
 
@@ -106,5 +107,33 @@ VOLUMES="" NIK_EXISTING_INSTALL=1 run "$work/forced.env"
 rm -f "$work/fresh.env"
 VOLUMES="nik_db-data-18" NIK_EXISTING_INSTALL=0 run "$work/fresh.env"
 [ "$(wc -c <"$work/fresh.env.secrets/db_password")" -eq 65 ] || fail "NIK_EXISTING_INSTALL=0 was ignored"
+
+echo "== a value of the env file is read alike by init-env.sh, secrets.sh and recovery-lib.sh"
+mkdir "$work/stack"
+cat >"$work/stack/.env" <<'EOF'
+PLAIN=/srv/nik secrets
+SINGLE='/srv/nik secrets'
+DOUBLE="/srv/nik secrets"
+HASH='with # and $ inside'
+TWICE=first
+TWICE='second'
+EMPTY=
+EOF
+# The function as one script defines it, alone: the scripts themselves do their work when run.
+reader() { sed -n "/^$2() *{/,/^}/p" "$1"; }
+for name in PLAIN SINGLE DOUBLE HASH TWICE EMPTY ABSENT; do
+  case "$name" in
+    HASH) expected='with # and $ inside' ;;
+    TWICE) expected=second ;;
+    EMPTY | ABSENT) expected="" ;;
+    *) expected="/srv/nik secrets" ;;
+  esac
+  from_init=$(ENV_FILE="$work/stack/.env" sh -c "$(reader deploy/init-env.sh value_of); value_of $name")
+  from_secrets=$(ENV_FILE="$work/stack/.env" bash -c "$(reader deploy/secrets.sh value_of); value_of $name")
+  from_recovery=$(NIK_DIR="$work/stack" ENGINE=docker bash -c ". deploy/recovery-lib.sh; env_value $name")
+  [ "$from_init" = "$expected" ] || fail "init-env.sh reads $name as '$from_init'"
+  [ "$from_secrets" = "$expected" ] || fail "secrets.sh reads $name as '$from_secrets'"
+  [ "$from_recovery" = "$expected" ] || fail "recovery-lib.sh reads $name as '$from_recovery'"
+done
 
 echo "init-env tests passed"

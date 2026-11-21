@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { asTable, authorLabel, cell, contextWrites, entryLine, hasDetail, threaded } from './warRoom.js'
+import { asTable, authorLabel, cell, contextWrites, entryLine, threaded } from './warRoom.js'
 
 test('a line of the stream says what happened', () => {
   assert.deepEqual(entryLine({ kind: 'note', body: { text: 'Called the user.' } }), {
@@ -47,8 +47,6 @@ test('a line of the stream says what happened', () => {
   assert.equal(authorLabel('nik-automation'), 'automation')
   assert.equal(authorLabel('connector:servicenow'), 'servicenow')
   assert.equal(authorLabel('anna'), 'anna')
-  assert.equal(hasDetail({ kind: 'note' }), false)
-  assert.equal(hasDetail({ kind: 'result', stepId: 's1' }), true)
 })
 
 test('a result is a table when it is a list of flat objects', () => {

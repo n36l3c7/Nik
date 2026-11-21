@@ -170,7 +170,8 @@ services:
       # after failed sign-ins and the administrators' networks go by it.
       FORWARDED_ALLOW_IPS: ""
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
-      # Optional bearer token for /api/metrics (never published by nginx).
+      # Optional bearer token for /api/metrics (reached through nginx like the
+      # rest of /api; the route answers to a token only).
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       METRICS_TOKEN_FILE: /run/secrets/metrics_token
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}

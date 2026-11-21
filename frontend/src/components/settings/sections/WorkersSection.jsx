@@ -4,7 +4,7 @@ import { api } from '../../../services/api.js'
 import { formatRelative } from '../../../lib/time.js'
 import { notAnswering, workerName, workerStatus } from '../../../domain/workers.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
-import { Badge, Button, EmptyState } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Wait } from '../../ui/index.js'
 
 /*
  * System → Workers (admins): the automation worker and the analysis workers,
@@ -68,11 +68,7 @@ export default function WorkersSection() {
           {error}
         </p>
       )}
-      {!found && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+      {!found && !error && <Wait>Loading…</Wait>}
 
       {found && (
         <div className="max-w-2xl space-y-3">

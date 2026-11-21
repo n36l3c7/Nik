@@ -23,13 +23,13 @@ os.environ.setdefault("NIK_PACKS_CATALOGUE", "")
 os.environ.setdefault("SANDBOX_URL", "http://sandbox.test:8750")
 os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+import pytest
+from fastapi.testclient import TestClient
 
 from app import lists
-from app.core import security  # noqa: E402
-from app.core.db import Base, engine  # noqa: E402
-from app.main import app  # noqa: E402
+from app.core import security
+from app.core.db import Base, engine
+from app.main import app
 
 # bcrypt's lowest cost: hashing in tests needs to be correct, not slow.
 security.BCRYPT_ROUNDS = 4
@@ -208,7 +208,6 @@ def sandbox(monkeypatch):
         pytest.skip("the sandbox runner needs Linux and the workers/sandbox sources")
     sys.path.insert(0, str(folder))
     import runner
-
     from app.automation import egress
 
     calls: list[dict] = []

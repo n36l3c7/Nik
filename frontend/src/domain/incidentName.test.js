@@ -1,13 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  deriveIncidentName,
-  filterIncidents,
-  hasIdentity,
-  normalizeSeverity,
-  normalizeStatus,
-  statusLabel,
-} from './incidentName.js'
+import { deriveIncidentName, hasIdentity, normalizeSeverity, normalizeStatus, statusLabel } from './incidentName.js'
 import { formatNumber, numberFromText, numberedName } from './incidentName.js'
 
 test('the name puts the ticket first and lets the title replace host and user', () => {
@@ -37,18 +30,6 @@ test('status: unknown values are open, and the panel filters by status and assig
   assert.equal(normalizeStatus(undefined), 'open')
   assert.equal(normalizeStatus('archived'), 'open')
   assert.equal(statusLabel('in_progress'), 'in progress')
-  const list = [
-    { id: 'a' },
-    { id: 'b', status: 'in_progress', assignee: 'Anna' },
-    { id: 'c', status: 'closed', assignee: 'anna' },
-    { id: 'd', status: 'closed', assignee: 'luca' },
-  ]
-  const ids = (filters) => filterIncidents(list, filters).map((incident) => incident.id)
-  assert.deepEqual(ids(), ['a', 'b', 'c', 'd'])
-  assert.deepEqual(ids({ status: 'open' }), ['a'])
-  assert.deepEqual(ids({ status: 'closed' }), ['c', 'd'])
-  assert.deepEqual(ids({ assignee: 'ANNA' }), ['b', 'c'])
-  assert.deepEqual(ids({ status: 'closed', assignee: 'anna' }), ['c'])
 })
 
 test('the number of an incident is written #00042 and read back from what is typed', () => {

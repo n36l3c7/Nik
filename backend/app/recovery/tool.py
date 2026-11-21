@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from ..backups.container import PASSPHRASE, SUFFIX, BackupError, Key, Reader, Secrets, Writer, peek
+from ..core.clock import now_iso
 from ..core.config import settings
 from . import archive, envelope, layout
 
@@ -266,7 +267,7 @@ def _note_recovery(db, label: str, moment: float | None, newest: float, paused: 
     db.execute(
         sa.insert(log).values(
             id=str(uuid.uuid4()),
-            at=datetime.now(timezone.utc).isoformat(),
+            at=now_iso(),
             actor=ACTOR,
             action=RESTORE,
             target=label,
@@ -677,9 +678,7 @@ def pack_secrets(_args) -> int:
         if needed not in held:
             raise BackupError(f"This server has no {needed} to give: is this the api container of a running stack?")
     out = io.BytesIO()
-    writer = Writer(
-        out, Key.new(PASSPHRASE, phrase), {"kind": "pair-secrets", "createdAt": datetime.now(timezone.utc).isoformat()}
-    )
+    writer = Writer(out, Key.new(PASSPHRASE, phrase), {"kind": "pair-secrets", "createdAt": now_iso()})
     with writer.part("secrets.json") as part:
         part.write(json.dumps(held, sort_keys=True).encode("utf-8"))
     writer.finish({"names": sorted(held)})

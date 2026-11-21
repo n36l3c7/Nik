@@ -47,9 +47,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     # What the account may do: a list of role names (core/permissions.py).
     roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    # Raised each time the roles change. The roles themselves are read on every
-    # request; the counter is for whatever keeps a copy of them (a long-lived
-    # worker, a client) to notice that its copy is old.
+    # Raised each time the roles change. Nothing reads it: the roles themselves
+    # are read on every request, so no copy of them can be old.
     session_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -589,7 +588,7 @@ class EnrichmentHistory(Base):
 
 
 class Lease(Base):
-    """A lease held by one API process at a time (the enrichment worker)."""
+    """A lease: what one process at a time holds to run a loop that must run once (core/leases.py)."""
 
     __tablename__ = "leases"
 
@@ -828,7 +827,8 @@ class YaraRule(Base):
 
 
 class Setting(Base):
-    """Global shared settings (keywords + business hours). Single row, id=1."""
+    """Settings documents, one row each: the id says whose it is. Row 1 is the keywords and the
+    business hours; the module that owns another row names it ``SETTINGS_ID``."""
 
     __tablename__ = "settings"
 
@@ -1985,7 +1985,6 @@ SAVED_FILTER_TABLES = ("saved_filters", "saved_filter_defaults")
 
 # Created by migration 0040_instance_keys where missing.
 INSTANCE_KEY_TABLES = ("instance_key_uses", "command_answers")
-INSTANCE_KEY_COLUMNS = {"connections": ("extra_keys", "key_policy")}
 
 # Created by migration 0038_incident_page where missing.
 INCIDENT_PAGE_TABLES = ("playground_entries",)

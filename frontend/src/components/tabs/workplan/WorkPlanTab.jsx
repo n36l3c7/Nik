@@ -8,7 +8,7 @@ import { api } from '../../../services/api.js'
 import { KIND_LABELS, normalise } from '../../../domain/automation/graph.js'
 import { RUN_COLORS, isFinished } from '../../../domain/automation/runs.js'
 import { dueText, isOpen, orderPlans, phaseTitle, progress, statusBadge, stepBadge } from '../../../domain/tasks.js'
-import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../../ui/index.js'
 import Assign, { assigneeOf } from '../../tasks/Assign.jsx'
 import NewTaskDialog from '../../tasks/NewTaskDialog.jsx'
 import TaskCard from '../../tasks/TaskCard.jsx'
@@ -282,11 +282,7 @@ export default function WorkPlanTab({ incident }) {
           {error}
         </p>
       )}
-      {!plan && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the plan…
-        </p>
-      )}
+      {!plan && !error && <Wait>Loading the plan…</Wait>}
       {plan && plans.length === 0 && plan.tasks.length === 0 && (
         <EmptyState
           skull

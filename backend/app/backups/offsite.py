@@ -55,7 +55,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..core import audit
+from ..core import audit, leases
 from ..core.models import Backup, Setting
 from . import config, runner
 from .container import CHUNK, SUFFIX, BackupError
@@ -448,7 +448,7 @@ def ship(now: float | None = None, holder: str = runner.HOLDER) -> list[str]:
         ]
     if not ready and not going:
         return did
-    with runner.Renewing(holder, LEASE):
+    with leases.Renewing(LEASE, holder, runner.LEASE_SECONDS):
         if ready and destination is not None:
             did += _reconcile(destination, clock)
         did += _work(destination, trouble, going, waiting if ready else [], clock)

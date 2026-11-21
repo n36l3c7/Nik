@@ -8,7 +8,6 @@ import {
   idFromName,
   importable,
   initialSkips,
-  packLine,
   packProblem,
   planSummary,
   plural,
@@ -84,14 +83,6 @@ test('items by kind, and a pack in a line', () => {
   )
   assert.equal(plural('Incident type', 2), 'Incident types')
   assert.equal(plural('Field', 1), 'Field')
-  assert.equal(
-    packLine({ items: [{ there: true }, { there: false }], builtin: true }),
-    '2 items · 1 no longer here · part of Nik',
-  )
-  assert.equal(
-    packLine({ items: [{ there: true }], updatedBy: 'admin', updatedAt: '2026-11-19T08:00:00+00:00' }),
-    '1 item · installed by admin on 2026-11-19',
-  )
 })
 
 test('the catalogue and what is installed make one list of cards', async () => {

@@ -5,7 +5,7 @@ the tests make that process's pass themselves (``run_due``), as those of ``nik.s
 The files are harmless: a text, a minimal PE with two instructions, a message written here.
 """
 
-# ruff: noqa: E501, F811 (graphs of test playbooks read better on one line; fixtures are imported)
+# ruff: noqa: F811 (fixtures are imported)
 
 from __future__ import annotations
 

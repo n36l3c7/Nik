@@ -14,7 +14,7 @@ import { STATUSES } from '../../../domain/incidentName.js'
 import { gridSections, kindOf } from '../../../domain/layoutGrid.js'
 import { chartSummary } from '../../../domain/linked.js'
 import { formatDateTime } from '../../../lib/time.js'
-import { Button, ErrorBoundary, SeverityTag } from '../../ui/index.js'
+import { Button, ErrorBoundary, SeverityTag, Wait } from '../../ui/index.js'
 import EditFieldsDialog from '../../fields/EditFieldsDialog.jsx'
 import FieldList from '../../fields/FieldList.jsx'
 import Timers from '../../fields/Timers.jsx'
@@ -221,7 +221,7 @@ function Tab({ id, incident, ...rest }) {
   if (!Component) return null
   return (
     <div className="h-full overflow-y-auto">
-      <Suspense fallback={<p className={`font-mono ${MUTED}`}>Loading…</p>}>
+      <Suspense fallback={<Wait>Loading…</Wait>}>
         <Component incident={incident} {...rest} />
       </Suspense>
     </div>

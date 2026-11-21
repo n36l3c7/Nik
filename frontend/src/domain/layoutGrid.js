@@ -239,6 +239,3 @@ export function freeSections(grid, layout) {
   )
   return gridSections(layout).filter((section) => !shown.has(section.id))
 }
-
-/** The grid as the type keeps it: for the editor's kinds of widget, what each needs and no more. */
-export const gridForSaving = (grid, layout) => cleanGrid(grid, layout)

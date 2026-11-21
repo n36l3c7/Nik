@@ -34,13 +34,12 @@ from ..core import audit, vault
 from ..core.db import get_db
 from ..core.models import Connection, Connector, Credential, Playbook, PlaybookVersion
 from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_OPEN, AUTOMATION_RUN, CONNECTORS_MANAGE
-from ..core.security import Principal, now_iso, reader_principal, require
+from ..core.security import Principal, manager_principal, now_iso, reader_principal, require
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
-manager_principal = require(CONNECTORS_MANAGE)
 # Whoever builds or runs playbooks sees which connections there are (never what is in them).
-chooser_principal = require(CONNECTORS_MANAGE, AUTOMATION_RUN, AUTOMATION_EDIT)
+instance_chooser_principal = require(CONNECTORS_MANAGE, AUTOMATION_RUN, AUTOMATION_EDIT)
 
 
 class SourceIn(BaseModel):
@@ -458,7 +457,7 @@ def delete_connector(
 # Connections                                                                 #
 # --------------------------------------------------------------------------- #
 @router.get("/instances")
-def list_connections(caller: Principal = Depends(chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_connections(caller: Principal = Depends(instance_chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The connections. With ``connectors.manage``: their address, which secrets are set, the last
     test. Otherwise their names only, to choose one on a node."""
     full = caller.has(CONNECTORS_MANAGE)

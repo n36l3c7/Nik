@@ -224,6 +224,15 @@ def command_name(action_id: str) -> str:
     return action_id.replace(".", "-", 1)
 
 
+def confirm_answer(target: Target) -> dict[str, Any]:
+    """What is answered (409) for a command that changes something outside Nik, until it is confirmed."""
+    return {
+        "detail": f"{target.title} changes something outside Nik: confirm to run it",
+        "needsConfirm": True,
+        "command": target.title,
+    }
+
+
 def resolve(db: OrmSession, parsed: Parsed) -> Target:
     """The node a parsed ``!`` line runs. Raises ``CommandError``."""
     name = parsed.name

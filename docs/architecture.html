@@ -214,14 +214,20 @@
 │   │                               #   (the DevTools-like request log), server.py, tests/
 │   ├── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
 │   │                               #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
+│   │                               # In analyzer, capa and pcap: given.py (the files the backend sends, the
+│   │                               #   secret the worker starts with); in those and docview: jobs.py (the jobs
+│   │                               #   in flight, so the backend can ask after one). Copies, kept alike by a test
 │   └── sandbox/                    # scripts of playbooks: Dockerfile (Python and nothing else),
 │                                   #   harness.py (the child a script runs in), runner.py (the limits),
 │                                   #   server.py, tests/
-├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
+├── deploy/                         # Operations: init-env.sh (writes .env and the secrets), secrets.sh (moves
+│                                   #   and changes them), db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
 │                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh,
 │                                   #   recover-to.sh (restore.sh --to), standby.sh, recovery-lib.sh (what the
 │                                   #   two share), db/ (the scripts PostgreSQL archives and restores its log
 │                                   #   with, the recovery service, the base backup put in place)
+├── packs/                          # Content packs, one folder a product: pack.yml and its connectors, mappers,
+│                                   #   playbooks; published as the catalogue a Nik reads
 ├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
 ├── docker-compose.yml              # db + recovery + api + automation + sandbox + analyzer + capa +
@@ -252,6 +258,11 @@
 │   ├── vault.py                    # Encryption of API keys, second-factor secrets and TLS key logs (Fernet,
 │   │                               #   HKDF of SECRET_KEY);
 │   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
+│   ├── keys.py                     # Where the secrets of the server come from: a file (NAME_FILE) or the environment
+│   ├── sealed.py                   # A file of the store as it is on the disk: sealed, its own key wrapped
+│   │                               #   with the store key
+│   ├── store.py                    # Reading and writing the files of the store: the one module that opens them
+│   ├── leases.py                   # Leases: what lets one process at a time run a loop that must run once
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
 ├── automation/                     # Playbooks (4.1), connectors (4.2): see "The automation engine" below
@@ -276,7 +287,9 @@
 ├── workers/                        # Clients of the analysis workers
 │   ├── analyzer.py                 # rizin worker client + disassembly job
 │   ├── capa.py                     # capa worker client + capabilities job (one at a time)
-│   └── previews.py                 # document viewer and isolated browser clients
+│   ├── previews.py                 # document viewer and isolated browser clients
+│   ├── handover.py                 # Giving a worker the files a job needs: the store is sealed and no worker sees it
+│   └── watching.py                 # Waiting for a long job: a slow worker told from a restarted or a dead one
 ├── malware/                        # Malware samples
 │   ├── samples.py                  # Sample store (files by SHA-256, e-mails as .mail) + protected zip
 │   ├── yara_rules.py               # YARA: built-in + admin rules compiled together, scan
@@ -340,6 +353,9 @@
 │                                   #   holds each piece, its heartbeat, the sweeper that takes back what lost
 │                                   #   its holder (started again or failed loudly), what is set aside
 ├── serving.py                      # The gunicorn worker: how long a stop waits for the requests in flight
+├── preflight.py                    # The check the entrypoint runs first: secrets missing, publicly known, given
+│                                   #   twice or unreadable; the store key against the store
+├── stopped.py                      # A server that does not start: it stays up and answers every request with why
 ├── backups/                        # Backups Nik takes by itself, and upgrades one can come back from
 │   ├── container.py                #   the file format (encrypted, streamed); also runs alone, without Nik
 │   ├── database.py · store.py      #   the database and the store inside a backup; scratch databases

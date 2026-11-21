@@ -8,7 +8,7 @@ import { formatNumber, numberedName } from '../../domain/incidentName.js'
 import { shortDateTime } from '../../domain/incidentList.js'
 import { blockTitle, countFigures, lastLines, nearestTimer, quickBlocks } from '../../domain/quickView.js'
 import { formatRelative } from '../../lib/time.js'
-import { Badge, Button, SeverityTag, StatusTag } from '../ui/index.js'
+import { Badge, Button, SeverityTag, StatusTag, Wait } from '../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import LayoutWidget from '../tabs/summary/LayoutWidgets.jsx'
 import IncidentTags from '../incident/IncidentTags.jsx'
@@ -113,7 +113,7 @@ function Linked({ incidentId, onOpen }) {
     }
   }, [incidentId])
   if (failed) return <p className={MUTED}>The linked incidents could not be read.</p>
-  if (found === null) return <p className={`font-mono ${MUTED}`}>Loading…</p>
+  if (found === null) return <Wait>Loading…</Wait>
   if (found.length === 0) return <p className={MUTED}>No incident is linked to this one.</p>
   return (
     <ul className="flex flex-col">
@@ -192,7 +192,7 @@ export default function QuickView({ row, type, onClose, onOpen, onTag }) {
   const draw = (block) => {
     if (block.kind === 'facts') return <Facts row={row} />
     if (block.kind === 'linked') return <Linked incidentId={row.id} onOpen={onOpen} />
-    if (!held) return <p className={`font-mono ${MUTED}`}>Loading…</p>
+    if (!held) return <Wait>Loading…</Wait>
     if (block.kind === 'stats') return <Numbers counts={held.counts} />
     if (block.kind === 'last') return <Last entries={held.last} />
     if (block.kind === 'timers' && held.timers.length === 0) return <p className={MUTED}>No timer was started.</p>

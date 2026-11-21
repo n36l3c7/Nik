@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, Database, FileCode, FileJson, FileSpreadsheet, Upload, X } from 'lucide-react'
-import Badge from '../../ui/Badge.jsx'
-import AsciiSkull from '../../ui/AsciiSkull.jsx'
+import { AsciiSkull, Badge } from '../../ui/index.js'
 import { formatDateTime } from '../../../lib/time.js'
 
 /*

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Container entrypoint: drop privileges, check the secrets, apply the database
 # migrations, then serve.
-set -e
+set -eu
 
 # The server never runs as root. The container starts as root only for this:
 # a sample store created by a release before 3.0.0 belongs to root, and has to

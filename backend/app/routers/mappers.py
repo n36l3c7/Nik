@@ -19,11 +19,9 @@ from .. import mapping
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Connection, Connector, Incident, Mapper
-from ..core.permissions import CONNECTORS_MANAGE
-from ..core.security import Principal, require
+from ..core.security import Principal, manager_principal
 
 router = APIRouter(tags=["mappers"])
-manager_principal = require(CONNECTORS_MANAGE)
 
 
 class MapperIn(BaseModel):

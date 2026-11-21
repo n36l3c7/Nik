@@ -298,9 +298,6 @@ export const SETTINGS_GROUPS = [
 const SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.sections.map((section) => ({ ...section, group: group.id })))
 const BY_ID = new Map(SECTIONS.map((section) => [section.id, section]))
 
-/** The section with this id, or null. */
-export const settingsSection = (id) => BY_ID.get(id) ?? null
-
 /** The address of a section (by id); of the page itself when the id is unknown. */
 export function settingsPath(id) {
   const section = BY_ID.get(id)

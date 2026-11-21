@@ -6,8 +6,8 @@
  * so all four categories share this one component.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Check, Clock, Copy, Flag, RotateCcw, TriangleAlert } from 'lucide-react'
-import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
+import { CalendarClock, Clock, Flag, RotateCcw, TriangleAlert } from 'lucide-react'
+import { Badge, Button, Card, CopyButton, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
@@ -44,31 +44,6 @@ function TimeCell({ event }) {
         </span>
       )}
     </span>
-  )
-}
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-  if (!text) return null
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      /* insecure context: ignore */
-    }
-  }
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label="Copy"
-      title="Copy"
-      className="shrink-0 p-0.5 text-fg-muted opacity-0 transition hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
-    >
-      {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
   )
 }
 
@@ -126,7 +101,7 @@ function FieldCell({ event, column }) {
     return (
       <span className="group inline-flex min-w-0 items-center gap-1.5">
         {cell}
-        <CopyButton text={value} />
+        <CopyButton text={value} hover />
       </span>
     )
   }
@@ -154,7 +129,7 @@ export default function ArtifactSection({ incident, category, records = [] }) {
 
   useEffect(() => {
     setRange({ start: incident?.suspiciousStart ?? null, end: incident?.suspiciousEnd ?? null })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only another incident or category resets the range, not an edit of the window
   }, [incident?.id, category.id])
 
   const events = useMemo(() => buildArtifactEvents({ records, category, engine }), [records, category, engine])

@@ -16,11 +16,11 @@ from . import keys
 # Load a local .env file if python-dotenv is installed. This is optional: in
 # production the environment is typically populated by systemd / the container
 # runtime, so a missing dotenv package is not an error.
-try:  # pragma: no cover - trivial import guard
+try:
     from dotenv import load_dotenv
 
     load_dotenv()
-except Exception:  # pragma: no cover - dotenv is optional
+except Exception:  # noqa: BLE001 - dotenv is optional
     pass
 
 

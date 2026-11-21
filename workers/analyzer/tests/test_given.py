@@ -44,6 +44,19 @@ def test_the_copies_of_this_file_in_the_other_workers_are_the_same():
         assert path.read_bytes() == mine, f"{path} differs from workers/analyzer/given.py"
 
 
+def test_the_workers_that_carry_their_own_reader_of_a_secret_read_it_the_same_way():
+    """The workers that are given no file have no given.py: ``secret`` is written in their server.py."""
+    reader = re.compile(r"^def secret\(name: str\) -> str:\n.*?^    return held or value\n", re.S | re.M)
+    mine = reader.search((HERE / "given.py").read_text(encoding="utf-8"))
+    assert mine is not None
+    others = [HERE.parent / worker / "server.py" for worker in ("browser", "docview", "sandbox")]
+    if not all(path.is_file() for path in others):
+        pytest.skip("the other workers are not beside this one here")
+    for path in others:
+        theirs = reader.search(path.read_text(encoding="utf-8"))
+        assert theirs is not None and theirs.group(0) == mine.group(0), f"secret() of {path} differs from given.py"
+
+
 def test_a_file_that_was_given_is_held_and_one_that_was_not_is_missing(held):
     data = b"a harmless fixture"
     name = named(data)

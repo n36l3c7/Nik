@@ -47,6 +47,7 @@ from .core import audit, client_address, security, signin_policy, totp, vault
 from .core.models import RecoveryCode, SigninAttempt, SigninTicket, User, UserFactor
 from .core.models import Session as SessionModel
 from .core.permissions import stored_roles
+from .core.security import token_digest as _hash
 
 PASSWORD = "password"
 CODE = "code"
@@ -257,10 +258,6 @@ def purge(db: OrmSession) -> None:
 # --------------------------------------------------------------------------- #
 # The ticket of the first step                                                #
 # --------------------------------------------------------------------------- #
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
 def new_ticket(db: OrmSession, user: User) -> str:
     """A ticket for the second step of this account (the caller commits). Returns the token for the cookie."""
     token = secrets.token_urlsafe(32)

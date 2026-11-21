@@ -197,7 +197,7 @@ def qr_codes(data: bytes) -> list[str]:
     try:
         import zxingcpp
         from PIL import Image
-    except ImportError:  # pragma: no cover - both are requirements
+    except ImportError:  # both are requirements: only a bare install lacks them
         return []
     try:
         with Image.open(io.BytesIO(data)) as image:

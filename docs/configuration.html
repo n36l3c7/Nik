@@ -40,6 +40,16 @@
         <code>.env</code>. Detection rules and business hours are edited in the app and shared by every analyst.
       </p>
 
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#backend">Backend</a></li>
+          <li><a href="#compose">Compose</a></li>
+          <li><a href="#more-variables">Tuning and worker variables</a></li>
+          <li><a href="#settings">In-app settings</a></li>
+          <li><a href="#upgrades">Upgrades</a></li>
+        </ol>
+      </nav>
+
       <h2 id="backend">Backend</h2>
       <p>Environment variables, optionally from <code>backend/.env</code> (see <code>backend/.env.example</code>).</p>
       <div class="table-wrap">
@@ -132,6 +142,15 @@
               <td>
                 Set by the Compose file for the automation container: it holds neither the store nor its key
                 (<code>1</code>) and asks the backend at this address for the files a step needs.
+              </td>
+            </tr>
+            <tr>
+              <td><code>NIK_SKIP_MIGRATIONS</code></td>
+              <td>—</td>
+              <td>
+                Set to <code>1</code> by the Compose file for the automation container, which shares the backend's
+                image: its entrypoint checks the secrets and leaves the migrations and the check of the store key to the
+                backend. Never set it for the backend.
               </td>
             </tr>
             <tr>
@@ -485,6 +504,14 @@
               </td>
             </tr>
             <tr>
+              <td><code>SANDBOX_URL</code></td>
+              <td>—</td>
+              <td>
+                Base URL of the script sandbox (<code>http://sandbox:8750</code> in the Compose file, which sets it).
+                Without it a step that runs a script fails and says the sandbox is not configured.
+              </td>
+            </tr>
+            <tr>
               <td><code>SANDBOX_TIMEOUT</code> · <code>SANDBOX_MAX_TIMEOUT</code></td>
               <td><code>10</code> · <code>60</code></td>
               <td>How long a script may run, in seconds: by default, and at most.</td>
@@ -606,6 +633,11 @@
               <td><code>API_MEMORY</code>, <code>API_CPUS</code></td>
               <td><code>4g</code>, <code>4</code></td>
               <td>Limits of the backend container, which parses the evidence.</td>
+            </tr>
+            <tr>
+              <td><code>WEB_MEMORY</code></td>
+              <td><code>512m</code></td>
+              <td>Memory limit of the <code>web</code> container (nginx).</td>
             </tr>
             <tr>
               <td><code>METRICS_TOKEN</code></td>
@@ -730,8 +762,8 @@
         with memory, CPU and process limits, like the workers. It alone mounts the store of files and holds its key: the
         workers are sent the file a job needs. nginx serves HTTPS only and sends a Content-Security-Policy,
         <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, <code>Referrer-Policy</code> and HSTS with
-        every page. Rate limits and account lock-outs are counted per client address, as nginx sees it. Container logs
-        are rotated at 20 MB.
+        every page. Rate limits and the waits after failed sign-ins go by the client address, as nginx sees it.
+        Container logs are rotated at 20 MB.
       </div>
 
       <h2 id="more-variables">Tuning and worker variables</h2>
@@ -796,10 +828,42 @@
             <tr>
               <td>
                 <code>ANALYZER_MAX_JOBS</code>, <code>CAPA_MAX_JOBS</code>, <code>DOCVIEW_MAX_JOBS</code>,
-                <code>PCAP_MAX_JOBS</code>
+                <code>PCAP_MAX_JOBS</code>, <code>SANDBOX_MAX_JOBS</code>
               </td>
-              <td><code>2</code>, <code>1</code>, <code>2</code>, <code>2</code></td>
-              <td>Analyses each worker runs at once; more are answered "busy".</td>
+              <td><code>2</code>, <code>1</code>, <code>2</code>, <code>2</code>, <code>4</code></td>
+              <td>Analyses each worker runs at once (scripts, for the sandbox); more are answered "busy".</td>
+            </tr>
+            <tr>
+              <td><code>ANALYZER_FILES_MB</code>, <code>CAPA_FILES_MB</code>, <code>PCAP_FILES_MB</code></td>
+              <td><code>1024</code>, <code>1024</code>, <code>16384</code></td>
+              <td>
+                How much each of these workers holds, in MB, of the files the backend sent it. When a new file does not
+                fit, the ones it is not working on go first; a single file larger than this is refused.
+              </td>
+            </tr>
+            <tr>
+              <td><code>DOCVIEW_PST_TIMEOUT</code></td>
+              <td><code>3600</code></td>
+              <td>
+                Seconds the document worker gives the conversion of one PST. The backend waits 3900 seconds for the
+                answer, so a longer time here is cut there.
+              </td>
+            </tr>
+            <tr>
+              <td><code>DOCVIEW_PST_TMP_MAX_MB</code></td>
+              <td><code>500</code></td>
+              <td>
+                Largest PST the document worker converts in memory, in MB, when it has no <code>pst-work</code> volume
+                it can write to.
+              </td>
+            </tr>
+            <tr>
+              <td><code>TLS_SELFSIGNED_DAYS</code></td>
+              <td><code>825</code></td>
+              <td>
+                Days the certificate the <code>web</code> container makes for itself is valid. Read once, when the
+                certificate is made: one that is already in the <code>web-certs</code> volume is left alone.
+              </td>
             </tr>
             <tr>
               <td>
@@ -811,8 +875,8 @@
                 Seconds a process that is asked to stop gives what it has in flight (the requests of the backend, the
                 analyses of a worker) before it exits. Each is read in the environment of its own container, and has to
                 stay under the <code>stop_grace_period</code> of that service in the Compose file (40 s for the backend,
-                30 s for the workers): see
-                <a href="deployment.html#stopping-and-restarting">Stopping and restarting the stack</a>.
+                30 s for these four workers; the sandbox and the isolated browser have no such variable and get 20 s):
+                see <a href="deployment.html#stopping-and-restarting">Stopping and restarting the stack</a>.
               </td>
             </tr>
             <tr>
@@ -841,12 +905,22 @@
               <td>—</td>
               <td>Set by <code>deploy/upgrade-postgres.sh</code> while it moves the data; never by hand.</td>
             </tr>
+            <tr>
+              <td><code>NIK_BACKUP_WAIT</code>, <code>NIK_ROTATE_WAIT</code></td>
+              <td><code>21600</code> each</td>
+              <td>
+                Seconds <code>deploy/backup.sh</code> waits for the backup it asked for, and
+                <code>deploy/secrets.sh</code> for a change of key to be verified. Read from the environment of the
+                shell that runs the script, not from <code>.env</code>.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
       <p>
-        The worker variables are read by the worker containers: to change one that
-        <code>docker-compose.yml</code> does not pass, add it to that service's <code>environment</code>.
+        The worker variables are read by the worker containers, and <code>TLS_SELFSIGNED_DAYS</code> by the
+        <code>web</code> container: to change one that <code>docker-compose.yml</code> does not pass, add it to that
+        service's <code>environment</code>.
       </p>
 
       <h2 id="settings">In-app settings</h2>
@@ -856,7 +930,7 @@
       </p>
       <div class="grid">
         <div class="card">
-          <h3>Detection rules</h3>
+          <h3 id="settings-detection-rules">Detection rules</h3>
           <p>
             Suspicious-keyword rules (regular expressions with a label, a description and a severity) matched against
             URLs, titles and file names; built-in command and endpoint rulesets run in addition, each only on its own
@@ -864,14 +938,14 @@
           </p>
         </div>
         <div class="card">
-          <h3>Business hours</h3>
+          <h3 id="settings-business-hours">Business hours</h3>
           <p>
             Start and end hour, with an option to treat weekends as outside hours. Events outside the window are marked
             and counted as medium severity.
           </p>
         </div>
         <div class="card">
-          <h3>Accounts and API keys</h3>
+          <h3 id="settings-accounts">Accounts and API keys</h3>
           <p>
             Admins create accounts, change their name, roles or password, disable them, and issue API keys with roles
             and an optional expiry. Every user changes their own password under My account. Webhooks are subscribed
@@ -879,7 +953,7 @@
           </p>
         </div>
         <div class="card">
-          <h3>YARA rules, FLIRT signatures, capa rules</h3>
+          <h3 id="settings-rules">YARA rules, FLIRT signatures, capa rules</h3>
           <p>
             Admins add YARA rule sets (compiled before they are saved), upload FLIRT signatures (<code>.sig</code> or
             <code>.pat</code>) that the analyzer worker applies on top of rizin's own, so more library code is
@@ -889,14 +963,14 @@
           </p>
         </div>
         <div class="card">
-          <h3>IOC allowlist</h3>
+          <h3 id="settings-ioc-allowlist">IOC allowlist</h3>
           <p>
             Known-good indicators (addresses, networks, domains) left out of the Indicators tab and never sent to a
             threat-intelligence source.
           </p>
         </div>
         <div class="card">
-          <h3>Indicators found</h3>
+          <h3 id="settings-indicators-found">Indicators found</h3>
           <p>
             Admins set whether the fields and the context of an incident are read for indicators as it comes in (on by
             default), which types are kept, that private addresses and what is known to be harmless are left out, how
@@ -906,7 +980,7 @@
           </p>
         </div>
         <div class="card">
-          <h3>Report header, mail analysis, threat intelligence</h3>
+          <h3 id="settings-report-mail-intel">Report header, mail analysis, threat intelligence</h3>
           <p>
             Admins set the organisation's name and logo on reports, the organisation's own mail domains and the mail
             servers whose authentication results are trusted, and for threat intelligence which indicator types are
@@ -915,7 +989,7 @@
           </p>
         </div>
         <div class="card">
-          <h3>My account, audit log</h3>
+          <h3 id="settings-account-audit">My account, audit log</h3>
           <p>
             Everyone changes their own password under My account and reads the audit log, which the server writes.
             Backups are set in Settings → System → Backup, by admins: their schedule, what is kept, the passphrase and

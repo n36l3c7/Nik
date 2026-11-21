@@ -18,13 +18,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..backups import runner
+from ..core.clock import iso_or_none as _iso
 from ..core.config import settings
 from ..core.models import RecoveryBase
 from . import agent, archive, config, kept, layout, role, ship, standby, watch
-
-
-def _iso(at: Any) -> str | None:
-    return runner.iso(float(at)) if at else None
 
 
 def command(moment: float | None = None) -> str:

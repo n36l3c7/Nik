@@ -22,7 +22,6 @@ of earlier versions, is still accepted beside it.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import math
 import secrets
@@ -35,6 +34,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..core.config import settings
 from ..core.models import Setting
+from ..core.security import token_digest as _digest
 from . import checks, thresholds, watch
 
 SETTINGS_ID = 46
@@ -44,10 +44,6 @@ PREFIX = "nikm_"
 def _held(db: OrmSession) -> dict[str, Any]:
     row = db.get(Setting, SETTINGS_ID)
     return dict((row.doc if row else None) or {})
-
-
-def _digest(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def new_token(db: OrmSession, actor: str, now: float | None = None) -> str:

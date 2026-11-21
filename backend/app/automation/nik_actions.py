@@ -26,14 +26,15 @@ from ..core.locking import lock_incident
 from ..core.models import Incident, IocList, IocListItem, UrlScan, User
 from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
+from ..fields import SEVERITIES as INCIDENT_SEVERITIES
+from ..fields import STATUSES
 from ..iocs import TYPES, normalize
 from . import payloads, triggers
 from .actions import ActionError, Call, Result, action
 
 ACTOR = SYSTEM_USER
 ADHOC_PLAYBOOK = "adhoc"  # the playbook the commands of the War Room run under (commands.ADHOC_ID)
-SEVERITIES = ("low", "medium", "high", "critical", "")
-STATUSES = ("open", "in_progress", "closed")
+SEVERITIES = (*INCIDENT_SEVERITIES, "")  # none is an answer too
 FIELDS = ("ticketId", "title", "host", "username", "os", "severity", "status", "assignee")
 
 

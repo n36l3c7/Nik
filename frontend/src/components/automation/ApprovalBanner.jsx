@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
-import { formatRelative } from '../../lib/time.js'
+import { formatDateTime, formatRelative } from '../../lib/time.js'
 import { Button } from '../ui/index.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
 
@@ -75,7 +75,7 @@ export default function ApprovalBanner({ approval, onOpenRun, onAnswered }) {
           <p className="text-xs text-fg-muted">
             {approval.playbook} · asked {formatRelative(approval.askedAt)} ·{' '}
             {approval.expiresAt
-              ? `waits until ${new Date(approval.expiresAt).toLocaleString()}`
+              ? `waits until ${formatDateTime(new Date(approval.expiresAt).getTime())}`
               : 'waits without limit'}
             {onOpenRun && (
               <>

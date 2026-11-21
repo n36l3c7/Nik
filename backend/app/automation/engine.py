@@ -63,9 +63,8 @@ import contextlib
 import logging
 import random
 import threading
-import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import regex
@@ -73,6 +72,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from ..core.clock import iso
+from ..core.ids import new_id
 from ..core.models import Approval, Incident, Playbook, PlaybookVersion, Run, RunStep, Task
 from ..core.permissions import SYSTEM_USER
 from . import actions, graph
@@ -105,14 +106,6 @@ _apply_lock = threading.RLock()
 
 def serial(db: OrmSession):
     return _apply_lock if db.get_bind().dialect.name == "sqlite" else contextlib.nullcontext()
-
-
-def iso(now: float) -> str:
-    return datetime.fromtimestamp(now, tz=timezone.utc).isoformat()
-
-
-def new_id() -> str:
-    return uuid.uuid4().hex
 
 
 class StepFailed(Exception):

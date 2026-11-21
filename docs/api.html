@@ -1462,7 +1462,8 @@
               <td>
                 Audit log, newest first (<code>audit.read</code>): <code>limit</code>, <code>offset</code>,
                 <code>q</code> (<a href="#query">the query language</a>: <code>action:user.* at:&gt;=yesterday</code>),
-                <code>actor</code>, <code>incidentId</code>. The log is written by the server.
+                <code>actor</code>, <code>incidentId</code>. The count of what matches is <code>total</code> (and the
+                <code>X-Total-Count</code> header). The log is written by the server.
               </td>
             </tr>
             <tr>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, FileArchive } from 'lucide-react'
 import { api, upload } from '../../../services/api.js'
+import { pickedSize } from '../../../domain/transfers.js'
 import { MicroSkull, TransferBar } from '../../ui/index.js'
 
 /*
@@ -23,9 +24,6 @@ async function waitForJob(jobId) {
     await sleep(POLL_MS)
   }
 }
-
-const formatSize = (bytes) =>
-  bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 
 export default function EvtxUpload({ incidentId, onDone, dropped = null }) {
   const inputRef = useRef(null)
@@ -76,7 +74,7 @@ export default function EvtxUpload({ incidentId, onDone, dropped = null }) {
   // Files dropped elsewhere in the app and routed here (EventLogsTab).
   useEffect(() => {
     if (dropped?.files?.length) handleFiles(dropped.files)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per drop handed over by the tab
   }, [dropped])
 
   const openPicker = () => {
@@ -146,7 +144,7 @@ export default function EvtxUpload({ incidentId, onDone, dropped = null }) {
                 <MicroSkull className="shrink-0 text-accent" />
               )}
               <span className="min-w-0 flex-1 truncate text-fg" title={item.name}>
-                {item.name} <span className="text-fg-subtle">{formatSize(item.size)}</span>
+                {item.name} <span className="text-fg-subtle">{pickedSize(item.size)}</span>
               </span>
               <span className={item.state === 'error' ? 'text-high' : 'text-fg-muted'}>
                 {item.state === 'queued' && 'queued'}

@@ -102,13 +102,13 @@
               <td><code>analyzer</code> (rizin)</td>
               <td>disassembly and decompilation of samples</td>
               <td>internal only, no route outside</td>
-              <td>the sample store, read-only</td>
+              <td>only the samples it is sent</td>
             </tr>
             <tr>
               <td><code>capa</code></td>
               <td>capabilities of samples</td>
               <td>internal only</td>
-              <td>the sample store, read-only</td>
+              <td>only the samples it is sent</td>
             </tr>
             <tr>
               <td><code>docview</code> (LibreOffice, pdfium)</td>
@@ -123,7 +123,7 @@
               <td><code>pcap</code> (tshark, sharkd)</td>
               <td>packet captures</td>
               <td>internal only</td>
-              <td>the sample store, read-only</td>
+              <td>only the captures it is sent</td>
             </tr>
             <tr>
               <td><code>browser</code> (Chromium)</td>
@@ -454,10 +454,10 @@
         </li>
         <li>
           <strong>The store and the worker.</strong> Everything a playbook keeps is written by the backend. The
-          <code>automation</code> container mounts the store read-only and is on no network with the analysis workers,
-          and nothing was added to either: the file a connector's command gives, the files of an archive, the
-          attachments of a message, a message a fetch made an incident from and a file a node downloads are handed over
-          through the database (<code>artifact_jobs</code>, the bytes in parts of 4 MB in
+          <code>automation</code> container mounts no store (a step that needs a file asks the backend for it) and is on
+          no network with the analysis workers, and nothing was added to either: the file a connector's command gives,
+          the files of an archive, the attachments of a message, a message a fetch made an incident from and a file a
+          node downloads are handed over through the database (<code>artifact_jobs</code>, the bytes in parts of 4 MB in
           <code>artifact_job_parts</code>, deleted once the file is in the store or the job is given up) and the step
           waits. The backend treats them as it treats an upload: the same size limit, the same analyses.
         </li>

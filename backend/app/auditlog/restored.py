@@ -15,11 +15,11 @@ the server, links it after the entries of the backup.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 import sqlalchemy as sa
 from sqlalchemy.engine import URL
 
+from ..core.clock import now_iso
 from .verifier import RESTORE
 
 ACTOR = "server console"
@@ -40,7 +40,7 @@ def note(url: URL, backup: str, taken_at: str = "") -> bool:
             conn.execute(
                 sa.insert(log).values(
                     id=str(uuid.uuid4()),
-                    at=datetime.now(timezone.utc).isoformat(),
+                    at=now_iso(),
                     actor=ACTOR,
                     action=RESTORE,
                     target=backup,

@@ -22,7 +22,7 @@ from ..core.permissions import LISTS_MANAGE
 from ..core.security import Principal, reader_principal, require
 
 router = APIRouter(prefix="/lists", tags=["lists"])
-manage_principal = require(LISTS_MANAGE)
+lists_principal = require(LISTS_MANAGE)
 
 
 class ListIn(BaseModel):
@@ -86,7 +86,7 @@ def list_lists(_caller: Principal = Depends(reader_principal), db: OrmSession = 
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_list(body: ListIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def create_list(body: ListIn, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Make a list: ``{name, label, description, kind, itemType, writableByAutomation}``."""
     try:
         row = lists.create(db, body.model_dump(exclude_none=True), caller.actor)
@@ -99,7 +99,7 @@ def create_list(body: ListIn, caller: Principal = Depends(manage_principal), db:
 
 @router.put("/pointers")
 def set_pointers(
-    body: PointersIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    body: PointersIn, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Choose which list a feature reads. The list must exist and be of the kind the feature takes."""
     try:
@@ -124,7 +124,7 @@ def get_list(name: str, _caller: Principal = Depends(reader_principal), db: OrmS
 
 @router.put("/{name}")
 def update_list(
-    name: str, body: ListIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    name: str, body: ListIn, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Change the label, the description, what its items are, and whether playbooks may write to it."""
     row = _own(db, name)
@@ -138,7 +138,7 @@ def update_list(
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_list(name: str, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> Response:
+def delete_list(name: str, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)) -> Response:
     """Delete a list of yours that nothing uses."""
     row = _own(db, name)
     try:
@@ -152,7 +152,7 @@ def delete_list(name: str, caller: Principal = Depends(manage_principal), db: Or
 
 @router.put("/{name}/items")
 def replace_items(
-    name: str, body: ItemsIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    name: str, body: ItemsIn, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Replace everything the list holds: ``entries``, or ``document`` for a list that is one."""
     row = _own(db, name)
@@ -168,7 +168,7 @@ def replace_items(
 
 @router.post("/{name}/items", status_code=status.HTTP_201_CREATED)
 def add_item(
-    name: str, body: ItemIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    name: str, body: ItemIn, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Add an item, or change the one with that key."""
     row = _own(db, name)
@@ -185,7 +185,7 @@ def add_item(
 def remove_item(
     name: str,
     key: str = Query(min_length=1, max_length=lists.KEY_MAX),
-    caller: Principal = Depends(manage_principal),
+    caller: Principal = Depends(lists_principal),
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """Remove the item with that key (``404`` when the list does not hold it)."""
@@ -219,7 +219,7 @@ def export_list(
 
 @router.post("/{name}/import")
 def import_list(
-    name: str, body: FileIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    name: str, body: FileIn, caller: Principal = Depends(lists_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Replace what the list holds with what a CSV or JSON file holds."""
     row = _own(db, name)

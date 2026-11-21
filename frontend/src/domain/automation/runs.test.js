@@ -9,7 +9,6 @@ import {
   nodeStatuses,
   runnable,
   stepLine,
-  stepsOf,
   triggerLabel,
 } from './runs.js'
 
@@ -26,7 +25,6 @@ test('a node is coloured by the worst of its steps', () => {
   ]
   assert.deepEqual(nodeStatuses(steps), { start: 'done', loop: 'waiting', note: 'failed', skip: 'skipped' })
   assert.deepEqual(nodeStatuses(null), {})
-  assert.equal(stepsOf(steps, 'note').length, 3)
   assert.ok(isFinished('stopped') && !isFinished('waiting'))
 })
 

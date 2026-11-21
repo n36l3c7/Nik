@@ -89,7 +89,7 @@ def list_audit(
     """Return audit entries newest-first, filterable and paginated.
 
     Backward compatible: with no params it returns up to ``MAX_ENTRIES`` entries.
-    The total matching count is in the ``X-Total-Count`` header.
+    The total matching count is in ``total`` and in the ``X-Total-Count`` header.
     """
     conditions = query.sql("audit", q, caller) if q and q.strip() else []
     if conditions:
@@ -105,7 +105,7 @@ def list_audit(
     stmt = select(AuditEntry).where(*conditions).order_by(AuditEntry.at.desc())
     stmt = stmt.offset(offset).limit(limit if limit is not None else MAX_ENTRIES)
     rows = db.scalars(stmt).all()
-    return {"entries": [_entry_to_dict(r) for r in rows]}
+    return {"entries": [_entry_to_dict(r) for r in rows], "total": total}
 
 
 @router.post("", response_model=AuditOut, status_code=status.HTTP_201_CREATED)

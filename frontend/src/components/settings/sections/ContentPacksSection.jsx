@@ -11,7 +11,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { api, apiUrl, postForBlob, upload } from '../../../services/api.js'
+import { api, apiUrl, getBlob, postForBlob, upload } from '../../../services/api.js'
 import { saveBlob } from '../../../lib/download.js'
 import { formatRelative } from '../../../lib/time.js'
 import { useStoredBoolean } from '../../../lib/useStoredBoolean.js'
@@ -49,7 +49,7 @@ import {
   uninstallCounts,
 } from '../../../domain/packs.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { transfer } from '../../../lib/transfers.js'
 
@@ -252,7 +252,7 @@ function ExportForm({ onClose, onError }) {
       cancelled = true
     }
     // The choice is its text: a new set with the same items asks nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `asked` is the choice as text
   }, [asked])
   const problem = packProblem(form, chosen.size)
   const set = (patch) => setForm((old) => ({ ...old, ...patch }))
@@ -334,9 +334,7 @@ function ExportForm({ onClose, onError }) {
         </label>
       </div>
       {kinds === null ? (
-        <p role="status" className="font-mono text-xs text-fg-muted">
-          Loading…
-        </p>
+        <Wait className="text-xs">Loading…</Wait>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {kinds
@@ -696,11 +694,7 @@ function UninstallDialog({ card, onClose, onDone }) {
             {error}
           </p>
         )}
-        {!plan && !error && (
-          <p role="status" className="font-mono text-xs text-fg-muted">
-            Loading…
-          </p>
-        )}
+        {!plan && !error && <Wait className="text-xs">Loading…</Wait>}
         {plan && held.length > 0 && (
           <>
             <p role="status" className="border border-high-line bg-high-soft px-3 py-2 text-high-fg">
@@ -817,9 +811,9 @@ function BulkDialog({ action, cards, onClose }) {
           </p>
         )}
         {!plan && !error && (
-          <p role="status" className="font-mono text-xs text-fg-muted">
+          <Wait className="text-xs">
             {action === 'uninstall' ? 'Loading…' : 'Taking the packs from the catalogue…'}
-          </p>
+          </Wait>
         )}
         {plan && (
           <p role="status" className="text-xs text-fg-muted">
@@ -1114,9 +1108,7 @@ export default function ContentPacksSection() {
   }
   const download = (pack) =>
     transfer(`Downloading ${pack.id}-${pack.version}.nikpack`, () =>
-      fetch(apiUrl(`/packs/${encodeURIComponent(pack.id)}/download`), { credentials: 'include' }).then((response) =>
-        response.ok ? response.blob() : Promise.reject(new Error(`Request failed (${response.status})`)),
-      ),
+      getBlob(`/packs/${encodeURIComponent(pack.id)}/download`),
     ).then(
       (blob) => saveBlob(blob, `${pack.id}-${pack.version}.nikpack`),
       (failure) => setError(failure.message),
@@ -1350,11 +1342,7 @@ export default function ContentPacksSection() {
         </div>
       )}
 
-      {loading && !error && (
-        <p role="status" className="py-6 text-center font-mono text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+      {loading && !error && <Wait className="py-6 justify-center">Loading…</Wait>}
       {!loading && groups.length === 0 && (
         <EmptyState
           skull

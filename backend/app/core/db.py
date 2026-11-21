@@ -9,13 +9,18 @@ PostgreSQL production database.
 
 from __future__ import annotations
 
-from collections.abc import Generator
+import contextlib
+import logging
+from collections.abc import Generator, Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
+
+logger = logging.getLogger("nik.db")
 
 
 class Base(DeclarativeBase):
@@ -64,6 +69,44 @@ SessionLocal = sessionmaker(
     expire_on_commit=False,
     class_=Session,
 )
+
+
+# Held by the process that is adding what Nik ships when the server starts (main.py). Two numbers:
+# the form with one number is how the connection of a dump is told apart (health/checks.py).
+SEEDING_LOCK = (0x4E494B, 1)
+
+
+@contextlib.contextmanager
+def one_process(lock: tuple[int, int]) -> Iterator[None]:
+    """What is done inside is done by one process of the server at a time: another that comes to
+    the same point waits until the first is through, and then goes through it in its turn.
+
+    On PostgreSQL this is an advisory lock taken in a transaction of a connection of its own, so
+    that the work inside may commit as often as it needs; the lock goes with that transaction, or
+    with the connection if the process dies. It is not a lease (core/leases.py): it has no holder
+    and no expiry, and a standby takes it like anybody else. On SQLite there is one process, and
+    nothing to take. Should the lock not be had (the database refused, or went away), the work is
+    done all the same: what is written inside must stay correct without it.
+    """
+    if engine.dialect.name != "postgresql":
+        yield
+        return
+    conn = None
+    try:
+        conn = engine.connect()
+        # The wait is for as long as the other process works: the limit on one statement is not for it.
+        conn.execute(text("SET LOCAL statement_timeout = 0"))
+        conn.execute(text("SELECT pg_advisory_xact_lock(:high, :low)"), {"high": lock[0], "low": lock[1]})
+    except SQLAlchemyError:
+        logger.warning("The lock of what one process does at a time was not had: going on without it")
+    try:
+        yield
+    finally:
+        if conn is not None:
+            try:
+                conn.close()  # ends the transaction, and the lock with it
+            except SQLAlchemyError:
+                logger.warning("The connection of a lock did not close cleanly")
 
 
 def connection_lost(error: BaseException) -> bool:

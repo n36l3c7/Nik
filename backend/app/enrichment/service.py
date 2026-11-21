@@ -87,8 +87,6 @@ ERROR_RETRY = timedelta(hours=1)
 RUNNING_STALE = timedelta(minutes=10)
 INTERNAL_SUFFIXES = (".local", ".lan", ".internal", ".intranet", ".corp", ".home", ".home.arpa", ".localdomain")
 
-RETENTION_GROUPS = ("ip", "url", "hash")  # url covers domains, hash the three digests
-
 # The classes of the data guard the value of an indicator can carry, with what each is there. The
 # others are of things an indicator is not (a subject, a file, the text of a message), and TLP:RED
 # is never offered: the rule of the look-ups keeps it in.

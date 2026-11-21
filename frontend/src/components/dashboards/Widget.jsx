@@ -69,7 +69,7 @@ function useAnswer(widget, board, range, tick) {
       cancelled = true
     }
     // The request is its key: a new object with the same content asks nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the request is its key; `seen` only says whether to ask afresh
   }, [key, tick])
 
   // While a new answer is on its way the last one stays, dimmed: no jump, no flash.

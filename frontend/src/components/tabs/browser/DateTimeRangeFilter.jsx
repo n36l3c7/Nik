@@ -3,33 +3,10 @@
  * `<input type="datetime-local">` fields (which natively provide a calendar +
  * time selector). Values are exchanged as Unix ms | null with the parent.
  *
- * The two exported helpers convert between Unix ms and the `datetime-local`
- * string representation (`YYYY-MM-DDTHH:mm`), always in the viewer's LOCAL time.
+ * The fields show and read the viewer's local time (`lib/time.js`).
  */
 
-/**
- * Convert a Unix-ms timestamp to a `datetime-local` input value (local time,
- * `YYYY-MM-DDTHH:mm`). Returns '' for null / non-finite values.
- */
-export function msToLocalInput(ms) {
-  if (ms == null || !Number.isFinite(ms)) return ''
-  // Shift by the local timezone offset so the ISO string reflects local
-  // wall-clock time, then keep only the `YYYY-MM-DDTHH:mm` part.
-  const offsetMs = new Date(ms).getTimezoneOffset() * 60000
-  return new Date(ms - offsetMs).toISOString().slice(0, 16)
-}
-
-/**
- * Convert a `datetime-local` input value (local wall-clock time) back to
- * Unix ms. Returns null for empty / unparseable input. A date-time string with
- * no timezone suffix is interpreted by the engine as local time — exactly what
- * the input produced.
- */
-export function localInputToMs(str) {
-  if (!str) return null
-  const ms = new Date(str).getTime()
-  return Number.isFinite(ms) ? ms : null
-}
+import { localInputToMs, msToLocalInput } from '../../../lib/time.js'
 
 // Shared field styling (kept in sync with the Select component look & feel).
 const FIELD_CLASSES = [

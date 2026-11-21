@@ -58,6 +58,24 @@
           <li><a href="#upgrades">Updates, and the snapshot before each</a></li>
           <li><a href="#upgrade-went-wrong">An upgrade went wrong</a></li>
           <li><a href="#upgrading-to-43">Upgrading to 4.3</a></li>
+          <li><a href="#upgrading-to-69">Upgrading to 6.9</a></li>
+          <li><a href="#upgrading-to-68">Upgrading to 6.8</a></li>
+          <li><a href="#upgrading-to-67">Upgrading to 6.7</a></li>
+          <li><a href="#upgrading-to-66">Upgrading to 6.6</a></li>
+          <li><a href="#upgrading-to-65">Upgrading to 6.5</a></li>
+          <li><a href="#upgrading-to-64">Upgrading to 6.4</a></li>
+          <li><a href="#upgrading-to-63">Upgrading to 6.3</a></li>
+          <li><a href="#upgrading-to-62">Upgrading to 6.2</a></li>
+          <li><a href="#upgrading-to-61">Upgrading to 6.1</a></li>
+          <li><a href="#upgrading-to-60">Upgrading to 6.0</a></li>
+          <li><a href="#upgrading-to-54">Upgrading to 5.4</a></li>
+          <li><a href="#upgrading-to-53">Upgrading to 5.3</a></li>
+          <li><a href="#upgrading-to-52">Upgrading to 5.2</a></li>
+          <li><a href="#upgrading-to-51">Upgrading to 5.1</a></li>
+          <li><a href="#upgrading-to-50">Upgrading to 5.0</a></li>
+          <li><a href="#upgrading-to-47">Upgrading to 4.7</a></li>
+          <li><a href="#upgrading-to-46">Upgrading to 4.6</a></li>
+          <li><a href="#upgrading-to-45">Upgrading to 4.5</a></li>
           <li><a href="#upgrading-to-44">Upgrading to 4.4</a></li>
           <li><a href="#upgrading-to-42">Upgrading to 4.2</a></li>
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
@@ -1987,7 +2005,7 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           file says how;
         </li>
         <li>
-          the automation worker does the fetching and the mirroring: with <code>AUTOMATION_ENABLED</code> off, or the
+          the automation worker does the fetching and the mirroring: with <code>AUTOMATION_WORKER=off</code>, or the
           worker stopped, nothing comes in and nothing is sent. The worker reaches the host of each connection through
           the proxy the playbooks use.
         </li>
@@ -3077,7 +3095,7 @@ sudo openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
 server {
     listen 80;
     server_name nik.example.internal;
-    return 301 https://$host$request_uri;
+    return 308 https://$host$request_uri;
 }
 
 server {
@@ -3087,6 +3105,7 @@ server {
 
     ssl_certificate     /etc/pki/nginx/nik.crt;
     ssl_certificate_key /etc/pki/nginx/private/nik.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
 
     # Large uploads (packet captures up to PCAP_MAX_MB, backup restore,
     # incidents with parsed artifacts) blow past nginx's 1m default and get
@@ -3095,10 +3114,11 @@ server {
 
     root  /var/www/nik;
     index index.html;
-    include /etc/nginx/snippets/nik-headers.conf;
+    include /etc/nginx/snippets/nik-headers-page.conf;
 
-    # A mailbox (mbox, Maildir archive) can be as large as MAILBOX_MAX_MB:
-    # only its upload is allowed that much, and it is not buffered to disk.
+    # A mailbox (mbox, Maildir archive, Outlook PST) can be gigabytes: only
+    # its upload is allowed that much, and it is not buffered to disk. The
+    # backend applies MAILBOX_MAX_MB and PST_MAX_MB to what passes.
     location = /api/artifacts/mailboxes {
         client_max_body_size 2100m;
         proxy_request_buffering off;
@@ -3109,6 +3129,13 @@ server {
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
+        include /etc/nginx/snippets/nik-headers-api.conf;
+    }
+
+    # What the processes of the server ask of each other is not for whoever
+    # can open the app: none of them comes through nginx.
+    location /api/internal/ {
+        return 404;
     }
 
     # Reverse-proxy the REST API to the gunicorn/uvicorn backend.
@@ -3122,19 +3149,20 @@ server {
         # The client's address as nginx saw it: the API limits sign-ins by it.
         proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
+        include /etc/nginx/snippets/nik-headers-api.conf;
     }
 
     # Fingerprinted assets can be cached forever…
     location /assets/ {
         expires 1y;
         add_header Cache-Control &quot;public, immutable&quot;;
-        include /etc/nginx/snippets/nik-headers.conf;
+        include /etc/nginx/snippets/nik-headers-page.conf;
     }
 
     # …but never cache the HTML entry point, so updates are picked up.
     location = /index.html {
         add_header Cache-Control &quot;no-cache&quot;;
-        include /etc/nginx/snippets/nik-headers.conf;
+        include /etc/nginx/snippets/nik-headers-page.conf;
     }
 
     # Serve static files; fall back to index.html
@@ -3152,19 +3180,34 @@ server {
         </p>
       </blockquote>
       <p>
-        Put the security headers in a file of their own, <code>/etc/nginx/snippets/nik-headers.conf</code>, so the
-        server block and the two locations that set a header of their own can include it (nginx drops the inherited ones
-        there):
+        The security headers go in two files of their own, as in the Compose image, so that the server block and every
+        location that sets a header of its own can include one (nginx drops the inherited ones there).
+        <code>/etc/nginx/snippets/nik-headers-page.conf</code> is sent with the app's pages and assets:
       </p>
       <pre><code class="language-nginx">add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
 add_header X-Frame-Options "DENY" always;
 add_header Strict-Transport-Security "max-age=31536000" always;
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
 </code></pre>
       <p>
-        That policy is the one the Compose image sends (<code>frontend/security-headers.js</code>): copy it again from
-        there after an update.
+        <code>/etc/nginx/snippets/nik-headers-api.conf</code> is sent with what the API answers, which includes
+        documents of its own (the PDF reports, <code>/api/docs</code>): they get the generic protections, not the app's
+        policy:
+      </p>
+      <pre><code class="language-nginx">add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header Strict-Transport-Security "max-age=31536000" always;
+</code></pre>
+      <p>
+        These are the files the Compose image sends, written from <code>frontend/security-headers.js</code>:
+        <code>node frontend/security-headers.js &lt;directory&gt;</code> writes both, so make them again that way after
+        an update.
       </p>
       <h4 id="step-9-open-the-firewall-and-reload">Step 9 — Open the firewall and reload</h4>
       <p>Only <strong>80/443</strong> are exposed; the backend stays on <code>127.0.0.1:8000</code>:</p>

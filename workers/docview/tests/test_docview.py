@@ -19,8 +19,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DOCVIEW_TOKEN", "test-token")
 
-import nik_docview  # noqa: E402
-import server  # noqa: E402
+import nik_docview
+import server
 
 RTF = rb"{\rtf1\ansi{\fonttbl\f0\fswiss Helvetica;}\f0\pard Invoice 2041: please enable editing.\par}"
 

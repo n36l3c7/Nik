@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Globe } from 'lucide-react'
 import { api } from '../../../services/api.js'
-import { Button } from '../../ui/index.js'
+import { Button, Wait } from '../../ui/index.js'
 import { settingsPath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
 import ListPicker from '../ListPicker.jsx'
@@ -52,11 +52,7 @@ export default function AutomationNetworkSection() {
           {error}
         </p>
       )}
-      {!settings && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+      {!settings && !error && <Wait>Loading…</Wait>}
 
       {settings && (
         <>

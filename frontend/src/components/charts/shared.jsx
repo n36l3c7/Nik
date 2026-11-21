@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 /*
  * What every chart of a dashboard shares: its measured size, the tooltip, the
@@ -159,14 +159,4 @@ export function placeOf(event, box) {
   }
   const mark = event.currentTarget.getBoundingClientRect()
   return { x: mark.left + mark.width / 2 - frame.left, y: mark.top - frame.top }
-}
-
-/** True once, shortly after mounting: marks grow from the baseline unless the reader asked for no motion. */
-export function useSettled() {
-  const [settled, setSettled] = useState(false)
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setSettled(true))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-  return settled
 }

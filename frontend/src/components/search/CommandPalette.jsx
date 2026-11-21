@@ -50,7 +50,7 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
     setCursor(0)
     setRemote({ loading: false, data: NO_RESULTS, error: null })
     // The query is seeded once per opening.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once per opening
   }, [open])
 
   // Server search, debounced; aborted when the query changes.

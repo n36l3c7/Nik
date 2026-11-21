@@ -37,7 +37,7 @@ from typing import BinaryIO
 
 from . import sealed
 from .config import settings
-from .sealed import Damaged, SealError, WrongKey  # noqa: F401 - what callers catch
+from .sealed import Damaged, SealError, WrongKey  # what callers catch
 
 PART = ".part"
 PIECE = 1024 * 1024

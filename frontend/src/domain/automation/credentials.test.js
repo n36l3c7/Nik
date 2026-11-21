@@ -20,7 +20,6 @@ import {
   suggestedName,
   updateBody,
   usedIn,
-  usedText,
   valueForMode,
 } from './credentials.js'
 
@@ -220,9 +219,6 @@ test('where a credential is used: one line an instance, on the tab that holds th
     { instance: 'i1', name: 'Shodan production', connectorName: 'Shodan', tab: 'connection', keys: ['spare'] },
     { instance: 'i2', name: 'Shodan lab', connectorName: 'Shodan', tab: 'keys', keys: ['lab'] },
   ])
-  assert.equal(usedText(usedBy), '2 instances')
-  assert.equal(usedText(usedBy.slice(0, 2)), '1 instance')
-  assert.equal(usedText([]), 'not used')
   assert.deepEqual(usedIn(undefined), [])
 })
 

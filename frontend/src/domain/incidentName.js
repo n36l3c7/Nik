@@ -57,20 +57,6 @@ export function statusLabel(value) {
 }
 
 /**
- * The incidents of a list that pass the panel's filters: `status` is a status
- * value or 'all'; `assignee` is a username (compared without case) or '' for
- * everyone.
- */
-export function filterIncidents(incidents, { status = 'all', assignee = '' } = {}) {
-  const who = clean(assignee).toLowerCase()
-  return incidents.filter(
-    (incident) =>
-      (status === 'all' || normalizeStatus(incident.status) === status) &&
-      (!who || clean(incident.assignee).toLowerCase() === who),
-  )
-}
-
-/**
  * The number of an incident as it is written: `#00042`, five digits and more
  * when they are needed. '' for an incident that has none yet (one being created).
  */

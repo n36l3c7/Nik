@@ -6,12 +6,10 @@ import {
   formatValue,
   fromInput,
   indicatorKind,
-  missingOnClose,
   moveField,
   moveSection,
   nameFromLabel,
   nameProblem,
-  onType,
   placeField,
   removeSection,
   setFieldFlags,
@@ -110,11 +108,6 @@ test('an incident has the type it names, and the fields of that type', () => {
   assert.equal(typeOf(types, {}).name, 'Unclassified')
   assert.equal(typeOf(types, { type: 'gone' }).name, 'Unclassified')
   assert.equal(typeOf([], {}), null)
-  const known = byName(FIELDS)
-  assert.equal(onType(TYPE, known.status), true)
-  assert.equal(onType(TYPE, known.site), true)
-  assert.equal(onType(TYPE, known.campaign), true)
-  assert.equal(onType(types[0], known.campaign), false)
   // What the side list offers: the fields of incidents that are in no section.
   assert.deepEqual(
     unplaced(TYPE, FIELDS).map((field) => field.name),
@@ -129,8 +122,6 @@ test('an incident has the type it names, and the fields of that type', () => {
     owner: 'anna',
     campaign: 'Q4',
   })
-  assert.deepEqual(missingOnClose(TYPE, FIELDS, values), ['Root cause'])
-  assert.deepEqual(missingOnClose(TYPE, FIELDS, { root_cause: 'A bad rule' }), [])
 })
 
 test('a layout is edited without touching the one it was', () => {

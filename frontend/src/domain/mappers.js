@@ -24,9 +24,6 @@ const UNARY = new Set(['exists', 'empty'])
 const text = (value) =>
   typeof value === 'string' ? value : value === null || value === undefined ? '' : JSON.stringify(value)
 
-/** What a rule reads, as the text of its input: a template as it is, anything else as JSON. */
-export const fromToText = text
-
 /** What was typed for a rule: JSON when it reads as an object or a list, else the text. */
 export function textToFrom(typed) {
   const value = String(typed ?? '').trim()

@@ -3,7 +3,7 @@ import { RotateCcw } from 'lucide-react'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button, EmptyState } from '../ui/index.js'
+import { Badge, Button, EmptyState, Wait } from '../ui/index.js'
 
 /*
  * The versions of a playbook, newest first. The current one is what runs.
@@ -54,11 +54,7 @@ export default function PlaybookVersionsTab({ playbook, canEdit, onRestored }) {
     )
   }
   if (!versions) {
-    return (
-      <p role="status" className="font-mono text-sm text-fg-muted">
-        Loading the versions…
-      </p>
-    )
+    return <Wait>Loading the versions…</Wait>
   }
   if (versions.length === 0) {
     return (

@@ -37,7 +37,7 @@ OLD=/var/lib/postgresql-16
 
 if [ ! -s "$PGDATA/PG_VERSION" ] && [ -s "$OLD/PG_VERSION" ] && [ "${NIK_PG_UPGRADE:-}" != "1" ]; then
   echo "nik: PostgreSQL $(cat "$OLD/PG_VERSION") data found on the old volume, none for PostgreSQL 18." >&2
-  echo "nik: run deploy/upgrade-postgres.sh to move it (the deployment guide (Upgrading to PostgreSQL 18), \"Upgrading to PostgreSQL 18\")." >&2
+  echo "nik: run deploy/upgrade-postgres.sh to move it (the deployment guide, \"Upgrading to PostgreSQL 18\")." >&2
   exit 1
 fi
 
@@ -66,7 +66,7 @@ if [ "${1:-}" = "postgres" ] && [ "${NIK_WAL_ARCHIVE:-on}" != "off" ] && [ -d "$
   case "$timeout" in
     *[!0-9]* | "") timeout=300 ;;
   esac
-  set -- "$@" -c archive_mode=on -c "archive_command=sh $LIB/wal-archive.sh %p %f"     -c "archive_timeout=$timeout" -c "restore_command=sh $LIB/wal-restore.sh %f %p" -c hot_standby=on
+  set -- "$@" -c archive_mode=on -c "archive_command=sh $LIB/wal-archive.sh %p %f" -c "archive_timeout=$timeout" -c "restore_command=sh $LIB/wal-restore.sh %f %p" -c hot_standby=on
 fi
 
 if [ "${1:-}" = "postgres" ] && [ -f "$PGDATA/nik-recovery.conf" ]; then

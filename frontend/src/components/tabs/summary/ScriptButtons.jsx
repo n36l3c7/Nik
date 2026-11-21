@@ -11,7 +11,7 @@ import {
   tally,
   tookText,
 } from '../../../domain/scriptButtons.js'
-import { Button, Modal } from '../../ui/index.js'
+import { Button, Modal, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -260,11 +260,7 @@ export function RunButtonDialog({ incident, button, onClose }) {
         </div>
       ) : (
         <form id="form-run-button" onSubmit={submit} className="flex flex-col gap-4">
-          {!plan && !error && (
-            <p role="status" className="font-mono text-fg-muted">
-              Reading the incident…
-            </p>
-          )}
+          {!plan && !error && <Wait>Reading the incident…</Wait>}
           {plan && (
             <>
               <p className={MUTED}>

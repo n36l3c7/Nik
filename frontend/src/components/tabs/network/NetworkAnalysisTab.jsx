@@ -83,7 +83,7 @@ export default function NetworkAnalysisTab({ incident, onReference, focus = null
   const standalone = Boolean(incident.standalone)
   const putCapture = useCallback(
     (incidentId, ref) => (standalone ? onReference?.(ref) : incidents.putCapture(incidentId, ref)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `incidents` is a new object at every render; its putCapture is what is used
     [standalone, onReference, incidents.putCapture],
   )
   const { showToast } = useToast()
@@ -145,7 +145,7 @@ export default function NetworkAnalysisTab({ incident, onReference, focus = null
     if (!busy) return undefined
     const timer = setInterval(() => fetchDetail(current.id), POLL_MS)
     return () => clearInterval(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the capture is its id and status; `details` changes at every answer
   }, [current?.id, current?.status, busy, fetchDetail])
 
   const handleFiles = async (files) => {
@@ -174,7 +174,7 @@ export default function NetworkAnalysisTab({ incident, onReference, focus = null
     if (standalone || !requests.network) return
     const request = take('network')
     if (request?.file) handleFiles([request.file])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per dropped file; `take` empties the request
   }, [requests.network])
 
   const act = async (work, message) => {

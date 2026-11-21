@@ -118,9 +118,6 @@ export function cell(value) {
   return String(value)
 }
 
-/** Whether an entry can be opened in the inspector with more than it shows in the stream. */
-export const hasDetail = (entry) => Boolean(entry?.stepId) || entry?.kind !== 'note'
-
 /** The entries with their answers under them: a command first, then what it gave. */
 export function threaded(entries) {
   const list = Array.isArray(entries) ? entries : []

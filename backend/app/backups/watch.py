@@ -28,13 +28,13 @@ from __future__ import annotations
 import logging
 import shutil
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from ..core.clock import when as _when
 from ..core.models import Backup, Setting, User
 from ..core.permissions import stored_roles
 from . import config, policy, runner
@@ -59,10 +59,6 @@ SOLVED = {
     "disk": "The backup directory has room again.",
     "offsite": "The copy off the server works again.",
 }
-
-
-def _when(at: float) -> str:
-    return datetime.fromtimestamp(at, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _held(db: OrmSession) -> dict[str, Any]:

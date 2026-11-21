@@ -2,7 +2,7 @@
  * Badge — compact square label (terminal look), used for file formats,
  * detection severities, counts, etc.
  *
- * Colour names are kept for compatibility: slate (neutral), cyan (info),
+ * The colour names: slate (neutral), cyan (info),
  * red (HIGH), amber (MED), emerald (accent / ok), violet (commands).
  */
 const COLORS = {

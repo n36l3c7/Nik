@@ -16,9 +16,9 @@ import {
   triggerLabel,
 } from '../../domain/automation/runs.js'
 import { interruptedSteps, restartLines, runStatus } from '../../domain/restarts.js'
-import { formatDateTime } from '../../lib/time.js'
+import { formatDateTime, formatTime } from '../../lib/time.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
-import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import ApprovalBanner from './ApprovalBanner.jsx'
 import InterruptedBanner from './InterruptedBanner.jsx'
 import Canvas from './Canvas.jsx'
@@ -244,9 +244,9 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
   }
   if (!run) {
     return (
-      <p role="status" className="p-6 font-mono text-sm text-fg-muted">
-        Loading the run…
-      </p>
+      <div className="p-6">
+        <Wait>Loading the run…</Wait>
+      </div>
     )
   }
 
@@ -403,7 +403,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
                         <span className="block truncate text-fg-muted">{stepLine(item)}</span>
                       </span>
                       <time className="whitespace-nowrap font-mono text-[11px] text-fg-subtle">
-                        {item.startedAt ? new Date(item.startedAt).toLocaleTimeString() : ''}
+                        {item.startedAt ? formatTime(new Date(item.startedAt).getTime()) : ''}
                       </time>
                     </button>
                   </li>

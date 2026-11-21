@@ -17,12 +17,12 @@ the step when the entry is opened, not copied here.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from .core.ids import new_id
 from .core.models import Incident, Run, RunStep, WarRoomEntry
 from .core.security import now_iso
 
@@ -36,10 +36,6 @@ FILTERS = {
     "commands": ("command",),
     "automation": ("result", "error", "approval", "task", "system", "mirror"),
 }
-
-
-def new_id() -> str:
-    return uuid.uuid4().hex
 
 
 def clean_tags(tags: Any) -> list[str]:

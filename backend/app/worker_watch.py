@@ -37,7 +37,6 @@ import urllib.error
 import urllib.request
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -45,6 +44,8 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .core import leases
+from .core.clock import iso_or_none as _iso
+from .core.clock import when as _when
 from .core.config import settings
 from .core.models import Setting, User
 from .core.permissions import stored_roles
@@ -57,7 +58,7 @@ LEASE_SECONDS = 120
 WATCH_EVERY = 30
 DOWN_AFTER = 120
 HEALTH_TIMEOUT = 5
-HOLDER = f"{uuid.uuid4()}"
+HOLDER = uuid.uuid4().hex
 LINK = "/settings/system/workers"
 AUTOMATION = "automation"
 _started = False
@@ -127,10 +128,6 @@ def _keep(db: OrmSession, doc: dict[str, Any]) -> None:
     flag_modified(row, "doc")
 
 
-def _stamp(at: float) -> str:
-    return datetime.fromtimestamp(at, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
 def lasted(seconds: float) -> str:
     """How long it was down, in words: "1 minute", "12 minutes", "2 hours 5 minutes"."""
     minutes = max(1, round(seconds / 60))
@@ -191,11 +188,11 @@ def record(db: OrmSession, answers: dict[str, bool], now: float | None = None) -
             _tell_admins(
                 db,
                 "worker.down",
-                f"The {worker.label} has not answered since {_stamp(since)}: {worker.waits}. "
+                f"The {worker.label} has not answered since {_when(since)}: {worker.waits}. "
                 "Its state is in Settings → System → Workers; look at its container.",
             )
             told.append("worker.down")
-            logger.warning("The %s has not answered since %s", worker.label, _stamp(since))
+            logger.warning("The %s has not answered since %s", worker.label, _when(since))
         after[worker.id] = {"state": state, "since": since, "checked": now}
     # A worker that is no longer configured is forgotten: nothing is said of it.
     _keep(db, {"workers": after, "checked": now})
@@ -226,13 +223,13 @@ def check(now: float | None = None, holder: str = HOLDER) -> list[str]:
 
 
 def _loop() -> None:
-    time.sleep(20)  # let the API and the other containers start
-    while True:
+    leases.wait(20)  # let the API and the other containers start
+    while not leases.stopping():
         try:
             check()
         except Exception:  # noqa: BLE001 - the watch must survive a bad pass
             logger.exception("The check of the workers failed")
-        time.sleep(WATCH_EVERY)
+        leases.wait(WATCH_EVERY)
 
 
 def start() -> None:
@@ -247,10 +244,6 @@ def start() -> None:
 # --------------------------------------------------------------------------- #
 # Showing                                                                     #
 # --------------------------------------------------------------------------- #
-def _iso(at: Any) -> str | None:
-    return datetime.fromtimestamp(float(at), timezone.utc).isoformat() if at else None
-
-
 def out(db: OrmSession) -> dict[str, Any]:
     """Every worker Nik knows, with what the last pass found of those that are configured."""
     doc = _held(db)

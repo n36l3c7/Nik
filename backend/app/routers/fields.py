@@ -20,13 +20,11 @@ from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import Field as FieldRow
 from ..core.models import Incident
-from ..core.permissions import INCIDENTS_CONFIGURE
-from ..core.security import Principal, reader_principal, require, writer_principal
+from ..core.security import Principal, configure_principal, reader_principal, writer_principal
 from ..events import emit
 
 router = APIRouter(prefix="/fields", tags=["fields"])
 incident_router = APIRouter(prefix="/incidents", tags=["fields"])
-configure_principal = require(INCIDENTS_CONFIGURE)
 
 
 class FieldIn(BaseModel):

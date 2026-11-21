@@ -4,7 +4,7 @@ import { formatNumber } from '../../../domain/incidentName.js'
 import { linkedWhy } from '../../../domain/linked.js'
 import { api } from '../../../services/api.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { SeverityTag, StatusTag } from '../../ui/index.js'
+import { SeverityTag, StatusTag, Wait } from '../../ui/index.js'
 
 /*
  * ============================================================================
@@ -43,7 +43,7 @@ export default function LinkedIncidents({ incidentId, onOpen = null, compact = f
     }
   }, [incidentId])
 
-  if (state.id !== incidentId) return <p className="font-mono text-sm text-fg-muted">Loading…</p>
+  if (state.id !== incidentId) return <Wait>Loading…</Wait>
   if (state.error) return <p className="text-sm text-fg-muted">This could not be read: {state.error}</p>
   const { incidents, total } = state.found
   if (incidents.length === 0) {

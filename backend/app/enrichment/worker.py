@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 import uuid
 
 from ..core import leases
@@ -24,7 +23,7 @@ LEASE = "enrichment-worker"
 LEASE_SECONDS = 300
 PAUSE_SECONDS = 30
 BUDGET_SECONDS = 120
-HOLDER = f"{uuid.uuid4()}"
+HOLDER = uuid.uuid4().hex
 _started = False
 
 
@@ -36,8 +35,8 @@ def acquire(db, holder: str = HOLDER, now: float | None = None, seconds: float =
 def _loop() -> None:
     from ..routers.settings import read_settings
 
-    time.sleep(15)  # let the API start
-    while True:
+    leases.wait(15)  # let the API start
+    while not leases.stopping():
         try:
             with SessionLocal() as db:
                 if acquire(db):
@@ -50,7 +49,7 @@ def _loop() -> None:
                         logger.info("Threat-intelligence lookups: %d request(s)", done)
         except Exception:  # noqa: BLE001 - the worker must survive a bad pass
             logger.exception("Threat-intelligence pass failed")
-        time.sleep(PAUSE_SECONDS)
+        leases.wait(PAUSE_SECONDS)
 
 
 def start() -> None:

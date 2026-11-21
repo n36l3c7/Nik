@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { api } from '../services/api.js'
+import { generateId } from '../lib/id.js'
 
 /*
  * ============================================================================
@@ -24,10 +25,6 @@ const AuditContext = createContext(null)
 
 // Keep at most this many entries client-side (newest kept); the server caps too.
 const MAX_ENTRIES = 5000
-
-function newId() {
-  return crypto.randomUUID?.() ?? `au-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
 
 export function AuditProvider({ children }) {
   const [entries, setEntries] = useState([])
@@ -60,7 +57,7 @@ export function AuditProvider({ children }) {
    */
   const log = useCallback((e) => {
     const temp = {
-      id: newId(),
+      id: generateId(),
       at: new Date().toISOString(),
       actor: e.actor ?? 'system',
       action: e.action,

@@ -32,7 +32,7 @@ from .core import (
     vault,
 )
 from .core.config import settings as app_settings
-from .core.db import Base, SessionLocal, engine, get_db
+from .core.db import SEEDING_LOCK, Base, SessionLocal, engine, get_db, one_process
 from .core.observability import metrics_response, observability_middleware, setup_logging
 from .core.ratelimit import limiter
 from .core.security import Refused
@@ -170,7 +170,7 @@ TAGS_METADATA = [
 
 app = FastAPI(
     title="Nik API",
-    version="6.9.0",
+    version="6.10.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -213,10 +213,15 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables when not using migrations, index IOCs, start the loops of the process.
+    """Create all tables when not using migrations, index what older releases left without an
+    index, add what Nik ships (fields, types, lists, dashboards, scripts, connectors, mappers,
+    playbooks, packs) and start the loops of the process.
 
     In production run Alembic (``alembic upgrade head``, see backend/alembic).
-    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema.
+    ``RUN_CREATE_ALL=false`` disables the first step so migrations own the schema.
+
+    The server runs as several processes and each one comes through here: what Nik ships is added
+    by one of them at a time (``one_process``), so the second finds the rows there and adds nothing.
     """
     if app_settings.RUN_CREATE_ALL:
         Base.metadata.create_all(bind=engine)
@@ -231,20 +236,21 @@ def on_startup() -> None:
     from . import fields as field_registry
     from . import incident_types as type_registry
 
-    with SessionLocal() as db:
-        try:
-            # The types Nik ships too, each added once.
-            from . import dashboards as boards
-            from . import jsanalysis
-            from . import lists as named_lists
-            from .core.security import now_iso as stamp
+    with one_process(SEEDING_LOCK):
+        with SessionLocal() as db:
+            try:
+                # The types Nik ships too, each added once.
+                from . import dashboards as boards
+                from . import jsanalysis
+                from . import lists as named_lists
+                from .core.security import now_iso as stamp
 
-            seeded = field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db) + boards.seed(db)
-            # The script signatures Nik ships (those nobody changed here follow a release).
-            if seeded + jsanalysis.seed(db, stamp()):
-                db.commit()
-        except IntegrityError:
-            db.rollback()  # another process of the server added them at the same moment
+                seeded = field_registry.seed(db) + type_registry.seed(db) + named_lists.seed(db) + boards.seed(db)
+                # The script signatures Nik ships (those nobody changed here follow a release).
+                if seeded + jsanalysis.seed(db, stamp()):
+                    db.commit()
+            except IntegrityError:
+                db.rollback()  # another process of the server added them at the same moment
     # Automatic threat-intelligence lookups (one process at a time, see worker.py).
     if app_settings.ENRICHMENT_WORKER:
         enrichment_worker.start()
@@ -302,47 +308,49 @@ def on_startup() -> None:
         from .automation import connector_actions, shipped
         from .automation import scripts as automation_scripts
 
-        with SessionLocal() as db:
-            try:
-                # All three, so that none is skipped when another has nothing new. The playbooks
-                # last: they are checked against the scripts and the connectors that are there.
-                changed = automation_scripts.seed(db) + connector_actions.seed(db)
-                db.flush()
-                # The mappers the shipped connectors come with (those nobody changed follow a release).
-                from . import mapping
+        with one_process(SEEDING_LOCK):
+            with SessionLocal() as db:
+                try:
+                    # All three, so that none is skipped when another has nothing new. The playbooks
+                    # last: they are checked against the scripts and the connectors that are there.
+                    changed = automation_scripts.seed(db) + connector_actions.seed(db)
+                    db.flush()
+                    # The mappers the shipped connectors come with (those nobody changed follow a release).
+                    from . import mapping
 
-                changed += mapping.seed(db)
-                changed += shipped.seed(db)
-                # The SMTP server the e-mail node of 4.x used becomes an instance of the Mail connector.
-                changed += int(connector_actions.adopt_smtp(db))
-                if changed:
-                    db.commit()
-            except IntegrityError:
-                # Another process of the server added them at the same moment.
-                db.rollback()
+                    changed += mapping.seed(db)
+                    changed += shipped.seed(db)
+                    # The SMTP server the e-mail node of 4.x used becomes an instance of the Mail connector.
+                    changed += int(connector_actions.adopt_smtp(db))
+                    if changed:
+                        db.commit()
+                except IntegrityError:
+                    # Another process of the server added them at the same moment.
+                    db.rollback()
     # What Nik ships is written down as packs, once everything above is there.
     from . import packs as content_packs
 
-    with SessionLocal() as db:
-        try:
-            # What came inside Nik before 6.0 and is a vendor's becomes the pack it is from now on.
-            if content_packs.register_builtin(db) + content_packs.adopt_legacy(db):
+    with one_process(SEEDING_LOCK):
+        with SessionLocal() as db:
+            try:
+                # What came inside Nik before 6.0 and is a vendor's becomes the pack it is from now on.
+                if content_packs.register_builtin(db) + content_packs.adopt_legacy(db):
+                    db.commit()
+            except IntegrityError:
+                db.rollback()  # another process of the server wrote them at the same moment
+            # The packs of the folder an administrator filled, for a Nik without the catalogue.
+            if app_settings.PACKS_DIR:
+                from pathlib import Path
+
+                content_packs.install_folder(db, Path(app_settings.PACKS_DIR))
+            # The API keys the look-ups kept before 6.5 become keys of instances of the connectors that are here.
+            from .enrichment import old_keys
+
+            try:
+                old_keys.adopt(db)
                 db.commit()
-        except IntegrityError:
-            db.rollback()  # another process of the server wrote them at the same moment
-        # The packs of the folder an administrator filled, for a Nik without the catalogue.
-        if app_settings.PACKS_DIR:
-            from pathlib import Path
-
-            content_packs.install_folder(db, Path(app_settings.PACKS_DIR))
-        # The API keys the look-ups kept before 6.5 become keys of instances of the connectors that are here.
-        from .enrichment import old_keys
-
-        try:
-            old_keys.adopt(db)
-            db.commit()
-        except IntegrityError:
-            db.rollback()  # another process of the server made the instances at the same moment
+            except IntegrityError:
+                db.rollback()  # another process of the server made the instances at the same moment
     # Playbooks: the loop runs here only when there is no automation container.
     if app_settings.AUTOMATION_WORKER == "inline":
         from .automation import worker as automation_worker

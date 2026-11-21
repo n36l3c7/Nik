@@ -6,7 +6,7 @@ import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { normalizeOs } from '../../../config/os.js'
 import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
-import { Button, EmptyState, ErrorBoundary } from '../../ui/index.js'
+import { Button, EmptyState, ErrorBoundary, Wait } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import SystemDialog from './SystemDialog.jsx'
@@ -221,13 +221,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
       <ResizeHandle {...pane.handle} label="Resize the list of evidence" className="hidden md:block" />
       <div className="min-w-0 flex-1 md:pl-4">
         {Viewer ? (
-          <Suspense
-            fallback={
-              <p role="status" className="font-mono text-sm text-fg-muted">
-                Loading…
-              </p>
-            }
-          >
+          <Suspense fallback={<Wait>Loading…</Wait>}>
             <ErrorBoundary resetKey={`${incident.id}:${shownKind.id}:${focus ?? ''}`}>
               <Viewer incident={incident} focus={focus} evidence />
             </ErrorBoundary>

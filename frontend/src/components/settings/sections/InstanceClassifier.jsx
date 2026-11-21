@@ -11,7 +11,7 @@ import {
   isUnary,
   parseSample,
 } from '../../../domain/mappers.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
 import InstanceSample from './InstanceSample.jsx'
 import { Expression, INPUT, SELECT, TD, TH } from './mapperParts.jsx'
 
@@ -78,11 +78,7 @@ export default function InstanceClassifier({ connector, instance, draft, onDraft
   const typeName = (id) => types.find((type) => type.id === id)?.name ?? id
 
   if (loaded === null && !error) {
-    return (
-      <p role="status" className="font-mono text-sm text-fg-muted">
-        Loading the classifier…
-      </p>
-    )
+    return <Wait>Loading the classifier…</Wait>
   }
 
   return (

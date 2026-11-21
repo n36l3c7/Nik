@@ -167,6 +167,78 @@ def test_the_loop_of_the_worker_waits_until_the_server_serves_and_writes_nothing
         assert not automation_state.read(db)["heartbeat"] and db.scalars(select(Lease)).all() == []
 
 
+def test_what_playbooks_ask_about_files_and_addresses_is_not_looked_for_on_a_server_that_does_not_serve(
+    client, monkeypatch
+):
+    """The two loops every process runs take no lease (rows are claimed one by one): they ask the
+    question a lease asks before they look for work, and a standby's database is never asked to
+    take a claim."""
+    from app import artifact_jobs, urlscan_queue
+    from app.core.models import ArtifactJob
+
+    with SessionLocal() as db:
+        db.add(ArtifactJob(id=uuid.uuid4().hex, kind="store", params={}, created_epoch=NOW))
+        db.commit()
+    looked: list[str] = []
+    monkeypatch.setattr(artifact_jobs, "take", lambda db, now=None: looked.append("files"))
+    monkeypatch.setattr(urlscan_queue, "take", lambda db: looked.append("addresses"))
+    with monkeypatch.context() as patched:
+        patched.setattr(role, "may_work", lambda db, now=None: False)
+        assert artifact_jobs.run_due(threads=False) == 0 and urlscan_queue.run_due() == 0
+        assert artifact_jobs.prune(NOW + artifact_jobs.KEPT_SECONDS + 1) == 0
+        assert looked == []
+        with SessionLocal() as db:
+            assert db.scalars(select(ArtifactJob.status)).all() == ["queued"], "neither claimed nor dropped"
+    # Promoted: the same process goes on, nothing was restarted.
+    assert artifact_jobs.run_due(threads=False) == 0 and urlscan_queue.run_due() == 0
+    assert looked == ["files", "addresses"]
+    assert artifact_jobs.prune(NOW + artifact_jobs.KEPT_SECONDS + 1) == 1
+
+
+def test_a_process_that_ends_is_told_that_no_loop_may_work(client):
+    with SessionLocal() as db:
+        assert leases.may_work(db) is True
+        leases.close()
+        assert leases.may_work(db) is False and leases.take(db, "a-loop", "somebody", 30, NOW) is False
+        leases.starting()
+        assert leases.may_work(db) is True
+
+
+@pytest.mark.parametrize(
+    "module, one_pass, first, every",
+    [
+        ("app.auditlog.chain", "check", 25, "VERIFY_EVERY"),
+        ("app.auditlog.forward", "ship", 12, "SHIP_EVERY"),
+        ("app.health.watch", "check", 30, "WATCH_EVERY"),
+        ("app.worker_watch", "check", 20, "WATCH_EVERY"),
+        ("app.urlscan_queue", "run_due", 15, "LOOK_EVERY"),
+    ],
+)
+def test_a_loop_waits_on_the_flag_of_the_process_and_starts_no_pass_once_it_is_set(
+    monkeypatch, module, one_pass, first, every
+):
+    """Between two passes a loop waits on the flag every loop of the process obeys, not on the
+    clock alone: asked to stop, it ends instead of sleeping and passing once more."""
+    import importlib
+
+    loop = importlib.import_module(module)
+    asked: list[float] = []
+    passes: list[int] = []
+
+    class Stopping(threading.Event):
+        def wait(self, timeout=None):
+            asked.append(timeout)
+            if len(asked) >= 3:
+                self.set()
+            return self.is_set()
+
+    monkeypatch.setattr(worker, "_stopping", Stopping())
+    monkeypatch.setattr(loop, one_pass, lambda: passes.append(1))
+    loop._loop()
+    assert asked == [first, getattr(loop, every), getattr(loop, every)] and passes == [1, 1]
+    assert leases.stopping() and leases.wait(0) is True
+
+
 def test_the_names_of_the_holders_are_made_when_a_process_starts(client):
     """Two hosts run containers with the same names: a holder is a random number, never a name of
     the host, so the worker of the promoted server is never taken for the one that died."""

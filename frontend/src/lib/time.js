@@ -69,6 +69,12 @@ export function anyToMs(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/** The time of day of a timestamp (ms), as `formatDateTime` writes it: "14:05:09". */
+export function formatTime(ms) {
+  if (!Number.isFinite(ms)) return '—'
+  return new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 /** Formats a timestamp (ms) as a readable date + time in the en-GB locale. */
 export function formatDateTime(ms) {
   if (!Number.isFinite(ms)) return '—'
@@ -92,11 +98,6 @@ export function formatDate(ms) {
   })
 }
 
-/** Local hour (0-23) of a timestamp, or null if invalid. */
-export function hourOf(ms) {
-  return Number.isFinite(ms) ? new Date(ms).getHours() : null
-}
-
 /** Short relative date/time for the incident list (e.g. "2 h ago"). */
 export function formatRelative(isoString) {
   const ms = Date.parse(isoString)
@@ -110,4 +111,32 @@ export function formatRelative(isoString) {
   const days = Math.round(hours / 24)
   if (days < 30) return `${days} d ago`
   return formatDate(ms)
+}
+
+/** How long ago a moment was, as a clock: "02:05" (minutes and seconds). "00:00" with no moment. */
+export function elapsed(value, now = Date.now()) {
+  const seconds = Math.max(0, Math.round((now - (anyToMs(value) ?? now)) / 1000))
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+/**
+ * Unix ms as the value of an `<input type="datetime-local">`: the local
+ * wall-clock time, `YYYY-MM-DDTHH:mm`. '' for null or a value that is no time.
+ */
+export function msToLocalInput(ms) {
+  if (ms == null || !Number.isFinite(ms)) return ''
+  // Shifted by the local offset, the ISO string reads as the local time.
+  const offsetMs = new Date(ms).getTimezoneOffset() * 60000
+  return new Date(ms - offsetMs).toISOString().slice(0, 16)
+}
+
+/**
+ * The value of an `<input type="datetime-local">` as Unix ms, or null when it
+ * is empty or cannot be read. A time with no zone is read as local time, which
+ * is what the input wrote.
+ */
+export function localInputToMs(value) {
+  if (!value) return null
+  const ms = new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : null
 }

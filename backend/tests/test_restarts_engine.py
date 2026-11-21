@@ -6,8 +6,6 @@ it had committed before stays: the claim, and the mark of a call when one was ab
 The worker that comes next has another name and takes the lease when it has run out.
 """
 
-# ruff: noqa: E501 (graphs of test playbooks read better on one line)
-
 from __future__ import annotations
 
 import pytest

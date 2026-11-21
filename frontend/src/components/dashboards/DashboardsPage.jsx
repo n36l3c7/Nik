@@ -33,7 +33,7 @@ import {
 import { ROLES } from '../../domain/permissions.js'
 import { generateId } from '../../lib/id.js'
 import { copyText, saveBlob } from '../../lib/download.js'
-import { Badge, Button, EmptyState, Modal, Select } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Select, Wait } from '../ui/index.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import Grid from './Grid.jsx'
 import Widget from './Widget.jsx'
@@ -95,11 +95,7 @@ function DrillDialog({ what, onClose, onOpenIncident }) {
         </Button>
       </div>
       {error && <p className="text-sm text-high">{error}</p>}
-      {!found && !error && (
-        <p role="status" className="text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+      {!found && !error && <Wait>Loading…</Wait>}
       {found && (
         <>
           <p className="mb-2 text-xs text-fg-muted">

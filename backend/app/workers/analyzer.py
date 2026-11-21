@@ -125,7 +125,7 @@ def post_worker(base_url: str, token: str, path: str, payload: dict[str, Any], t
         try:
             body = json.loads(exc.read())
             detail = body.get("detail")
-        except Exception:
+        except Exception:  # noqa: BLE001 - an error whose body is not JSON has no sentence of its own
             body, detail = None, None
         missing = handover.missing_of(exc, body)
         if missing:

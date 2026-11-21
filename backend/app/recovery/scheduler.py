@@ -87,9 +87,9 @@ def stop_if_superseded() -> bool:
 
 def _stop_flag() -> threading.Event:
     """What says that this process was asked to stop: one flag for every loop of the process."""
-    from ..automation import worker
+    from ..core import leases
 
-    return worker._stopping
+    return leases.stop_flag()
 
 
 def _loop() -> None:

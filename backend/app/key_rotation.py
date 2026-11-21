@@ -43,7 +43,6 @@ its fingerprint, a few characters that are not a part of it.
 
 from __future__ import annotations
 
-import atexit
 import logging
 import os
 import secrets as random_source
@@ -55,7 +54,7 @@ from typing import Any
 from sqlalchemy.orm import Session as OrmSession
 
 from . import store_seal
-from .core import keys, sealed, store, vault
+from .core import keys, leases, sealed, store, vault
 from .core.config import settings
 
 logger = logging.getLogger("nik.keys")
@@ -786,9 +785,9 @@ def tell_environment() -> bool:
 
 
 def _loop() -> None:
-    time.sleep(8)  # let the server start
+    leases.wait(8)  # let the server start
     last_slow = 0.0
-    while True:
+    while not leases.stopping():
         wait = 20.0
         try:
             doc = store_seal.convert_pass()
@@ -805,21 +804,7 @@ def _loop() -> None:
                 tell_environment()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("A pass of the keys and of the encryption of the store failed")
-        time.sleep(wait)
-
-
-def _let_go() -> None:
-    """At a clean stop, give the lease back: the process that starts next does not wait two minutes
-    for it to run out before it goes on with a conversion or a change of key (a restart is part of
-    every change of key)."""
-    from .backups import runner
-    from .core.db import SessionLocal
-
-    try:
-        with SessionLocal() as db:
-            runner.release(db, store_seal.HOLDER, store_seal.LEASE)
-    except Exception:  # noqa: BLE001 - stopping anyway; the lease runs out by itself
-        pass
+        leases.wait(wait)
 
 
 def start() -> None:
@@ -828,7 +813,6 @@ def start() -> None:
     if _started or not store.local():
         return
     _started = True
-    atexit.register(_let_go)
     threading.Thread(target=_loop, name="nik-keys", daemon=True).start()
 
 

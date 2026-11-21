@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
+import { saveBlob } from '../../../lib/download.js'
 
 /*
  * Collection-script block: a copy/download-able code snippet the analyst runs
@@ -31,13 +32,7 @@ export default function ScriptBlock({ script, filename }) {
   }
 
   const handleDownload = () => {
-    const blob = new Blob([script.code], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${filename}.${meta.ext}`
-    anchor.click()
-    URL.revokeObjectURL(url)
+    saveBlob(new Blob([script.code], { type: 'text/plain;charset=utf-8' }), `${filename}.${meta.ext}`)
   }
 
   return (

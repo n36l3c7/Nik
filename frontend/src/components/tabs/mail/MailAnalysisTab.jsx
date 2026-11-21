@@ -149,7 +149,7 @@ export default function MailAnalysisTab({ incident, focus = null, evidence = fal
     if (standalone || !requests.mail) return
     const request = take('mail')
     if (request?.file) handleFiles([request.file])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per dropped file; `take` empties the request
   }, [requests.mail])
 
   const handleRemove = async (message) => {

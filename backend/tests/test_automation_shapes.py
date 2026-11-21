@@ -7,8 +7,6 @@ each of them is read by a run, real and dry: a path that led nowhere would
 fail the step that reads it.
 """
 
-# ruff: noqa: E501 (graphs of test playbooks read better on one line)
-
 from __future__ import annotations
 
 from fastapi.testclient import TestClient

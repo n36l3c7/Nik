@@ -102,23 +102,9 @@ export function byKind(items) {
 /** "Field" → "Fields", "Pre-processing rule" → "Pre-processing rules", "Incident type" → "Incident types". */
 export const plural = (label, count) => (count === 1 ? label : `${label}s`)
 
-/** What a pack is, in a line: "12 items · installed by admin on 2026-11-19". */
-export function packLine(pack) {
-  const count = pack?.items?.length ?? 0
-  const missing = (pack?.items ?? []).filter((item) => !item.there).length
-  const parts = [`${count} ${count === 1 ? 'item' : 'items'}`]
-  if (missing) parts.push(`${missing} no longer here`)
-  if (pack?.builtin) parts.push('part of Nik')
-  else if (pack?.updatedBy) parts.push(`installed by ${pack.updatedBy} on ${String(pack.updatedAt ?? '').slice(0, 10)}`)
-  return parts.join(' · ')
-}
-
 // --------------------------------------------------------------------------- //
 // The catalogue (GET /api/packs/catalogue) beside what is installed            //
 // --------------------------------------------------------------------------- //
-
-/** The id of the pack that is Nik itself. */
-export const NIK_PACK = 'nik'
 
 const KIND_WORDS = {
   playbooks: 'playbook',

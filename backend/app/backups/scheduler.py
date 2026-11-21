@@ -17,13 +17,13 @@ Both are threads that survive a bad pass and start once per process.
 
 from __future__ import annotations
 
-import atexit
 import logging
 import threading
 import time
 
 from sqlalchemy import select
 
+from ..core import leases
 from ..core.models import Backup
 from . import config, offsite, policy, runner, watch
 
@@ -61,7 +61,7 @@ def tick(now: float | None = None, holder: str = runner.HOLDER) -> list[str]:
         clock = time.time() if now is None else now
         since = max(float(doc.get("scheduleSetAt") or 0), float(doc.get("passphraseSetAt") or 0))
         owed = bool(doc.get("passphrase")) and policy.due(doc["schedule"], runner.taken(db), clock, since)
-    with runner.Renewing(holder):
+    with leases.Renewing(runner.LEASE, holder, runner.LEASE_SECONDS):
         for name in queued:
             runner.take(name, now=now)
             did.append(f"backup:{name}")
@@ -86,39 +86,27 @@ def _watch() -> None:
 
 
 def _loop() -> None:
-    time.sleep(10)  # let the server start
-    while True:
+    leases.wait(10)  # let the server start
+    while not leases.stopping():
         try:
             if tick():
                 watch.check()
             _watch()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("A pass of the backups failed")
-        time.sleep(TICK_EVERY)
+        leases.wait(TICK_EVERY)
 
 
 def _ship_loop() -> None:
-    time.sleep(15)
-    while True:
+    leases.wait(15)
+    while not leases.stopping():
         try:
             if offsite.ship():
                 watch.check()
             _watch()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("A pass of the copies off the server failed")
-        time.sleep(SHIP_EVERY)
-
-
-def _let_go() -> None:
-    """At a clean stop, give the leases back: the process that takes over does not wait for them to run out."""
-    from ..core.db import SessionLocal
-
-    try:
-        with SessionLocal() as db:
-            for name in (runner.LEASE, watch.LEASE, offsite.LEASE):
-                runner.release(db, name=name)
-    except Exception:  # noqa: BLE001 - stopping anyway; the leases run out by themselves
-        pass
+        leases.wait(SHIP_EVERY)
 
 
 def start() -> None:
@@ -127,7 +115,6 @@ def start() -> None:
     if _started:
         return
     _started = True
-    atexit.register(_let_go)
     threading.Thread(target=_loop, name="nik-backups", daemon=True).start()
 
 
@@ -137,5 +124,4 @@ def start_shipper() -> None:
     if _shipping:
         return
     _shipping = True
-    atexit.register(_let_go)
     threading.Thread(target=_ship_loop, name="nik-backups-offsite", daemon=True).start()

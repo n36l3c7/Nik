@@ -25,6 +25,10 @@ export function sizeText(bytes) {
   return `${(size / 1024 ** 3).toFixed(2)} GB`
 }
 
+/** The size of a file that was picked, in a word: "1 KB" at least, "340 KB", "5.2 MB". */
+export const pickedSize = (bytes) =>
+  bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+
 /** "4.2 MB of 13.0 MB" when the size is known, "4.2 MB" when only what passed is, '' when nothing is. */
 export function amountText(progress) {
   const done = Number(progress?.sent ?? progress?.received ?? 0)

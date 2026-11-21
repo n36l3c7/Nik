@@ -10,7 +10,7 @@ import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
-import { Badge, Button, EmptyState } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Wait } from '../../ui/index.js'
 
 /*
  * ============================================================================
@@ -99,11 +99,7 @@ export default function AutomationTab({ incident }) {
           {error}
         </p>
       )}
-      {!runs && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the runs…
-        </p>
-      )}
+      {!runs && !error && <Wait>Loading the runs…</Wait>}
       {runs?.length === 0 && (
         <EmptyState
           skull

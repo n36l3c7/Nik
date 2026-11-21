@@ -18,7 +18,7 @@ import { leaveHere } from '../../../lib/unsaved.js'
 import { PLAYGROUND_ROOT, leaveLine, tryLine } from '../../../domain/playground.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
-import { Badge, Button, EmptyState, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, SearchInput, Wait } from '../../ui/index.js'
 import InstancePane from './InstancePane.jsx'
 import MirrorQueue from './MirrorQueue.jsx'
 import Switch from './Switch.jsx'
@@ -351,11 +351,7 @@ export default function ConnectorsSection() {
             {notice}
           </p>
         )}
-        {!connectors && !error && (
-          <p role="status" className="font-mono text-sm text-fg-muted">
-            Loading…
-          </p>
-        )}
+        {!connectors && !error && <Wait>Loading…</Wait>}
         {connectors && rows.length === 0 && (
           <EmptyState
             skull

@@ -155,7 +155,7 @@ export default function BrowserAnalysisTab({ incident }) {
     take('browser')
     const source = browser.sources.find((s) => s.key === request.params?.source) ?? browser.sources[0]
     handleFile(source, request.file)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for a new dropped file, and again once its browser is the active one
   }, [requests.browser, activeBrowserId])
 
   /* ---- Remove a single file ---- */

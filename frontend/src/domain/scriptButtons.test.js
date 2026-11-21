@@ -10,7 +10,6 @@ import {
   contrast,
   contrastText,
   fieldTree,
-  fieldsOfType,
   hexColor,
   lowContrast,
   luminance,
@@ -94,17 +93,7 @@ test('the fields of the type are what a template can be picked from', () => {
     sender_address: { name: 'sender_address', label: 'Sender address', type: 'text' },
     time_to_close: { name: 'time_to_close', label: 'Time to close', type: 'timer' },
   }
-  const layout = {
-    sections: [
-      { id: 'key', fields: ['status', 'gone'] },
-      { id: 'mail', fields: ['sender_address', 'time_to_close', 'status'] },
-    ],
-  }
-  const fields = fieldsOfType(layout, known)
-  assert.deepEqual(
-    fields.map((field) => field.name),
-    ['status', 'sender_address', 'time_to_close'],
-  )
+  const fields = [known.status, known.sender_address, known.time_to_close]
   const tree = fieldTree(fields)
   assert.deepEqual(
     tree.map((root) => root.name),

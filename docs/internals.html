@@ -664,8 +664,8 @@
       <p>
         The <strong>Network Analysis</strong> tab reads packet captures with Wireshark's own engine, in the
         <code>pcap</code> worker (<code>workers/pcap/</code>): Debian's <code>tshark</code> and <code>sharkd</code>, run
-        as an unprivileged user in a container with a read-only filesystem and the sample store mounted read-only, no
-        capabilities (nothing is ever captured) and the internal network only.
+        as an unprivileged user in a container with a read-only filesystem, no capabilities (nothing is ever captured)
+        and the internal network only. It mounts no store: the backend sends it the capture it reads.
       </p>
       <ul>
         <li>

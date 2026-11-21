@@ -280,7 +280,7 @@ class hold:  # noqa: N801 - reads as a statement: ``with work.hold("code", sha25
 
         with SessionLocal() as db:
             self.claim = take(db, self.kind, self.ref, self.now)
-        self.claim.failed = False  # type: ignore[attr-defined]
+        self.claim.failed = False  # type: ignore[attr-defined] - the block sets it to say that it failed
         with _lock:
             _active.add((self.kind, self.ref))
         return self.claim

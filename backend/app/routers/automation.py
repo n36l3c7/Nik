@@ -15,7 +15,6 @@ token.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import secrets
 import time
@@ -60,6 +59,7 @@ from ..core.models import (
 from ..core.permissions import AUTOMATION_DEBUG, AUTOMATION_EDIT, AUTOMATION_RUN
 from ..core.ratelimit import limiter
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, require, runner_principal
+from ..core.security import token_digest as _hook_hash
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 # What automation adds to an incident (its runs), under the incident's own address.
@@ -925,10 +925,6 @@ HOOK_LIMIT = "60/minute"
 _HOOK_HEADERS = ("content-type", "user-agent")
 _HOOK_NEVER = ("x-forwarded-", "x-real-ip", "x-api-key", "x-nik-", "x-csrf", "x-amz-security", "x-auth")
 _HOOK_SECRET_WORDS = ("token", "secret", "key", "auth", "password", "cookie", "signature")
-
-
-def _hook_hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _hook_key(request: Request) -> str:

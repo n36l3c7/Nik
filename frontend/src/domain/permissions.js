@@ -119,7 +119,6 @@ export function can(user, ...wanted) {
 }
 
 export const roleLabel = (id) => BY_ID.get(id)?.label ?? id
-export const roleDescription = (id) => BY_ID.get(id)?.description ?? ''
 
 /** "Analyst, Rules" for a list of roles. */
 export const describeRoles = (roles) => cleanRoles(roles).map(roleLabel).join(', ') || 'No role'

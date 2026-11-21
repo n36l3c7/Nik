@@ -5,7 +5,7 @@ import OsPicker from '../layout/OsPicker.jsx'
 import { useIncidents, deriveIncidentName } from '../../context/IncidentContext.jsx'
 import { normalizeOs } from '../../config/os.js'
 import { SEVERITIES, STATUSES } from '../../domain/incidentName.js'
-import { formatDateTime } from '../../lib/time.js'
+import { formatDateTime, localInputToMs, msToLocalInput } from '../../lib/time.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
 
 /*
@@ -22,21 +22,6 @@ import { useUnsavedChanges } from '../../lib/unsaved.js'
  * Closing goes through its own form (a reason, what the type wants filled):
  * choosing "closed" here opens it after the rest is saved.
  */
-
-/** Unix ms → value for an <input type="datetime-local"> (local time). */
-function msToLocalInput(ms) {
-  if (!Number.isFinite(ms)) return ''
-  const d = new Date(ms)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-/** <input type="datetime-local"> value → Unix ms (local time), or null. */
-function localInputToMs(value) {
-  if (!value) return null
-  const ms = new Date(value).getTime()
-  return Number.isFinite(ms) ? ms : null
-}
 
 const INPUT =
   'w-full border border-line bg-canvas px-3 py-2 text-sm text-fg placeholder:text-fg-muted ' +

@@ -9,8 +9,8 @@
  * clipboard.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Check, Clock, Copy, Flag, Hash, RotateCcw, Terminal, TriangleAlert } from 'lucide-react'
-import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
+import { CalendarClock, Clock, Flag, Hash, RotateCcw, Terminal, TriangleAlert } from 'lucide-react'
+import { Badge, Button, Card, CopyButton, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -50,31 +50,6 @@ function TimeCell({ event }) {
         </span>
       )}
     </span>
-  )
-}
-
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-  if (!text) return null
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      /* insecure context: ignore */
-    }
-  }
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label="Copy command"
-      title="Copy command"
-      className="shrink-0 p-0.5 text-fg-muted opacity-0 transition hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
-    >
-      {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
   )
 }
 
@@ -140,7 +115,7 @@ export default function CommandsSection({ incident, shellId, commands = [] }) {
 
   useEffect(() => {
     setRange({ start: incident?.suspiciousStart ?? null, end: incident?.suspiciousEnd ?? null })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only another incident resets the range, not an edit of its window
   }, [incident?.id])
 
   const events = useMemo(() => buildCommandEvents({ commands, engine }), [commands, engine])
@@ -313,7 +288,7 @@ function buildColumns({ incidentId, shellId, flags, toggleFlag }) {
         <div className="group flex items-start gap-1.5">
           <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet" />
           <code className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-fg">{row.command}</code>
-          <CopyButton text={row.command} />
+          <CopyButton text={row.command} label="Copy command" hover />
         </div>
       ),
     },

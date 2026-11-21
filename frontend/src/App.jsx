@@ -25,6 +25,7 @@ import {
   Modal,
   Transfers,
   UnsavedDialog,
+  Wait,
 } from './components/ui/index.js'
 import Rail from './components/layout/Rail.jsx'
 import Sidebar from './components/layout/Sidebar.jsx'
@@ -957,9 +958,9 @@ export default function App() {
       {automationShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading automations…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading automations…</Wait>
+            </div>
           }
         >
           <AutomationPage
@@ -975,9 +976,9 @@ export default function App() {
       {tasksShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading tasks…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading tasks…</Wait>
+            </div>
           }
         >
           <TasksPage
@@ -993,9 +994,9 @@ export default function App() {
       {dashboardsShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading dashboards…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading dashboards…</Wait>
+            </div>
           }
         >
           <DashboardsPage
@@ -1011,9 +1012,9 @@ export default function App() {
       {playgroundShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading the playground…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading the playground…</Wait>
+            </div>
           }
         >
           <PlaygroundPage key={fresh.playground ?? 0} onClose={closePlayground} />

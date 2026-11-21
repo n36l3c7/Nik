@@ -5,7 +5,7 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { nameProblem } from '../../domain/automation/scripts.js'
 import { formatRelative } from '../../lib/time.js'
-import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import { Field, TextInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
@@ -158,11 +158,7 @@ export default function ScriptsPage({ onOpen }) {
           {error}
         </p>
       )}
-      {!found && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the scripts…
-        </p>
-      )}
+      {!found && !error && <Wait>Loading the scripts…</Wait>}
 
       {found && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">

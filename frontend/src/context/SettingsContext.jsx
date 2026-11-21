@@ -7,6 +7,7 @@ import {
   DEFAULT_BUSINESS_HOURS,
 } from '../config/detectionRules.js'
 import { api } from '../services/api.js'
+import { generateId } from '../lib/id.js'
 import { createSocEngine } from '../domain/soc.js'
 import { useAuth } from './AuthContext.jsx'
 
@@ -47,11 +48,6 @@ const DEFAULT_ENRICHMENT = {
   auto: { ip: false, url: false, hash: false },
   retentionDays: { ip: 30, url: 30, hash: 180 },
   refreshExpired: true,
-}
-
-/** Generates a unique id for keyword rules created by the user. */
-function newId() {
-  return crypto.randomUUID?.() ?? `kw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 /** True if `pattern` is a valid RegExp (used by the UI to validate input). */
@@ -175,7 +171,7 @@ export function SettingsProvider({ children }) {
   /** Adds a new keyword rule (id generated if missing). */
   const addKeyword = useCallback((rule) => {
     const clean = {
-      id: rule.id || newId(),
+      id: rule.id || generateId(),
       label: rule.label?.trim() || rule.pattern,
       pattern: rule.pattern,
       severity: rule.severity === 'high' ? 'high' : 'medium',

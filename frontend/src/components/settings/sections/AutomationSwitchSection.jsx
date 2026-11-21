@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { OctagonX } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { useAutomation } from '../../../context/AutomationContext.jsx'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, Modal, Wait } from '../../ui/index.js'
 
 /*
  * Automation → Stop all (admins): the general switch.
@@ -64,11 +64,7 @@ export default function AutomationSwitchSection() {
           {error}
         </p>
       )}
-      {!current && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+      {!current && !error && <Wait>Loading…</Wait>}
 
       {current && (
         <div className="max-w-xl space-y-4">

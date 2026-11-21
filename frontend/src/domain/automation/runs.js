@@ -50,9 +50,6 @@ export function nodeStatuses(steps) {
   )
 }
 
-/** The steps of one node, in the order they were taken. */
-export const stepsOf = (steps, node) => (steps ?? []).filter((step) => step.node === node)
-
 /** "38 ms", "4.2 s", "3 min", "2 h 5 min" between two ISO instants (to now when the second is missing). */
 export function duration(from, to, now = Date.now()) {
   const start = Date.parse(from)

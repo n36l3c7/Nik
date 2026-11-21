@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { CUT, amountText, cutText, percentOf, sizeText, wasCut, withTransfer, withoutTransfer } from './transfers.js'
+import {
+  CUT,
+  amountText,
+  cutText,
+  percentOf,
+  pickedSize,
+  sizeText,
+  wasCut,
+  withTransfer,
+  withoutTransfer,
+} from './transfers.js'
 
 test('how much of a transfer is done, when its size is known', () => {
   assert.equal(percentOf({ sent: 50, total: 200 }), 25)
@@ -19,6 +29,9 @@ test('a size as a person reads it', () => {
   assert.equal(sizeText(13 * 1024 ** 2), '13.0 MB')
   assert.equal(sizeText(1.25 * 1024 ** 3), '1.25 GB')
   assert.equal(sizeText(undefined), '0 B')
+  assert.equal(pickedSize(0), '1 KB')
+  assert.equal(pickedSize(1536), '2 KB')
+  assert.equal(pickedSize(5 * 1024 ** 2 + 200000), '5.2 MB')
 })
 
 test('the amounts beside a bar', () => {

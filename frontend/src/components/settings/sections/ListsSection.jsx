@@ -22,7 +22,7 @@ import {
   textToEntries,
   toRows,
 } from '../../../domain/lists.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, Modal, SearchInput, Wait } from '../../ui/index.js'
 import { leaveHere, useUnsavedChanges } from '../../../lib/unsaved.js'
 import { transfer } from '../../../lib/transfers.js'
 
@@ -443,11 +443,7 @@ function Detail({ name, onChanged, onDeleted }) {
     )
   }
   if (!list) {
-    return (
-      <p role="status" className="font-mono text-sm text-fg-muted">
-        Loading the list…
-      </p>
-    )
+    return <Wait>Loading the list…</Wait>
   }
   const readOnly = Boolean(list.readOnly)
   return (
