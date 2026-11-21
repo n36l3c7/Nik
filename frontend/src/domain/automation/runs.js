@@ -5,17 +5,26 @@
  */
 
 /** Badge colours (components/ui/Badge) of a run and of a step. */
-export const RUN_COLORS = { running: 'cyan', waiting: 'amber', done: 'emerald', failed: 'red', stopped: 'slate' }
+export const RUN_COLORS = {
+  running: 'cyan',
+  waiting: 'amber',
+  // A run that waits at a step a restart interrupted (domain/restarts.js).
+  interrupted: 'amber',
+  done: 'emerald',
+  failed: 'red',
+  stopped: 'slate',
+}
 export const STEP_COLORS = {
   pending: 'slate',
   running: 'cyan',
   waiting: 'amber',
+  interrupted: 'amber',
   done: 'emerald',
   failed: 'red',
   skipped: 'slate',
 }
 
-export const RUN_STATUSES = ['running', 'waiting', 'done', 'failed', 'stopped']
+export const RUN_STATUSES = ['running', 'waiting', 'interrupted', 'done', 'failed', 'stopped']
 export const isFinished = (status) => ['done', 'failed', 'stopped'].includes(status)
 
 const TRIGGERS = { manual: 'by hand', schedule: 'a schedule', event: 'an event', playbook: 'another playbook' }
@@ -27,7 +36,7 @@ export function triggerLabel(run) {
 }
 
 // What a node shows when its steps differ (a node inside a "for each" has one step per item).
-const WORST_FIRST = ['failed', 'waiting', 'running', 'pending', 'done', 'skipped']
+const WORST_FIRST = ['interrupted', 'failed', 'waiting', 'running', 'pending', 'done', 'skipped']
 
 /** node id → the status the canvas colours it with. A node no step reached is not in the map. */
 export function nodeStatuses(steps) {
@@ -63,6 +72,7 @@ export function duration(from, to, now = Date.now()) {
 export function stepLine(step) {
   if (!step) return ''
   if (step.status === 'failed') return step.error || 'failed'
+  if (step.status === 'interrupted') return 'interrupted by a restart: waits for a person to say what happened'
   if (step.status === 'waiting') {
     if (step.waiting === 'approval') return 'waiting for an approval'
     if (step.waiting === 'task') return 'waiting for a person'

@@ -12,7 +12,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react'
-import { AsciiSkull, Badge, Button, Card, EmptyState, Wait } from '../../ui/index.js'
+import { AsciiSkull, Badge, Button, Card, EmptyState, RestartNote, Wait } from '../../ui/index.js'
 import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { IocValue } from '../../../context/IocLookupContext.jsx'
@@ -231,6 +231,7 @@ function UrlDetail({ scan, incident, error, onRescan, onRemove, onBrowse, busy }
           <p role="status" className="font-mono text-sm text-fg-muted">
             The isolated browser is visiting {displayUrl(scan.url)}…
           </p>
+          <RestartNote work={scan.work} />
         </div>
       ) : scan.status === 'error' ? (
         <div className="space-y-2 py-4">

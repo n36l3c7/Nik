@@ -73,6 +73,11 @@ METRICS: dict[str, tuple[str, str]] = {
     "nik_schedules": ("gauge", "Schedules of playbooks."),
     "nik_schedules_late": ("gauge", "Schedules whose time has passed without a run."),
     "nik_fetch_instances": ("gauge", "Instances that fetch, by state."),
+    "nik_work_held": ("gauge", "Pieces of work an API process holds now (analyses, scans, mailboxes)."),
+    "nik_work_interrupted": ("gauge", "Steps of playbooks a restart interrupted that wait for a person to say."),
+    "nik_work_interrupted_oldest_seconds": ("gauge", "How long the oldest of them has waited."),
+    "nik_work_set_aside": ("gauge", "Pieces of work set aside after they were interrupted, not tried again."),
+    "nik_work_silent_seconds": ("gauge", "Age of the oldest sign of life among the work that is held."),
     "nik_worker_up": ("gauge", "1 when a worker answered its last check, 0 when it did not."),
     "nik_automation_heartbeat_age_seconds": ("gauge", "Time since the automation worker last said it was alive."),
     "nik_backup_last_good_age_seconds": ("gauge", "Age of the last backup that passed its restore test."),
@@ -564,7 +569,8 @@ def _queues(db: OrmSession, limits: dict[str, int], now: float) -> list[dict[str
             None,
             now - (stamp(oldest) or now),
             limits,
-            detail="An upload that was being parsed when the server restarted stays here: upload the file again.",
+            detail="An upload that was being parsed when the server restarted fails within a minute, and says to "
+            "upload the file again.",
         )
     )
 
@@ -721,6 +727,114 @@ def _queues(db: OrmSession, limits: dict[str, int], now: float) -> list[dict[str
     if not failed:
         found["state"] = FINE
     rows.append(found)
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# Work in progress across restarts                                            #
+# --------------------------------------------------------------------------- #
+# A piece of work is taken back after work.STALE_AFTER seconds without a sign of life: twice that
+# without anybody taking it back is the sweeper not doing its part, ten minutes is a problem.
+SILENT_ATTENTION, SILENT_PROBLEM = 120, 600
+
+
+def _work(db: OrmSession, now: float) -> list[dict[str, Any]]:
+    """What restarts left behind: what waits for a person, what was given up, what nobody holds."""
+    from .. import work
+    from ..automation import worker as automation_worker
+    from ..core.models import MirrorJob, RunStep
+
+    rows = []
+    group = "Work in progress"
+    waiting = list(db.scalars(select(RunStep).where(RunStep.status == "interrupted")))
+    since = []
+    for step in waiting:
+        asked = next((line for line in reversed(step.restarts or []) if line.get("what") == "waiting"), None)
+        since.append(stamp(asked["at"]) if asked else now)
+    oldest = now - min(since) if since else 0.0
+    said = "None"
+    if waiting:
+        said = f"{len(waiting)} {'step waits' if len(waiting) == 1 else 'steps wait'}, the oldest for {lasted(oldest)}"
+    rows.append(
+        row(
+            "work.interrupted",
+            group,
+            "Steps a restart interrupted that wait for a person",
+            said,
+            ATTENTION if waiting else FINE,
+            "The worker stopped while each of them called another system, and Nik does not know whether the call "
+            "was made: it does not repeat it. Open the run and say what happened: it happened, it did not, or stop."
+            if waiting
+            else "",
+            link="/automation/runs?status=interrupted",
+            notify=True,
+            metrics=[
+                ("nik_work_interrupted", {}, len(waiting)),
+                ("nik_work_interrupted_oldest_seconds", {}, oldest),
+            ],
+        )
+    )
+
+    facts = work.facts(db, now)
+    kinds = work.kinds()
+    by_kind: dict[str, int] = {}
+    for kind, _ref in facts["aside"]:
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+    unsent = (
+        db.execute(
+            select(func.count())
+            .select_from(MirrorJob)
+            .where(MirrorJob.status == "failed", MirrorJob.error.like("%restart%"))
+        ).scalar()
+        or 0
+    )
+    aside = sum(by_kind.values())
+    parts = [f"{count} × {kinds[kind].label if kind in kinds else kind}" for kind, count in sorted(by_kind.items())] + (
+        [f"{unsent} × a comment to a mirrored system that was not sent again"] if unsent else []
+    )
+    rows.append(
+        row(
+            "work.aside",
+            group,
+            "Work set aside after it was interrupted",
+            "; ".join(parts) if parts else "None",
+            ATTENTION if aside or unsent else FINE,
+            f"Work that was interrupted {work.MAX_ATTEMPTS} times is not started again by itself: it may be what "
+            "stops its worker (look at the log of that container). Each says so where it is shown, and can be "
+            "asked for again there. A row is kept here for a week."
+            if aside or unsent
+            else "",
+            notify=True,
+            metrics=[("nik_work_set_aside", {}, aside + unsent)],
+        )
+    )
+
+    # Steps that are running under a worker that is not the one alive, or past their time: nobody
+    # took them back yet.
+    silent = float(facts["silent"])
+    for step in db.scalars(select(RunStep).where(RunStep.status == "running", RunStep.claimed_at.isnot(None))):
+        late = now - float(step.claimed_at or now) - float(step.timeout_s or 60) - automation_worker.LEASE_SECONDS
+        silent = max(silent, late)
+    silent = max(0.0, silent)
+    state = PROBLEM if silent >= SILENT_PROBLEM else ATTENTION if silent >= SILENT_ATTENTION else FINE
+    rows.append(
+        row(
+            "work.silent",
+            group,
+            "Oldest work held without a sign of life",
+            f"{facts['held']} held, "
+            + ("all alive" if silent < work.STALE_AFTER else f"one silent for {lasted(silent)}"),
+            state,
+            "Work whose holder is gone is taken back within a minute, by an API process (the analyses) or by the "
+            "automation worker (the steps of playbooks). This one was not: see whether both run "
+            "(Settings → System → Workers)."
+            if state != FINE
+            else "",
+            link="/settings/system/workers",
+            notify=True,
+            metrics=[("nik_work_held", {}, facts["held"]), ("nik_work_silent_seconds", {}, silent)],
+        )
+    )
     return rows
 
 
@@ -1294,6 +1408,7 @@ def gather(
         ]),
         ("database", lambda: _database(db, kept, limits, now)),
         ("queues", lambda: _queues(db, limits, now)),
+        ("work", lambda: _work(db, now)),
         ("workers", lambda: _workers(db, limits, now)),
         ("backups", lambda: _backups(db, now)),
         ("certificate", lambda: _certificate(kept, limits, now)),

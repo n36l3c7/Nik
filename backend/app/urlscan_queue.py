@@ -25,7 +25,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from . import artifacts, urlscan
+from . import artifacts, urlscan, work
 from .core.models import UrlScan
 from .core.security import now_iso
 
@@ -44,6 +44,8 @@ def ask(db: OrmSession, row: UrlScan, actor: str, run_id: str, depth: int) -> No
     row.result = {"startedAt": now_iso(), MARK: {"actor": actor, "run": run_id, "depth": depth}}
     flag_modified(row, "result")
     artifacts.register_url(db, row)
+    # Held from here on (work.py): a scan cut by a restart goes back to this queue by itself.
+    work.want(db, "scan", row.id, {"actor": actor})
 
 
 def asked(row: UrlScan) -> dict[str, Any] | None:
@@ -74,7 +76,7 @@ def run_due(limit: int = 20) -> int:
     from .core.db import SessionLocal
 
     done = 0
-    while done < limit:
+    while done < limit and not work.stopping():
         with SessionLocal() as db:
             taken = take(db)
         if taken is None:
@@ -96,7 +98,7 @@ def run_due(limit: int = 20) -> int:
 
 def _loop() -> None:
     time.sleep(15)  # let the API start
-    while True:
+    while not work.stopping():
         try:
             run_due()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass

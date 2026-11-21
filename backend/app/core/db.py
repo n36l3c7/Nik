@@ -66,6 +66,18 @@ SessionLocal = sessionmaker(
 )
 
 
+def connection_lost(error: BaseException) -> bool:
+    """Whether an error is the database going away under a transaction (it was restarted, killed,
+    or the network to it dropped), and not something the work in hand did wrong. Work that meets
+    one is not failed for it: nothing can be written at that moment, so it is left as it is, held
+    by who held it, and taken back as work whose holder stopped."""
+    from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, PendingRollbackError
+
+    if isinstance(error, (OperationalError, InterfaceError, PendingRollbackError)):
+        return True
+    return isinstance(error, DBAPIError) and bool(error.connection_invalidated)
+
+
 def after_commit(db: Session, action) -> None:
     """Run ``action()`` once this session's transaction is committed.
 

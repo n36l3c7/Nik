@@ -27,13 +27,14 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import work
 from ..core import vault
 from ..core.config import settings
 from ..core.db import SessionLocal
 from ..core.locking import lock_incident
 from ..core.models import Incident, NetworkCapture
 from ..core.security import now_iso
-from ..workers import handover, previews
+from ..workers import handover, previews, watching
 from . import pcapng, store
 
 logger = logging.getLogger("nik.network")
@@ -173,7 +174,53 @@ def _apply_summary(row: NetworkCapture, result: dict[str, Any]) -> None:
 
 
 def run_analysis(capture_id: str) -> None:
-    """Background task: analyse a stored capture and refresh its incident."""
+    """Background task: analyse a stored capture and refresh its incident.
+
+    **Across a restart: started again.** The capture is in the store and its analysis is a function
+    of it: the job is held (``work.py``, kind ``capture``), started again by another API process
+    when this one is gone, and handed out again with the file when the worker is the one that
+    restarted (``watching.py``); set aside after ``work.MAX_ATTEMPTS`` interruptions. While it runs
+    the worker says which of its two passes it is in. ``capture.analysed`` is said once, in the
+    commit that stores the result."""
+    try:
+        with work.hold("capture", capture_id) as claim:
+            _analysis(capture_id, claim)
+    except work.Taken:
+        return
+
+
+def _fail_analysis(db: OrmSession, capture_id: str, sentence: str) -> None:
+    row = db.get(NetworkCapture, capture_id)
+    if row is None or row.status != "indexing":
+        return
+    row.status, row.error = "error", sentence[:500]
+    save_reference(db, row)
+    from ..automation import triggers
+
+    triggers.capture_analysed(db, row)
+
+
+def _again(capture_id: str, _params: dict) -> bool | None:
+    with SessionLocal() as db:
+        row = db.get(NetworkCapture, capture_id)
+        if row is None or row.status != "indexing":
+            return False
+    work.thread(run_analysis, capture_id)
+    return None
+
+
+work.register(
+    work.Kind(
+        "capture",
+        "the analysis of a capture",
+        "again",
+        start=_again,
+        fail=_fail_analysis,
+    )
+)
+
+
+def _analysis(capture_id: str, claim: work.Claim) -> None:
     with _jobs, SessionLocal() as db:
         row = db.get(NetworkCapture, capture_id)
         if row is None:
@@ -181,7 +228,19 @@ def run_analysis(capture_id: str) -> None:
         try:
             target = _target(row)
             close_worker_session(row)  # a new key log or file: reopen it
-            _apply_summary(row, _worker("/analyze", target, ANALYSE_TIMEOUT))
+            _apply_summary(
+                row,
+                watching.handed_out(
+                    claim,
+                    lambda: _worker("/analyze", target, ANALYSE_TIMEOUT),
+                    settings.PCAP_URL,
+                    "X-Pcap-Token",
+                    settings.PCAP_TOKEN,
+                    what="the analysis of this capture",
+                ),
+            )
+        except watching.SetAside as aside:
+            row.status, row.error = "error", str(aside)[:500]
         except previews.WorkerError as exc:
             row.status, row.error = "error", str(exc)[:500]
         save_reference(db, row)
@@ -197,6 +256,9 @@ def queue_analysis(db: OrmSession, row: NetworkCapture, background_tasks) -> Non
     row.status = "indexing" if configured() else "stored"
     row.error = None if configured() else "The packet capture worker is not configured (PCAP_URL)."
     save_reference(db, row)
+    if configured():
+        # Written with the row: the job exists even if this process stops before its thread starts.
+        work.want(db, "capture", row.id)
     db.commit()
     if configured():
         background_tasks.add_task(run_analysis, row.id)

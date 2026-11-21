@@ -31,6 +31,7 @@
  * (auth, audit, settings, incidents) builds on top of it.
  */
 
+import { CUT } from '../domain/transfers.js'
 import { noteForeground, requestIsBackground } from '../lib/activity.js'
 
 const BASE = '/api'
@@ -214,7 +215,9 @@ export function upload(path, file, { onProgress, signal, fields = {}, method = '
     if (onProgress) {
       xhr.upload.onprogress = (event) => onProgress({ sent: event.loaded, total: event.total })
     }
-    xhr.onerror = () => reject(new Error('Cannot reach the server.'))
+    // The connection broke while the file went up: the server stopped or is restarting. Said so,
+    // and marked, so that who shows the transfer can offer to send it again (lib/transfers.js).
+    xhr.onerror = () => reject(Object.assign(new Error(CUT), { interrupted: true }))
     xhr.onabort = () => reject(Object.assign(new Error('Upload cancelled.'), { name: 'AbortError' }))
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {

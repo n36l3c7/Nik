@@ -353,29 +353,11 @@ def _acquire(now: float | None = None, holder: str = HOLDER) -> bool:
     """Take or renew the lease of the loop; False while another process holds it. It is short: a
     server that was killed (a restart is part of every change of key) is taken over from within
     ``LEASE_SECONDS``, not after minutes."""
-    from sqlalchemy import insert, or_, update
-    from sqlalchemy.exc import IntegrityError
-
+    from .core import leases
     from .core.db import SessionLocal
-    from .core.models import Lease
 
-    now = time.time() if now is None else now
     with SessionLocal() as db:
-        taken = db.execute(
-            update(Lease)
-            .where(Lease.name == LEASE, or_(Lease.holder == holder, Lease.expires_at < now))
-            .values(holder=holder, expires_at=now + LEASE_SECONDS)
-        ).rowcount
-        if taken:
-            db.commit()
-            return True
-        try:
-            db.execute(insert(Lease).values(name=LEASE, holder=holder, expires_at=now + LEASE_SECONDS))
-            db.commit()
-            return True
-        except IntegrityError:
-            db.rollback()
-            return False
+        return leases.take(db, LEASE, holder, LEASE_SECONDS, now)
 
 
 class _Renewing:

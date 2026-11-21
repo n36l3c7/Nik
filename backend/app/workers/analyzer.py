@@ -5,6 +5,16 @@ see workers/analyzer/) to disassemble and decompile a sample, waits for the JSON
 result and saves it in ``sample_code``. The worker is reachable only from the
 backend and does not see the store: it is given the sample and the signatures
 it lacks (``handover.py``).
+
+**Across a restart: started again.** A disassembly is a function of the file
+and of the signatures: nothing is lost by doing it from the beginning, and
+its result replaces itself. The job is held (``work.py``, kind ``code``): when
+the API process that waited for the worker is gone, another one starts the
+job again; when the worker is the one that restarted, the process that waits
+is told "unknown job" and hands the job out again with the file
+(``watching.py``). After ``work.MAX_ATTEMPTS`` interruptions the job is set
+aside as failed, with that reason. ``code.analysed`` is said once, in the
+commit that stores the result.
 """
 
 from __future__ import annotations
@@ -17,13 +27,14 @@ from typing import Any
 
 from sqlalchemy import delete
 
+from .. import work
 from ..core.config import settings
 from ..core.db import SessionLocal
 from ..core.models import SampleCode, SampleFunction
 from ..core.security import now_iso
 from ..malware import flirt
 from ..malware.samples import sample_path
-from . import handover
+from . import handover, watching
 
 
 class AnalyzerError(Exception):
@@ -52,6 +63,22 @@ def request_code_analysis(sha256: str, signatures: list[str]) -> dict[str, Any]:
     ``signatures`` are the enabled admin FLIRT files, relative to the store.
     """
     return _post("/analyze", {"sha256": sha256, "signatures": signatures})
+
+
+def _analysis_of(sha256: str, signatures: list[str], claim: work.Claim) -> dict[str, Any]:
+    """The analysis, for the job that holds ``claim``: the worker is asked meanwhile whether it
+    still has the job, and a job it lost is handed out again (``watching.py``)."""
+    try:
+        return watching.handed_out(
+            claim,
+            lambda: request_code_analysis(sha256, signatures),
+            settings.ANALYZER_URL,
+            "X-Analyzer-Token",
+            settings.ANALYZER_TOKEN,
+            what="the disassembly of this file",
+        )
+    except watching.SetAside as aside:
+        raise AnalyzerError(str(aside)) from None
 
 
 def request_decompile(sha256: str, addr: int, signatures: list[str]) -> dict[str, Any]:
@@ -88,7 +115,7 @@ def post_worker(base_url: str, token: str, path: str, payload: dict[str, Any], t
     request = urllib.request.Request(
         f"{base_url}{path}",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "X-Analyzer-Token": token},
+        headers={"Content-Type": "application/json", "X-Analyzer-Token": token, **watching.headers()},
         method="POST",
     )
     try:
@@ -106,7 +133,9 @@ def post_worker(base_url: str, token: str, path: str, payload: dict[str, Any], t
         error = WorkerBusy if exc.code == 503 else AnalyzerError
         raise error(detail or f"The worker answered {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise AnalyzerError(f"Cannot reach the worker: {exc}") from exc
+        failure = AnalyzerError(f"Cannot reach the worker: {exc}")
+        failure.unreachable = True  # the connection, not an answer: watching.py asks the worker what it knows
+        raise failure from exc
 
 
 def split_result(result: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -126,7 +155,48 @@ def split_result(result: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str,
 
 
 def run_code_job(sha256: str) -> None:
-    """Background task: ask the worker, store the result or the error."""
+    """Background task: ask the worker, store the result or the error. Nothing when another
+    process holds the job."""
+    try:
+        with work.hold("code", sha256) as claim:
+            _code_job(sha256, claim)
+    except work.Taken:
+        return
+
+
+def _fail_code(db, sha256: str, sentence: str) -> None:
+    """The job was given up (set aside, or cut for good): said on its row, and to who waits for it."""
+    row = db.get(SampleCode, sha256)
+    if row is None or row.status not in ("queued", "running"):
+        return
+    row.status, row.error, row.finished_at = "error", sentence, now_iso()
+    from ..automation import triggers
+
+    db.flush()
+    triggers.code_analysed(db, row)
+
+
+def _again(sha256: str, _params: dict) -> bool | None:
+    with SessionLocal() as db:
+        row = db.get(SampleCode, sha256)
+        if row is None or row.status not in ("queued", "running"):
+            return False
+    work.thread(run_code_job, sha256)
+    return None
+
+
+work.register(
+    work.Kind(
+        "code",
+        "the disassembly of a file",
+        "again",
+        start=_again,
+        fail=_fail_code,
+    )
+)
+
+
+def _code_job(sha256: str, claim: work.Claim) -> None:
     db = SessionLocal()
     try:
         row = db.get(SampleCode, sha256)
@@ -135,7 +205,7 @@ def run_code_job(sha256: str) -> None:
         row.status = "running"
         db.commit()
         try:
-            summary, functions = split_result(request_code_analysis(sha256, flirt.enabled_paths(db)))
+            summary, functions = split_result(_analysis_of(sha256, flirt.enabled_paths(db), claim))
             db.execute(delete(SampleFunction).where(SampleFunction.sha256 == sha256))
             db.add_all(SampleFunction(sha256=sha256, **fn) for fn in functions)
             row.summary, row.status, row.error = summary, "done", None

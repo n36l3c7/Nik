@@ -34,8 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core import audit
@@ -129,27 +128,15 @@ def version_tuple(text: str) -> tuple[int, ...]:
 # --------------------------------------------------------------------------- #
 def acquire(db: OrmSession, holder: str = HOLDER, now: float | None = None, name: str = LEASE) -> bool:
     """Take or renew the lease; False while another process holds it."""
-    now = time.time() if now is None else now
-    taken = db.execute(
-        update(Lease)
-        .where(Lease.name == name, or_(Lease.holder == holder, Lease.expires_at < now))
-        .values(holder=holder, expires_at=now + LEASE_SECONDS)
-    ).rowcount
-    if taken:
-        db.commit()
-        return True
-    try:
-        db.execute(insert(Lease).values(name=name, holder=holder, expires_at=now + LEASE_SECONDS))
-        db.commit()
-        return True
-    except IntegrityError:
-        db.rollback()
-        return False
+    from ..core import leases
+
+    return leases.take(db, name, holder, LEASE_SECONDS, now)
 
 
 def release(db: OrmSession, holder: str = HOLDER, name: str = LEASE) -> None:
-    db.execute(delete(Lease).where(Lease.name == name, Lease.holder == holder))
-    db.commit()
+    from ..core import leases
+
+    leases.release(db, name, holder)
 
 
 def held_by_another(db: OrmSession, holder: str = HOLDER, now: float | None = None) -> bool:

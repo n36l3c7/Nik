@@ -37,6 +37,8 @@ from .defaults import DEFAULT_BUSINESS_HOURS
 
 SHIPPED = ("time_to_assign", "time_to_contain", "time_to_close")
 BREACHED = "sla_breached"
+# A timer found past its time by more than this was not noticed when it ran out (the worker was stopped).
+LATE = 300
 STATES = ("running", "paused", "stopped")
 MINUTES_MAX = 60 * 24 * 365
 SLA_MAX = 12
@@ -347,10 +349,17 @@ def tick(db: OrmSession, now: float) -> int:
             counted = elapsed(timer, now, hours)
             if not due or counted < due or timer.get("breached_at"):
                 continue
-            stored[name] = {**timer, "breached_at": now_iso()}
+            # Its real time: the moment it ran out, which is before now when the worker was stopped
+            # then. The timer fires late, once, and says since when it is past its time.
+            late = max(0.0, float(counted) - float(due))
+            since = datetime.fromtimestamp(now - late, timezone.utc)
+            stored[name] = {**timer, "breached_at": since.isoformat() if late >= LATE else now_iso()}
             stored[BREACHED] = True
             _keep(incident, stored)
-            war_room.system(db, incident.id, f"{labels[name]} is past its time ({_span(due)})")
+            said = f"{labels[name]} is past its time ({_span(due)})"
+            if late >= LATE:
+                said += f", since {since.strftime('%Y-%m-%d %H:%M UTC')}: it was noticed late"
+            war_room.system(db, incident.id, said)
             _tell(db, incident, labels[name])
             triggers.sla_breached(db, incident, name, labels[name], int(due), int(counted))
             breached += 1

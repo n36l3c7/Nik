@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { amountText, percentOf, sizeText, withTransfer, withoutTransfer } from './transfers.js'
+import { CUT, amountText, cutText, percentOf, sizeText, wasCut, withTransfer, withoutTransfer } from './transfers.js'
 
 test('how much of a transfer is done, when its size is known', () => {
   assert.equal(percentOf({ sent: 50, total: 200 }), 25)
@@ -38,4 +38,20 @@ test('the transfers in flight: one is added, follows its progress, and goes', ()
   ])
   assert.deepEqual(withoutTransfer(list, 1), [{ id: 2, label: 'Preparing the export' }])
   assert.deepEqual(withoutTransfer(list, 9), list)
+})
+
+test('a transfer the server went away under can be sent again, any other failure cannot', () => {
+  // The connection broke (services/api.js marks it), or the proxy answered for a server that is starting.
+  assert.equal(wasCut(Object.assign(new Error(CUT), { interrupted: true })), true)
+  for (const status of [502, 503, 504]) assert.equal(wasCut(Object.assign(new Error('x'), { status })), true)
+  // What the server said of the file itself is not a restart; nor is a transfer somebody cancelled.
+  for (const status of [400, 413, 422, 500]) assert.equal(wasCut(Object.assign(new Error('x'), { status })), false)
+  assert.equal(wasCut(Object.assign(new Error('Upload cancelled.'), { name: 'AbortError', interrupted: true })), false)
+  assert.equal(wasCut(new Error('Not a mailbox.')), false)
+  assert.equal(wasCut(null), false)
+  assert.equal(
+    cutText('Uploading case.pst'),
+    'Uploading case.pst: it was cut by a restart of the server. Try it again.',
+  )
+  assert.match(CUT, /the server may be restarting/)
 })

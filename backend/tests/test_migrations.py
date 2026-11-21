@@ -1391,3 +1391,95 @@ def test_migration_0051_on_a_log_that_is_empty_starts_the_chain_at_nothing(tmp_p
     with engine.connect() as conn:
         assert conn.execute(sa.text("SELECT count(*) FROM audit_log")).scalar() == 0
         assert tuple(conn.execute(sa.text("SELECT seq, hash FROM audit_chain")).one()) == (0, "0" * 64)
+
+
+def test_migration_0053_adds_what_holds_work_across_a_restart_and_marks_the_steps_in_flight(tmp_path, monkeypatch):
+    from app.core.models import JOB_COLUMNS, JOB_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        # What releases before this one knew of the tables that gain columns.
+        conn.execute(sa.text("CREATE TABLE runs (id VARCHAR(32) PRIMARY KEY, status VARCHAR(10) NOT NULL)"))
+        conn.execute(
+            sa.text(
+                "CREATE TABLE run_steps (id VARCHAR(32) PRIMARY KEY, run_id VARCHAR(32) NOT NULL,"
+                " kind VARCHAR(12) NOT NULL, status VARCHAR(10) NOT NULL, claimed_at FLOAT, error VARCHAR)"
+            )
+        )
+        conn.execute(sa.text("CREATE TABLE mirror_queue (id VARCHAR(32) PRIMARY KEY, status VARCHAR(8) NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO runs VALUES ('r1', 'running'), ('r2', 'done')"))
+        conn.execute(
+            sa.text(
+                "INSERT INTO run_steps VALUES ('calling', 'r1', 'action', 'running', 1700.5, NULL),"
+                " ('scripting', 'r1', 'script', 'running', 1701.0, NULL),"
+                " ('due', 'r1', 'action', 'pending', NULL, NULL), ('over', 'r2', 'action', 'done', 1600.0, NULL)"
+            )
+        )
+        conn.execute(sa.text("INSERT INTO mirror_queue VALUES ('m1', 'pending')"))
+        # Work the version before was doing in its threads when it was stopped.
+        conn.execute(sa.text("CREATE TABLE sample_code (sha256 VARCHAR(64) PRIMARY KEY, status VARCHAR NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE mailboxes (id VARCHAR(32) PRIMARY KEY, status VARCHAR(16) NOT NULL)"))
+        conn.execute(sa.text("CREATE TABLE jobs (id VARCHAR PRIMARY KEY, status VARCHAR NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO sample_code VALUES ('aa', 'running'), ('bb', 'done'), ('cc', 'queued')"))
+        conn.execute(
+            sa.text("INSERT INTO mailboxes VALUES ('m-read', 'indexing'), ('m-import', 'importing'), ('m-ok', 'ready')")
+        )
+        conn.execute(sa.text("INSERT INTO jobs VALUES ('j1', 'running'), ('j2', 'done')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0051_audit_chain")
+    command.upgrade(cfg, "0053_jobs")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(JOB_TABLES) <= set(inspector.get_table_names())
+        for table, added in JOB_COLUMNS.items():
+            assert set(added) <= {column["name"] for column in inspector.get_columns(table)}, table
+        claims = {column["name"] for column in inspector.get_columns("work_claims")}
+        assert {"kind", "ref", "state", "holder", "beat_at", "attempts", "interrupted_at", "resumed_at"} <= claims
+        unique = {index["name"]: index["unique"] for index in inspector.get_indexes("runs")}
+        assert unique["ux_runs_event_key"]
+        # An action that was running under the version before may have made its call: it carries the
+        # mark, from the moment it was claimed. Nothing else does.
+        marks = dict(conn.execute(sa.text("SELECT id, calling_at FROM run_steps")).all())
+        assert marks == {"calling": 1700.5, "scripting": None, "due": None, "over": None}
+        assert conn.execute(sa.text("SELECT status, holder FROM mirror_queue")).one() == ("pending", None)
+        assert conn.execute(sa.text("SELECT count(*) FROM runs WHERE event_key IS NOT NULL")).scalar() == 0
+        # What was in progress is wanted, due at once: the server of this version starts it again
+        # (or, for an upload whose bytes are gone, says so). What had ended is left alone.
+        wanted = conn.execute(sa.text("SELECT kind, ref, state, beat_at, attempts, note FROM work_claims")).all()
+        assert sorted((row[0], row[1]) for row in wanted) == [
+            ("code", "aa"),
+            ("code", "cc"),
+            ("import", "m-import"),
+            ("mailbox", "m-read"),
+            ("upload", "j1"),
+        ]
+        assert {tuple(row[2:]) for row in wanted} == {
+            ("wanted", 0.0, 0, "In progress when the server was upgraded to 6.9")
+        }
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE run_steps SET calling_at = NULL, status = 'interrupted' WHERE id = 'calling'"))
+    command.stamp(cfg, "0051_audit_chain")
+    command.upgrade(cfg, "0053_jobs")  # again: everything is there, and no step is marked a second time
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT calling_at FROM run_steps WHERE id = 'calling'")).scalar() is None
+        assert conn.execute(sa.text("SELECT count(*) FROM work_claims")).scalar() == 5
+    command.downgrade(cfg, "0051_audit_chain")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(JOB_TABLES) & set(inspector.get_table_names())
+        assert {column["name"] for column in inspector.get_columns("run_steps")} == {
+            "id",
+            "run_id",
+            "kind",
+            "status",
+            "claimed_at",
+            "error",
+        }
+        assert "event_key" not in {column["name"] for column in inspector.get_columns("runs")}
+        # The version before knows no step that waits for a word: it fails with what was known of it.
+        step = conn.execute(sa.text("SELECT status, error FROM run_steps WHERE id = 'calling'")).one()
+        assert tuple(step) == ("failed", "The worker stopped while this ran: outcome unknown")

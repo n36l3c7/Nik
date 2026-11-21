@@ -106,7 +106,15 @@ def execute(code: str, args: dict, timeout: int | None = None) -> dict:
     try:
         return egress.sandbox_run(settings.SANDBOX_URL, settings.SANDBOX_TOKEN, code, args, seconds)
     except egress.EgressError as error:
-        return {"ok": False, "error": error.message, "stdout": "", "duration_ms": 0, "unreachable": True}
+        return {
+            "ok": False,
+            "error": error.message,
+            "stdout": "",
+            "duration_ms": 0,
+            "unreachable": True,
+            # The sandbox was down or busy: nothing ran, and it may be back in a moment.
+            "away": bool(getattr(error, "away", False)),
+        }
 
 
 def run_test(draft: dict[str, Any]) -> dict[str, Any]:
@@ -138,8 +146,12 @@ def run_for_step(db: OrmSession, name: str, version: Any, args: dict, _run: Any)
     answer = execute(row.code, args)
     log = answer.get("stdout") or ""
     if not answer.get("ok"):
-        # A sandbox that is down may be back; a script that raised will raise again.
-        raise engine.StepFailed(str(answer.get("error")), retry=bool(answer.get("unreachable")), log=log)
+        # A sandbox that is down may be back; a script that raised will raise again. One that was
+        # away (it restarts, it is busy) is waited for whatever the node says of trying again: a
+        # script computes on what it is given, so nothing is lost by running it later.
+        raise engine.StepFailed(
+            str(answer.get("error")), retry=bool(answer.get("unreachable")), log=log, away=bool(answer.get("away"))
+        )
     result = answer.get("result")
     missing = [out["name"] for out in row.outputs or [] if not (isinstance(result, dict) and out["name"] in result)]
     if missing and row.outputs:

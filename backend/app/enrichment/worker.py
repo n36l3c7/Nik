@@ -14,11 +14,9 @@ import threading
 import time
 import uuid
 
-from sqlalchemy import insert, or_, update
-from sqlalchemy.exc import IntegrityError
-
+from ..core import leases
 from ..core.db import SessionLocal
-from ..core.models import Lease
+from ..core.models import Lease  # noqa: F401 - the tests reach the table through this module
 from . import service
 
 logger = logging.getLogger("nik.enrichment")
@@ -32,22 +30,7 @@ _started = False
 
 def acquire(db, holder: str = HOLDER, now: float | None = None, seconds: float = LEASE_SECONDS) -> bool:
     """Take or renew the lease; False while another process holds it."""
-    now = time.time() if now is None else now
-    taken = db.execute(
-        update(Lease)
-        .where(Lease.name == LEASE, or_(Lease.holder == holder, Lease.expires_at < now))
-        .values(holder=holder, expires_at=now + seconds)
-    ).rowcount
-    if taken:
-        db.commit()
-        return True
-    try:
-        db.execute(insert(Lease).values(name=LEASE, holder=holder, expires_at=now + seconds))
-        db.commit()
-        return True
-    except IntegrityError:
-        db.rollback()
-        return False
+    return leases.take(db, LEASE, holder, seconds, now)
 
 
 def _loop() -> None:

@@ -1335,6 +1335,140 @@ podman compose up -d --build
           <code>podman compose logs -f &lt;service&gt;</code>.
         </li>
       </ul>
+      <h4 id="stopping-and-restarting">Stopping and restarting the stack: what a restart costs</h4>
+      <p>
+        From 6.9 nothing that the server was doing is lost by a restart, and nothing is done twice. Everything that
+        outlives a request is written in the database, with who holds it and since when it last said it was alive; the
+        process that starts next, in the same container, in a new one or on the standby host after a promotion, goes on
+        from there. There is nothing to do before stopping the stack, and no moment that is better than another.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>What was in progress</th>
+              <th>After the restart</th>
+              <th>Where it is said</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                A playbook: a step working inside Nik, reading from another system, or changing something there that may
+                be repeated
+              </td>
+              <td>The step is done again; the run goes on.</td>
+              <td>The step of the run, under <em>Restarts</em>.</td>
+            </tr>
+            <tr>
+              <td>
+                A playbook: a step changing something in another system that may not be repeated (a ticket, a mail)
+              </td>
+              <td>
+                Not done again. The run waits for a person to say whether it happened (<a
+                  href="automation.html#interrupted"
+                  >Automation</a
+                >).
+              </td>
+              <td>The run, a notification to who started it, the health page.</td>
+            </tr>
+            <tr>
+              <td>A playbook that waits (a time, an approval, a task), a schedule, a timer of an SLA</td>
+              <td>
+                It waits on. A time that passed meanwhile is acted on once when the worker is back: one run for a
+                schedule however many times were missed, a timer past its time with the moment it really ran out.
+              </td>
+              <td>The run reads <code>trigger.due</code>; the War Room says "it was noticed late".</td>
+            </tr>
+            <tr>
+              <td>An event that starts playbooks, a fetch, a change to send to a mirrored system</td>
+              <td>
+                Started once. A fetch goes on from where it was: an alert becomes one incident. A change of fields is
+                sent again; a comment being sent is not, and fails with a sentence that says so.
+              </td>
+              <td>The queue of mirroring; the Fetch tab of the instance.</td>
+            </tr>
+            <tr>
+              <td>
+                An analysis on a worker: the disassembly of a file, capa, a capture, a scan of an address, a mailbox or
+                a PST being read, messages being imported
+              </td>
+              <td>
+                Started again from the file, which is in the store, by itself, within a minute; the messages of a
+                mailbox imported until then are kept and the rest follow.
+              </td>
+              <td>Where its progress is shown: "Interrupted by a restart at …, started again at …".</td>
+            </tr>
+            <tr>
+              <td>What a playbook asked the server about a file (keep it, analyse it)</td>
+              <td>Done by the server that is back; the step that waits for it waits on.</td>
+              <td>The run.</td>
+            </tr>
+            <tr>
+              <td>An upload still arriving, or being parsed in the background</td>
+              <td>
+                It fails, with a sentence: the transfers tray says <em>it was cut by a restart of the server</em> and
+                offers <em>Try again</em>; a job polled through the API ends in <code>error</code> with "Interrupted by
+                a restart of the server before the file was parsed: upload the file again."
+              </td>
+              <td>The tray; <code>GET /api/jobs/&lt;id&gt;</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>
+          <strong>Stopping politely.</strong> <code>podman compose restart</code>, <code>up -d --build</code> on a new
+          version and a shutdown of the host send each container SIGTERM. The backend then takes no new request, gives
+          the ones in flight 20 seconds (<code>API_STOP_GRACE</code>), hands back the work and the leases it holds, and
+          exits; the automation worker claims nothing more and gives its steps 25 seconds; each analysis worker takes no
+          new request and gives its jobs 20 seconds (<code>ANALYZER_STOP_GRACE</code>, <code>CAPA_STOP_GRACE</code>,
+          <code>PCAP_STOP_GRACE</code>, <code>DOCVIEW_STOP_GRACE</code>). The <code>stop_grace_period</code> of each
+          service in the Compose file is a little longer than that (40 s for the backend, 35 s for the automation
+          worker, 30 s for the workers). What was handed back is taken at once by the process that starts next. Until
+          6.9 the workers ignored SIGTERM and were killed after ten seconds.
+        </li>
+        <li>
+          <strong>A kill, a crash, the power.</strong> Nothing is handed back, and it is as safe, only slower: work
+          whose holder has not said it is alive for 45 seconds is taken back, a lease runs out 30 to 300 seconds after
+          its last renewal (the automation worker's after 30), and the worker that then starts takes back at once the
+          steps that were running under the name of the one that is gone. Allow about a minute after the containers are
+          up.
+        </li>
+        <li>
+          <strong>The database that restarts alone</strong> (or is killed) cuts what was being written. Nothing is
+          failed for it: the loops of the backend and of the automation worker log the error and go on at their next
+          pass; an event that was being turned into runs waits for the next pass; an analysis whose thread could not
+          write its result is handed back and started again; a step of a playbook that could not keep what its call gave
+          is found half a minute later, and is then done again or waits for a person, by the same rule as after a
+          restart.
+        </li>
+        <li>
+          <strong>A worker that restarts alone</strong> (the analyzer, capa, the capture worker, the document worker)
+          has lost its memory and the files it was given. The backend asks it every five seconds whether it still has
+          the job it waits for; "unknown job" is answered at once, and the job is handed out again with its file. A
+          worker that is merely slow is waited for as long as it says the job is there.
+        </li>
+        <li>
+          <strong>Work that keeps being interrupted</strong> (a file that takes its worker down every time, a step that
+          does the same to the automation worker) is tried three times and then set aside as failed, with that reason,
+          where it is shown; a person can ask for it again. The health page counts what was set aside.
+        </li>
+        <li>
+          <strong>The health page</strong> has three rows for all this, under <em>Work in progress</em>: the steps a
+          restart interrupted that wait for a person, the work set aside after it was interrupted, and the oldest work
+          held without a sign of life (more than two minutes means that what should take it back is not running). Each
+          tells the administrators once when it stops being fine and once when it is fine again.
+        </li>
+        <li>
+          <strong>Proving it on a stack of your own.</strong> <code>.github/scripts/restart-chaos.sh</code> starts a
+          small stack under a project name of its own (no port, about 8 GB of memory), starts one of every kind of work
+          against a stub that counts what it is asked, kills the backend, the automation worker, each analysis worker
+          and the database at random moments, restarts everything at once and brings it up again on rebuilt images, and
+          then checks that every job ended, that nothing outside was done twice, that nothing is still claimed and that
+          the chain of the audit log verifies. <code>CHAOS_SEED</code> repeats a run.
+        </li>
+      </ul>
       <h4 id="audit-log-forwarding">The audit log: its chain, and sending it to syslog</h4>
       <p>
         From 6.8 the audit log is a chain of hashes (<a href="security.html#audit-chain"
@@ -1442,6 +1576,16 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
           its connections (95%) or a pool with none left, a transaction open for 15 minutes (the one a backup reads the
           database in is not counted), clocks 5 seconds apart (60). A value has to be found twice in a row before
           anybody is told. Workers and backups keep their own notices; this page does not repeat them.
+        </li>
+        <li>
+          <strong>Work in progress.</strong> Three rows say what restarts left behind (<a
+            href="#stopping-and-restarting"
+            >Stopping and restarting the stack</a
+          >): <em>Steps a restart interrupted that wait for a person</em> needs attention as soon as there is one, and
+          leads to the runs; <em>Work set aside after it was interrupted</em> needs attention while a piece of work that
+          was interrupted three times, or a comment to a mirrored system that was not sent again, is there (a row is
+          kept a week); <em>Oldest work held without a sign of life</em> needs attention after two minutes and is a
+          problem after ten.
         </li>
         <li>
           <strong>Keys and encryption.</strong> <em>Keys of the server</em> needs attention while the secrets are in the
@@ -1567,6 +1711,27 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
               <td><code>nik_fetch_instances</code></td>
               <td><code>state</code> (<code>ok</code>, <code>failing</code>, <code>paused</code>)</td>
               <td>Instances that fetch.</td>
+            </tr>
+            <tr>
+              <td><code>nik_work_interrupted</code>, <code>nik_work_interrupted_oldest_seconds</code></td>
+              <td></td>
+              <td>
+                Steps of playbooks a restart interrupted that wait for a person to say what happened, and how long the
+                oldest has waited.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_work_set_aside</code></td>
+              <td></td>
+              <td>Pieces of work set aside after they were interrupted, not tried again by themselves.</td>
+            </tr>
+            <tr>
+              <td><code>nik_work_held</code>, <code>nik_work_silent_seconds</code></td>
+              <td></td>
+              <td>
+                Work an API process holds now (analyses, scans, mailboxes), and the age of the oldest sign of life among
+                the work that is held: above 45 it should have been taken back.
+              </td>
             </tr>
             <tr>
               <td><code>nik_worker_up</code></td>
@@ -1986,7 +2151,7 @@ EnvironmentFile=/etc/nik/nik.env
 # Creates the schema on the first start and upgrades it after every update.
 ExecStartPre=/opt/nik/backend/.venv/bin/alembic upgrade head
 ExecStart=/opt/nik/backend/.venv/bin/gunicorn \
-    -k uvicorn.workers.UvicornWorker \
+    -k app.serving.Worker --graceful-timeout 30 \
     app.main:app \
     --bind 127.0.0.1:8000 \
     --workers 3

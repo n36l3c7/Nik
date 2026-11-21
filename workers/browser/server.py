@@ -20,6 +20,7 @@ import hmac
 import json
 import os
 import re
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -174,10 +175,22 @@ def _expire() -> None:
             BROWSER.expire()
 
 
+def _stop_politely(server) -> None:
+    """SIGTERM: stop taking requests and exit. The sessions are in the memory of this process and end with
+    it: the backend is answered 404 for a session of before, and closes what it kept of it.
+    The work happens in a thread: ``shutdown`` waits for the loop the signal interrupted."""
+    print("stopping: no new request is taken", flush=True)
+    threading.Thread(target=server.shutdown, name="stop", daemon=True).start()
+
+
 if __name__ == "__main__":
     if not TOKEN or TOKEN.startswith("please-change-this"):
         # An empty token, or the public one of the example file, protects nothing.
         raise SystemExit("BROWSER_TOKEN is not set (or is the example value): refusing to start.")
     print(f"nik-browser listening on :{PORT}", flush=True)
     threading.Thread(target=_expire, name="expire", daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server.daemon_threads = True
+    signal.signal(signal.SIGTERM, lambda *_: _stop_politely(server))
+    signal.signal(signal.SIGINT, lambda *_: _stop_politely(server))
+    server.serve_forever()

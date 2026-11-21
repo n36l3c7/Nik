@@ -1805,9 +1805,18 @@ test('Settings → Health: every row with its state, one made to need attention,
   const summary = settings.getByRole('status', { name: 'Summary' })
   await expect(summary).toBeVisible()
   // The groups of the page, each a list of rows with a value and a state.
-  for (const group of ['Disk', 'Database', 'Queues', 'Backups', 'Audit log', 'Sign-in', 'Server']) {
+  for (const group of ['Disk', 'Database', 'Queues', 'Work in progress', 'Backups', 'Audit log', 'Sign-in', 'Server']) {
     await expect(settings.getByRole('list', { name: group, exact: true })).toBeVisible()
   }
+  // What restarts left behind: nothing waits for a person, nothing was set aside, nothing is held by nobody.
+  const work = settings.getByRole('list', { name: 'Work in progress', exact: true })
+  await expect(work.getByRole('listitem')).toHaveCount(3)
+  await expect(
+    work.getByRole('listitem').filter({ hasText: 'Steps a restart interrupted that wait for a person' }),
+  ).toContainText('None')
+  await expect(work.getByRole('listitem').filter({ hasText: 'Oldest work held without a sign of life' })).toContainText(
+    'all alive',
+  )
   const disk = settings.getByRole('list', { name: 'Disk', exact: true })
   const store = disk.getByRole('listitem').filter({ hasText: 'Store of files' })
   await expect(store).toContainText(/\d+% used, .+ free of .+/)
@@ -3497,6 +3506,113 @@ test('a playbook runs on an incident: the approval is asked where the incident i
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
   await expect(page.getByText('Approved by admin: looks right')).toBeVisible()
   await expect(page.getByRole('button', { name: 'automation', exact: true })).toHaveCount(1)
+})
+
+test('a run a restart interrupted waits for a person: the step says what happened to it, and the three answers are there', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  // A playbook whose only step waits a minute, made and started through the API: its run is still
+  // going when it is opened.
+  const made = await page.request.post('/api/automation/playbooks', { data: { name: 'Cut by a restart' } })
+  expect(made.status()).toBe(201)
+  const playbookId = (await made.json()).id
+  const graph = {
+    nodes: [
+      { id: 'start', kind: 'trigger', name: 'Trigger', position: { x: 40, y: 40 }, config: { manual: true } },
+      { id: 'ticket', kind: 'wait', name: 'Open a ticket', position: { x: 40, y: 160 }, config: { seconds: 60 } },
+    ],
+    edges: [{ from: 'start', to: 'ticket' }],
+  }
+  expect(
+    (await page.request.post(`/api/automation/playbooks/${playbookId}/versions`, { data: { graph } })).status(),
+  ).toBe(201)
+  const started = await page.request.post(`/api/automation/playbooks/${playbookId}/run`, { data: {} })
+  expect(started.status()).toBe(201)
+  const runId = (await started.json()).id
+
+  // A worker cannot be killed from here in the middle of a call to another system, which is what
+  // makes a step "interrupted" (the server's side of it is backend/tests/test_restarts_engine.py).
+  // The page is given what the server answers then: the run as it is, with that step interrupted.
+  const cut = [
+    { at: '2026-11-21T10:02:00+00:00', what: 'interrupted' },
+    { at: '2026-11-21T10:02:00+00:00', what: 'waiting' },
+  ]
+  let answered = null
+  const asRead = `**/api/automation/runs/${runId}`
+  const asAnswered = `**/api/automation/runs/${runId}/steps/*/resolve`
+  await page.route(asRead, async (route) => {
+    const response = await route.fetch()
+    const run = await response.json()
+    const waits = answered === null
+    const steps = run.steps.map((step) => {
+      if (step.node !== 'ticket') return step
+      if (!waits)
+        return { ...step, restarts: [...cut, { at: '2026-11-21T10:30:00+00:00', what: 'again', by: 'admin' }] }
+      return {
+        ...step,
+        status: 'interrupted',
+        error: 'Interrupted by a restart: it is not known whether this happened',
+        input: { action: 'servicenow.create-incident', args: { short_description: 'Laptop of finance' } },
+        restarts: cut,
+      }
+    })
+    await route.fulfill({
+      response,
+      json: { ...run, status: waits ? 'waiting' : run.status, interrupted: waits, steps },
+    })
+  })
+  await page.route(asAnswered, async (route) => {
+    answered = route.request().postDataJSON()
+    await route.fulfill({ json: { id: runId, status: 'running', interrupted: false, steps: [] } })
+  })
+
+  await page.goto(`/automation/runs/${runId}`)
+  const area = page.getByRole('region', { name: 'Automations' })
+  const status = area.getByRole('status', { name: 'Status of the run' })
+  await expect(status).toHaveText('interrupted by a restart', { timeout: 15_000 })
+  await expect(area.getByTestId('rf__node-ticket')).toContainText('interrupted')
+  // The run says what it does not know, shows what was about to leave, and asks.
+  const banner = area.getByRole('region', { name: 'Interrupted by a restart: Open a ticket' })
+  await expect(banner).toContainText('it is not known whether it happened')
+  await expect(banner).toContainText('Nik does not do it twice by guessing')
+  await expect(banner).toContainText('servicenow.create-incident')
+  const answers = banner.getByRole('group', { name: 'What happened to Open a ticket' })
+  await expect(answers.getByRole('button')).toHaveText([
+    'It happened, go on',
+    'It did not, do it again',
+    'Stop the run',
+  ])
+  // The step keeps what the restart did to it.
+  const steps = area.getByRole('complementary', { name: 'Steps of the run' })
+  await steps.getByRole('button', { name: /Open a ticket/ }).click()
+  await expect(steps).toContainText('interrupted by a restart: waits for a person to say what happened')
+  const history = steps.getByRole('list', { name: 'What restarts did to this step' })
+  await expect(history.getByRole('listitem')).toHaveCount(2)
+  await expect(history.getByRole('listitem').first()).toContainText('Interrupted by a restart at')
+  await expect(history.getByRole('listitem').last()).toContainText('it waits for a person since')
+
+  // An answer is one request, with the word the server takes; the run then goes on.
+  await answers.getByRole('button', { name: 'It did not, do it again' }).click()
+  await expect(page.getByText('The step is done again.')).toBeVisible()
+  expect(answered).toEqual({ answer: 'again' })
+  await expect(banner).toBeHidden()
+  await expect(status).not.toHaveText('interrupted by a restart')
+  await expect(history.getByRole('listitem')).toHaveCount(3)
+  await expect(history.getByRole('listitem').last()).toContainText('admin said it did not happen: done again at')
+
+  // The list of runs finds the runs that wait this way by a status of their own.
+  await page.unroute(asRead)
+  await page.unroute(asAnswered)
+  await area.getByRole('button', { name: 'All runs' }).click()
+  await area.getByLabel('Status').selectOption('interrupted')
+  await expect(area.getByRole('table', { name: 'Runs' })).toHaveCount(0)
+  await area.getByLabel('Status').selectOption('')
+
+  // Nothing of this is left: the run goes with its playbook.
+  expect((await page.request.post(`/api/automation/runs/${runId}/stop`)).status()).toBe(200)
+  expect((await page.request.delete(`/api/automation/playbooks/${playbookId}`)).status()).toBe(204)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
 test('a script is written, tested in the sandbox, saved as a version and offered as a node', async () => {

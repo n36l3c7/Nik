@@ -730,6 +730,20 @@
               <td>Analyses each worker runs at once; more are answered "busy".</td>
             </tr>
             <tr>
+              <td>
+                <code>API_STOP_GRACE</code>, <code>ANALYZER_STOP_GRACE</code>, <code>CAPA_STOP_GRACE</code>,
+                <code>DOCVIEW_STOP_GRACE</code>, <code>PCAP_STOP_GRACE</code>
+              </td>
+              <td><code>20</code> each</td>
+              <td>
+                Seconds a process that is asked to stop gives what it has in flight (the requests of the backend, the
+                analyses of a worker) before it exits. Each is read in the environment of its own container, and has to
+                stay under the <code>stop_grace_period</code> of that service in the Compose file (40 s for the backend,
+                30 s for the workers): see
+                <a href="deployment.html#stopping-and-restarting">Stopping and restarting the stack</a>.
+              </td>
+            </tr>
+            <tr>
               <td><code>DOCVIEW_TIMEOUT</code>, <code>DOCVIEW_MAX_PAGES</code>, <code>DOCVIEW_MAX_MB</code></td>
               <td><code>90</code>, <code>20</code>, <code>50</code></td>
               <td>Seconds a preview may take, pages rendered, largest document.</td>

@@ -1598,12 +1598,29 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           you want: the run goes on by your answer, and your name is on it.
         </li>
         <li>
+          <strong>A run interrupted by a restart.</strong> When the server was restarted while a step was changing
+          something in another system (opening a ticket, sending a mail), Nik does not know whether it happened and does
+          not do it twice by guessing. The run waits, with the badge <em>interrupted</em>, and who started it is told by
+          the bell. Its page shows the step, what it was about to send, and three buttons: <em>It happened, go on</em>,
+          <em>It did not, do it again</em>, <em>Stop the run</em>. Look at the other system first. Every step says under
+          <em>Restarts</em> what a restart did to it and when: "Interrupted by a restart at …", "Started again at …".
+          <strong>Automations → Runs</strong> has <em>interrupted</em> among its statuses.
+        </li>
+        <li>
           <strong>Run a playbook…</strong> in the right-click menu of an incident, or on its
           <strong>Automation</strong> tab, starts one by hand on that incident. The same entry is in the menu of an
           analysed e-mail, file or address and of an indicator, wherever they are shown, and offers the playbooks made
           for that kind of object. Tick <em>Dry run</em> to see what it would do without anything being sent or changed.
         </li>
         <li><strong>An artifact's page</strong> lists the playbooks that ran on it, each opening its run.</li>
+        <li>
+          <strong>An analysis and a restart.</strong> A disassembly, capa, a capture, a scan or a mailbox being read
+          when the server or a worker restarts starts again by itself, and says so where its progress is shown:
+          "Interrupted by a restart at 10:02, started again at 10:03 (try 2 of 3)". While it runs the same line says how
+          far the worker is, when the worker tells ("reading the packets (1 of 2)"). One that was interrupted three
+          times is set aside with that reason; the button that started it starts it again. An upload that was cut stays
+          in the tray at the foot of the window with <em>Try again</em>.
+        </li>
         <li>
           <strong>Five playbooks are there from the start</strong>, marked <em>shipped with Nik</em> and off: phishing
           triage, the weekly re-check of the watched lists, a malicious indicator to a block list, an incident to
@@ -1990,8 +2007,9 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <h3 id="health">Health</h3>
       <p>
         <em>Settings → System → Health</em> (admins). One row for each thing an operator would otherwise go and look at,
-        in groups: the disks, the database, the queues, the workers, the backups, the certificate, the audit log, the
-        sign-in, the keys and the encryption of the store, the server. A row has a value (<em
+        in groups: the disks, the database, the queues, the work in progress (what restarts left behind: steps that wait
+        for a person, work that was set aside, work nobody holds), the workers, the backups, the certificate, the audit
+        log, the sign-in, the keys and the encryption of the store, the server. A row has a value (<em
           >62% used, 118 GB free of 320 GB</em
         >), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or <em>not known</em> when it could not be
         measured), since when it is in that state, what to do when it is not fine, and a link to the page that has the

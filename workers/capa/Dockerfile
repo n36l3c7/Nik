@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir "flare-capa==${CAPA_VERSION}" \
     && python fetch_rules.py "${CAPA_VERSION}" "${CAPA_RULES_SHA256}" "${CAPA_SOURCE_SHA256}" /opt/capa \
     && rm fetch_rules.py \
     && useradd --create-home --uid 1000 capa
-COPY given.py nik_capa.py server.py ./
+COPY given.py jobs.py nik_capa.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

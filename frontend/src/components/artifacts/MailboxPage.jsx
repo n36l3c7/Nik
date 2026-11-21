@@ -17,7 +17,7 @@ import {
 } from '../../domain/mailbox.js'
 import { verdictBadge } from '../../domain/artifactRegistry.js'
 import { formatDateTime } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, EmptyState, Modal, StatCard, TransferBar, Wait } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, EmptyState, Modal, RestartNote, StatCard, TransferBar, Wait } from '../ui/index.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
 import { transfer } from '../../lib/transfers.js'
 
@@ -475,6 +475,7 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
               className="w-64 max-w-full"
             />
           )}
+          <RestartNote work={box.work} />
         </div>
       )}
       {box.status === 'error' && (
@@ -495,6 +496,13 @@ export default function MailboxPage({ artifact, onOpenArtifact, onOpenIncident, 
           <Button onClick={importNext}>Import the next {Math.min(box.pending.waiting, IMPORT_MAX)}</Button>
         </div>
       )}
+      {box.status === 'ready' && box.interrupted && (
+        <p role="alert" className="border-l-2 border-med-line bg-med-soft/50 px-3 py-2 text-sm">
+          <b>The last import was interrupted.</b> {box.interrupted}. The messages imported until then are kept: import
+          the others again.
+        </p>
+      )}
+      {box.status === 'importing' && <RestartNote work={box.work} />}
       {box.status === 'importing' && box.progress && (
         <div
           role="status"

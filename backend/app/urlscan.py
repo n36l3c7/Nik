@@ -306,7 +306,84 @@ def _fail(scan: str, message: str) -> None:
 
 
 def run_scan(scan: str, actor: str) -> None:
-    """Background task: visit the address and store the result."""
+    """Background task: visit the address and store the result.
+
+    **Across a restart: started again.** A scan is a visit: nothing is kept of one that was cut
+    (its browser session ended with the worker, or nobody is left to read it), and visiting again
+    changes nothing anywhere. The job is held (``work.py``, kind ``scan``): another API process
+    starts it again when this one is gone, and this one visits again when the isolated browser is
+    the one that went away, once it is back. After ``work.MAX_ATTEMPTS`` interruptions the scan
+    fails with that reason. ``url.analysed`` is said once, in the commit that stores the result."""
+    from . import work
+    from .workers import watching
+
+    try:
+        with work.hold("scan", scan) as claim:
+            while True:
+                lost = _scan(scan, actor)
+                if lost is None:
+                    return
+                if claim.attempts >= work.MAX_ATTEMPTS:
+                    sentence = (
+                        f"Set aside: the isolated browser went away {claim.attempts} times while it visited this "
+                        "address, and it is not visited again by itself. Scan it again to try once more"
+                    )
+                    _fail(scan, sentence)
+                    claim.set_aside(sentence)
+                    return
+                claim.interrupted(lost)
+                if not watching.back(settings.BROWSER_URL):
+                    claim.failed = True
+                    return _fail(scan, lost)
+                claim.resumed()
+    except work.Taken:
+        return
+
+
+def _gone(error: previews.WorkerError) -> bool:
+    """Whether the isolated browser went away under the scan: the connection broke, or it no
+    longer knows the session (it restarted)."""
+    return bool(getattr(error, "unreachable", False)) or error.status == 404
+
+
+def _fail_scan(db: OrmSession, scan: str, sentence: str) -> None:
+    row = db.get(UrlScan, scan)
+    if row is None or row.status not in ("queued", "running"):
+        return
+    row.status, row.error, row.scanned_at = "error", sentence[:500], now_iso()
+    artifacts.register_url(db, row)
+
+
+def _scan_again(scan: str, params: dict) -> bool | None:
+    """Start the scan again. One a playbook asked for goes back to the queue the API processes
+    take from (``urlscan_queue.py``): what it sets off is then caused by the run that asked."""
+    from . import work
+
+    with SessionLocal() as db:
+        row = db.get(UrlScan, scan)
+        if row is None or row.status not in ("queued", "running"):
+            return False
+        asked = isinstance((row.result or {}).get("askedBy"), dict)
+        if asked:
+            row.status = "queued"
+            db.commit()
+            return None
+    work.thread(run_scan, scan, str(params.get("actor") or "nik"))
+    return None
+
+
+def _register_work() -> None:
+    from . import work
+
+    work.register(work.Kind("scan", "the scan of an address", "again", start=_scan_again, fail=_fail_scan))
+
+
+_register_work()
+
+
+def _scan(scan: str, actor: str) -> str | None:
+    """One visit. None when it ended (done or failed for a reason of its own); the sentence of what
+    happened when the isolated browser went away under it."""
     with SessionLocal() as db:
         row = db.get(UrlScan, scan)
         if row is None:
@@ -321,13 +398,13 @@ def run_scan(scan: str, actor: str) -> None:
     try:
         state = previews.open_session(actor, True, None, url)
     except previews.WorkerError as exc:
-        return _fail(scan, str(exc))
+        return str(exc) if _gone(exc) else _fail(scan, str(exc))
     session_id = state["id"]
     try:
         try:
             inspected = previews.act(actor, session_id, {"type": "inspect"})
         except previews.WorkerError as exc:
-            return _fail(scan, str(exc))
+            return str(exc) if _gone(exc) else _fail(scan, str(exc))
         with SessionLocal() as db:
             row = db.get(UrlScan, scan)
             if row is None:

@@ -271,6 +271,15 @@ def on_startup() -> None:
         from .health import watch as health_watch
 
         health_watch.start()
+    # What this process does outside a request is held, and what lost its holder is found (work.py):
+    # the analyses, the scans, the mailboxes, what playbooks ask about files.
+    from . import work
+    from .automation import worker as automation_loop
+
+    work.starting()
+    automation_loop._stopping.clear()
+    if app_settings.API_BACKGROUND:
+        work.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -328,6 +337,21 @@ def on_startup() -> None:
         from .automation import worker as automation_worker
 
         automation_worker.start_inline()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    """The process was asked to stop and its requests are over (or were given their time,
+    app/serving.py): the loops take nothing new, the work this process holds is handed back as
+    wanted, and every lease it took is given back. The process that starts next, here or on
+    another host, takes all of it at once instead of waiting for it to run out."""
+    from . import work
+    from .automation import worker as automation_worker
+    from .core import leases
+
+    automation_worker._stopping.set()
+    work.release_all()
+    leases.release_all()
 
 
 @app.get("/api/health", tags=["health"])

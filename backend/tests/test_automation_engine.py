@@ -638,14 +638,14 @@ def test_a_run_survives_the_worker_dying_in_the_middle_of_a_step(admin: TestClie
         (claimed,) = worker.claim_steps(db, T0, 10, holder="a-worker-that-dies")
     step = steps(run_of(admin, run_id))["a"]
     assert step["status"] == "running" and CALLS == []
-    worker.drain(T0 + 30)  # too soon to say it is lost
-    assert steps(run_of(admin, run_id))["a"]["status"] == "running"
-    worker.drain(T0 + 200)
-    worker.drain(T0 + 200)
+    # The worker that holds the lease is the only one there is: a step that is running under another
+    # name lost its worker, and is taken back at once (until 6.9 it waited for the time of the step).
+    worker.drain(T0 + 30)
     run = run_of(admin, run_id)
     assert run["status"] == "done" and [c["text"] for c in CALLS] == ["a", "b"]
 
-    # A change outside whose worker died: its outcome cannot be known, so it is not sent twice.
+    # A change outside whose worker died before the call began: nothing had left, so it is made, once.
+    # (A worker that died after it began the call: tests/test_restarts_engine.py.)
     outside = playbook(
         admin,
         "Outside",
@@ -657,8 +657,7 @@ def test_a_run_survives_the_worker_dying_in_the_middle_of_a_step(admin: TestClie
         worker.claim_steps(db, T0, 10, holder="a-worker-that-dies")
     worker.drain(T0 + 200)
     run = run_of(admin, run_id)
-    assert run["status"] == "failed" and run["error"] == "block: The worker stopped while this ran: outcome unknown"
-    assert all(call["action"] != "block" for call in CALLS)
+    assert run["status"] == "done" and [call["host"] for call in CALLS if call["action"] == "block"] == ["h"]
 
     # Two workers never both schedule: the second does not get the lease.
     with SessionLocal() as db:
