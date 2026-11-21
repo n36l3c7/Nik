@@ -41,3 +41,19 @@ export function withTransfer(list, item) {
 }
 
 export const withoutTransfer = (list, id) => list.filter((entry) => entry.id !== id)
+
+/** What an upload says when the connection was cut under it: the server stopped, or was restarting. */
+export const CUT = 'The connection to the server was cut while the file was being sent: the server may be restarting.'
+
+/**
+ * Whether a transfer failed because the server went away under it (a restart, an upgrade), and
+ * not because of what was sent: the connection broke, or the proxy in front of a server that is
+ * starting answered for it (502, 503, 504). Such a transfer can simply be sent again.
+ */
+export function wasCut(error) {
+  if (!error || error.name === 'AbortError') return false
+  return Boolean(error.interrupted) || [502, 503, 504].includes(Number(error.status))
+}
+
+/** The sentence a transfer that was cut shows in the tray, with what to do. */
+export const cutText = (label) => `${label}: it was cut by a restart of the server. Try it again.`

@@ -513,7 +513,11 @@
             </tr>
             <tr>
               <td><code>GET /api/jobs/{id}</code></td>
-              <td>Poll an async upload job.</td>
+              <td>
+                Poll an async upload job. A job that was being parsed when the server restarted ends in
+                <code>error</code> within a minute, with a sentence that says to upload the file again: it never stays
+                <code>queued</code> or <code>running</code>.
+              </td>
             </tr>
             <tr>
               <td><code>GET /api/incidents/{id}/iocs</code></td>
@@ -1850,10 +1854,12 @@
             <tr>
               <td><code>GET /api/automation/runs</code></td>
               <td>
-                Runs, newest first. Query: <code>playbook</code>, <code>status</code> (running, waiting, done, failed,
-                stopped), <code>incident</code>, <code>limit</code>, <code>offset</code>. Each run has
+                Runs, newest first. Query: <code>playbook</code>, <code>status</code> (running, waiting, interrupted,
+                done, failed, stopped), <code>incident</code>, <code>limit</code>, <code>offset</code>. Each run has
                 <code>branch</code>: <code>{id, name}</code> for a debug run of a branch, <code>null</code> for every
-                other run. <code>GET /api/incidents/{id}/runs</code> is the runs of one incident with the approvals that
+                other run; and <code>interrupted</code>, true for a run that waits at a step a restart of the server
+                interrupted (its <code>status</code> is <code>waiting</code>; <code>status=interrupted</code> lists
+                them). <code>GET /api/incidents/{id}/runs</code> is the runs of one incident with the approvals that
                 wait on them.
               </td>
             </tr>
@@ -1861,7 +1867,19 @@
               <td><code>GET /api/automation/runs/{id}</code> · <code>POST …/stop</code></td>
               <td>
                 A run with the graph of its version, every step (input, output, what was sent, tries, error, log) and
-                its approvals · stop it.
+                its approvals · stop it. A step also has <code>restarts</code>, what restarts of the server did to it,
+                oldest first: <code>{at, what, by?}</code> with <code>what</code> one of <code>interrupted</code>,
+                <code>again</code>, <code>waiting</code>, <code>happened</code>, <code>stopped</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/automation/runs/{id}/steps/{step}/resolve</code></td>
+              <td>
+                Say what happened to a step whose <code>status</code> is <code>interrupted</code> (the worker stopped
+                while it made a call that changes something outside and that may not be repeated):
+                <code>{answer: "happened" | "again" | "stop"}</code>. The run goes on from the next node, the step is
+                done again, or the run stops. Answers with the run and its steps; <code>409</code> when the step waits
+                for no answer any more. For who may run playbooks; audited as <code>playbook.resolve</code>.
               </td>
             </tr>
             <tr>
@@ -2655,6 +2673,17 @@ labels:vip due:&lt;today sender_domain:""</code></pre>
         <li>
           <strong>Async uploads</strong>: <code>?async=true</code> → <code>202 { jobId }</code>, then poll
           <code>GET /api/jobs/{jobId}</code>.
+        </li>
+        <li>
+          <strong>Work in progress and restarts</strong>: the state of a disassembly (<code
+            >GET /api/samples/{sha256}/code</code
+          >), of capa (<code>…/capabilities</code>), of a capture (<code>GET /api/captures/{id}</code>), of a scan
+          (<code>GET /api/urls/{id}</code>) and of a mailbox (<code>GET /api/mailboxes/{id}</code>) carries
+          <code>work</code>, or <code>null</code>:
+          <code>{state, attempts, interruptedAt, resumedAt, progress, note}</code>. <code>interruptedAt</code> and
+          <code>resumedAt</code> (seconds since 1970) say when a restart cut the job and when it started again;
+          <code>progress</code> is what its worker says of how far it is; <code>state</code> is <code>aside</code> for a
+          job that was interrupted three times and is not tried again by itself.
         </li>
         <li>
           <strong id="webhooks">Webhooks</strong>: <code>incident.created/updated/deleted</code>,

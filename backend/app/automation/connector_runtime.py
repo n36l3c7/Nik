@@ -39,6 +39,7 @@ import re
 import secrets as pysecrets
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -298,6 +299,9 @@ class Runtime:
         # for a playbook (connector_files.Store). None where no file can be carried.
         self.store: Any = None
         self._output_classes: dict[str, list] = {}
+        # What {{ idempotency.key }} gives: the same for every try of one step of a run (who runs the
+        # command for a playbook sets it); one of its own for a command that is run by hand.
+        self.idempotency_key = uuid.uuid4().hex
         # The hosts a file may be downloaded from, as the instance says them, when the connector asks it.
         entry = connector.download_hosts_from
         self.download_hosts = download_hosts.tolerant(self.config.get(entry)) if entry else ()
@@ -336,6 +340,7 @@ class Runtime:
         classes: dict[str, dict] = {}
         if sent:
             values["secret"] = self.secrets
+            values["idempotency"] = {"key": self.idempotency_key}
         if answer is not None:
             values.update(response=answer["response"], status=answer["status"], headers=answer["headers"])
             if answer.get("kept"):

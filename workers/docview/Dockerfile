@@ -16,7 +16,7 @@ RUN apt-get update \
     && mkdir /work && chown viewer:viewer /work
 
 WORKDIR /opt/nik-docview
-COPY nik_docview.py server.py ./
+COPY jobs.py nik_docview.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

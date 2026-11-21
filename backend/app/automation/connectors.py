@@ -36,6 +36,23 @@ and ``response`` is what describes it (``name``, ``type``, ``size``,
 multipart form (``files``) or the body itself (``body_file``), each naming
 an artifact, usually through an argument of type ``file``. A command that
 sends a file changes the outside, and its file must say so.
+
+**Doing a command twice.** A step of a playbook can be cut by a restart after
+its request left and before its answer was kept; nobody then knows whether
+the other side acted. What Nik does next depends on three keys of the command:
+
+- ``changes_outside: false`` (the default): it only reads. It is done again.
+- ``changes_outside: true`` with ``idempotent: true`` (the default): doing it
+  twice leaves the other side as doing it once (it sets a state: isolate this
+  host, close this ticket). It is done again.
+- ``changes_outside: true`` with ``idempotent: false``: twice is two things
+  (a ticket, a comment, a mail). It is **not** done again: the run waits for a
+  person to say whether it happened.
+- ``idempotency_key: true``, for a product that takes a key with a request and
+  acts once per key: the command sends ``{{ idempotency.key }}`` where the
+  product wants it (a header, a field of the body), Nik gives every try of the
+  same step the same key, and the command is done again whatever
+  ``idempotent`` says. The key is 32 hexadecimal characters.
 """
 
 from __future__ import annotations
@@ -331,6 +348,9 @@ class Command(_Strict):
     description: str = Field(default="", max_length=500)
     changes_outside: bool = False
     idempotent: bool = True
+    # The command sends {{ idempotency.key }} and the product acts once per key: a second try of the
+    # same step is safe, whatever "idempotent" says.
+    idempotency_key: bool = False
     # The vendor gives this command only to a paid plan: said in the library and on the node, never enforced
     # here (the vendor answers what it answers to the key it is asked with).
     premium: bool = False
@@ -418,7 +438,19 @@ class Command(_Strict):
             if argument.name in seen:
                 raise ValueError(f'two arguments are called "{argument.name}"')
             seen.add(argument.name)
+        if self.idempotency_key and not any(
+            "idempotency.key" in str(request.model_dump(exclude_none=True)) for request in self.requests()
+        ):
+            raise ValueError(
+                '"idempotency_key: true" is for a command that sends {{ idempotency.key }} to the product: '
+                "no request of this one does"
+            )
         return self
+
+    @property
+    def safe_to_repeat(self) -> bool:
+        """Whether a second try of the same step does no harm on the other side."""
+        return not self.changes_outside or self.idempotent or self.idempotency_key
 
 
 class FetchSpec(_Strict):
@@ -832,7 +864,7 @@ def _where(loc: tuple) -> str:
 # Templates                                                                   #
 # --------------------------------------------------------------------------- #
 # The names a template may read, by where it is.
-_SENT = frozenset({"config", "args", "steps", "secret", "now"})
+_SENT = frozenset({"config", "args", "steps", "secret", "now", "idempotency"})
 _ANSWER = frozenset({"config", "args", "steps", "now", "response", "status", "headers"})
 # What a file that came back is named from: the answer is not read, only what came with it.
 _SAVED = _ANSWER - {"response"}

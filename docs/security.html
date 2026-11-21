@@ -393,6 +393,16 @@
       </p>
       <ul>
         <li>
+          <strong>Never twice by accident.</strong> A step that changes something outside Nik writes down that it is
+          about to before the request leaves, and that it is done after, in separate commits. When the server is
+          restarted between the two, nobody knows whether the other system acted, and a playbook that isolates hosts or
+          mails customers must not find out by trying: the step is done again only when the command says a second time
+          does no harm (it only reads, it is <code>idempotent</code>, or it sends the other system an idempotency key);
+          otherwise the run stops there until a person who can look at the other system says <em>it happened</em>,
+          <em>it did not</em> or <em>stop</em>. That answer is the role of who may run playbooks, and is in the audit
+          log with the name of who gave it. <a href="automation.html#restarts">Automation</a> has the table.
+        </li>
+        <li>
           <strong>Who.</strong> Building playbooks and scripts is the role <em>Playbooks</em>; running one and answering
           an approval is <em>Analyst</em>. Only an <em>Admin</em> chooses the hosts a playbook reaches, lets it reach
           any host, opens a class of data, or sets the SMTP server. A playbook brought in from a file arrives off, with

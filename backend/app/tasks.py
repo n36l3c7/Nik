@@ -96,6 +96,30 @@ def notify_approval(db: OrmSession, run: Run, question: str) -> None:
             notify(db, user.username, "approval", f"An approval waits: {question}", link_to)
 
 
+def notify_interrupted(db: OrmSession, run: Run, step_name: str) -> None:
+    """A restart cut a step that may have changed something outside, and the run waits for someone
+    to say whether it did: whoever owns the run is told, once (the caller commits). The owner is
+    the account that started it; a run nobody started by hand (an event, a schedule) is everybody's
+    who may run playbooks, as an approval is."""
+    from .core.permissions import AUTOMATION_RUN, permissions_of
+
+    playbook = str((run.trigger or {}).get("playbook") or "a playbook")
+    text = (
+        f'A restart interrupted "{step_name}" of {playbook}: it is not known whether it happened. '
+        "Say what happened on the page of the run"
+    )
+    link_to = f"/automation/runs/{run.id}"
+    people = [
+        user
+        for user in db.scalars(select(User).where(User.disabled.is_(False)))
+        if SYSTEM_ROLE not in clean_roles(user.roles)
+    ]
+    owner = [user for user in people if user.username == run.started_by]
+    told = owner or [user for user in people if AUTOMATION_RUN in permissions_of(clean_roles(user.roles))]
+    for user in told:
+        notify(db, user.username, "run", text, link_to)
+
+
 MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9][A-Za-z0-9._-]{0,63})")
 
 

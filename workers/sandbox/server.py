@@ -14,6 +14,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import signal
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -91,9 +92,21 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{self.address_string()} {fmt % args}", flush=True)
 
 
+def _stop_politely(server) -> None:
+    """SIGTERM: stop taking requests and exit. A script runs for seconds: the ones in flight finish
+    (the threads of the requests are not daemons, so the process waits for them).
+    The work happens in a thread: ``shutdown`` waits for the loop the signal interrupted."""
+    print("stopping: no new request is taken", flush=True)
+    threading.Thread(target=server.shutdown, name="stop", daemon=True).start()
+
+
 if __name__ == "__main__":
     if not TOKEN or TOKEN.startswith("please-change-this"):
         # An empty token, or the public one of the example file, protects nothing.
         raise SystemExit("SANDBOX_TOKEN is not set (or is the example value): refusing to start.")
     print(f"nik-sandbox listening on :{PORT}", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()  # noqa: S104 - an internal network only
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)  # noqa: S104 - an internal network only
+    server.daemon_threads = False
+    signal.signal(signal.SIGTERM, lambda *_: _stop_politely(server))
+    signal.signal(signal.SIGINT, lambda *_: _stop_politely(server))
+    server.serve_forever()

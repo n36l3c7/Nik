@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { amountText, percentOf } from '../../domain/transfers.js'
-import { subscribeTransfers, transfersNow } from '../../lib/transfers.js'
+import { dismissTransfer, retryTransfer, subscribeTransfers, transfersNow } from '../../lib/transfers.js'
 import { MicroSkull } from './AsciiSkull.jsx'
 
 /*
@@ -110,7 +110,32 @@ export function Transfers() {
     >
       {list.map((item) => (
         <li key={item.id} className="border border-line bg-raised px-3 py-2 shadow-lg">
-          <Transfer label={item.label} progress={item} />
+          {item.failed ? (
+            // Cut by a restart of the server: said, and sent again from here (lib/transfers.js).
+            <div className="flex flex-col gap-2 font-mono">
+              <p role="alert" className="text-xs text-high-fg">
+                {item.failed}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => retryTransfer(item.id)}
+                  className="border border-line bg-canvas px-2 py-0.5 text-xs text-fg hover:bg-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  Try again
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissTransfer(item.id)}
+                  className="px-2 py-0.5 text-xs text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ) : (
+            <Transfer label={item.label} progress={item} />
+          )}
         </li>
       ))}
     </ul>

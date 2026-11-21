@@ -517,11 +517,15 @@ def sandbox_run(url: str, token: str, code: str, args: dict, timeout: int) -> di
         content = answer.read(MAX_BODY + 1)
         status = answer.status
     except (OSError, http.client.HTTPException):
-        raise EgressError("The sandbox could not be reached") from None
+        gone = EgressError("The sandbox could not be reached")
+        gone.away = True  # down, or restarting: it may be back in a moment (automation/scripts.py)
+        raise gone from None
     finally:
         connection.close()
     if status == 503:
-        raise EgressError("The sandbox is busy: try again in a moment")
+        busy = EgressError("The sandbox is busy: try again in a moment")
+        busy.away = True
+        raise busy
     if status != 200:
         raise EgressError("The sandbox refused the request")
     try:

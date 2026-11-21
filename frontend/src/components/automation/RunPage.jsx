@@ -15,10 +15,12 @@ import {
   stepLine,
   triggerLabel,
 } from '../../domain/automation/runs.js'
+import { interruptedSteps, restartLines, runStatus } from '../../domain/restarts.js'
 import { formatDateTime } from '../../lib/time.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
 import ApprovalBanner from './ApprovalBanner.jsx'
+import InterruptedBanner from './InterruptedBanner.jsx'
 import Canvas from './Canvas.jsx'
 import DebugPanel, { DebugStepTools } from './DebugPanel.jsx'
 import { SectionTitle } from './fields.jsx'
@@ -34,7 +36,9 @@ import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
  * what happened to it. Beside it the steps in the order they were taken; a
  * step (or its node) shows what went in, what came out, what was sent, the
  * tries and the script's log. A run still going is read again every two
- * seconds; an approval that waits is answered here.
+ * seconds; an approval that waits is answered here, and so is a step a
+ * restart of the server interrupted (InterruptedBanner). A step says what
+ * restarts did to it: when it was interrupted, when it started again.
  *
  * A dry run stops before every action that would change or send something
  * and shows what it would have done. A debug run also stops before its
@@ -114,6 +118,16 @@ function StepDetail({ step, node, entry, dryRun }) {
           {step.error}
         </p>
       )}
+      {step.restarts?.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <SectionTitle>Restarts</SectionTitle>
+          <ol aria-label="What restarts did to this step" className="flex flex-col gap-0.5 text-xs text-fg-muted">
+            {restartLines(step.restarts, formatDateTime).map((line, index) => (
+              <li key={index}>{line}</li>
+            ))}
+          </ol>
+        </div>
+      )}
       {dryRun && step.request ? (
         <p className="border border-violet-line bg-violet-soft p-2 text-xs text-fg">
           A dry run: this was not sent. It is what the node would have done.
@@ -173,6 +187,7 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
   const statuses = useMemo(() => nodeStatuses(run?.steps), [run?.steps])
   const step = run?.steps.find((item) => item.id === stepId) ?? null
   const waiting = (run?.approvals ?? []).filter((approval) => approval.status === 'waiting')
+  const interrupted = interruptedSteps(run?.steps)
   const answered = (run?.approvals ?? []).filter((approval) => approval.status !== 'waiting')
   const incident = run?.incidentId ? incidents.find((item) => item.id === run.incidentId) : null
 
@@ -293,11 +308,13 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
           )}
           <span role="status" aria-label="Status of the run">
             <Badge color={RUN_COLORS[run.status] ?? 'slate'}>
-              {run.status === 'waiting' && waiting.length
-                ? 'waiting for approval'
-                : run.status === 'waiting' && run.debug?.at?.length
-                  ? 'stopped at a node'
-                  : run.status}
+              {run.status === 'waiting' && interrupted.length
+                ? 'interrupted by a restart'
+                : run.status === 'waiting' && waiting.length
+                  ? 'waiting for approval'
+                  : run.status === 'waiting' && run.debug?.at?.length
+                    ? 'stopped at a node'
+                    : runStatus(run)}
             </Badge>
           </span>
           {going && !run.debug && (
@@ -308,13 +325,23 @@ export default function RunPage({ id, onBack, onOpenPlaybook, onOpenIncident }) 
         </div>
       </div>
 
-      {(run.error || waiting.length > 0) && (
+      {(run.error || waiting.length > 0 || interrupted.length > 0) && (
         <div className="flex shrink-0 flex-col gap-2 border-b border-line px-4 py-3">
           {run.error && (
             <p role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">
               {run.error}
             </p>
           )}
+          {interrupted.map((item) => (
+            <InterruptedBanner
+              key={item.id}
+              runId={run.id}
+              step={item}
+              name={nodeOf(graph, item.node)?.name || item.node}
+              sent={item.input}
+              onAnswered={load}
+            />
+          ))}
           {waiting.map((approval) => (
             <ApprovalBanner key={approval.id} approval={approval} onAnswered={load} />
           ))}

@@ -17,6 +17,7 @@ from typing import Any
 
 from ..core import store
 from ..core.config import settings
+from . import watching
 
 DOCUMENT_TIMEOUT = 180
 BROWSER_TIMEOUT = 90
@@ -62,7 +63,10 @@ def kind(name: str, type_id: str) -> str | None:
 def _call(base: str, header: str, token: str, method: str, path: str, body: Any, timeout: int) -> Any:
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(
-        f"{base}{path}", data=data, method=method, headers={header: token, "Content-Type": "application/json"}
+        f"{base}{path}",
+        data=data,
+        method=method,
+        headers={header: token, "Content-Type": "application/json", **watching.headers()},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - operator-configured URL
@@ -80,7 +84,9 @@ def _call(base: str, header: str, token: str, method: str, path: str, body: Any,
             detail or f"the worker answered HTTP {exc.code}", status, handover.missing_of(exc, answer)
         ) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise WorkerError(f"the worker cannot be reached: {getattr(exc, 'reason', exc)}") from exc
+        failure = WorkerError(f"the worker cannot be reached: {getattr(exc, 'reason', exc)}")
+        failure.unreachable = True  # the connection, not an answer: watching.py asks the worker what it knows
+        raise failure from exc
     return json.loads(raw) if raw else {}
 
 
@@ -197,6 +203,7 @@ def convert_pst(source, target, progress=None) -> None:
                 "X-Docview-Token": settings.DOCVIEW_TOKEN,
                 "Content-Type": "application/octet-stream",
                 "Content-Length": str(size),
+                **watching.headers(),
             },
         )
         try:
@@ -217,4 +224,6 @@ def convert_pst(source, target, progress=None) -> None:
                 detail = None
             raise WorkerError(str(detail or f"The document worker answered {exc.code}"), exc.code) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise WorkerError("The document worker cannot be reached.", 502) from exc
+            failure = WorkerError("The document worker cannot be reached.", 502)
+            failure.unreachable = True  # the connection, not an answer: watching.py asks the worker what it knows
+            raise failure from exc

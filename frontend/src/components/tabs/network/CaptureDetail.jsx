@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Bug, Download, FileDown, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
-import { AsciiSkull, Badge, Button, Card, StatCard } from '../../ui/index.js'
+import { AsciiSkull, Badge, Button, Card, RestartNote, StatCard } from '../../ui/index.js'
 import PacketView from './PacketView.jsx'
 import RequestLog from './RequestLog.jsx'
 import SortHeader from './SortHeader.jsx'
@@ -364,6 +364,7 @@ export default function CaptureDetail({
             <p role="status" className="text-sm text-fg-muted">
               Wireshark is reading the capture…
             </p>
+            <RestartNote work={capture.work} />
           </div>
         )}
         {capture.status === 'stored' && <p className="font-mono text-xs text-fg-muted">{capture.error}</p>}

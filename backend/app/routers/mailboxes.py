@@ -19,7 +19,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import artifacts, mailboxes
+from .. import artifacts, mailboxes, work
 from ..automation import triggers as automation_triggers
 from ..core import store
 from ..core.config import settings
@@ -28,7 +28,7 @@ from ..core.models import Artifact, AuditEntry, Incident, Mail, Mailbox, Mailbox
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..mail.parse import MailError
 from ..malware.samples import write_mail
-from ..workers import previews
+from ..workers import previews, watching
 from . import mails as mail_routes
 
 router = APIRouter(tags=["mailboxes"])
@@ -84,6 +84,10 @@ def _detail(db: OrmSession, row: Mailbox) -> dict[str, Any]:
         # While it is being read: {"phase": "converting" | "indexing", "bytes", "totalBytes", "messages"}.
         "preparing": meta.get("preparing") if row.status == "indexing" else None,
         "pending": meta.get("pending"),
+        # What restarts did to the reading or to the import, and how far the worker is (work.py).
+        "work": work.describe(db, "import" if row.status == "importing" else "mailbox", row.id),
+        # An import a restart cut for good: the messages imported until then are kept.
+        "interrupted": meta.get("interrupted"),
         "createdAt": row.created_at,
         "createdBy": row.created_by,
         "topSenders": mailboxes.top_senders(db, row.id) if row.status in ("ready", "importing") else [],
@@ -116,7 +120,57 @@ def _said(db: OrmSession, row: Mailbox, phase: str):
 
 
 def prepare(mailbox_id: str) -> None:
-    """Background task: turn what was uploaded into the stored mbox, then index it."""
+    """Background task: turn what was uploaded into the stored mbox, then index it.
+
+    **Across a restart: started again.** What was uploaded is in the store until the mbox made from
+    it is whole, and the index is made in one piece: the job is held (``work.py``, kind
+    ``mailbox``), started again from the upload by another API process when this one is gone, and
+    the PST is sent again when the document worker is the one that restarted (``watching.py``).
+    After ``work.MAX_ATTEMPTS`` interruptions the mailbox says it could not be read, with that
+    reason. A PST says how far it is while the worker reads it."""
+    try:
+        with work.hold("mailbox", mailbox_id) as claim:
+            _prepare(mailbox_id, claim)
+    except work.Taken:
+        return
+
+
+def _fail_mailbox(db: OrmSession, mailbox_id: str, sentence: str) -> None:
+    row = db.get(Mailbox, mailbox_id)
+    if row is None or row.status not in ("indexing", "importing"):
+        return
+    if row.status == "importing":
+        # The messages imported so far are kept: the mailbox is usable, and says what happened.
+        row.status = "ready"
+        row.meta = {**(row.meta or {}), "interrupted": sentence}
+    else:
+        row.status, row.error = "error", sentence[:500]
+        row.meta = {key: value for key, value in (row.meta or {}).items() if key != "preparing"}
+    flag_modified(row, "meta")
+    _refresh(db, row)
+
+
+def _prepare_again(mailbox_id: str, _params: dict) -> bool | None:
+    with SessionLocal() as db:
+        row = db.get(Mailbox, mailbox_id)
+        if row is None or row.status != "indexing":
+            return False
+    work.thread(prepare, mailbox_id)
+    return None
+
+
+work.register(
+    work.Kind(
+        "mailbox",
+        "the reading of a mailbox",
+        "again",
+        start=_prepare_again,
+        fail=_fail_mailbox,
+    )
+)
+
+
+def _prepare(mailbox_id: str, claim: work.Claim) -> None:
     with SessionLocal() as db:
         row = db.get(Mailbox, mailbox_id)
         if row is None:
@@ -127,7 +181,27 @@ def prepare(mailbox_id: str) -> None:
             if upload.exists():
                 converting = _said(db, row, "converting")
                 if row.format == "pst":
-                    previews.convert_pst(upload, target, progress=converting)
+                    tries = [0]
+
+                    def convert() -> None:
+                        # A try the worker lost may still be waiting on its connection when the next
+                        # one starts: only the try that is current notes how far it is.
+                        tries[0] += 1
+                        mine = tries[0]
+                        previews.convert_pst(
+                            upload,
+                            target,
+                            progress=lambda done, total: converting(done, total) if tries[0] == mine else None,
+                        )
+
+                    watching.handed_out(
+                        claim,
+                        convert,
+                        settings.DOCVIEW_URL,
+                        "X-Docview-Token",
+                        settings.DOCVIEW_TOKEN,
+                        what="the reading of this PST",
+                    )
                 elif row.format == "maildir":
                     mailboxes.maildir_to_mbox(
                         upload,
@@ -145,7 +219,7 @@ def prepare(mailbox_id: str) -> None:
             row.meta = {key: value for key, value in (row.meta or {}).items() if key != "preparing"}
             flag_modified(row, "meta")
             row.status, row.error = "ready", None
-        except (mailboxes.MailboxError, previews.WorkerError, OSError) as exc:
+        except (mailboxes.MailboxError, previews.WorkerError, watching.SetAside, OSError) as exc:
             db.rollback()
             row = db.get(Mailbox, mailbox_id)
             row.status, row.error = "error", str(exc)[:500]
@@ -203,6 +277,8 @@ async def upload_mailbox(
     db.flush()
     artifacts.register_mailbox(db, row)
     _audit(db, caller, "mailbox.upload", f"Uploaded mailbox {row.file_name} ({size} bytes, {kind})", row.file_name)
+    # Written with the row: the job exists even if this process stops before its thread starts.
+    work.want(db, "mailbox", mailbox_id)
     db.commit()
     background_tasks.add_task(prepare, mailbox_id)
     return _detail(db, row)
@@ -328,7 +404,41 @@ def _plan(db: OrmSession, row: Mailbox, body: ImportIn) -> dict[str, Any]:
 
 
 def import_messages(mailbox_id: str, seqs: list[int], actor: str) -> None:
-    """Background task: analyse each message as an e-mail and make it an artifact."""
+    """Background task: analyse each message as an e-mail and make it an artifact.
+
+    **Across a restart: resumed.** Each message is committed by itself, with the event that says it
+    was analysed: one that was imported stays imported and is not announced again. The job is held
+    (``work.py``, kind ``import``, with the messages asked for and who asked): another API process
+    goes through the same messages again, finds the ones that are there, and imports the rest."""
+    try:
+        with work.hold("import", mailbox_id):
+            _import_messages(mailbox_id, seqs, actor)
+    except work.Taken:
+        return
+
+
+def _import_again(mailbox_id: str, params: dict) -> bool | None:
+    with SessionLocal() as db:
+        row = db.get(Mailbox, mailbox_id)
+        if row is None or row.status != "importing":
+            return False
+        seqs = [int(seq) for seq in params.get("seqs") or []]
+        if not seqs:
+            # An import a version before 6.9 was doing when it was stopped: which messages it had
+            # been asked for was only in its memory. Said on the mailbox, not guessed.
+            _fail_mailbox(db, mailbox_id, "The import was cut by the upgrade of the server")
+            db.commit()
+            return False
+    work.thread(import_messages, mailbox_id, seqs, str(params.get("actor") or "nik"))
+    return None
+
+
+work.register(
+    work.Kind("import", "the import of messages of a mailbox", "again", start=_import_again, fail=_fail_mailbox)
+)
+
+
+def _import_messages(mailbox_id: str, seqs: list[int], actor: str) -> None:
     with SessionLocal() as db:
         row = db.get(Mailbox, mailbox_id)
         if row is None:
@@ -418,6 +528,7 @@ def import_mailbox(
     flag_modified(row, "meta")
     artifacts.register_mailbox(db, row)
     _audit(db, caller, "mailbox.import", f"Importing {len(seqs)} message(s) of {row.file_name}", row.file_name)
+    work.want(db, "import", row.id, {"seqs": list(seqs), "actor": caller.actor})
     db.commit()
     background_tasks.add_task(import_messages, row.id, seqs, caller.actor)
     return {**plan, "started": True}

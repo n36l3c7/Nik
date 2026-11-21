@@ -6,6 +6,9 @@ workers/capa/) to analyse a sample and saves the reduced report in
 (``handover.py``) and the admin rules travel with the request. capa reads
 x86 / x64 PE and ELF files; other samples are marked ``unsupported`` without
 calling the worker.
+
+**Across a restart: started again**, as the disassembly is (``analyzer.py``
+says why and how): the job is held under the kind ``capa``.
 """
 
 from __future__ import annotations
@@ -15,12 +18,14 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from .. import work
 from ..core.config import settings
 from ..core.db import SessionLocal
 from ..core.models import SampleCapa
 from ..core.security import now_iso
 from ..malware import capa_rules
 from ..malware.samples import sample_path
+from . import watching
 from .analyzer import AnalyzerError, WorkerBusy, post_with_files
 
 SUPPORTED_TYPES = {"pe32", "pe64", "pe", "elf"}
@@ -64,12 +69,24 @@ def _queue_seconds() -> int:
     return QUEUE_RUNS * _run_seconds()
 
 
-def _request_when_free(sha256: str, rules: list[dict[str, str]]) -> dict[str, Any]:
-    """Ask the worker, waiting while it is busy with a sample sent by another backend process."""
+def _request_when_free(sha256: str, rules: list[dict[str, str]], claim: work.Claim | None = None) -> dict[str, Any]:
+    """Ask the worker, waiting while it is busy with a sample sent by another backend process. With
+    the ``claim`` of the job, the worker is asked meanwhile whether it still has it."""
     waited = 0.0
     while True:
         try:
-            return request_capabilities(sha256, rules)
+            if claim is None:
+                return request_capabilities(sha256, rules)
+            return watching.handed_out(
+                claim,
+                lambda: request_capabilities(sha256, rules),
+                settings.CAPA_URL,
+                "X-Analyzer-Token",
+                settings.CAPA_TOKEN,
+                what="the capa analysis of this file",
+            )
+        except watching.SetAside as aside:
+            raise AnalyzerError(str(aside)) from None
         except WorkerBusy:
             if waited >= _queue_seconds():
                 raise AnalyzerError("capa stayed busy with other samples; run it again later") from None
@@ -84,27 +101,61 @@ def run_capa_job(sha256: str) -> None:
     this process run one after the other; the others stay ``queued``.
     """
     with _one_at_a_time:
-        db = SessionLocal()
         try:
-            row = db.get(SampleCapa, sha256)
-            if row is None or row.status != "queued":
-                return
-            row.status, row.started_at = "running", now_iso()
-            db.commit()
-            try:
-                rules = capa_rules.enabled_sources(db)
-                row.result, row.status, row.error = _request_when_free(sha256, rules), "done", None
-            except AnalyzerError as exc:
-                row.status, row.error = "error", str(exc)
-            row.finished_at = now_iso()
-            # Said to the playbooks and the webhooks that wait for it, done or failed.
-            from ..automation import triggers
+            with work.hold("capa", sha256) as claim:
+                _capa_job(sha256, claim)
+        except work.Taken:
+            return
 
-            db.flush()
-            triggers.capabilities_analysed(db, row)
-            db.commit()
-        finally:
-            db.close()
+
+def _fail_capa(db, sha256: str, sentence: str) -> None:
+    row = db.get(SampleCapa, sha256)
+    if row is None or row.status not in ("queued", "running"):
+        return
+    row.status, row.error, row.finished_at = "error", sentence, now_iso()
+    from ..automation import triggers
+
+    db.flush()
+    triggers.capabilities_analysed(db, row)
+
+
+def _again(sha256: str, _params: dict) -> bool | None:
+    """Start the job again in this process: its row waits again, as when it was asked for."""
+    with SessionLocal() as db:
+        row = db.get(SampleCapa, sha256)
+        if row is None or row.status not in ("queued", "running"):
+            return False
+        row.status, row.started_at = "queued", None
+        db.commit()
+    work.thread(run_capa_job, sha256)
+    return None
+
+
+work.register(work.Kind("capa", "the capa analysis of a file", "again", start=_again, fail=_fail_capa))
+
+
+def _capa_job(sha256: str, claim: work.Claim) -> None:
+    db = SessionLocal()
+    try:
+        row = db.get(SampleCapa, sha256)
+        if row is None or row.status != "queued":
+            return
+        row.status, row.started_at = "running", now_iso()
+        db.commit()
+        try:
+            rules = capa_rules.enabled_sources(db)
+            row.result, row.status, row.error = _request_when_free(sha256, rules, claim), "done", None
+        except AnalyzerError as exc:
+            row.status, row.error = "error", str(exc)
+        row.finished_at = now_iso()
+        # Said to the playbooks and the webhooks that wait for it, done or failed.
+        from ..automation import triggers
+
+        db.flush()
+        triggers.capabilities_analysed(db, row)
+        db.commit()
+    finally:
+        db.close()
 
 
 def _age(iso: str | None) -> float | None:

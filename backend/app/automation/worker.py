@@ -14,6 +14,25 @@ two workers never both schedule:
 
 The same loop runs as a thread of the API process with
 ``AUTOMATION_WORKER=inline`` (tests, a single-container install).
+
+**Stopping and starting again.** Nothing of the worker is kept outside the
+database, so the worker that takes over may be another container, or another
+host after a promotion.
+
+- *Asked to stop* (SIGTERM: ``docker compose restart``, ``up -d --build``, the
+  host shutting down): it claims nothing more, gives the steps and the cycles
+  in flight ``STOP_GRACE`` seconds to finish, gives its leases back and exits.
+  What is still in flight then stays ``running`` under its name.
+- *Killed* (kill -9, the power): nothing is given back. The lease runs out
+  ``LEASE_SECONDS`` after its last renewal.
+- *Starting*: the worker that holds the lease is the only one there is, so a
+  step that is ``running`` under another name lost its worker. It is taken
+  back at once, by the rule of ``engine.take_back`` (tried again, or the run
+  waits for a person when the step may have changed something outside). The
+  same holds for a change to a mirrored system that was being sent
+  (``mirror.take_back``).
+- A step this worker claimed and no longer runs (its thread died) is found by
+  its age, as before.
 """
 
 from __future__ import annotations
@@ -27,17 +46,20 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from sqlalchemy import delete, insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, or_, select
 
+from ..core import leases
 from ..core.config import settings
 from ..core.db import SessionLocal
-from ..core.models import Approval, AutomationEvent, Lease, Playbook, Run, RunStep
-from . import actions, engine, graph, state, triggers
+from ..core.models import Approval, AutomationEvent, Playbook, Run, RunStep
+from . import engine, state, triggers
 
 logger = logging.getLogger("nik.automation")
 LEASE = "automation"
 LEASE_SECONDS = 30
+# How long the steps and cycles in flight are given to finish when the worker is asked to stop.
+# Compose gives the container a little more (stop_grace_period) before it kills it.
+STOP_GRACE = 25.0
 HOLDER = uuid.uuid4().hex
 TICK_SECONDS = 1.0
 EVENTS_PER_TICK = 50
@@ -56,27 +78,11 @@ _fetching: set[str] = set()
 
 def acquire(db, holder: str = HOLDER, now: float | None = None) -> bool:
     """Take or renew the lease; False while another worker holds it."""
-    now = time.time() if now is None else now
-    taken = db.execute(
-        update(Lease)
-        .where(Lease.name == LEASE, or_(Lease.holder == holder, Lease.expires_at < now))
-        .values(holder=holder, expires_at=now + LEASE_SECONDS)
-    ).rowcount
-    if taken:
-        db.commit()
-        return True
-    try:
-        db.execute(insert(Lease).values(name=LEASE, holder=holder, expires_at=now + LEASE_SECONDS))
-        db.commit()
-        return True
-    except IntegrityError:
-        db.rollback()
-        return False
+    return leases.take(db, LEASE, holder, LEASE_SECONDS, now)
 
 
 def release(db, holder: str = HOLDER) -> None:
-    db.execute(delete(Lease).where(Lease.name == LEASE, Lease.holder == holder))
-    db.commit()
+    leases.release(db, LEASE, holder)
 
 
 # --------------------------------------------------------------------------- #
@@ -97,7 +103,11 @@ def take_events(db, now: float) -> int:
             event.done = True
             event.claimed_at = now
             db.commit()
-        except Exception:  # noqa: BLE001 - one bad event must not stop the others
+        except Exception as error:  # noqa: BLE001 - one bad event must not stop the others
+            from ..core.db import connection_lost
+
+            if connection_lost(error):
+                raise  # the database went away: the event is not a bad one, and waits for the next pass
             db.rollback()
             logger.exception("Event %s could not be handled", event.id)
             event = db.get(AutomationEvent, event.id)
@@ -127,14 +137,14 @@ def claim_steps(db, now: float, limit: int, holder: str = HOLDER) -> list[str]:
     return claimed
 
 
-def run_step(step_id: str, now: float | None = None) -> None:
+def run_step(step_id: str, now: float | None = None, holder: str = HOLDER) -> None:
     """Execute one claimed step in a session of its own."""
     with SessionLocal() as db:
         step = db.get(RunStep, step_id)
         run = db.get(Run, step.run_id) if step else None
         token = triggers.current_run.set((run.id, int((run.trigger or {}).get("depth") or 0)) if run else None)
         try:
-            engine.execute(db, step_id, time.time() if now is None else now)
+            engine.execute(db, step_id, time.time() if now is None else now, holder)
         except Exception:  # noqa: BLE001
             db.rollback()
             logger.exception("Step %s could not be executed", step_id)
@@ -142,36 +152,32 @@ def run_step(step_id: str, now: float | None = None) -> None:
             triggers.current_run.reset(token)
 
 
-def reclaim(db, now: float) -> int:
-    """A step whose worker died while it ran: tried again, unless its outcome cannot be known."""
+def reclaim(db, now: float, holder: str = HOLDER, *, threads: bool = False) -> int:
+    """Take back the steps whose worker is gone, by the rule of ``engine.take_back``. Returns how
+    many. A step is lost when it is ``running`` under the name of another worker (this one holds
+    the lease, so there is no other), or under this worker's name without a thread that runs it:
+    with a pool of threads (``threads``) that is known for certain a moment after it was claimed
+    (its thread ended and could not write, the database had gone away); without one, when the
+    step is past its time."""
     taken = 0
     lost = db.scalars(select(RunStep).where(RunStep.status == "running", RunStep.claimed_at.isnot(None))).all()
+    # The worker that was asked to stop wrote its name down before it left: a step it left
+    # unfinished was cut by the stop, not by a fall of the worker.
+    asked = str((state.read(db).get("stopped") or {}).get("holder") or "") if lost else ""
     for step in lost:
-        if (step.claimed_at or 0) + (step.timeout_s or 60) + engine.RECLAIM_GRACE >= now:
+        ours = step.claimed_by == holder
+        allowed = engine.RECLAIM_GRACE + (0 if threads else (step.timeout_s or 60))
+        if ours and (step.id in _in_flight or (step.claimed_at or 0) + allowed >= now):
             continue
-        with engine.serial(db):
-            run = engine.locked_run(db, step.run_id)
-            if run is None or run.status in engine.FINISHED:
-                step.status = "skipped"
-                continue
-            shape = engine.graph_of(db, run)
-            node = graph.nodes_of(shape).get(step.node_id) or {}
-            action_id = str((node.get("config") or {}).get("action") or "")
-            spec = actions.lookup(db, action_id) if step.kind == "action" else None
-            if spec is not None and spec.changes_outside and not spec.idempotent:
-                engine._fail(
-                    db, run, shape, step, "The worker stopped while this ran: outcome unknown", now, retry=False
-                )
-            else:
-                step.status = "pending"
-                step.next_at = now
-                step.claimed_by = None
-        taken += 1
-    db.commit()
+        done = engine.take_back(db, step, now, counted=not asked or step.claimed_by != asked)
+        db.commit()
+        if done in ("again", "interrupted", "failed"):
+            logger.warning("Step %s of run %s lost its worker: %s", step.node_id, step.run_id, done)
+            taken += 1
     return taken
 
 
-def housekeeping(db, now: float) -> None:
+def housekeeping(db, now: float, holder: str = HOLDER, *, threads: bool = False) -> None:
     """Approvals that ran out of time, runs past their deadline, what is too old to keep."""
     for approval in db.scalars(select(Approval).where(Approval.status == "waiting", Approval.expires_at <= now)).all():
         engine.answer(db, approval, "expired", "", "", now)
@@ -202,7 +208,10 @@ def housekeeping(db, now: float) -> None:
 
     if debugger.prune(db, now):
         db.commit()
-    reclaim(db, now)
+    reclaim(db, now, holder, threads=threads)
+    from .. import mirror
+
+    mirror.take_back(db, now, holder)
     global _storage_looked
     if abs(now - _storage_looked) >= STORAGE_LOOK_EVERY:
         _storage_looked = now
@@ -281,7 +290,7 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
         done["runs"] += take_events(db, now)
         done["runs"] += len(triggers.fire_schedules(db, now))
         db.commit()
-        housekeeping(db, now)
+        housekeeping(db, now, holder, threads=pool is not None)
         # With a pool, only as many as there are free hands: a slow step does not hold the pass.
         free = (
             settings.AUTOMATION_CONCURRENCY * 4 if pool is None else settings.AUTOMATION_CONCURRENCY - len(_in_flight)
@@ -298,17 +307,17 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
     done["steps"] = len(claimed)
     if pool is None:
         for step_id in claimed:
-            run_step(step_id, now)
+            run_step(step_id, now, holder)
         for connection_id in fetching:
             fetch.run(connection_id, now)
         for incident_id in reading:
             mirror.run_pull(incident_id, now)
         for job_id in sending:
-            mirror.run_push(job_id, now)
+            mirror.run_push(job_id, now, holder)
         return done
     for key, work, wanted in (
         *((f"in:{found}", mirror.run_pull, found) for found in reading),
-        *((f"out:{found}", mirror.run_push, found) for found in sending),
+        *((f"out:{found}", lambda job_id: mirror.run_push(job_id, None, holder), found) for found in sending),
     ):
         _fetching.add(key)
         pool.submit(work, wanted).add_done_callback(lambda _future, done_key=key: _fetching.discard(done_key))
@@ -319,7 +328,9 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
         )
     for step_id in claimed:
         _in_flight.add(step_id)
-        pool.submit(run_step, step_id).add_done_callback(lambda _future, done_id=step_id: _in_flight.discard(done_id))
+        pool.submit(run_step, step_id, None, holder).add_done_callback(
+            lambda _future, done_id=step_id: _in_flight.discard(done_id)
+        )
     return done
 
 
@@ -344,7 +355,8 @@ def loop() -> None:
 
         system_user(db)  # what a playbook changes in Nik is signed with this account
         db.commit()
-    with ThreadPoolExecutor(max_workers=settings.AUTOMATION_CONCURRENCY, thread_name_prefix="nik-step") as pool:
+    pool = ThreadPoolExecutor(max_workers=settings.AUTOMATION_CONCURRENCY, thread_name_prefix="nik-step")
+    try:
         while not _stopping.is_set():
             started = time.time()
             try:
@@ -360,8 +372,34 @@ def loop() -> None:
             except Exception:  # noqa: BLE001 - the worker must survive a bad pass
                 logger.exception("Automation pass failed")
             _stopping.wait(max(0.05, TICK_SECONDS - (time.time() - started)))
-    with SessionLocal() as db:
-        release(db)
+    finally:
+        left = finish_in_flight(pool)
+        if left:
+            logger.warning(
+                "%d step(s) or cycle(s) were still in flight after %d s: the worker that starts next takes them back",
+                left,
+                int(STOP_GRACE),
+            )
+        try:
+            with SessionLocal() as db:
+                if left:
+                    # Said for the worker that starts next: these steps were cut by a stop that was asked for.
+                    state.write(db, stopped={"holder": HOLDER, "at": time.time()})
+                    db.commit()
+                release(db)
+        except Exception:  # noqa: BLE001 - stopping anyway: the lease runs out by itself
+            logger.warning("The lease of the automation worker could not be given back")
+
+
+def finish_in_flight(pool: ThreadPoolExecutor, grace: float = STOP_GRACE, pause=time.sleep) -> int:
+    """Asked to stop: nothing new is started, and what is in flight gets ``grace`` seconds to
+    finish. Returns how many steps and cycles were still in flight after that."""
+    pool.shutdown(wait=False, cancel_futures=True)
+    waited = 0.0
+    while (_in_flight or _fetching) and waited < grace:
+        pause(0.2)
+        waited += 0.2
+    return len(_in_flight) + len(_fetching)
 
 
 def start_inline() -> None:
@@ -469,7 +507,18 @@ def main() -> None:
 
     health_watch.start()
     loop()
+    # Every lease this process took (its own, the copies of the backups, the forwarding of the
+    # audit log, the watch of the health) is given back: the worker that starts next waits for none.
+    leases.release_all()
     logger.info("Automation worker stopped")
+    if _in_flight or _fetching:
+        # Threads that did not finish in the grace would hold the process until they do: it exits
+        # now, and what they were doing is taken back by the worker that starts next.
+        import logging as _logging
+        import os
+
+        _logging.shutdown()
+        os._exit(0)
 
 
 if __name__ == "__main__":

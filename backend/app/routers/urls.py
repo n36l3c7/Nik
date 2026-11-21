@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import artifacts, urlscan
+from .. import artifacts, urlscan, work
 from ..core import store
 from ..core.db import get_db
 from ..core.files import attachment_headers, safe_name, stored_response
@@ -72,6 +72,8 @@ def _detail(db: OrmSession, row: UrlScan) -> dict[str, Any]:
         "status": "error" if stale else row.status,
         "error": "The scan was interrupted; run it again." if stale else row.error,
         "captureId": row.capture_id,
+        # What restarts did to the scan (work.py).
+        "work": work.describe(db, "scan", row.id),
         "result": row.result or {},
         "incidents": [
             {"id": incident.id, "name": incident.name} for incident in urlscan.incidents_referencing(db, row.id)
@@ -85,6 +87,8 @@ def _queue(db: OrmSession, row: UrlScan, actor: str, background_tasks: Backgroun
     row.result = {"startedAt": now_iso()}
     flag_modified(row, "result")
     artifacts.register_url(db, row)
+    # Written with the row: the scan exists even if this process stops before its thread starts.
+    work.want(db, "scan", row.id, {"actor": actor})
     db.commit()
     background_tasks.add_task(urlscan.run_scan, row.id, actor)
 

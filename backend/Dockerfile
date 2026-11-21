@@ -44,5 +44,7 @@ EXPOSE 8000
 ENV WEB_CONCURRENCY=2 \
     RUN_CREATE_ALL=false
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", \
-     "--bind", "0.0.0.0:8000", "--worker-tmp-dir", "/dev/shm"]
+# The worker is uvicorn's with a limit on how long a stop waits for requests (app/serving.py);
+# gunicorn gives its workers a little longer, and Compose the container a little longer still.
+CMD ["gunicorn", "-k", "app.serving.Worker", "app.main:app", \
+     "--bind", "0.0.0.0:8000", "--worker-tmp-dir", "/dev/shm", "--graceful-timeout", "30"]

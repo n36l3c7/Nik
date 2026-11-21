@@ -336,6 +336,10 @@
 ├── artifact_convert.py             # A file artifact analysed as the e-mail or the capture it is
 ├── unpack.py                       # The files of a zip archive, in memory: bounded, a name never a path
 ├── worker_watch.py                 # Workers that stop answering: the check, and the notices to the admins
+├── work.py                         # Work the API process does outside a request, held across restarts: who
+│                                   #   holds each piece, its heartbeat, the sweeper that takes back what lost
+│                                   #   its holder (started again or failed loudly), what is set aside
+├── serving.py                      # The gunicorn worker: how long a stop waits for the requests in flight
 ├── backups/                        # Backups Nik takes by itself, and upgrades one can come back from
 │   ├── container.py                #   the file format (encrypted, streamed); also runs alone, without Nik
 │   ├── database.py · store.py      #   the database and the store inside a backup; scratch databases
@@ -1024,7 +1028,14 @@
               <td><code>integration_keys</code>, <code>ioc_enrichment</code>, <code>leases</code></td>
               <td>
                 the threat-intelligence API keys of before 6.5 that no instance holds yet (encrypted), the answers of
-                the sources, and the lock of the lookup worker
+                the sources, and the leases of the loops that must run once (who holds each, until when)
+              </td>
+            </tr>
+            <tr>
+              <td><code>work_claims</code></td>
+              <td>
+                who holds each piece of work the API process does outside a request, its last sign of life, how many
+                times it was taken, and when a restart cut it (kept a week after it ended)
               </td>
             </tr>
             <tr>
@@ -1317,12 +1328,27 @@
             >FOR UPDATE SKIP LOCKED</code
           >
           on PostgreSQL), takes each in a transaction of its own, and writes what comes next. Where branches meet, a
-          node waits for every branch that can still reach it; a branch not taken is marked dead and does not hold it. A
-          step claimed by a worker that died is taken back after a grace time.
+          node waits for every branch that can still reach it; a branch not taken is marked dead and does not hold it.
+        </li>
+        <li>
+          <strong>Started and done are two commits.</strong> The claim of a step is committed before it does anything; a
+          step about to make a call that changes something outside commits a mark first
+          (<code>run_steps.calling_at</code>); its result, with everything it did inside Nik, the next steps and the
+          events it causes, is one last commit that empties the mark. The worker that holds the lease is the only one,
+          so a step that is <code>running</code> under another name lost its worker and is taken back at once
+          (<code>engine.take_back</code>): with no mark, or a call that may be repeated, it is done again; with the mark
+          and a call that may not, it becomes <code>interrupted</code> and the run waits for
+          <code>engine.resolve</code>. A worker that comes back late finds its step taken and applies nothing (the claim
+          is checked again under the lock of the run).
         </li>
         <li>
           <strong>Waiting costs nothing.</strong> A wait, a retry and an approval are a step with a time on it (or
           none); no thread sleeps.
+        </li>
+        <li>
+          <strong>Leases</strong> (<code>core/leases.py</code>) are taken with one statement, an insert that becomes an
+          update when the row is ours or has run out, and given back when the process stops; nothing about one lives
+          outside its row.
         </li>
         <li>
           <strong>One worker at a time</strong> holds a lease in the database and renews it; the container can be
@@ -1363,7 +1389,22 @@
         indicator's overall verdict, a watched indicator found in an incident and a disk nearly full each write a row of
         the outbox in the transaction of what they tell of. A request to
         <code>POST /api/automation/hooks/&lt;token&gt;</code> starts a run directly: the token is looked up by its
-        SHA-256, which is all that is stored of it.
+        SHA-256, which is all that is stored of it. The runs an event starts and its mark of done are one commit, and
+        each such run carries <code>runs.event_key</code> (<code>&lt;event&gt;:&lt;playbook&gt;</code>, unique): the
+        same event cannot start the same playbook twice. Webhooks are told only after the commit of what they tell of
+        (<code>events.emit_detached</code>), at most once.
+      </p>
+      <p>
+        <strong>Work of the API process across restarts.</strong> An analysis, a scan, a mailbox being read and what a
+        playbook asks about a file run in threads of an API process long after the request that asked. Each is a row of
+        <code>work_claims</code> (<code>work.py</code>): <em>wanted</em>, written in the transaction of the request;
+        <em>held</em> by a process that says it is alive every ten seconds; then <em>done</em>, <em>failed</em> or
+        <em>aside</em>. A sweeper under a lease takes back what is held by a process that has been silent for 45
+        seconds, each piece once, by the rule of its kind (<code>work.Kind</code>: started again, or failed loudly), and
+        sets aside what was interrupted three times. The workers keep everything in memory; the backend names each long
+        request (<code>X-Nik-Job</code>) and asks the worker meanwhile whether it still has it
+        (<code>workers/watching.py</code>, <code>jobs.py</code> in each worker): "unknown job" is a restart, and the job
+        is handed out again with its file.
       </p>
       <h3 id="incident-model">Fields, types, context and the War Room (4.3)</h3>
       <p>

@@ -188,12 +188,40 @@ def _midnight(now: float) -> float:
 
 
 def _use(db: OrmSession, connection_id: str, key_id: str) -> InstanceKeyUse:
+    """The row that counts the uses of a key, made when it is not there. Two steps of two runs may
+    use a key for the first time at the same moment: the row is added with a statement that does
+    nothing when it is there already, so the second one neither fails (its call has been made by
+    then, and a step that fails after its call cannot be told from one whose call failed) nor
+    writes an error to the log of the database."""
     row = db.get(InstanceKeyUse, (connection_id, key_id))
-    if row is None:
-        row = InstanceKeyUse(connection_id=connection_id, key_id=key_id)
-        db.add(row)
-        db.flush()
+    if row is not None:
+        return row
+    if _added_unless_there(db, InstanceKeyUse, connection_id=connection_id, key_id=key_id):
+        return db.get(InstanceKeyUse, (connection_id, key_id))
+    row = InstanceKeyUse(connection_id=connection_id, key_id=key_id)
+    db.add(row)
+    db.flush()
     return row
+
+
+def _added_unless_there(db: OrmSession, model: Any, **key: Any) -> bool:
+    """Add the row of ``model`` with this key unless it is there, in one statement that is no
+    error either way. False on a database that has no such statement (the caller adds it itself)."""
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as upsert
+    elif dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as upsert
+    else:
+        return False
+    table = model.__table__
+    added = {
+        column.name: column.default.arg
+        for column in table.columns
+        if column.default is not None and column.name not in key
+    }
+    db.execute(upsert(table).values(**added, **key).on_conflict_do_nothing(index_elements=list(table.primary_key)))
+    return True
 
 
 def _counts(row: InstanceKeyUse | None, now: float) -> tuple[int, int]:
@@ -370,8 +398,13 @@ def keep_answer(
     key = answer_key(connection, command, args)
     row = db.get(CommandAnswer, key)
     if row is None:
-        row = CommandAnswer(id=key, connection_id=connection.id, command=command[:120])
-        db.add(row)
+        # Two steps may ask the same thing at the same moment: the second finds the row of the first
+        # instead of failing on it after its request was answered.
+        if _added_unless_there(db, CommandAnswer, id=key, connection_id=connection.id, command=command[:120]):
+            row = db.get(CommandAnswer, key)
+        else:
+            row = CommandAnswer(id=key, connection_id=connection.id, command=command[:120])
+            db.add(row)
     row.outputs, row.context, row.created_epoch = outputs, [list(pair) for pair in (context or [])], now
 
 

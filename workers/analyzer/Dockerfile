@@ -3,7 +3,7 @@
 FROM docker.io/rizin/rizin:v0.9.1
 
 WORKDIR /opt/nik-analyzer
-COPY given.py nik_analyzer.py server.py ./
+COPY given.py jobs.py nik_analyzer.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

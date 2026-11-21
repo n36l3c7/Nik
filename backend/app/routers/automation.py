@@ -317,9 +317,21 @@ def _detail(db: OrmSession, row: Playbook) -> dict[str, Any]:
 BRANCH_ONLY_DEBUG = "A branch runs only in the debugger: push it to main to run it, turn it on or schedule it"
 
 
-def _run_summary(run: Run) -> dict[str, Any]:
+def _cut(db: OrmSession, runs: list[Run]) -> set[str]:
+    """Which of these runs wait at a step a restart interrupted."""
+    wanted = [run.id for run in runs if run.status == "waiting"]
+    if not wanted:
+        return set()
+    return set(
+        db.scalars(select(RunStep.run_id).where(RunStep.run_id.in_(wanted), RunStep.status == "interrupted")).all()
+    )
+
+
+def _run_summary(run: Run, cut: set[str] | None = None) -> dict[str, Any]:
     return {
         "id": run.id,
+        # It waits for a person to say whether a step a restart interrupted happened.
+        "interrupted": run.id in (cut or ()),
         "playbookId": run.playbook_id,
         "playbook": (run.trigger or {}).get("playbook", ""),
         "version": run.version,
@@ -361,6 +373,9 @@ def _step(step: RunStep) -> dict[str, Any]:
         "nextAt": step.next_at,
         "startedAt": step.started_at,
         "finishedAt": step.finished_at,
+        # What restarts did to it, oldest first: {at, what, by?} with what = interrupted | again |
+        # waiting | happened | stopped.
+        "restarts": step.restarts or [],
     }
 
 
@@ -1125,7 +1140,12 @@ def get_catalog(
 @router.get("/runs")
 def list_runs(
     playbook: str | None = Query(None, max_length=32),
-    run_status: str | None = Query(None, alias="status", pattern="^(running|waiting|done|failed|stopped)$"),
+    run_status: str | None = Query(
+        None,
+        alias="status",
+        pattern="^(running|waiting|interrupted|done|failed|stopped)$",
+        description="``interrupted``: the runs that wait at a step a restart interrupted.",
+    ),
     incident: str | None = Query(None, max_length=200),
     artifact: str | None = Query(None, max_length=80),
     limit: int = Query(50, ge=1, le=200),
@@ -1139,7 +1159,9 @@ def list_runs(
         conditions.append(Run.started_by == caller.actor)
     if playbook:
         conditions.append(Run.playbook_id == playbook)
-    if run_status:
+    if run_status == "interrupted":
+        conditions.append(Run.id.in_(select(RunStep.run_id).where(RunStep.status == "interrupted")))
+    elif run_status:
         conditions.append(Run.status == run_status)
     if incident:
         conditions.append(Run.incident_id == incident)
@@ -1147,7 +1169,8 @@ def list_runs(
         conditions.append(Run.artifact_id == artifact)
     total = db.scalar(select(func.count()).select_from(Run).where(*conditions)) or 0
     rows = db.scalars(select(Run).where(*conditions).order_by(Run.started_at.desc()).offset(offset).limit(limit)).all()
-    return {"runs": [_run_summary(run) for run in rows], "total": total}
+    cut = _cut(db, rows)
+    return {"runs": [_run_summary(run, cut) for run in rows], "total": total}
 
 
 @router.get("/runs/{run_id}")
@@ -1161,7 +1184,7 @@ def get_run(run_id: str, caller: Principal = Depends(runner_principal), db: OrmS
     steps = db.scalars(select(RunStep).where(RunStep.run_id == run.id).order_by(RunStep.seq)).all()
     approvals = db.scalars(select(Approval).where(Approval.run_id == run.id).order_by(Approval.asked_epoch)).all()
     return {
-        **_run_summary(run),
+        **_run_summary(run, _cut(db, [run])),
         "graph": engine.graph_of(db, run),
         "steps": [_step(step) for step in steps],
         "approvals": [_approval(db, approval) for approval in approvals],
@@ -1293,6 +1316,55 @@ def stop_run(run_id: str, caller: Principal = Depends(runner_principal), db: Orm
     return _run_summary(run)
 
 
+class ResolveIn(BaseModel):
+    answer: Literal["happened", "again", "stop"]
+
+
+_RESOLVED = {
+    "happened": "said that it happened: the run goes on",
+    "again": "said that it did not happen: the step is done again",
+    "stop": "stopped the run there",
+}
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/resolve")
+def resolve_step(
+    run_id: str,
+    step_id: str,
+    body: ResolveIn,
+    caller: Principal = Depends(runner_principal),
+    db: OrmSession = Depends(get_db),
+) -> dict:
+    """Say what happened to a step a restart interrupted (its ``status`` is ``interrupted``): the
+    worker stopped after the step began a call that changes something outside Nik and before its
+    answer was kept, so Nik cannot know whether the call was made. ``happened``: it was; the run
+    goes on, and the step has no result of its own. ``again``: it was not; the step is done again.
+    ``stop``: the run stops there. ``409`` when the step waits for no such answer (someone answered
+    first, or the run ended). Who answered is in the audit log and on the step."""
+    run = db.get(Run, run_id)
+    step = db.get(RunStep, step_id)
+    if run is None or step is None or step.run_id != run.id or not debugger.may_see(run, caller):
+        raise HTTPException(status_code=404, detail="Run or step not found")
+    if not engine.resolve(db, step_id, body.answer, caller.actor, time.time()):
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This step does not wait for an answer any more")
+    name = (run.trigger or {}).get("playbook", "")
+    node = graph.nodes_of(engine.graph_of(db, run)).get(step.node_id) or {}
+    audit.record(
+        db,
+        caller.actor,
+        "playbook.resolve",
+        f'A restart interrupted "{node.get("name") or step.node_id}" in a run of the playbook "{name}": '
+        f"{caller.actor} {_RESOLVED[body.answer]}",
+        db.get(Incident, run.incident_id) if run.incident_id else None,
+        target=name,
+    )
+    db.commit()
+    db.refresh(run)
+    steps = db.scalars(select(RunStep).where(RunStep.run_id == run.id).order_by(RunStep.seq)).all()
+    return {**_run_summary(run, _cut(db, [run])), "steps": [_step(found) for found in steps]}
+
+
 class AnswerIn(BaseModel):
     answer: Literal["approved", "refused"]
     comment: str = Field(default="", max_length=1000)
@@ -1368,7 +1440,8 @@ def incident_runs(
         .where(Run.incident_id == incident_id, Approval.status == "waiting")
         .order_by(Approval.asked_epoch)
     ).all()
-    return {"runs": [_run_summary(run) for run in rows], "approvals": [_approval(db, row) for row in waiting]}
+    cut = _cut(db, rows)
+    return {"runs": [_run_summary(run, cut) for run in rows], "approvals": [_approval(db, row) for row in waiting]}
 
 
 @router.get("/state")

@@ -86,3 +86,54 @@ def test_rules_and_files_that_are_not_what_the_worker_takes_are_refused(worker):
         assert call(f"{url}/analyze", body={"sha256": SHA, "rules": rules})[0] == 400, rules
     assert call(f"{url}/analyze", body={"sha256": SHA}, token="wrong")[0] == 401
     assert seen == []
+
+
+def test_the_backend_asks_whether_the_worker_still_has_its_job_and_a_restarted_one_says_unknown(worker, monkeypatch):
+    import jobs
+
+    url, seen, _work = worker
+    monkeypatch.setattr(server, "JOBS", jobs.Jobs())
+    go, begun = threading.Event(), threading.Event()
+
+    def analyze(path, timeout, extra_rules=()):
+        begun.set()
+        assert go.wait(20), "the analysis was never let go"
+        return {"capabilities": []}
+
+    monkeypatch.setattr(server, "analyze", analyze)
+    name = f"capa:{SHA}:1"
+
+    def named(path, method="POST", body=None, job=None):
+        data = body if isinstance(body, bytes) else (json.dumps(body).encode() if body is not None else None)
+        headers = {"X-Analyzer-Token": "test-token", **({jobs.HEADER: job} if job else {})}
+        request = urllib.request.Request(f"{url}{path}", data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.status, json.loads(response.read() or b"{}")
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read() or b"{}")
+
+    assert named(f"/files/{SHA}.bin", "PUT", DATA) == (200, {})
+    answer = {}
+    asking = threading.Thread(
+        target=lambda: answer.update(result=named("/analyze", body={"sha256": SHA, "rules": []}, job=name)),
+        daemon=True,
+    )
+    asking.start()
+    assert begun.wait(20)
+    status, state = named(f"/jobs/{name}", "GET")
+    assert status == 200 and state["state"] == "running" and state["progress"] == "matching the rules"
+    go.set()
+    asking.join(20)
+    assert answer["result"] == (200, {"capabilities": []})
+    assert named(f"/jobs/{name}", "GET")[1]["state"] == "finished"
+    # A worker that started again has none of it: said at once, and the sample is asked for again.
+    monkeypatch.setattr(server, "JOBS", jobs.Jobs())
+    status, unknown = named(f"/jobs/{name}", "GET")
+    assert status == 404 and unknown["unknown"] is True
+    request = urllib.request.Request(f"{url}/jobs/{name}", headers={"X-Analyzer-Token": "wrong"})
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(request, timeout=30)
+    assert refused.value.code == 401
+    status, lacking = named("/analyze", body={"sha256": SHA, "rules": []}, job=f"capa:{SHA}:2")
+    assert status == 409 and lacking["missing"] == [f"{SHA}.bin"]

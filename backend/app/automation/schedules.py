@@ -1,4 +1,12 @@
-"""Schedules: when a cron expression fires next, in its time zone."""
+"""Schedules: when a cron expression fires next, in its time zone.
+
+**A time that passed while the server was stopped.** A schedule is a row with
+its next time. When the worker starts again and that time is behind, the
+playbook runs **once**, now, however many of its times went by: a server that
+was down a week does not start a week of runs. The run is told when it was
+due and how many times were missed (``trigger.due``, ``trigger.late_seconds``,
+``trigger.missed``), and the next time is counted from now.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +30,20 @@ def next_after(cron: str, zone: str, after: float) -> float:
     """The next firing after ``after`` (epoch seconds)."""
     start = datetime.fromtimestamp(after, tz=timezone.utc).astimezone(_zone(zone) or timezone.utc)
     return croniter(cron, start).get_next(datetime).timestamp()
+
+
+MISSED_MAX = 1000
+
+
+def missed_between(cron: str, zone: str, due: float, now: float) -> int:
+    """How many firings after ``due`` are already past at ``now`` (counted up to ``MISSED_MAX``)."""
+    count, moment = 0, due
+    while count < MISSED_MAX:
+        moment = next_after(cron, zone, moment)
+        if moment > now:
+            break
+        count += 1
+    return count
 
 
 def cron_problem(cron: object, zone: object) -> str | None:

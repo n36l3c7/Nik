@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -526,6 +527,7 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
                 raise actions.ActionError(said_wait, retry=False)
         try:
             runtime = runtime_for(db, connector, connection, call.playbook, call.now, key=key)
+            runtime.idempotency_key = idempotency_key(call, command_name)
             if connector.native == "mail":
                 # What a message quotes and carries of another is known once that one is read: the
                 # runtime asks the guard then, and keeps what it is asked to keep through the store
@@ -706,6 +708,16 @@ _UNPACKED_OUTPUTS = (
 )
 
 
+def idempotency_key(call: actions.Call, command: str) -> str:
+    """What ``{{ idempotency.key }}`` gives a command run by a step: the same for every try of
+    that step (a retry, a try after a restart, "do it again" after an interruption), another for
+    every other step and run. One of its own when no step runs it."""
+    run_id = str(getattr(call.run, "id", "") or "")
+    if not run_id or not call.step_id:
+        return uuid.uuid4().hex
+    return hashlib.sha256(f"{run_id}:{call.step_id}:{command}".encode()).hexdigest()[:32]
+
+
 def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
     connector_id, name = connector.id, command.name
     described = command.gives_file and not command.outputs
@@ -726,7 +738,8 @@ def _spec(connector: ConnectorFile, command: Command) -> actions.Spec:
             else ({"name": "response", "type": "any", "description": "The answer, as it came"},)
         ),
         changes_outside=command.changes_outside,
-        idempotent=command.idempotent,
+        # Safe to do again after a restart cut it: by its nature, or by the key it sends the product.
+        idempotent=command.idempotent or command.idempotency_key,
         timeout=command.timeout,
         run=lambda call: run_command(connector_id, name, call),
         extra={

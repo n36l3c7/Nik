@@ -14,6 +14,14 @@ conditions hold, within the limits:
   event is dropped and counted;
 - **runs per hour** per playbook, and a ceiling of active runs for the whole
   server.
+
+**Exactly once.** The event is in the transaction of the change, so it is
+there exactly when the change is. The runs it starts and its mark of done are
+one commit too: a worker that stops in between starts them again from the
+same event, and finds none of them there. And each run an event starts
+carries a key, ``<event>:<playbook>``, that the database holds unique: the
+same event cannot start the same playbook twice, whatever the order of what
+went wrong (``event_key``).
 """
 
 from __future__ import annotations
@@ -269,6 +277,9 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
             continue
         if not accepts(trigger_config(db, playbook), event.kind, data, classes, db):
             continue
+        key = event_key(event.id, playbook.id)
+        if db.scalar(select(Run.id).where(Run.event_key == key)) is not None:
+            continue  # this event started this playbook already
         why = refusal(db, playbook, event.object_kind, event.object_id, now)
         if why:
             logger.info('Event %s did not start "%s": %s', event.kind, playbook.name, why)
@@ -288,11 +299,17 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
                 event_id=event.id,
                 caused_by_run=cause,
                 depth=depth,
+                event_key=key,
                 now=now,
             )
         )
         db.flush()
     return started
+
+
+def event_key(event_id: str, playbook_id: str) -> str:
+    """What makes a run of a playbook for an event one of a kind."""
+    return f"{event_id}:{playbook_id}"[:80]
 
 
 # --------------------------------------------------------------------------- #
@@ -332,14 +349,20 @@ def fire_schedules(db: OrmSession, now: float) -> list[Run]:
     started: list[Run] = []
     for row in db.scalars(select(AutomationSchedule).where(AutomationSchedule.next_at <= now)):
         playbook = db.get(Playbook, row.playbook_id)
+        # Once, however many of its times passed while the worker was stopped (schedules.py); the
+        # move of the next time and the run are one commit, so a restart neither loses nor repeats it.
+        due = float(row.next_at or now)
+        missed = schedules.missed_between(row.cron, row.timezone, due, now) if now - due >= 60 else 0
         row.next_at = schedules.next_after(row.cron, row.timezone, now)
         if playbook is None or not playbook.enabled or not playbook.current_version:
             continue
+        if missed:
+            row.skipped = (row.skipped or 0) + missed
         # A run of the last firing still in progress: this one is skipped and counted.
         if _active_for(db, playbook, "schedule", row.node_id) or refusal(db, playbook, "schedule", row.node_id, now):
             row.skipped = (row.skipped or 0) + 1
             continue
-        data, classes = payloads.schedule(engine.iso(now), row.cron)
+        data, classes = payloads.schedule(engine.iso(now), row.cron, engine.iso(due), int(max(0, now - due)), missed)
         started.append(
             engine.start_run(
                 db,

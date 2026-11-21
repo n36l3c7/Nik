@@ -1,6 +1,7 @@
 """HTTP front of the Nik packet capture worker (standard library only).
 
     GET  /health
+    GET  /jobs/<name>                                             -> whether the worker still has a job (``jobs.py``)
     PUT  /files/_captures/<id>/capture.<ext>                      -> the worker is given a capture (the body)
     POST /analyze {"id", "path", "keylog"?}                      -> summary, objects, expert counts
     POST /rpc     {"id", "path", "keylog"?, "method", "params"}  -> the sharkd result
@@ -19,6 +20,11 @@ is kept in memory (``/tmp``); a larger one goes to the work volume
 (``/work``), a disk, where it is **in clear** until its session is closed or
 has been idle for ``PCAP_SESSION_IDLE`` seconds, and at the latest until the
 worker starts again (it empties both places when it starts).
+
+On SIGTERM the worker stops taking requests, lets the ones it runs finish for
+``PCAP_STOP_GRACE`` seconds, and exits. Everything it knows is in memory: a
+worker that starts again answers "unknown job" for what it was doing
+(``jobs.py``), and the backend hands that out again with its file.
 """
 
 from __future__ import annotations
@@ -28,11 +34,13 @@ import hmac
 import json
 import os
 import re
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import given
+import jobs
 import nik_pcap
 
 TOKEN = given.secret("PCAP_TOKEN")
@@ -41,7 +49,9 @@ MAX_JOBS = int(os.environ.get("PCAP_MAX_JOBS", "2"))
 _ID = re.compile(r"^[0-9a-f]{32}$")
 EXTENSIONS = ("pcap", "pcapng", "cap", "gz")
 _PATH = re.compile(r"^_captures/([0-9a-f]{32})/capture\.(pcap|pcapng|cap|gz)$")
+STOP_GRACE = float(os.environ.get("PCAP_STOP_GRACE", "20"))
 _slots = threading.BoundedSemaphore(MAX_JOBS)
+JOBS = jobs.Jobs()
 GIVEN = given.Given(
     os.environ.get("PCAP_MEMORY_DIR", "/tmp/nik-given"),
     (re.compile(r"_captures/[0-9a-f]{32}/capture\.(pcap|pcapng|cap|gz)"),),
@@ -73,9 +83,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path == "/health":
-            self._send(200, {"status": "ok"})
-        else:
-            self._send(404, {"detail": "Not found"})
+            return self._send(200, {"status": "ok", "started": JOBS.started})
+        if not (TOKEN and hmac.compare_digest(self.headers.get("X-Pcap-Token", ""), TOKEN)):
+            return self._send(401, {"detail": "Missing or wrong pcap token"})
+        self._send(*(JOBS.answer(self.path) or (404, {"detail": "Not found"})))
 
     def do_PUT(self) -> None:  # noqa: N802
         authorized = bool(TOKEN) and hmac.compare_digest(self.headers.get("X-Pcap-Token", ""), TOKEN)
@@ -128,8 +139,11 @@ class Handler(BaseHTTPRequestHandler):
             if not _slots.acquire(blocking=False):
                 return self._send(503, {"detail": "The capture worker is busy; try again later"})
             try:
-                summary = nik_pcap.summarize(path, keylog)
-                found, expert = nik_pcap.objects(capture_id, path, keylog)
+                with JOBS.running(self.headers.get(jobs.HEADER)) as say:
+                    say("reading the packets (1 of 2)")
+                    summary = nik_pcap.summarize(path, keylog)
+                    say("listing the objects (2 of 2)")
+                    found, expert = nik_pcap.objects(capture_id, path, keylog)
                 self._send(200, {**summary, "objects": found, "expert": expert})
             finally:
                 _slots.release()
@@ -158,4 +172,10 @@ if __name__ == "__main__":
     GIVEN.clear()
     print(f"nik-pcap listening on :{PORT}", flush=True)
     threading.Thread(target=_expire, name="expire", daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    # A request in flight is not cut by the stop of the server: its thread goes on for the grace.
+    server.daemon_threads = True
+    signal.signal(signal.SIGTERM, lambda *_: jobs.stop_politely(server))
+    signal.signal(signal.SIGINT, lambda *_: jobs.stop_politely(server))
+    server.serve_forever()
+    jobs.drain(JOBS, STOP_GRACE)

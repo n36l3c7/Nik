@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifacts
+from .. import artifacts, work
 from ..core import store as sealed_store
 from ..core import vault
 from ..core.config import settings
@@ -84,7 +84,14 @@ def _worker_error(exc: previews.WorkerError) -> HTTPException:
 
 
 def _detail(row: NetworkCapture) -> dict[str, Any]:
-    return {**service.reference(row), "incidentId": row.incident_id, "meta": row.meta, "summary": row.summary}
+    return {
+        **service.reference(row),
+        "incidentId": row.incident_id,
+        "meta": row.meta,
+        "summary": row.summary,
+        # What restarts did to its analysis, and how far it is (work.py).
+        "work": work.of(row, "capture", row.id),
+    }
 
 
 def _needs_file(row: NetworkCapture) -> None:
@@ -168,16 +175,19 @@ def keep_capture(
     actor: str,
     background_tasks: Any,
     origin: str = "",
+    capture_id: str | None = None,
 ) -> NetworkCapture:
     """Store bytes Nik holds already as a capture and queue its analysis, where there is no upload
     (a file artifact analysed as a capture): what ``store_capture`` does, under the same limit.
-    Raises ``HTTPException`` for what is not a capture or is too large."""
+    Raises ``HTTPException`` for what is not a capture or is too large. ``capture_id`` is the id
+    the capture gets when the caller has to find it again (a conversion cut by a restart is done
+    again, and must not make a second capture)."""
     ext = store.capture_format(data[:CHUNK])
     if ext is None:
         raise HTTPException(status_code=422, detail="Not a pcap or pcapng file.")
     if len(data) > settings.PCAP_MAX_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"The capture exceeds {settings.PCAP_MAX_MB} MB.")
-    capture_id = uuid.uuid4().hex
+    capture_id = capture_id or uuid.uuid4().hex
     store.write_capture(capture_id, ext, [data])
     row = NetworkCapture(
         id=capture_id,

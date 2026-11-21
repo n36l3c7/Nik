@@ -254,6 +254,10 @@ services:
     cap_add: [CHOWN, SETUID, SETGID]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${API_MEMORY:-4g}
+    # Asked to stop, the server takes no new request and gives the ones in flight 20 s
+    # (API_STOP_GRACE), hands back the work and the leases it holds, and exits; gunicorn
+    # waits 30 s for that, and the engine this long before it kills the container.
+    stop_grace_period: 40s
     cpus: ${API_CPUS:-4}
     pids_limit: 512
     healthcheck:
@@ -342,6 +346,9 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${AUTOMATION_MEMORY:-1g}
+    # Asked to stop, the worker claims nothing more and gives the steps in flight 25 s to
+    # finish; what is not over then is taken back by the worker that starts next.
+    stop_grace_period: 35s
     cpus: ${AUTOMATION_CPUS:-2}
     pids_limit: 256
     logging: *logging
@@ -370,6 +377,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${SANDBOX_MEMORY:-512m}
+    # A script runs for seconds: the ones in flight finish.
+    stop_grace_period: 20s
     cpus: ${SANDBOX_CPUS:-1}
     pids_limit: 64
     logging: *logging
@@ -401,6 +410,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${ANALYZER_MEMORY:-4g}
+    # The analyses in flight get 20 s to finish (ANALYZER_STOP_GRACE); one that is cut is handed out again.
+    stop_grace_period: 30s
     cpus: ${ANALYZER_CPUS:-2}
     pids_limit: 512
     logging: *logging
@@ -425,6 +436,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${CAPA_MEMORY:-4g}
+    # The analysis in flight gets 20 s to finish (CAPA_STOP_GRACE); one that is cut is handed out again.
+    stop_grace_period: 30s
     cpus: ${CAPA_CPUS:-2}
     pids_limit: 512
     logging: *logging
@@ -451,6 +464,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${DOCVIEW_MEMORY:-2g}
+    # The conversions in flight get 20 s to finish (DOCVIEW_STOP_GRACE); one that is cut is handed out again.
+    stop_grace_period: 30s
     cpus: ${DOCVIEW_CPUS:-1}
     pids_limit: 512
     logging: *logging
@@ -480,6 +495,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${PCAP_MEMORY:-4g}
+    # The analyses in flight get 20 s to finish (PCAP_STOP_GRACE); one that is cut is handed out again.
+    stop_grace_period: 30s
     cpus: ${PCAP_CPUS:-2}
     pids_limit: 512
     logging: *logging
@@ -510,6 +527,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${BROWSER_MEMORY:-2g}
+    # Its sessions end with it: a scan that was cut visits again.
+    stop_grace_period: 20s
     cpus: ${BROWSER_CPUS:-2}
     pids_limit: 512
     logging: *logging

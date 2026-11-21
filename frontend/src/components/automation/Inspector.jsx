@@ -846,7 +846,7 @@ function KindSettings({
           )}
           <Field
             label="On a schedule"
-            hint="Five fields, as in cron: minute hour day month weekday. Every 5 minutes at most. Empty: no schedule."
+            hint="Five fields, as in cron: minute hour day month weekday. Every 5 minutes at most. Empty: no schedule. A time that passes while the server is stopped runs once when it starts again, however many were missed: the run reads when it was due in trigger.due, and how many in trigger.missed."
             problem={problemAt('cron')}
           >
             {(id) => (

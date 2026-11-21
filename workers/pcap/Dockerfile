@@ -12,7 +12,7 @@ RUN apt-get update \
     && mkdir /work && chown pcap:pcap /work
 
 WORKDIR /opt/nik-pcap
-COPY given.py nik_pcap.py server.py ./
+COPY given.py jobs.py nik_pcap.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

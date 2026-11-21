@@ -3,6 +3,7 @@ import { FolderClosed, FolderOpen, RefreshCw, Workflow } from 'lucide-react'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { api } from '../../services/api.js'
 import { RUN_COLORS, RUN_STATUSES, duration, isFinished, triggerLabel } from '../../domain/automation/runs.js'
+import { runStatus } from '../../domain/restarts.js'
 import { formatDateTime } from '../../lib/time.js'
 import { Badge, Button, EmptyState } from '../ui/index.js'
 import { SelectInput } from './fields.jsx'
@@ -217,7 +218,7 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
                     )}
                   </th>
                   <td className="border-b border-line-soft px-3 py-2">
-                    <Badge color={RUN_COLORS[run.status] ?? 'slate'}>{run.status}</Badge>
+                    <Badge color={RUN_COLORS[run.status] ?? 'slate'}>{runStatus(run)}</Badge>
                     {run.error && <span className="ml-2 text-high-fg">{run.error}</span>}
                   </td>
                   <td className="border-b border-line-soft px-3 py-2 text-fg-muted">

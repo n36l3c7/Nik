@@ -116,8 +116,11 @@ def manual(actor: str, incident: Incident | None) -> tuple[dict, dict]:
     return data, classes
 
 
-def schedule(at: str, cron: str) -> tuple[dict, dict]:
-    return {"at": at, "cron": cron}, {}
+def schedule(at: str, cron: str, due: str = "", late_seconds: int = 0, missed: int = 0) -> tuple[dict, dict]:
+    """What a run started by a schedule reads: when it started (``at``), when it was due (``due``:
+    earlier when the server was stopped at that time), by how much it is late, and how many other
+    firings passed meanwhile without a run."""
+    return {"at": at, "cron": cron, "due": due or at, "late_seconds": late_seconds, "missed": missed}, {}
 
 
 # --------------------------------------------------------------------------- #

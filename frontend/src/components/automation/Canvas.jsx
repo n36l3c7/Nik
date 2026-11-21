@@ -78,6 +78,7 @@ const STATUS_BORDERS = {
   done: 'border-accent',
   running: 'border-info-line',
   waiting: 'border-med-line',
+  interrupted: 'border-2 border-dashed border-med-line',
   failed: 'border-high-line',
   skipped: 'border-line opacity-50',
   pending: 'border-line opacity-70',
