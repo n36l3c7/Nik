@@ -293,7 +293,8 @@ deploy/secrets.sh move        # from .env into ./secrets
         <code>deploy/secrets.sh status</code> say how many entries, if any, cannot be checked for want of their key. A
         key that is retired by hand instead (the line removed from <code>.env</code>) is not carried:
         <code>python -m app.auditlog key --derived</code>, run while the old <code>SECRET_KEY</code> is still the one in
-        use, prints what belongs in <code>AUDIT_KEY_PREVIOUS</code>.
+        use, writes what belongs in <code>AUDIT_KEY_PREVIOUS</code>. It is a key: the command refuses to write it to a
+        terminal, so send it to a file only you can read (<code>compose exec -T api … &gt; file</code>).
       </p>
       <p>
         Stopped at any step, it is run again and goes on: until the change is verified the server holds both keys and

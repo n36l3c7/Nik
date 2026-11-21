@@ -40,6 +40,7 @@ Everything is kept in one row of ``settings`` (``SETTINGS_ID``).
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import logging
 import os
@@ -132,6 +133,21 @@ def _update(**changes: Any) -> dict[str, Any]:
         _write(db, doc)
         db.commit()
     return doc
+
+
+def why(error: BaseException) -> str:
+    """Why a file could not be put under a new key, in words chosen here from the kind of the
+    error: what is kept with the progress of a change of key, shown on the Keys screen and printed
+    by the command line. Never the text of the error itself, which is written by whatever raised
+    it and may hold anything."""
+    if isinstance(error, sealed.WrongKey):
+        return "no key the server holds opens it"
+    if isinstance(error, sealed.SealError):
+        return "it is damaged: it fails its check"
+    if isinstance(error, OSError):
+        code = errno.errorcode.get(error.errno or 0, "")
+        return "the system refused to read or write it" + (f" ({code})" if code else "")
+    return f"an error of the kind {type(error).__name__}"
 
 
 def clear_allowed() -> bool:
@@ -682,7 +698,7 @@ def rewrap_pass(now: float | None = None, holder: str = HOLDER, budget: float = 
         except FileNotFoundError:
             continue
         except (OSError, sealed.SealError) as error:
-            failed.append({"name": name, "reason": str(error)})
+            failed.append({"name": name, "reason": why(error)})
     progress["done"] = min(int(progress.get("total") or 0), int(progress.get("done") or 0) + moved)
     progress["failed"] = failed[:STUCK_KEPT]
     if left:
@@ -708,7 +724,7 @@ def rewrap_pass(now: float | None = None, holder: str = HOLDER, budget: float = 
             continue
         except (OSError, sealed.SealError) as error:
             if not any(entry["name"] == name for entry in wrong):
-                wrong.append({"name": name, "reason": str(error)})
+                wrong.append({"name": name, "reason": why(error)})
     if wrong:
         progress.update(state="failed", failed=wrong[:STUCK_KEPT], failedCount=len(wrong))
         if was != "failed":

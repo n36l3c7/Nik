@@ -11,7 +11,8 @@ receiver got) and exits 1 when something does not hold. ``export`` prints
 every entry as one JSON object a line, in the order of the chain: the file
 ``verifier.py`` checks on another machine. ``key`` says which key signs the
 entries now (its id, never the key) and which earlier keys this server can
-still make; ``key --derived`` prints the key derived from ``SECRET_KEY``, as
+still make; ``key --derived`` writes the key derived from ``SECRET_KEY`` (into a
+file or a pipe: it refuses a terminal), as
 it is written in ``AUDIT_KEY_PREVIOUS``: to keep before ``SECRET_KEY`` is
 changed for good, so that the entries it signed can still be checked.
 """
@@ -69,8 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "key":
         if args.derived:
+            from ..core import keys as secrets_of_the_server
             from ..core.config import settings
 
+            # A key: into a pipe or a file, never onto a screen.
+            if secrets_of_the_server.to_a_terminal("The key derived from SECRET_KEY"):
+                return 2
             print("hex:" + signing.derived(settings.SECRET_KEY).hex())
             return 0
         current, _secret = signing.current()

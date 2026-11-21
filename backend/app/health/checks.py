@@ -883,6 +883,9 @@ def tls_dates(host: str, port: int) -> dict[str, Any]:
     from cryptography import x509
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # The web container serves TLS 1.2 and 1.3 and nothing older (frontend/nginx/nginx.conf):
+    # nothing older is spoken here either.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     with socket.create_connection((host, port), TLS_TIMEOUT) as plain:

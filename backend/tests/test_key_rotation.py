@@ -444,7 +444,10 @@ def test_a_snapshot_that_cannot_be_read_keeps_the_change_open(server: TestClient
     change_secret_key(monkeypatch)
     progress = key_rotation.secret_pass()
     assert progress["state"] == "failed" and progress["failed"][0]["name"] == path.name
+    # Why is said in words of the server, by the kind of the error: never the text of the error.
+    assert progress["failed"][0]["reason"].startswith("an error of the kind ")
     assert path.read_bytes() == bytes(raw)
+    assert key_rotation.main(["status", "SECRET_KEY"]) == 0
     shown = server.get("/api/system/keys").json()["keys"][0]["rotation"]
     assert shown["state"] == "failed" and shown["failed"][0]["name"] == path.name
     # The secrets of the database were moved all the same, and read: only the file is in the way.
@@ -797,3 +800,93 @@ def test_the_key_of_the_forwarding_certificate_is_moved_by_the_same_change(serve
         db.merge(Setting(id=forward.STATE_ID, doc={"active": None}))
         db.commit()
         assert "key of the certificate the audit log is forwarded with" not in [w for w, _t in vault.inventory(db)]
+
+
+# --------------------------------------------------------------------------- #
+# What the command line prints, and where it refuses to                       #
+# --------------------------------------------------------------------------- #
+class Terminal(io.StringIO):
+    """Standard output when a person runs the command by hand."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_the_status_printed_is_made_of_fixed_words_numbers_and_names():
+    assert key_rotation.status_lines({"state": "idle", "total": 5, "done": 5}) == ["idle"]
+    assert key_rotation.status_lines({"state": "running"}) == ["running", "the server has not counted yet"]
+    assert key_rotation.status_lines({"state": "verified", "total": 7, "done": 7}) == [
+        "verified",
+        "7 of 7 under the new key",
+    ]
+    # A state that is not one of the four words is never printed as it is.
+    assert key_rotation.status_lines({"state": "hex:00ff a key that was put there"}) == ["idle"]
+    lines = key_rotation.status_lines(
+        {
+            "state": "failed",
+            "total": 3,
+            "done": 2,
+            "failed": [
+                {"name": "nik-upgrade-20261101-000000.nikbak", "reason": "an error of the kind WrongKey"},
+                {"name": "aa/bb.bin\x1b[31m; rm -rf $HOME", "reason": "the system refused to read or write it (EIO)"},
+            ],
+        }
+    )
+    assert lines == [
+        "failed",
+        "2 of 3 under the new key",
+        "failed: nik-upgrade-20261101-000000.nikbak: an error of the kind WrongKey",
+        "failed: aa/bb.bin31mrm-rfHOME: the system refused to read or write it (EIO)",
+    ]
+
+
+def test_why_something_failed_is_said_in_words_of_the_server_never_in_those_of_the_error():
+    from app.core import sealed
+
+    said = "the text of an error, which may hold anything: hunter2"
+    assert store_seal.why(sealed.WrongKey(said)) == "no key the server holds opens it"
+    assert store_seal.why(sealed.Damaged(said)) == "it is damaged: it fails its check"
+    assert store_seal.why(OSError(5, said)) == "the system refused to read or write it (EIO)"
+    assert store_seal.why(OSError(said)) == "the system refused to read or write it"
+    assert store_seal.why(ValueError(said)) == "an error of the kind ValueError"
+    assert store_seal.why(store.DamagedFile(said)) == "it is damaged: it fails its check"
+
+
+def test_a_command_that_writes_a_key_refuses_a_terminal(server: TestClient, derived_audit_key, monkeypatch, capsys):
+    """new-key, audit-carry and ``auditlog key --derived`` write a key on standard output for a pipe.
+    Run by hand in a terminal they write nothing and say where a key goes."""
+    import sys
+
+    from app.auditlog import __main__ as audit_command
+    from app.auditlog import key as signing
+
+    monkeypatch.setattr(settings, "SECRET_KEY", OLD)
+    write_entries(2)
+    change_secret_key(monkeypatch)  # an earlier derived key signed entries: there is one to carry
+    for run, argv in (
+        (key_rotation.main, ["new-key"]),
+        (key_rotation.main, ["audit-carry"]),
+        (audit_command.main, ["key", "--derived"]),
+    ):
+        screen = Terminal()
+        monkeypatch.setattr(sys, "stdout", screen)
+        assert run(argv) == 2, argv
+        assert screen.getvalue() == "", argv
+    monkeypatch.setattr(sys, "stdout", sys.__stdout__)
+    said = capsys.readouterr().err
+    assert said.count("is a secret and is not written to a terminal") == 3
+    assert signing.derived(OLD).hex() not in said and signing.derived(NEW).hex() not in said
+    # Into a pipe or a file they write, as before.
+    pipe = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", pipe)
+    assert key_rotation.main(["new-key"]) == 0 and key_rotation.main(["audit-carry"]) == 0
+    assert audit_command.main(["key", "--derived"]) == 0
+    monkeypatch.setattr(sys, "stdout", sys.__stdout__)
+    written = pipe.getvalue().splitlines()
+    assert len(written) == 3 and len(written[0]) == 64
+    assert written[1] == "hex:" + signing.derived(OLD).hex() and written[2] == "hex:" + signing.derived(NEW).hex()
+    # The commands that print no key are not concerned: a person reads them in a terminal.
+    monkeypatch.setattr(sys, "stdout", Terminal())
+    assert key_rotation.main(["status", "SECRET_KEY"]) == 0 and key_rotation.main(["audit-unchecked"]) == 0
+    assert audit_command.main(["key"]) == 0
+    monkeypatch.setattr(sys, "stdout", sys.__stdout__)

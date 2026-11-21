@@ -136,3 +136,24 @@ def several(secret: str, env: Mapping[str, str] | None = None) -> list[str]:
     """A secret that holds several values, separated by commas or new lines (the earlier keys)."""
     raw = value(secret, "", env)
     return [part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()]
+
+
+def to_a_terminal(what: str, out=None, err=None) -> bool:
+    """Whether standard output is a terminal, said on standard error when it is.
+
+    A few commands write a key on standard output, for the script that pipes it into the place keys
+    are kept. Run by hand in a terminal they would put the key on a screen, and in the scrollback of
+    whoever looks next: they ask this first, and write nothing when it answers True."""
+    import sys
+
+    out = sys.stdout if out is None else out
+    try:
+        shown = bool(out.isatty())
+    except (AttributeError, ValueError):
+        shown = False
+    if shown:
+        (sys.stderr if err is None else err).write(
+            f"{what} is a secret and is not written to a terminal. Send it where it goes: into a file only you "
+            "can read (> file, with umask 077), or through a pipe to the command that stores it.\n"
+        )
+    return shown

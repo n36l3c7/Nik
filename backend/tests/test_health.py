@@ -827,7 +827,9 @@ def test_the_keys_and_the_encryption_of_the_store(client: TestClient, monkeypatc
     assert "SECRET_KEY" in half["detail"] and "holds both keys" in half["detail"]
     assert ("nik_key_rotation_state", {"key": "SECRET_KEY"}, 1) in half["metrics"]
     with SessionLocal() as db:
-        key_rotation._write(db, {"secret": {"to": key_rotation.fingerprint("SECRET_KEY"), "state": "failed"}})
+        key_rotation._write(
+            db, {key_rotation.REKEYING: {"to": key_rotation.fingerprint("SECRET_KEY"), "state": "failed"}}
+        )
         db.commit()
     failed = _rows(now)["keys.state"]
     assert failed["state"] == "attention" and failed["value"] == "A change of key is stopped"

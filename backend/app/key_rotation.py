@@ -64,6 +64,11 @@ SETTINGS_ID = 51  # 50 is store_seal.py
 LINK = "/settings/system/keys"
 SYSTEM = "system"
 REQUEST_LASTS = 24 * 3600
+# Where the row keeps how far a change of SECRET_KEY is: counts, dates, the names of the snapshots
+# that could not be written again. Never a key, never a value that a key protects.
+REKEYING = "rekeying"
+# The words a change of key is in, and the only ones the command line ever prints for it.
+STATES = ("idle", "running", "failed", "verified")
 REKEY = ".rekey"
 
 SECRET, STORE, AUDIT = "SECRET_KEY", "STORE_KEY", "AUDIT_KEY"
@@ -400,7 +405,7 @@ def secret_needed(doc: dict[str, Any]) -> bool:
     """Whether the server holds an earlier ``SECRET_KEY`` that something may still be under."""
     if not settings.SECRET_KEY_PREVIOUS:
         return False
-    return (doc.get("secret") or {}).get("verifiedFor") != fingerprint(SECRET)
+    return (doc.get(REKEYING) or {}).get("verifiedFor") != fingerprint(SECRET)
 
 
 def secret_pass(now: float | None = None, holder: str = store_seal.HOLDER) -> dict[str, Any]:
@@ -412,9 +417,9 @@ def secret_pass(now: float | None = None, holder: str = store_seal.HOLDER) -> di
     with SessionLocal() as db:
         doc = read(db)
     if not secret_needed(doc) or not store_seal._acquire(now, holder):
-        return doc.get("secret") or {}
+        return doc.get(REKEYING) or {}
     mine = fingerprint(SECRET)
-    progress = dict(doc.get("secret") or {})
+    progress = dict(doc.get(REKEYING) or {})
     if progress.get("to") != mine:
         progress = {"to": mine, "state": "running", "startedAt": _iso(time.time() if now is None else now), "moved": 0}
     progress["moved"] = int(progress.get("moved") or 0) + vault.reencrypt(SessionLocal)
@@ -428,7 +433,9 @@ def secret_pass(now: float | None = None, holder: str = store_seal.HOLDER) -> di
                     db.commit()
             except Exception as error:  # noqa: BLE001 - one file that cannot be read does not stop the others
                 db.rollback()
-                failed.append({"name": path.name, "reason": f"{type(error).__name__}: {error}"[:300]})
+                # The name of the file and the kind of the error, in words chosen here: never the
+                # text of the error, which is written by whatever raised it.
+                failed.append({"name": path.name, "reason": store_seal.why(error)})
         progress["snapshots"] = rewritten
         # The proof: every secret reads under the new key alone. What no key the server holds can read
         # was lost before this change (an earlier one, done without its old key) and is said apart.
@@ -448,9 +455,9 @@ def secret_pass(now: float | None = None, holder: str = store_seal.HOLDER) -> di
         progress["done"] = progress["total"] - sum(behind.values())
         doc = read(db)
         if behind or failed:
-            was = (doc.get("secret") or {}).get("state")
+            was = (doc.get(REKEYING) or {}).get("state")
             progress["state"] = "failed" if failed else "running"
-            doc["secret"] = progress
+            doc[REKEYING] = progress
             _write(db, doc)
             if failed and was != "failed":
                 said = (
@@ -462,7 +469,7 @@ def secret_pass(now: float | None = None, holder: str = store_seal.HOLDER) -> di
             db.commit()
             return progress
         progress.update(state="verified", verifiedFor=mine, verifiedAt=_iso(time.time()))
-        doc["secret"] = progress
+        doc[REKEYING] = progress
         doc.setdefault("requests", {}).pop(SECRET, None)
         seen = dict(doc.get("keys") or {})
         known = dict(seen.get(SECRET) or {})
@@ -539,7 +546,7 @@ def requested(db: OrmSession, name: str, now: float | None = None) -> dict[str, 
 # --------------------------------------------------------------------------- #
 def _rotation(doc: dict[str, Any], store_doc: dict[str, Any], name: str) -> dict[str, Any]:
     """Where a change of this key stands: ``idle`` | ``running`` | ``failed`` | ``verified``."""
-    progress = dict((store_doc.get("rewrap") if name == STORE else doc.get("secret")) or {})
+    progress = dict((store_doc.get("rewrap") if name == STORE else doc.get(REKEYING)) or {})
     if not _previous(name):
         # No earlier key is held: nothing is in progress; the last change, if any, is history.
         # (The identifier of a store key is not shown: the screen shows fingerprints.)
@@ -852,8 +859,12 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("audit-unchecked")
     args = parser.parse_args(argv)
     if args.command == "new-key":
+        if keys.to_a_terminal("A new key"):
+            return 2
         sys.stdout.write(random_source.token_hex(32) + "\n")
         return 0
+    if args.command == "audit-carry" and keys.to_a_terminal("A key of the audit log"):
+        return 2
     from .core.db import SessionLocal
 
     with SessionLocal() as db:
@@ -872,17 +883,34 @@ def main(argv: list[str] | None = None) -> int:
             print(f"asked for by {asked['by']} at {asked['at']}")
             return 0
         rotation = _rotation(read(db), store_seal.read(db), args.name)
-    print(rotation["state"])
-    if rotation["state"] != "idle":
-        # Nothing is counted before the first pass of the server; then how far it is.
-        print(
-            f"{rotation.get('done', 0)} of {rotation['total']} under the new key"
-            if rotation.get("total")
-            else "the server has not counted yet"
-        )
-        for entry in rotation.get("failed") or []:
-            print(f"failed: {entry.get('name')}: {entry.get('reason')}")
+    for line in status_lines(rotation):
+        print(line)
     return 0
+
+
+def status_lines(rotation: dict[str, Any]) -> list[str]:
+    """What ``status`` prints of a change of key, built here from what a change of key is made of:
+    one of the four words of ``STATES``, two numbers, and for each thing that could not be put
+    under the new key its name (a file of the store or a snapshot of the backup directory) and why,
+    in the words ``store_seal.why`` chose. Nothing is passed through as it was stored: the word is
+    picked from the list, the numbers are numbers, a name is cut down to what a file name is."""
+    state = next((word for word in STATES if word == rotation.get("state")), STATES[0])
+    lines = [state]
+    if state == STATES[0]:
+        return lines
+    total, done = int(rotation.get("total") or 0), int(rotation.get("done") or 0)
+    # Nothing is counted before the first pass of the server; then how far it is.
+    lines.append(f"{done} of {total} under the new key" if total else "the server has not counted yet")
+    for entry in rotation.get("failed") or []:
+        lines.append(f"failed: {_file_name(entry.get('name'))}: {_file_name(entry.get('reason'), words=True)}")
+    return lines
+
+
+def _file_name(text: Any, words: bool = False) -> str:
+    """A name as a file has one (letters, digits, ``. _ - /``), or a short sentence of plain words
+    (the same and spaces, ``( ) : ,``): whatever else was there is left out."""
+    kept = "._-/" + (" ():," if words else "")
+    return "".join(char for char in str(text or "") if char.isalnum() or char in kept)[:200]
 
 
 if __name__ == "__main__":
