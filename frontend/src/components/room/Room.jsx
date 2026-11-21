@@ -19,9 +19,11 @@ import { api } from '../../services/api.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { argumentHints, completions, lineKind, recall, remember } from '../../domain/commandLine.js'
 import { EVIDENCE, asTable, authorLabel, cell, contextWrites, entryLine, threaded } from '../../domain/warRoom.js'
+import { copyText } from '../../lib/download.js'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
 import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
+import JsonBlock from '../ui/JsonBlock.jsx'
 import IocText from '../ioc/IocText.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -77,17 +79,9 @@ const TONES = {
   system: { icon: Info, className: 'text-fg-subtle' },
 }
 
-function Json({ value }) {
-  return (
-    <pre className="max-h-80 overflow-auto bg-canvas p-2 font-mono text-[11px] leading-relaxed text-fg">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  )
-}
-
 function Result({ value }) {
   const table = asTable(value)
-  if (!table) return <Json value={value} />
+  if (!table) return <JsonBlock value={value} what="the result" />
   return (
     <div className="max-h-80 overflow-auto border border-line">
       <table className="w-full border-collapse text-left text-xs">
@@ -153,12 +147,8 @@ function Inspector({ base, pane: paneName, entry, raw, canMark, onClose, onChang
     }
   }
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(detail ?? entry, null, 2))
-      showToast({ message: 'Copied as JSON.' })
-    } catch {
-      showToast({ message: 'The browser refused to copy.' })
-    }
+    const done = await copyText(JSON.stringify(detail ?? entry, null, 2))
+    showToast({ message: done ? 'Copied as JSON.' : 'The browser refused to copy.' })
   }
 
   return (
@@ -221,6 +211,12 @@ function Inspector({ base, pane: paneName, entry, raw, canMark, onClose, onChang
             {entry.kind === 'result' ? line.text : <IocText text={line.text} />}
           </p>
         )}
+        {entry.body?.item !== undefined && entry.body?.item !== null && (
+          <section className="flex flex-col gap-1">
+            <Heading>The item as it came</Heading>
+            <JsonBlock value={entry.body.item} what="the item" />
+          </section>
+        )}
         {!detail && (
           <p role="status" className="font-mono text-xs text-fg-muted">
             Loading…
@@ -236,19 +232,19 @@ function Inspector({ base, pane: paneName, entry, raw, canMark, onClose, onChang
             {step.output !== null && step.output !== undefined && (
               <section className="flex flex-col gap-1">
                 <Heading>Result</Heading>
-                {raw ? <Json value={step.output} /> : <Result value={step.output} />}
+                {raw ? <JsonBlock value={step.output} what="the result" /> : <Result value={step.output} />}
               </section>
             )}
             {step.request && (
               <section className="flex flex-col gap-1">
                 <Heading>What was sent</Heading>
-                <Json value={step.request} />
+                <JsonBlock value={step.request} what="what was sent" />
               </section>
             )}
             {step.input && (
               <section className="flex flex-col gap-1">
                 <Heading>What it was given</Heading>
-                <Json value={step.input} />
+                <JsonBlock value={step.input} what="what it was given" />
               </section>
             )}
             {wrote.length > 0 && (

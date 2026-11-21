@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Crosshair, Download, Link2, ListPlus, RefreshCw, ShieldCheck, Share2 } from 'lucide-react'
+import { Crosshair, Download, Link2, ListPlus, RefreshCw, ScanSearch, ShieldCheck, Share2, X } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, StatCard } from '../../ui/index.js'
 import { IocValue, useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { useIocLibrary } from '../../../context/IocLibraryContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
 import { IOC_TYPES, sourceLabel } from '../../../domain/iocs.js'
+import { onlyFound, scanWords } from '../../../domain/indicatorsFound.js'
+import { useAuth } from '../../../context/AuthContext.jsx'
+import { useToast } from '../../../context/ToastContext.jsx'
 import { reputationRank, verdictMeta } from '../../../domain/enrichment.js'
 import { verdictRowClass } from '../../../domain/iocLibrary.js'
 import { formatDateTime } from '../../../lib/time.js'
@@ -17,6 +20,12 @@ import { formatDateTime } from '../../../lib/time.js'
  * incidents it appears in. Clicking a value opens "Where seen"; right-click
  * (or the shield button) adds it to the shared allowlist. Allowlisted values
  * (Settings → IOC allowlist) are hidden by default and never exported.
+ *
+ * Some are there because Nik found them by itself in the fields and the
+ * context when the incident came in ("Found · <path>"). One that is there
+ * for that alone can be removed, and is not found again; the line under the
+ * table says what the last reading came to, reads the incident now, and
+ * gives back what was removed.
  */
 
 const TYPE_OPTIONS = [
@@ -130,6 +139,27 @@ export default function IocsTab({ incident }) {
   const { openAllowlist, iocMenu } = useIocLookup()
   const { openCheck, openListForm, version: libraryVersion } = useIocLibrary()
   const { iocAllowlist } = useSettings()
+  const { can } = useAuth()
+  const { showToast } = useToast()
+  const canWrite = can('write')
+  const [found, setFound] = useState(null)
+  const [reading, setReading] = useState(false)
+  const [state, setState] = useState({ loading: true, iocs: [], error: null })
+  const foundUrl = `/incidents/${encodeURIComponent(incident.id)}/iocs/found`
+  // What was found by itself: asked again after each change, with the table.
+  const act = useCallback(
+    async (what, body, said) => {
+      try {
+        setFound(await api.post(`${foundUrl}/${what}`, body))
+        const res = await api.get(`/incidents/${encodeURIComponent(incident.id)}/iocs`)
+        setState({ loading: false, iocs: res?.iocs ?? [], error: null })
+        if (said) showToast({ message: said })
+      } catch (failure) {
+        showToast({ message: failure.message })
+      }
+    },
+    [foundUrl, incident.id, showToast],
+  )
   const columns = useMemo(
     () => [
       ...BASE_COLUMNS,
@@ -137,36 +167,56 @@ export default function IocsTab({ incident }) {
         key: 'actions',
         label: '',
         className: 'w-px',
-        render: (row) =>
-          row.allowlisted ? null : (
-            <button
-              type="button"
-              onClick={() => openAllowlist(row.type, row.value)}
-              title="Add to the allowlist"
-              aria-label={`Add ${row.value} to the allowlist`}
-              className="p-1 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <ShieldCheck className="h-4 w-4" />
-            </button>
-          ),
+        render: (row) => (
+          <span className="flex items-center">
+            {canWrite && onlyFound(row.sources) && (
+              <button
+                type="button"
+                onClick={() =>
+                  act('remove', { type: row.type, value: row.value }, 'Removed. It will not be found again here.')
+                }
+                title="Remove from this incident: it was found by itself, and will not be found again"
+                aria-label={`Remove ${row.value} from this incident`}
+                className="p-1 text-fg-muted hover:text-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            {!row.allowlisted && (
+              <button
+                type="button"
+                onClick={() => openAllowlist(row.type, row.value)}
+                title="Add to the allowlist"
+                aria-label={`Add ${row.value} to the allowlist`}
+                className="p-1 text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <ShieldCheck className="h-4 w-4" />
+              </button>
+            )}
+          </span>
+        ),
       },
     ],
-    [openAllowlist],
+    [openAllowlist, canWrite, act],
   )
-  const [state, setState] = useState({ loading: true, iocs: [], error: null })
   const [typeFilter, setTypeFilter] = useState('all')
   const [scope, setScope] = useState('all')
   const [showAllowlisted, setShowAllowlisted] = useState(false)
 
   const load = useCallback(
-    (signal) =>
+    (signal) => {
       api
+        .get(foundUrl, { signal })
+        .then((answer) => setFound(answer))
+        .catch(() => {})
+      return api
         .get(`/incidents/${encodeURIComponent(incident.id)}/iocs`, { signal })
         .then((res) => setState({ loading: false, iocs: res?.iocs ?? [], error: null }))
         .catch((err) => {
           if (!signal?.aborted) setState((s) => ({ ...s, loading: false, error: err?.message ?? 'Failed to load.' }))
-        }),
-    [incident.id],
+        })
+    },
+    [incident.id, foundUrl],
   )
 
   // Reload when the incident changes (its data was saved and reindexed).
@@ -301,6 +351,62 @@ export default function IocsTab({ incident }) {
             toolbar={toolbar}
             emptyMessage={state.loading ? 'Loading…' : 'No indicators match the current filters'}
           />
+        )}
+        {found && (
+          <div
+            aria-label="Indicators found by themselves"
+            className="mt-4 flex flex-col gap-2 border-t border-line-soft pt-3 text-xs"
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="min-w-0 flex-1 text-fg-muted">
+                <span className="text-fg">Found by themselves: {found.found.length}.</span>{' '}
+                {scanWords(found.scan, found.on)}
+              </p>
+              {canWrite && (
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  icon={ScanSearch}
+                  waiting={reading}
+                  onClick={async () => {
+                    setReading(true)
+                    await act('scan', undefined, 'The incident was read for indicators.')
+                    setReading(false)
+                  }}
+                >
+                  Find indicators now
+                </Button>
+              )}
+            </div>
+            {found.removed.length > 0 && (
+              <details>
+                <summary className="cursor-pointer text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                  Removed, and not found again: {found.removed.length}
+                </summary>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {found.removed.map((row) => (
+                    <li key={`${row.type}:${row.value}`} className="flex items-center gap-2">
+                      <Badge color="slate">{IOC_TYPES[row.type]?.short ?? row.type}</Badge>
+                      <span className="min-w-0 flex-1 truncate font-mono text-fg">{row.value}</span>
+                      <span className="text-fg-muted">
+                        removed by {row.removedBy} · read at {row.path}
+                      </span>
+                      {canWrite && (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          aria-label={`Put ${row.value} back`}
+                          onClick={() => act('restore', { type: row.type, value: row.value }, 'Put back.')}
+                        >
+                          Put back
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
         )}
       </Card>
     </div>

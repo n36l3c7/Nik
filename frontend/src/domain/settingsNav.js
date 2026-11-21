@@ -71,6 +71,14 @@ export const SETTINGS_GROUPS = [
         permission: 'admin',
         keywords: 'sources connectors instances api keys virustotal reputation lookups retention automatic enrichment',
       },
+      {
+        id: 'found',
+        slug: 'found',
+        label: 'Indicators found',
+        permission: 'admin',
+        keywords:
+          'ingestion new incident context read by itself extract recognise defanged limit paths left out private',
+      },
     ],
   },
   {

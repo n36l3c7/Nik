@@ -319,6 +319,10 @@ def apply(db: OrmSession, incident: Incident, writes: list[tuple[str, Any]], sou
                     db.add(IncidentContextMeta(incident_id=incident.id, path_key=key, source=source, at=stamp))
                 else:
                     meta.source, meta.at = source, stamp
+            # What a connector brings to an incident that was read for indicators is read again.
+            from . import indicators_found
+
+            indicators_found.after_update(db, incident, source)
             return [*(f"field:{name}" for name in field_changes), *dict.fromkeys(touched)]
         db.expire(row)  # someone wrote in between: read it again
     raise ContextError("The context was being written by something else: try again")

@@ -4952,6 +4952,114 @@ test('the Context tab shows what playbooks read of the incident, with the path o
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
 })
 
+test('a value and its path are copied from the context, a text is made indicators, and what was found can be removed', async () => {
+  test.setTimeout(120_000)
+  const before = page.url()
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
+  // An incident of its own, whose name holds a domain and a private address: read as it is made.
+  const made = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-found', name: 'Beacon to e2e-found-site.com from 10.1.2.3', host: 'E2E-FOUND', data: {} },
+  })
+  expect(made.status(), await made.text()).toBe(201)
+  const found = await (await page.request.get('/api/incidents/e2e-found/iocs/found')).json()
+  expect(found.found.map((row) => [row.type, row.value, row.path, row.door])).toEqual([
+    ['domain', 'e2e-found-site.com', 'incident.name', 'hand'],
+  ])
+  expect(found.scan.leftOut).toEqual({ private: 1 })
+  await page.goto('/incident/e2e-found')
+  const tabs = page.locator('nav[aria-label="Analysis tabs"]')
+
+  // The Context tab: a value is text the mouse selects, and the chosen one is copied whole.
+  const tree = page.getByRole('tree', { name: 'Context of the incident' })
+  await expect(async () => {
+    await tabs.getByRole('button', { name: 'Context', exact: true }).click()
+    await expect(tree).toBeVisible({ timeout: 2000 })
+  }).toPass()
+  const host = tree.getByRole('treeitem', { name: /^host E2E-FOUND$/ })
+  // On its first letters: the cell of the value is as wide as the row.
+  await host.getByText('E2E-FOUND').dblclick({ position: { x: 6, y: 6 } })
+  expect(await page.evaluate(() => window.getSelection().toString())).toContain('E2E')
+  await page.evaluate(() => window.getSelection().removeAllRanges())
+  const chosen = page.getByLabel('The chosen value')
+  await expect(chosen.getByLabel('The value, whole')).toHaveText('E2E-FOUND')
+  await chosen.getByRole('button', { name: 'Copy the value' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Value copied.' })).toBeVisible()
+  expect(await clipboard()).toBe('E2E-FOUND')
+  await chosen.getByRole('button', { name: 'Copy the path', exact: true }).click()
+  expect(await clipboard()).toBe('{{ incident.host }}')
+  await chosen.getByRole('button', { name: 'Copy the path for the command line' }).click()
+  expect(await clipboard()).toBe('${incident.host}')
+  // With the keyboard: the arrows move, Ctrl C copies the value of the row.
+  await host.getByRole('button').focus()
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Control+c')
+  await expect.poll(clipboard).toBe('E2E-FOUND')
+  // The right click of a row copies too; a branch is copied as JSON.
+  await tree
+    .getByRole('treeitem', { name: /^name Beacon to/ })
+    .getByRole('button')
+    .click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Copy the path', exact: true }).click()
+  expect(await clipboard()).toBe('{{ incident.name }}')
+  await tree
+    .getByRole('treeitem', { name: /^incident \d+$/ })
+    .getByRole('button')
+    .click()
+  await chosen.getByRole('button', { name: 'Copy the value' }).click()
+  await expect.poll(async () => JSON.parse(await clipboard()).name).toBe('Beacon to e2e-found-site.com from 10.1.2.3')
+  await tree
+    .getByRole('treeitem', { name: /^incident \d+$/ })
+    .getByRole('button')
+    .click()
+
+  // The War Room says once what was found, and its command line makes indicators of a text.
+  await tabs.getByRole('button', { name: 'War Room', exact: true }).click()
+  const stream = page.getByRole('list', { name: 'War Room' })
+  await expect(stream.getByText('1 indicator found: 1 domain; 1 left out as private.')).toHaveCount(1)
+  const line = page.locator('#war-room-line')
+  await line.fill('!nik-make-indicators text="hxxp://e2e-made-site[.]net/gate.php kernel32.dll"')
+  await line.press('Enter')
+  const result = stream.getByRole('listitem').filter({ hasText: /^automation.*nik-make-indicators/ })
+  await expect(result).toHaveCount(1, { timeout: 20_000 })
+  await result.getByRole('button').first().click()
+  const inspector = page.getByRole('complementary', { name: 'The chosen entry' })
+  await expect(inspector).toContainText('http://e2e-made-site.net/gate.php')
+  // What a step gave is copied whole with its button.
+  await inspector.getByRole('button', { name: 'Copy the result' }).click()
+  await expect.poll(async () => JSON.parse(await clipboard()).linked).toBe(2)
+  await inspector.getByRole('button', { name: 'Close the entry' }).click()
+
+  // The Indicators tab: the two that were made, the one that was found with where, which can be removed.
+  await tabs.getByRole('button', { name: 'Indicators', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'e2e-found-site.com' })).toContainText('Found · incident.name')
+  await expect(page.getByRole('row').filter({ hasText: 'http://e2e-made-site.net/gate.php' })).toHaveCount(1)
+  const byItself = page.getByLabel('Indicators found by themselves')
+  await expect(byItself).toContainText('Found by themselves: 1.')
+  await page.getByRole('button', { name: 'Remove e2e-found-site.com from this incident' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'It will not be found again here.' })).toBeVisible()
+  await expect(byItself).toContainText('Found by themselves: 0.')
+  await expect(byItself).toContainText('Removed, and not found again: 1')
+  // Asked for again, it stays removed.
+  await byItself.getByRole('button', { name: 'Find indicators now' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'The incident was read for indicators.' })).toBeVisible()
+  await expect(byItself).toContainText('Found by themselves: 0.')
+  const held = (await (await page.request.get('/api/incidents/e2e-found/iocs')).json()).iocs
+  expect(held.map((item) => `${item.type} ${item.value}`).sort()).toEqual([
+    'domain e2e-made-site.net',
+    'url http://e2e-made-site.net/gate.php',
+  ])
+
+  // Left as it was.
+  expect((await page.request.delete('/api/incidents/e2e-found')).status()).toBe(204)
+  await page.goto(before)
+  // On the Summary, as the test before left it: the page was loaded again, and the next test goes
+  // back to a Summary that is already there.
+  await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Summary of the incident' })).toBeVisible()
+})
+
 test('the War Room holds what was said and done on the incident, and marks evidence', async () => {
   const tabs = page.locator('nav[aria-label="Analysis tabs"]')
   await tabs.getByRole('button', { name: 'War Room', exact: true }).click()

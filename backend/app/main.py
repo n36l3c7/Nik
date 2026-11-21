@@ -61,6 +61,7 @@ from .routers import (
     incident_page,
     incident_types,
     incidents,
+    indicators_found,
     ioc_library,
     iocs,
     jobs,
@@ -420,6 +421,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
+app.include_router(indicators_found.router, prefix="/api")
 app.include_router(mailboxes.router, prefix="/api")
 app.include_router(iocs.router, prefix="/api")
 app.include_router(search.router, prefix="/api")

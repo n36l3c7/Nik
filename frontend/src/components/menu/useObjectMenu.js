@@ -3,6 +3,7 @@ import { Braces, Copy, Link2 } from 'lucide-react'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { objectMenuItems } from '../../domain/menus.js'
+import { copyText } from '../../lib/download.js'
 
 const ICONS = { link: Link2, copy: Copy, json: Braces }
 
@@ -22,16 +23,11 @@ export function useObjectMenu() {
 
   return useCallback(
     (event, spec) => {
-      const copyText = async (what, text) => {
-        let done = true
-        try {
-          await navigator.clipboard.writeText(text)
-        } catch {
-          done = false
-        }
+      const copy = async (what, text) => {
+        const done = await copyText(text)
         showToast({ message: done ? `${what} copied.` : 'The browser refused to copy.' })
       }
-      const items = objectMenuItems(spec, { copyText, origin: window.location.origin, icons: ICONS })
+      const items = objectMenuItems(spec, { copyText: copy, origin: window.location.origin, icons: ICONS })
       return openMenu(event, { title: spec.title ?? '', items })
     },
     [openMenu, showToast],

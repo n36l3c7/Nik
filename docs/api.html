@@ -527,6 +527,50 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/incidents/{id}/iocs/found</code></td>
+              <td>
+                The indicators the incident was given by itself when it came in:
+                <code>{ found, removed, scan, on }</code>. Each row is
+                <code>{ type, value, path, door, foundAt, removedAt, removedBy }</code>: <code>path</code> is where it
+                was read (<code>context.URL[0].Data</code>), <code>door</code> how the incident came in
+                (<code>fetch</code>, <code>api</code>, <code>hand</code>, <code>playbook</code>, <code>mirror</code>,
+                <code>asked</code>). <code>scan</code> is the last reading (<code
+                  >{ at, door, new, kept, byType, leftOut, over, removed, unread, cap }</code
+                >), null for an incident that was never read.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>POST /api/incidents/{id}/iocs/found/scan</code> · <code>…/remove</code> ·
+                <code>…/restore</code>
+              </td>
+              <td>
+                <code>write</code>. <code>scan</code> reads the incident now, whatever the setting says.
+                <code>remove</code> takes <code>{ type, value }</code> off the incident and remembers it: the value is
+                not found again there; <code>restore</code> gives it back. Each answers as the <code>GET</code> does,
+                and 404 when the incident was not given that indicator.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET/PUT /api/iocs/found/settings</code></td>
+              <td>
+                How incidents are read for indicators (<code>PUT</code>: admin; a key left out keeps what it had):
+                <code>enabled</code>, <code>types</code>, <code>leaveOutPrivate</code>, <code>leaveOutBenign</code>,
+                <code>cap</code> (1 to 500), <code>skip</code> (the paths never read), <code>lookUps</code> (whether the
+                automatic look-ups ask about what was only found). The answer adds <code>instances</code> (the instances
+                told apart), <code>allTypes</code>, <code>skipDefault</code>, <code>capMax</code> and
+                <code>limits</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET/PUT /api/iocs/found/instances/{id}</code></td>
+              <td>
+                <code>connectors.manage</code>. Whether the incidents of one instance of a connector are read:
+                <code>{ enabled }</code> true, false, or null to follow the setting. The answer is
+                <code>{ id, enabled, setting }</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/iocs/lookup?type=&amp;value=</code></td>
               <td>
                 Every incident an indicator appears in ("where seen"); per incident,

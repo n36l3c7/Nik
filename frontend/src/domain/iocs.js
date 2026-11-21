@@ -68,6 +68,11 @@ export function sourceLabel(source) {
       return `URL scan · ${id}`
     case 'warroom':
       return 'War Room · looked up'
+    case 'playbook':
+      return 'Made by a playbook'
+    case 'found':
+      // Found by itself when the incident came in, at this path of its fields or its context.
+      return `Found · ${id}`
     case 'manual':
       return 'Added by hand'
     default:

@@ -379,6 +379,15 @@
           while it is held.
         </li>
         <li>
+          <strong>What nobody chose is not asked about.</strong> The indicators Nik finds by itself in an incident as it
+          comes in (<a href="guide.html#found-indicators">Indicators found by themselves</a>) start no look-up, and the
+          automatic look-ups leave out a value that incidents hold for that reason alone: an alert with a hundred
+          addresses spends no quota and sends nothing out. An administrator can let the automatic look-ups ask about
+          them (Settings → Indicators found); they are then judged like every other value, by the rule above and by the
+          guard. A value a person looked up, or one that also comes from an analysed file, mail or capture, is asked
+          about as before.
+        </li>
+        <li>
           <strong>What the guard cannot see.</strong> It reads addresses, names and e-mail addresses. A person's name, a
           token or a customer number written in the path of a link has no class and leaves with the link: do not turn on
           the automatic look-ups of URLs where such links must not reach a vendor.
