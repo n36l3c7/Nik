@@ -14,7 +14,8 @@ What a route may expect:
   not be done with a key alone: taking somebody's second factor away);
 - ``"first-run"``: open while there is no account, admin only afterwards;
 - ``"public"``: no authentication (sign-in, health, the API documentation;
-  ``/api/metrics`` has its own bearer token and is not published by nginx).
+  ``/api/metrics`` declares no gate either: it answers to its own scrape
+  token and to nothing else, which ``test_health.py`` checks).
 """
 
 from __future__ import annotations
@@ -418,7 +419,16 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("DELETE", "/api/webhooks/{webhook_id}"): ("admin",),
     ("GET", "/api/audit"): ("audit.read",),
     ("POST", "/api/audit"): ("read",),
-    ("DELETE", "/api/audit"): ("admin",),
+    ("DELETE", "/api/audit"): "admin-session",
+    ("GET", "/api/audit/chain"): ("audit.read",),
+    ("POST", "/api/audit/chain/verify"): ("audit.read",),
+    ("GET", "/api/audit/forwarding"): ("admin",),
+    ("PUT", "/api/audit/forwarding"): "admin-session",
+    ("POST", "/api/audit/forwarding/test"): "admin-session",
+    ("GET", "/api/health/details"): ("admin",),
+    ("PUT", "/api/health/thresholds"): "admin-session",
+    ("POST", "/api/health/metrics-token"): "admin-session",
+    ("DELETE", "/api/health/metrics-token"): "admin-session",
     ("GET", "/api/settings"): "signed-in",
     ("PUT", "/api/settings"): ("write",),
     ("GET", "/api/backup/export"): ("admin",),

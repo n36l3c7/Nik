@@ -29,13 +29,13 @@ echo "== a new install: everything is generated, each secret into a file of its 
 VOLUMES="other_db-data-18 nikola_db-data" run "$work/new.env"
 secrets="$work/new.env.secrets"
 [ "$(value "$work/new.env" NIK_SECRETS_DIR)" = "$secrets" ] || fail "new install: the env file does not name the secrets directory"
-for name in SECRET_KEY STORE_KEY DB_PASSWORD ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN; do
+for name in SECRET_KEY STORE_KEY AUDIT_KEY DB_PASSWORD ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN; do
   file="$secrets/$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
   [ "$(wc -c <"$file")" -eq 65 ] || fail "new install: $name is not a 64-character random value in its file"
   grep -q "^$name=\$" "$work/new.env" || fail "new install: $name is not named, empty, in the env file"
 done
 [ "$(sort "$secrets"/*_token "$secrets"/*_key "$secrets"/db_password | uniq -d | grep -c .)" -eq 0 ] || fail "new install: two secrets are the same value"
-for name in secret_key_previous store_key_previous metrics_token; do
+for name in secret_key_previous store_key_previous audit_key_previous metrics_token; do
   [ -f "$secrets/$name" ] && [ ! -s "$secrets/$name" ] || fail "new install: $name is not an empty file"
 done
 [ "$(stat -c '%a' "$secrets")" = 700 ] || fail "new install: the secrets directory can be entered by others"
@@ -51,7 +51,7 @@ fi
 
 echo "== a new install that keeps its secrets in the env file, when asked to"
 VOLUMES="" NIK_SECRETS=env run "$work/inenv.env"
-for name in SECRET_KEY STORE_KEY DB_PASSWORD ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN; do
+for name in SECRET_KEY STORE_KEY AUDIT_KEY DB_PASSWORD ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN; do
   [ "$(value "$work/inenv.env" "$name" | wc -c)" -eq 65 ] || fail "NIK_SECRETS=env: $name is not a 64-character random value"
 done
 grep -q '^NIK_SECRETS_DIR=' "$work/inenv.env" && fail "NIK_SECRETS=env: a secrets directory was named"
@@ -73,6 +73,8 @@ for volumes in "nik_db-data-18" "nik_db-data"; do
   # An existing install keeps its secrets where they were: in the env file.
   grep -q '^NIK_SECRETS_DIR=' "$work/bare.env" && fail "no .env, volume $volumes: the secrets were moved to files"
   [ "$(value "$work/bare.env" STORE_KEY | wc -c)" -eq 65 ] || fail "no .env: STORE_KEY was not generated"
+  # Its audit log is signed with the key derived from SECRET_KEY until the operator chooses otherwise.
+  [ -z "$(value "$work/bare.env" AUDIT_KEY)" ] || fail "no .env, volume $volumes: an existing install was given an audit key nobody chose"
 done
 
 echo "== an existing install with a partial .env: only what is missing is written"
@@ -88,6 +90,7 @@ VOLUMES="" run "$work/partial.env"
 [ "$(value "$work/partial.env" STORE_KEY | wc -c)" -eq 65 ] || fail "partial: STORE_KEY was not added"
 grep -q '^NIK_SECRETS_DIR=' "$work/partial.env" && fail "partial: the secrets of an existing install were moved to files"
 grep -q '^STORE_KEY_PREVIOUS=' "$work/partial.env" && fail "partial: an earlier store key was written, and there never was one"
+[ -z "$(value "$work/partial.env" AUDIT_KEY)" ] || fail "partial: an existing install was given an audit key nobody chose"
 store_key=$(value "$work/partial.env" STORE_KEY)
 VOLUMES="" run "$work/partial.env"
 [ "$(value "$work/partial.env" STORE_KEY)" = "$store_key" ] || fail "partial: a second run changed STORE_KEY"

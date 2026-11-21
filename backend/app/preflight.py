@@ -95,7 +95,7 @@ def problems(env: Mapping[str, str] | None = None) -> list[tuple[str, str]]:
     # A process that is told it holds no store key (the automation worker) needs none.
     if env.get("NIK_NO_STORE_KEY", "").strip().lower() not in ("1", "true", "yes", "on"):
         check("STORE_KEY", MIN_STORE_KEY_LENGTH)
-    for name in ("SECRET_KEY_PREVIOUS", "STORE_KEY_PREVIOUS", "DB_PASSWORD"):
+    for name in ("SECRET_KEY_PREVIOUS", "STORE_KEY_PREVIOUS", "DB_PASSWORD", "AUDIT_KEY", "AUDIT_KEY_PREVIOUS"):
         # Not required here, but a file that cannot be read is never taken for an empty one.
         try:
             keys.find(name, env)

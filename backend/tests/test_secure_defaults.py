@@ -90,11 +90,13 @@ def test_a_changed_secret_key_keeps_the_stored_secrets(admin: TestClient, monkey
 def test_metrics_can_require_a_token_and_count_unknown_paths_under_one_label(client: TestClient, monkeypatch):
     for path in ("/api/no-such-thing-1", "/api/no-such-thing-2", "/wp-login.php"):
         assert client.get(path).status_code == 404
-    body = client.get("/api/metrics").text
+    # Without a token set the route answers to nobody (it was open before 6.8, behind nginx).
+    assert client.get("/api/metrics").status_code == 401
+    monkeypatch.setattr(settings, "METRICS_TOKEN", "scrape-me")
+    body = client.get("/api/metrics", headers={"Authorization": "Bearer scrape-me"}).text
     assert 'path="unmatched"' in body
     assert "no-such-thing" not in body and "wp-login" not in body
 
-    monkeypatch.setattr(settings, "METRICS_TOKEN", "scrape-me")
     assert client.get("/api/metrics").status_code == 401
     assert client.get("/api/metrics", headers={"Authorization": "Bearer nope"}).status_code == 401
     assert client.get("/api/metrics", headers={"Authorization": "Bearer scrape-me"}).status_code == 200

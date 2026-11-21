@@ -44,7 +44,7 @@ class EncryptionAction(BaseModel):
 
 
 def _name(name: str) -> str:
-    if name not in key_rotation.ROTATED:
+    if name not in key_rotation.ASKED:
         raise HTTPException(status_code=404, detail="Nik does not change this key by itself.")
     return name
 

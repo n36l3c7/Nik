@@ -54,7 +54,8 @@ SYSTEM = "system"
 # Room asked for beyond what the database and the store measure.
 MARGIN = 64 * 1024 * 1024
 NOT_INCLUDED = [
-    "the .env file and the secrets directory, with SECRET_KEY (unless the administrator chose to include the key)",
+    "the .env file and the secrets directory, with SECRET_KEY and the keys of the audit log (unless the "
+    "administrator chose to include the key: both then travel inside the backup)",
     "the store key (STORE_KEY): the files are in the backup themselves, and a restore seals them under its own",
     "the TLS certificate and its key",
     "the Compose overrides and the other files of the deployment",
@@ -259,9 +260,15 @@ def write_file(
             writer = Writer(out, key, about)
             described = database.dump(writer, migrating=migrating)
             held = store.pack(writer, settings.SAMPLE_STORE) if kind == "full" else None
+            audit_keys = _audit_keys() if include_key else []
             if include_key:
                 with writer.part("secret-key") as part:
                     part.write(settings.SECRET_KEY.encode("utf-8"))
+                # The keys the audit log was signed with go the same way: on the server that
+                # restores they become earlier keys, and its log is checked with them.
+                if audit_keys:
+                    with writer.part(AUDIT_KEYS_PART) as part:
+                        part.write("\n".join(audit_keys).encode("utf-8"))
             manifest = writer.finish(
                 {
                     **about,
@@ -270,6 +277,9 @@ def write_file(
                     "database": described,
                     "store": held,
                     "includesSecretKey": include_key,
+                    "includesAuditKeys": len(audit_keys),
+                    # The end of the audit log as this backup holds it (the id of a key, never a key).
+                    "auditHead": described.get("auditHead"),
                     "upgrade": upgrade,
                     "notIncluded": NOT_INCLUDED[int(include_key) :],
                 }
@@ -292,6 +302,9 @@ def write_file(
         "revision": described.get("revision") or "",
         "keyFrom": key.spec["from"],
         "upgrade": upgrade,
+        # In clear beside the file, and sent with it off the server: what the verifier of the audit
+        # log is given (--head SEQ:HASH) to hold a log against the one this backup was taken from.
+        "auditHead": described.get("auditHead"),
         "summary": {
             "engine": described.get("engine"),
             "serverVersion": described.get("serverVersion"),
@@ -306,6 +319,27 @@ def write_file(
     }
     write_note(note, folder)
     return note
+
+
+AUDIT_KEYS_PART = "audit-keys"
+
+
+def _audit_keys() -> list[str]:
+    """The keys of the audit log a backup that carries ``SECRET_KEY`` carries too, as they are
+    written in ``AUDIT_KEY_PREVIOUS``: the key the server was given, and the earlier ones. The key
+    derived from ``SECRET_KEY`` is not among them: whoever has ``SECRET_KEY`` makes it again. The
+    keys derived from an earlier ``SECRET_KEY`` that still signed entries are."""
+    from ..auditlog import key as signing
+
+    # A key that was typed with a comma in it cannot stand in a list separated by commas: it is
+    # written as the bytes it is.
+    texts = [
+        "hex:" + text.encode("utf-8").hex() if "," in text or "\n" in text else text
+        for text in (signing._configured(), *signing._previous())
+        if text
+    ]
+    texts += ["hex:" + signing.derived(secret).hex() for secret in settings.SECRET_KEY_PREVIOUS]
+    return list(dict.fromkeys(texts))
 
 
 # --------------------------------------------------------------------------- #

@@ -4,8 +4,10 @@ import { useAuth } from '../../../context/AuthContext.jsx'
 import { api } from '../../../services/api.js'
 import { formatBytes } from '../../../domain/events.js'
 import {
+  auditSignedLines,
   encryptionStatus,
   planLines,
+  restartOnceText,
   restartText,
   rotating,
   rotationPercent,
@@ -24,7 +26,9 @@ import { Badge, Button, Modal, TransferBar, Wait } from '../../ui/index.js'
  * Every secret the stack has: where it comes from (a file given to the
  * containers that use it, or the environment), what it protects, which
  * containers hold it. For the two keys that encrypt (the secret key and the
- * store key): the fingerprint, since when the key is in use, and changing it.
+ * store key) and the key that signs the audit log: the fingerprint, since
+ * when the key is in use, and changing it. For the audit key also how many
+ * entries each key signed, and how many cannot be checked for want of theirs.
  *
  * A key is changed in two places. Here an administrator asks for it, giving
  * the password again (and a code, with a second factor), and sees what will
@@ -97,6 +101,8 @@ function RotateDialog({ entry, hasFactor, onClose, onAsked }) {
   }
   // What was typed is a password: leaving the dialog loses nothing worth keeping, and asks nothing.
   const lines = planLines(plan)
+  // The key that signs the audit log: nothing is stored under it, so a change moves nothing.
+  const audit = entry.name === 'AUDIT_KEY'
   const command = asked?.command ?? plan?.command ?? entry.command
 
   return (
@@ -132,16 +138,29 @@ function RotateDialog({ entry, hasFactor, onClose, onAsked }) {
     >
       {!asked && (
         <form id="form-rotate-key" onSubmit={submit} className="space-y-3 text-sm text-fg-muted">
-          <p>
-            A new key is made by the server and everything under the key in use is put under it:{' '}
-            {entry.name === 'STORE_KEY'
-              ? 'the head of each file of the store. The files themselves are not written again.'
-              : 'every secret kept in the database, and the snapshots taken before upgrades while no backup passphrase was set.'}
-          </p>
+          {audit ? (
+            <p>
+              A new key is made by the server and signs the audit log from the next entry on. Nothing is signed again:
+              the entries written so far keep the key that signed them, and that key stays among the keys of the server
+              (AUDIT_KEY_PREVIOUS), so that they can still be checked.
+            </p>
+          ) : (
+            <p>
+              A new key is made by the server and everything under the key in use is put under it:{' '}
+              {entry.name === 'STORE_KEY'
+                ? 'the head of each file of the store. The files themselves are not written again.'
+                : 'every secret kept in the database, and the snapshots taken before upgrades while no backup passphrase was set.'}
+            </p>
+          )}
           {!plan && !error && <Wait>Counting what will be put under the new key…</Wait>}
           {plan && (
-            <ul aria-label="What will be put under the new key" className="border border-line bg-canvas px-3 py-2">
-              {lines.length === 0 && <li>Nothing is stored under this key yet.</li>}
+            <ul
+              aria-label={audit ? 'What keeps its key' : 'What will be put under the new key'}
+              className="border border-line bg-canvas px-3 py-2"
+            >
+              {lines.length === 0 && (
+                <li>{audit ? 'No entry was signed yet.' : 'Nothing is stored under this key yet.'}</li>
+              )}
               {lines.map((line) => (
                 <li key={line} className="font-mono text-xs text-fg">
                   {line}
@@ -149,13 +168,22 @@ function RotateDialog({ entry, hasFactor, onClose, onAsked }) {
               ))}
             </ul>
           )}
-          <p>
-            The server holds both keys until everything was read back under the new one alone; only then is the earlier
-            key taken away. Stopped at any moment, the change goes on from where it was.
-          </p>
+          {!audit && (
+            <p>
+              The server holds both keys until everything was read back under the new one alone; only then is the
+              earlier key taken away. Stopped at any moment, the change goes on from where it was.
+            </p>
+          )}
+          {entry.name === 'SECRET_KEY' && plan?.auditKeyDerived && (
+            <p>
+              The audit log of this server is signed with a key derived from the secret key. Before the earlier secret
+              key is taken away, the command writes the key derived from it beside the audit keys (AUDIT_KEY_PREVIOUS):
+              the entries signed until now can still be checked afterwards.
+            </p>
+          )}
           <p>
             It is asked for here and carried out on the server, by who administers it: the new key is written straight
-            where the keys are kept and is never shown. {restartText(plan)}
+            where the keys are kept and is never shown. {audit ? restartOnceText(plan) : restartText(plan)}
           </p>
           <IdentityFields idPrefix="rotate-key" value={proof} onChange={setProof} hasFactor={hasFactor} autoFocus />
           {error && <ErrorNote>{error}</ErrorNote>}
@@ -167,12 +195,24 @@ function RotateDialog({ entry, hasFactor, onClose, onAsked }) {
             The change was asked for. Within a day, on the server, in the folder of Nik:
           </p>
           <Command>{command}</Command>
-          <p>
-            {restartText(asked.restarts ? asked : plan)} The command waits for the server to say the change is verified,
-            then takes the earlier key away and says where it put it.
-          </p>
+          {audit ? (
+            <p>
+              {restartOnceText(asked.restarts ? asked : plan)} The command keeps the key in use until now among the
+              earlier audit keys, and says which key signs once the server answers.
+            </p>
+          ) : (
+            <p>
+              {restartText(asked.restarts ? asked : plan)} The command waits for the server to say the change is
+              verified, then takes the earlier key away and says where it put it.
+            </p>
+          )}
           {error && <ErrorNote>{error}</ErrorNote>}
-          {entry.name === 'SECRET_KEY' ? (
+          {audit ? (
+            <p>
+              Keep a copy of the audit key and of the earlier ones where the copy of the secret key is: a server that is
+              restored checks the log that comes back with them.
+            </p>
+          ) : entry.name === 'SECRET_KEY' ? (
             <p>
               The backups taken before the change hold their secrets under the earlier key: keep it with them, for as
               long as you keep them. Open sessions are not ended.
@@ -280,6 +320,7 @@ function KeyRow({ entry, onRotate }) {
   const rotation = rotationStatus(entry.rotation)
   const percent = rotationPercent(entry.rotation)
   const running = entry.rotation?.state === 'running'
+  const signed = entry.signed ? auditSignedLines(entry.signed) : null
   return (
     <li aria-label={entry.label} className="space-y-1.5 px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -289,7 +330,7 @@ function KeyRow({ entry, onRotate }) {
           from {source.text}
         </Badge>
         {rotation.text && <Badge color={rotation.color}>{rotation.text}</Badge>}
-        {entry.request && !entry.rotation?.previousKept && (
+        {entry.request && (entry.name === 'AUDIT_KEY' || !entry.rotation?.previousKept) && (
           <Badge color="cyan" title={`By ${entry.request.by}, ${when(entry.request.at)}`}>
             change asked for
           </Badge>
@@ -323,6 +364,22 @@ function KeyRow({ entry, onRotate }) {
       )}
       {running && percent != null && (
         <TransferBar label={`Changing the ${entry.label.toLowerCase()}`} percent={percent} />
+      )}
+      {signed && signed.lines.length > 0 && (
+        <div role="group" aria-label="What each key signed" className="text-xs text-fg-muted">
+          {signed.lines.map((line) => (
+            <p key={line} className="font-mono">
+              {line}
+            </p>
+          ))}
+        </div>
+      )}
+      {signed?.problem && <ErrorNote>{signed.problem}</ErrorNote>}
+      {entry.rotation?.previousKept > 0 && entry.name === 'AUDIT_KEY' && (
+        <p className="text-xs text-fg-muted">
+          {entry.rotation.previousKept} earlier key{entry.rotation.previousKept === 1 ? '' : 's'} kept
+          (AUDIT_KEY_PREVIOUS), for the entries {entry.rotation.previousKept === 1 ? 'it' : 'they'} signed.
+        </p>
       )}
       {!entry.rotates && entry.how && <p className="max-w-prose text-xs text-fg-muted">To change it: {entry.how}</p>}
     </li>
@@ -418,12 +475,12 @@ export default function KeysSection() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <h3 className={HEADING}>The keys that encrypt</h3>
+              <h3 className={HEADING}>The keys that encrypt and sign</h3>
               <Button variant="secondary" size="sm" icon={RefreshCw} disabled={loading} onClick={() => load()}>
                 Refresh
               </Button>
             </div>
-            <ul aria-label="Keys that encrypt" className="divide-y divide-line border border-line bg-panel">
+            <ul aria-label="Keys that encrypt and sign" className="divide-y divide-line border border-line bg-panel">
               {keys
                 .filter((entry) => entry.rotates)
                 .map((entry) => (

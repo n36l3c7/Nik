@@ -392,6 +392,34 @@ def _wait_for_the_schema() -> None:
         _stopping.wait(5)
 
 
+def backend_health() -> str:
+    """What the backend answers to its health check: ``ok``, the word of a server that did not
+    start (``stopped``: a key is missing or wrong, app/stopped.py; ``upgrade-stopped``:
+    backups/upgrade.py), or nothing when it does not answer or this process was not told where it is."""
+    # Asked where the files of the store are asked: the address of the API container, on the
+    # network of the stack. Nothing of this package opens a connection itself but egress.py.
+    from .. import store_handover
+
+    return store_handover.backend_health()
+
+
+def _wait_for_the_backend() -> None:
+    """A backend that did not start says so and stays up (a key is missing, or is not the one the
+    store is sealed under; an upgrade was stopped): its health check passes, so this container is
+    started. Nothing must run beside a server that refused to: no playbook, no copy of a backup,
+    no entry sent to syslog as if all were well. This waits until the backend says it runs. A
+    backend that does not answer at all is not waited for: this worker runs without it, as before."""
+    said = False
+    while not _stopping.is_set():
+        status = backend_health()
+        if status in ("", "ok"):
+            return
+        if not said:
+            logger.warning("The backend says it did not start (%s): waiting. Its log and the page say why", status)
+            said = True
+        _stopping.wait(5)
+
+
 def main() -> None:
     from ..core.observability import setup_logging
 
@@ -401,10 +429,19 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: _stopping.set())
     logger.info("Automation worker started")
     _wait_for_the_schema()
+    _wait_for_the_backend()
     # The copies of the backups off the server leave from here: this container has the way out.
     from ..backups import scheduler as backup_scheduler
 
     backup_scheduler.start_shipper()
+    # So does the audit log, entry by entry, to the syslog receiver an administrator set.
+    from ..auditlog import forward as audit_forward
+
+    audit_forward.start()
+    # And the health of the server is looked at from here too, for the day the API process is what is stuck.
+    from ..health import watch as health_watch
+
+    health_watch.start()
     loop()
     logger.info("Automation worker stopped")
 

@@ -171,6 +171,41 @@ def _rotate_backups(db) -> int:
     return moved
 
 
+# The rows of the forwarding of the audit log (auditlog/forward.py): the settings as an
+# administrator set them, and the settings in force, which the sender writes. Each keeps the key
+# of the client certificate under ``clientKey``, as ``vault:<token>``.
+FORWARDING_ROWS = ((40, "settings"), (41, "active"))
+
+
+def _forwarding_tokens(db, lock: bool = False):
+    """``(row, part, held, token)`` for each key of a client certificate the forwarding keeps."""
+    from .models import Setting
+
+    for row_id, part in FORWARDING_ROWS:
+        row = db.get(Setting, row_id, with_for_update=True) if lock else db.get(Setting, row_id)
+        held = ((row.doc if row else None) or {}).get(part)
+        kept = str(held.get("clientKey") or "") if isinstance(held, dict) else ""
+        if kept.startswith("vault:"):
+            yield row, part, held, kept[len("vault:") :]
+
+
+def _rotate_forwarding(db) -> int:
+    """The key of the client certificate the audit log is forwarded with. The row in force is the
+    sender's (the automation worker), which also puts it under the new key when it starts
+    (``forward.rekey``): the row is locked here while it is read and written, so that nothing the
+    sender committed meanwhile is written over."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    moved = 0
+    for row, part, held, kept in list(_forwarding_tokens(db, lock=True)):
+        token = _rotated(kept)
+        if token:
+            row.doc = {**row.doc, part: {**held, "clientKey": "vault:" + token}}
+            flag_modified(row, "doc")
+            moved += 1
+    return moved
+
+
 def _rotate_factors(db) -> int:
     """The secrets of the second factors: without this, a changed key would lock their owners out."""
     from .models import UserFactor
@@ -211,6 +246,8 @@ def inventory(db) -> list[tuple[str, str]]:
         found.append(("key of the backup destination", secret[len("vault:") :]))
     for row in db.scalars(select(UserFactor)):
         found.append(("second factor of an account", row.secret))
+    for _row, _part, _held, token in _forwarding_tokens(db):
+        found.append(("key of the certificate the audit log is forwarded with", token))
     return [(what, token) for what, token in found if token]
 
 
@@ -258,6 +295,7 @@ def reencrypt(session_factory) -> int:
         moved += _rotate_automation(db)
         moved += _rotate_backups(db)
         moved += _rotate_factors(db)
+        moved += _rotate_forwarding(db)
         db.commit()
     if moved:
         _logger.info("re-encrypted %d stored secret(s) with the current SECRET_KEY", moved)

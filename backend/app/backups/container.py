@@ -630,7 +630,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("file")
     parser.add_argument("directory", nargs="?", help="where extract writes the parts")
     parser.add_argument(
-        "--with-secret-key", action="store_true", help="also write the SECRET_KEY the backup holds, if it holds one"
+        "--with-secret-key",
+        action="store_true",
+        help="also write the SECRET_KEY and the keys of the audit log the backup holds, if it holds them",
     )
     args = parser.parse_args(argv)
     if args.command == "extract" and not args.directory:
@@ -647,7 +649,7 @@ def main(argv: list[str] | None = None) -> int:
                 part.drain()
                 print(f"{part.size:>16}  {part.sha256}  {part.name}")
                 return
-            if part.name == "secret-key" and not args.with_secret_key:
+            if part.name in ("secret-key", "audit-keys") and not args.with_secret_key:
                 return
             target = os.path.join(args.directory, *_safe_name(part.name).split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)

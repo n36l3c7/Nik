@@ -39,6 +39,16 @@
 set -euo pipefail
 
 NIK_DIR=${NIK_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
+# Step 3 checks out another version of the code, and with it another version of this very file, while
+# it runs: a shell reads its script as it goes, and would go on in the middle of the other one. So the
+# script runs from a copy of itself, which nothing replaces.
+if [ -z "${NIK_ROLLBACK_RUNNING:-}" ]; then
+  NIK_ROLLBACK_RUNNING=$(mktemp "${TMPDIR:-/tmp}/nik-rollback.XXXXXX")
+  cat "$0" >"$NIK_ROLLBACK_RUNNING"
+  export NIK_DIR NIK_ROLLBACK_RUNNING
+  exec bash "$NIK_ROLLBACK_RUNNING" "$@"
+fi
+trap 'rm -f "$NIK_ROLLBACK_RUNNING"' EXIT
 if [ -z "${ENGINE:-}" ]; then
   if command -v podman >/dev/null 2>&1; then ENGINE=podman; else ENGINE=docker; fi
 fi

@@ -59,7 +59,7 @@ from .core.config import settings
 
 logger = logging.getLogger("nik.store")
 
-SETTINGS_ID = 40
+SETTINGS_ID = 50  # 40 to 46 are the audit log and the health page; 51 is key_rotation.py
 LEASE = "store-seal"
 LEASE_SECONDS = 45
 HOLDER = f"{uuid.uuid4()}"

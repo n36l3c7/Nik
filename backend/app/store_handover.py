@@ -134,3 +134,16 @@ def fetch(kind: str, ref: str) -> bytes:
     if hashlib.sha256(data).hexdigest() != ref:
         raise NotServed("The file received is not the one that was asked for")
     return data
+
+
+def backend_health() -> str:
+    """What the API process answers to its health check, asked from the process that has no store
+    key: ``ok``, the word of a server that did not start (``stopped``, ``upgrade-stopped``), or
+    nothing when it does not answer or this process was not told where it is."""
+    if not settings.STORE_API_URL:
+        return ""
+    try:
+        with urllib.request.urlopen(f"{settings.STORE_API_URL}/api/health", timeout=5) as answer:  # noqa: S310
+            return str(json.loads(answer.read(4096)).get("status") or "")
+    except Exception:  # noqa: BLE001 - not there: the caller decides
+        return ""

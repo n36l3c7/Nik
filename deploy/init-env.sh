@@ -39,6 +39,10 @@
 #    STORE_KEY is new in 6.8 and nothing was ever written under an earlier one:
 #    it is generated. Every file of the store is sealed under it from the next
 #    start on. It is in no backup: keep a copy of it away from the server.
+#    AUDIT_KEY (the key that signs the audit log) is generated on a new
+#    install only. An existing install keeps signing with the key derived
+#    from its SECRET_KEY until you give the log a key of its own:
+#    deploy/secrets.sh rotate audit-key. Nothing is lost either way.
 #
 # An existing install is recognised by its .env, or by the database volume of
 # the Compose project (docker or podman). Say so yourself when the script
@@ -53,8 +57,9 @@ EXAMPLE="$NIK_DIR/.env.example"
 OLD_SECRET_KEY_DEFAULT="please-change-this-secret"
 OLD_DB_PASSWORD_DEFAULT="nik"
 TOKENS="ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN"
-# Every secret of the stack; the last three are empty unless the operator fills them.
-SECRETS="DB_PASSWORD SECRET_KEY STORE_KEY $TOKENS SECRET_KEY_PREVIOUS STORE_KEY_PREVIOUS METRICS_TOKEN"
+# Every secret of the stack; those after the tokens are empty unless something fills them
+# (AUDIT_KEY is filled here on a new install, and by deploy/secrets.sh rotate audit-key).
+SECRETS="DB_PASSWORD SECRET_KEY STORE_KEY $TOKENS SECRET_KEY_PREVIOUS STORE_KEY_PREVIOUS METRICS_TOKEN AUDIT_KEY AUDIT_KEY_PREVIOUS"
 
 random() {
     if command -v openssl >/dev/null 2>&1; then
@@ -187,7 +192,7 @@ if [ "$mode" = files ]; then
             exit 1
         fi
         case "$name" in
-            *_PREVIOUS | METRICS_TOKEN) grep -q "^$name=" "$ENV_FILE" && set_value "$name" "" ;;
+            *_PREVIOUS | METRICS_TOKEN | AUDIT_KEY) grep -q "^$name=" "$ENV_FILE" && set_value "$name" "" ;;
             *) set_value "$name" "" ;;
         esac
     done
@@ -231,6 +236,14 @@ if is_placeholder "$(get STORE_KEY)"; then
     fi
 fi
 
+# The key that signs the audit log. A new install gets its own. An existing one signs with the
+# key derived from its SECRET_KEY, and a key written here would start signing without anybody
+# having chosen it: deploy/secrets.sh rotate audit-key is how it is given one.
+if [ "$existing" -eq 0 ] && [ -z "$(get AUDIT_KEY)" ]; then
+    put AUDIT_KEY "$(random)"
+    changed=1
+fi
+
 for name in $TOKENS; do
     if is_placeholder "$(get "$name")"; then
         put "$name" "$(random)"
@@ -244,7 +257,7 @@ else
     where="$ENV_FILE"
 fi
 if [ "$changed" -eq 1 ]; then
-    echo "init-env: secrets written to $where. Keep a copy away from this server: SECRET_KEY decrypts what the database stores (keep it with the backups), STORE_KEY opens the files of the store (keep it apart from them)"
+    echo "init-env: secrets written to $where. Keep a copy away from this server: SECRET_KEY decrypts what the database stores (keep it with the backups), AUDIT_KEY signs the audit log (keep it where that copy of SECRET_KEY is), STORE_KEY opens the files of the store (keep it apart from them)"
 else
     echo "init-env: $where already has every secret, nothing changed"
 fi

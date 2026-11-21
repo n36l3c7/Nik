@@ -22,7 +22,9 @@
 #   --secret-key       first write the SECRET_KEY the backup holds where the keys of this stack are
 #                      kept (a backup taken with "Include SECRET_KEY"): into .env, the file as it was
 #                      being kept as .env.before-restore; or into the secrets directory, the key as it
-#                      was being kept beside it as secret_key.before-restore
+#                      was being kept beside it as secret_key.before-restore. The keys the audit
+#                      log of the backup was signed with are added to the earlier audit keys of
+#                      this stack (AUDIT_KEY_PREVIOUS), so that its entries can be checked here
 #   --inspect          only read the file and say what it holds
 #   --no-start         leave the stack stopped at the end
 #   --yes              do not ask before stopping the stack and before replacing
@@ -36,7 +38,10 @@
 #
 # On a new host: clone the repository at the version that took the backup (or a
 # later one), run deploy/init-env.sh, put the SECRET_KEY of the old server where
-# the keys are kept (or use --secret-key), then run this. The store key of the
+# the keys are kept (or use --secret-key), then run this. Without --secret-key,
+# also add the AUDIT_KEY of the old server (and what its AUDIT_KEY_PREVIOUS
+# held) to the AUDIT_KEY_PREVIOUS of this one: the audit log that comes back
+# was signed with them. The store key of the
 # old server is not needed: a backup holds the files themselves, under its
 # passphrase, and each is sealed here under the store key init-env.sh just made.
 # The deployment guide has the whole procedure ("The first host is gone").
@@ -188,6 +193,41 @@ if [ "$WITH_KEY" -eq 1 ]; then
     log "SECRET_KEY of the backup written to .env (the file as it was: .env.before-restore, to remove once all is well)"
   fi
   unset key
+  # The keys the audit log of the backup was signed with: earlier audit keys of this stack from
+  # now on. This server signs with its own; the entries that come back are checked with theirs.
+  held=$(tool audit-keys "$target") || die "the keys of the audit log the backup holds could not be read: nothing was restored"
+  added=0
+  while IFS= read -r line; do
+    one=${line#AUDIT_KEY_PREVIOUS=}
+    if [ "$one" = "$line" ] || [ -z "$one" ]; then continue; fi
+    if [ -n "$secrets_dir" ]; then
+      earlier=$(tr -d '\r\n' <"$secrets_dir/audit_key_previous" 2>/dev/null || true)
+      current=$(tr -d '\r\n' <"$secrets_dir/audit_key" 2>/dev/null || true)
+    else
+      earlier=$(sed -n 's/^AUDIT_KEY_PREVIOUS=//p' .env | tail -n 1)
+      current=$(sed -n 's/^AUDIT_KEY=//p' .env | tail -n 1)
+    fi
+    case ",$earlier,$current," in
+      *",$one,"*) continue ;;
+    esac
+    if [ -n "$secrets_dir" ]; then
+      printf '%s\n' "${earlier:+$earlier,}$one" >"$secrets_dir/audit_key_previous"
+      chmod 644 "$secrets_dir/audit_key_previous"
+    else
+      KEY="${earlier:+$earlier,}$one" awk 'BEGIN { done = 0 }
+        /^AUDIT_KEY_PREVIOUS=/ { print "AUDIT_KEY_PREVIOUS=" ENVIRON["KEY"]; done = 1; next } { print }
+        END { if (!done) print "AUDIT_KEY_PREVIOUS=" ENVIRON["KEY"] }' .env >.env.restoring
+      chmod 600 .env.restoring
+      mv .env.restoring .env
+    fi
+    added=$((added + 1))
+  done <<EOF
+$held
+EOF
+  unset held line one earlier current
+  if [ "$added" -gt 0 ]; then
+    log "$added key(s) of the audit log of the backup added to the earlier audit keys of this stack (AUDIT_KEY_PREVIOUS): the entries that come back are checked with them"
+  fi
 fi
 
 log "stopping the stack; the database alone is started"

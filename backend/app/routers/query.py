@@ -116,6 +116,7 @@ def _audit_row(row: AuditEntry) -> dict[str, Any]:
         "details": row.details,
         "incidentId": row.incident_id,
         "incidentName": row.incident_name,
+        "origin": row.origin,
     }
 
 

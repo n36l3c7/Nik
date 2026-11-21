@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  auditSignedLines,
   durationWords,
   encryptionStatus,
   planLines,
+  restartOnceText,
   restartText,
   rotating,
   rotationPercent,
@@ -126,4 +128,31 @@ test('the dialog of a change says what will be touched and what restarts', () =>
   assert.match(restartText(plan), /^The containers api and automation restart twice/)
   assert.match(restartText({ restarts: ['api'] }), /^The container api restarts twice/)
   assert.equal(restartText({ restarts: [] }), '')
+})
+
+test('the audit key says where it comes from and what each key signed', () => {
+  assert.equal(sourceText({ source: 'default', derived: true }).text, 'the secret key, derived')
+  assert.equal(sourceText({ source: 'file', derived: false }).text, 'a file')
+  assert.match(restartOnceText({ restarts: ['api', 'automation'] }), /^The containers api and automation restart once/)
+  assert.equal(restartOnceText({ restarts: [] }), '')
+  const signed = {
+    byKey: [
+      { keyId: 'set-0123456789ab', entries: 120, current: true, known: true },
+      { keyId: 'derived-ba9876543210', entries: 1, current: false, known: true },
+      { keyId: 'set-ffffffffffff', entries: 7, current: false, known: false },
+    ],
+    cannotBeChecked: 7,
+    unsigned: 2,
+  }
+  const shown = auditSignedLines(signed)
+  assert.deepEqual(shown.lines, [
+    'set-0123456789ab: 120 entries, the key in use',
+    'derived-ba9876543210: 1 entry, an earlier key the server still holds',
+    'set-ffffffffffff: 7 entries, a key the server no longer holds',
+    '2 entries without a signature',
+  ])
+  assert.match(shown.problem, /^7 entries of the audit log cannot be checked: the key that signed them/)
+  assert.match(auditSignedLines({ byKey: [], cannotBeChecked: 1 }).problem, /^1 entry .* signed it is not among/)
+  assert.deepEqual(auditSignedLines(null), { lines: [], problem: '' })
+  assert.equal(auditSignedLines({ byKey: [], cannotBeChecked: 0 }).problem, '')
 })

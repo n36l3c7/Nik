@@ -12,8 +12,6 @@ public to view; calling the write endpoints requires an ``X-API-Key`` header
 
 from __future__ import annotations
 
-import hmac
-
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -92,6 +90,9 @@ from .routers import (
     webhooks,
     yara_rules,
 )
+from .routers import (
+    health as health_details,
+)
 from .routers import workers as worker_status
 
 setup_logging(app_settings.LOG_LEVEL)
@@ -162,7 +163,7 @@ TAGS_METADATA = [
         "name": "keys",
         "description": "The keys of the server: where each comes from, what it protects, changing one (admins).",
     },
-    {"name": "health", "description": "Liveness probe."},
+    {"name": "health", "description": "Liveness probe; for administrators, the health page of the server."},
 ]
 
 app = FastAPI(
@@ -217,7 +218,8 @@ def on_startup() -> None:
     """
     if app_settings.RUN_CREATE_ALL:
         Base.metadata.create_all(bind=engine)
-    # SECRET_KEY was changed: move what the old one encrypted to the new one.
+    # SECRET_KEY was changed: move what the old one encrypted to the new one (the key of the client
+    # certificate the audit log is forwarded with is among it: core/vault.py lists every place).
     vault.reencrypt(SessionLocal)
     # Incidents saved before 2.12.0 have no indicator index yet.
     backfill_iocs(SessionLocal)
@@ -257,6 +259,18 @@ def on_startup() -> None:
         # Their copies off the server leave from the process that runs playbooks: this one only when it does.
         if app_settings.AUTOMATION_WORKER == "inline":
             backup_scheduler.start_shipper()
+        # The chain of the audit log is walked here every few minutes (one process at a time, see
+        # auditlog/chain.py); the log leaves for syslog from the process that runs playbooks.
+        from .auditlog import chain as audit_chain
+        from .auditlog import forward as audit_forward
+
+        audit_chain.start()
+        if app_settings.AUTOMATION_WORKER == "inline":
+            audit_forward.start()
+        # The health of the server is looked at once a minute, and the administrators told (health/watch.py).
+        from .health import watch as health_watch
+
+        health_watch.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -330,13 +344,14 @@ def ready(db: OrmSession = Depends(get_db)) -> dict:
 
 
 @app.get("/api/metrics", tags=["health"], include_in_schema=False)
-def metrics(request: Request):
-    """Prometheus metrics exposition (with ``METRICS_TOKEN`` set, for its bearer only)."""
-    token = app_settings.METRICS_TOKEN
-    sent = request.headers.get("Authorization", "")
-    if token and not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return metrics_response()
+def metrics(request: Request, db: OrmSession = Depends(get_db)):
+    """Prometheus metrics, for the bearer of the scrape token and nobody else (``health/metrics.py``):
+    a session cookie or an API key gets 401 like no credential at all."""
+    from .health import metrics as health_metrics
+
+    if not health_metrics.allowed(db, request.headers.get("Authorization", "")):
+        raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    return metrics_response(health_metrics.exposition(db))
 
 
 @app.exception_handler(QueryError)
@@ -418,3 +433,4 @@ app.include_router(backup.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(worker_status.router, prefix="/api")
+app.include_router(health_details.router, prefix="/api")

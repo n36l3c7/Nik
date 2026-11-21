@@ -31,6 +31,14 @@ export function sourceText(key) {
       detail: 'In .env: whoever can inspect a container of the stack reads it.',
     }
   }
+  if (key?.derived) {
+    // The audit key of a server that was given none: made from the secret key, wherever that one is.
+    return {
+      text: 'the secret key, derived',
+      color: 'slate',
+      detail: 'No key of its own was given to the server: the audit log is signed with one made from the secret key.',
+    }
+  }
   return { text: 'not set', color: 'slate', detail: '' }
 }
 
@@ -145,4 +153,40 @@ export function restartText(plan) {
     `The ${services.length === 1 ? 'container' : 'containers'} ${names} ${services.length === 1 ? 'restarts' : 'restart'} twice, ` +
     'about a minute each time: once to take the new key, once to forget the earlier one. Nik does not answer meanwhile.'
   )
+}
+
+/** The sentence for a key whose change restarts its containers once (the audit key). */
+export function restartOnceText(plan) {
+  const services = plan?.restarts ?? []
+  if (!services.length) return ''
+  const names = services.length === 1 ? services[0] : `${services.slice(0, -1).join(', ')} and ${services.at(-1)}`
+  return (
+    `The ${services.length === 1 ? 'container' : 'containers'} ${names} ${services.length === 1 ? 'restarts' : 'restart'} once, ` +
+    'about a minute, to take the new key. Nik does not answer meanwhile.'
+  )
+}
+
+/**
+ * What the audit key signed: `{ lines, problem }`. One line for each key that signed entries
+ * (by its id, which is not a part of it), and a sentence when entries cannot be checked
+ * because the server no longer holds the key that signed them.
+ */
+export function auditSignedLines(signed) {
+  const entries = (count) => `${count} ${count === 1 ? 'entry' : 'entries'}`
+  const lines = (signed?.byKey ?? []).map(
+    (key) =>
+      `${key.keyId}: ${entries(key.entries)}` +
+      (key.current
+        ? ', the key in use'
+        : key.known
+          ? ', an earlier key the server still holds'
+          : ', a key the server no longer holds'),
+  )
+  if (signed?.unsigned) lines.push(`${entries(signed.unsigned)} without a signature`)
+  const lost = Number(signed?.cannotBeChecked) || 0
+  const problem = lost
+    ? `${entries(lost)} of the audit log cannot be checked: the key that signed ${lost === 1 ? 'it' : 'them'} is not among ` +
+      'the keys of this server. Their place in the chain still is. Put the key back into AUDIT_KEY_PREVIOUS if you have it.'
+    : ''
+  return { lines, problem }
 }

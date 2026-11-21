@@ -11,7 +11,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
-PROJECT=nik-smoke
+PROJECT=${SMOKE_PROJECT:-nik-smoke}
 HTTP_PORT=${SMOKE_HTTP_PORT:-18080}
 TLS_PORT=${SMOKE_TLS_PORT:-18443}
 ENV_FILE=$(mktemp)
@@ -42,7 +42,7 @@ NIK_EXISTING_INSTALL=0 deploy/init-env.sh "$ENV_FILE"
 grep -Eq '^(SECRET_KEY|STORE_KEY|DB_PASSWORD|[A-Z]+_TOKEN)=.' "$ENV_FILE" &&
   fail "init-env.sh left a secret, or a placeholder, in the env file of a new install"
 SECRETS_DIR="$ENV_FILE.secrets"
-for name in db_password secret_key store_key analyzer_token capa_token docview_token browser_token pcap_token sandbox_token; do
+for name in db_password secret_key store_key audit_key analyzer_token capa_token docview_token browser_token pcap_token sandbox_token; do
   [ "$(wc -c <"$SECRETS_DIR/$name")" -eq 65 ] || fail "init-env.sh did not write the secret $name as a 64-character value"
 done
 {
@@ -79,8 +79,10 @@ api=$(get -o /dev/null -D - "$base/api/health" | tr -d '\r')
 grep -qi '^X-Content-Type-Options: nosniff' <<<"$api" || fail "the API lacks nosniff"
 grep -qi '^Content-Security-Policy' <<<"$api" && fail "the API carries the app's policy (it breaks /api/docs)"
 
-echo "== metrics are not published"
-[ "$(get -o /dev/null -w '%{http_code}' "$base/api/metrics")" = 404 ] || fail "/api/metrics is reachable through nginx"
+echo "== the metrics answer to their scrape token only"
+[ "$(get -o /dev/null -w '%{http_code}' "$base/api/metrics")" = 401 ] || fail "/api/metrics answers without a token"
+[ "$(get -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-the-token' "$base/api/metrics")" = 401 ] ||
+  fail "/api/metrics answers to a token that is not the one"
 
 echo "== the first account, a Secure session cookie, and a sign-in limit counted per client"
 [ "$(get -o /dev/null -w '%{http_code}' -X POST "$base/api/users" -H 'Content-Type: application/json' \
@@ -100,6 +102,14 @@ for _ in $(seq 1 20); do
   sleep 2
 done
 grep -q '"workerAlive":true' <<<"$alive" || fail "the automation worker does not report in ($alive)"
+
+echo "== a signed-in administrator's cookie does not open the metrics; the token made on the health page does"
+[ "$(get -o /dev/null -w '%{http_code}' -b "$jar" "$base/api/metrics")" = 401 ] ||
+  fail "/api/metrics answers to a session cookie"
+token=$(get -b "$jar" -X POST "$base/api/health/metrics-token" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+[ -n "$token" ] || fail "no scrape token was made"
+get -H "Authorization: Bearer $token" "$base/api/metrics" | grep -q '^nik_health_state{' ||
+  fail "/api/metrics does not answer to its scrape token"
 
 echo "== a script runs in the sandbox, which has no way out"
 script=$(get -b "$jar" -X POST "$base/api/automation/scripts" -H 'Content-Type: application/json' -d '{"name":"SmokeTest"}')
@@ -157,7 +167,7 @@ grep -q 429 <<<"$codes" || fail "the sign-in limit can be dodged with X-Forwarde
 echo "== no secret is in the environment of a container; each container is given only its own"
 for service in db api automation sandbox web; do
   described=$(docker inspect "$("${COMPOSE[@]}" ps -q "$service")")
-  for name in db_password secret_key store_key sandbox_token; do
+  for name in db_password secret_key store_key audit_key sandbox_token; do
     grep -qF "$(cat "$SECRETS_DIR/$name")" <<<"$described" && fail "the $name is in what inspect shows of $service"
   done
 done
@@ -165,7 +175,7 @@ api_container=$("${COMPOSE[@]}" ps -q api)
 # (Reading the environment of another process takes privileges the container itself does not have.)
 docker exec --privileged -u 0 "$api_container" sh -c 'cat /proc/[0-9]*/environ | tr "\0" "\n"' >"$ENV_FILE.environ"
 grep -q "^SECRET_KEY_FILE=" "$ENV_FILE.environ" || fail "the environment of the server processes could not be read"
-for name in db_password secret_key store_key; do
+for name in db_password secret_key store_key audit_key; do
   grep -qF "$(cat "$SECRETS_DIR/$name")" "$ENV_FILE.environ" && fail "the $name is in the environment of a server process"
 done
 rm -f "$ENV_FILE.environ"
@@ -174,8 +184,16 @@ docker exec "$api_container" sh -c 'test -s /run/secrets/store_key && test -s /r
 # The automation worker has a way out: it holds neither the store nor its key.
 docker exec "$worker_container" sh -c 'test ! -e /run/secrets/store_key && ! grep -q " /app/samples " /proc/mounts' ||
   fail "the automation worker is given the store of files or its key"
-docker exec "$sandbox_container" sh -c 'test ! -e /run/secrets/secret_key && test ! -e /run/secrets/db_password' ||
+docker exec "$sandbox_container" sh -c 'test ! -e /run/secrets/secret_key && test ! -e /run/secrets/db_password && test ! -e /run/secrets/audit_key' ||
   fail "the sandbox is given a key it has no use for"
+# The two processes that write entries of the audit log sign them with the same key, a key of its
+# own on a new install: with different keys each would say the entries of the other cannot be checked.
+signs_api=$(docker exec "$api_container" python -m app.auditlog key | head -n 1)
+signs_worker=$(docker exec "$worker_container" python -m app.auditlog key | head -n 1)
+grep -q "signed with the key set-" <<<"$signs_api" || fail "the audit log is not signed with the key init-env.sh made ($signs_api)"
+[ "$signs_api" = "$signs_worker" ] || fail "the backend and the automation worker do not sign the audit log with the same key"
+[ "$(docker exec "$api_container" python -m app.key_rotation audit-unchecked)" = 0 ] ||
+  fail "entries of the audit log cannot be checked on a new install"
 
 echo "== the backend is unprivileged, on a read-only filesystem"
 api_container=$("${COMPOSE[@]}" ps -q api)

@@ -14,11 +14,18 @@ from app.main import app as fastapi_app
 from .conftest import ADMIN, make_key
 
 
-def test_health_ready_metrics(client: TestClient):
+def test_health_ready_metrics(client: TestClient, monkeypatch):
+    from app.core.config import settings
+
     h = client.get("/api/health")
     assert h.status_code == 200 and "X-Request-ID" in h.headers
+    # What a load balancer asks says that the process is up, and nothing else.
+    assert h.json() == {"status": "ok"}
     assert client.get("/api/ready").json()["status"] == "ready"
-    m = client.get("/api/metrics")
+    # The metrics answer to their token only (6.8): without one there is nothing to read.
+    assert client.get("/api/metrics").status_code == 401
+    monkeypatch.setattr(settings, "METRICS_TOKEN", "scrape-me")
+    m = client.get("/api/metrics", headers={"Authorization": "Bearer scrape-me"})
     assert m.status_code == 200 and b"nik_http_requests_total" in m.content
 
 

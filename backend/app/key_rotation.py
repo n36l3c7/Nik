@@ -60,15 +60,20 @@ from .core.config import settings
 
 logger = logging.getLogger("nik.keys")
 
-SETTINGS_ID = 41
+SETTINGS_ID = 51  # 50 is store_seal.py
 LINK = "/settings/system/keys"
 SYSTEM = "system"
 REQUEST_LASTS = 24 * 3600
 REKEY = ".rekey"
 
-SECRET, STORE = "SECRET_KEY", "STORE_KEY"
+SECRET, STORE, AUDIT = "SECRET_KEY", "STORE_KEY", "AUDIT_KEY"
+# The keys something is stored under: a change moves it all and proves it, with both keys held.
 ROTATED = (SECRET, STORE)
-SLUGS = {SECRET: "secret-key", STORE: "store-key"}
+# The keys a change of which is asked for on the screen and carried out by deploy/secrets.sh.
+# The audit key is one of them and moves nothing: it signs from the next entry on, and the
+# entries before it keep the key that signed them, which stays known to the server.
+ASKED = (SECRET, STORE, AUDIT)
+SLUGS = {SECRET: "secret-key", STORE: "store-key", AUDIT: "audit-key"}
 
 # name, label, what it protects, which containers hold it.
 KEYS: tuple[dict[str, Any], ...] = (
@@ -86,6 +91,14 @@ KEYS: tuple[dict[str, Any], ...] = (
         "protects": "Every file of the store: samples, e-mails, captures and their logs, mailboxes, previews, "
         "screenshots, signatures. It is in no database and in no backup.",
         "holders": ["api"],
+    },
+    {
+        "name": AUDIT,
+        "label": "Audit key",
+        "protects": "The signature of every entry of the audit log: whoever can write to the database can compute "
+        "the chain of hashes again, not the signatures. A server that was given no key of its own signs with one "
+        "derived from the secret key. It is in no database.",
+        "holders": ["api", "automation"],
     },
     {
         "name": "DB_PASSWORD",
@@ -117,7 +130,8 @@ KEYS: tuple[dict[str, Any], ...] = (
     {
         "name": "METRICS_TOKEN",
         "label": "Metrics token",
-        "protects": "Who may read /api/metrics. Optional: without it the endpoint answers on the internal network.",
+        "protects": "Who may read /api/metrics, beside the scrape token made in Settings → Health. Optional: "
+        "without either the route answers to nobody.",
         "holders": ["api"],
         "how": "Put a new value where the keys are kept and start the api container again.",
     },
@@ -134,6 +148,11 @@ def fingerprint(name: str) -> str:
     """The fingerprint of the key the server runs with: what two people compare, never part of it."""
     if name == STORE:
         return store.keyring().current.fingerprint if store.local() else ""
+    if name == AUDIT:
+        # The id the entries carry and the messages sent to syslog name: set-… or derived-….
+        from .auditlog import key as signing
+
+        return signing.current()[0]
     return sealed.fingerprint(SECRET, vault.key_id(settings.SECRET_KEY))
 
 
@@ -271,8 +290,78 @@ def _after_rekey(db: OrmSession, path: Path) -> None:
             row.offsite_state = "pending"
 
 
+def audit_signed(db: OrmSession) -> dict[str, Any]:
+    """How the entries of the audit log stand against the keys this server can make: how many each
+    key signed (by its id, never the key), whether the server can still make it, and how many
+    entries therefore cannot be checked."""
+    from sqlalchemy import func, select
+
+    from .auditlog import key as signing
+    from .core.models import AuditEntry
+
+    current, known = signing.current()[0], signing.known()
+    by_key, unchecked, unsigned = [], 0, 0
+    counted = db.execute(
+        select(AuditEntry.key_id, func.count()).where(AuditEntry.seq.is_not(None)).group_by(AuditEntry.key_id)
+    ).all()
+    for key_id, count in sorted(counted, key=lambda row: (-int(row[1]), str(row[0] or ""))):
+        if not key_id:
+            unsigned += int(count)
+            continue
+        can = key_id.rsplit("-", 1)[-1] in known
+        by_key.append({"keyId": key_id, "entries": int(count), "current": key_id == current, "known": can})
+        unchecked += 0 if can else int(count)
+    return {"byKey": by_key, "cannotBeChecked": unchecked, "unsigned": unsigned}
+
+
+def audit_keys_to_carry(db: OrmSession) -> list[str]:
+    """The earlier audit keys that leave with ``SECRET_KEY_PREVIOUS``: the keys derived from an
+    earlier ``SECRET_KEY`` that signed entries of the log, and that the server could no longer make
+    once that earlier key is taken away. Each as it is written in ``AUDIT_KEY_PREVIOUS``
+    (``hex:…``). Secrets: they go to the place keys are kept and nowhere else.
+
+    Without this, the end of a change of ``SECRET_KEY`` would turn every entry signed before it
+    into one that cannot be checked, on a server whose audit key is the derived one."""
+    from sqlalchemy import func, select
+
+    from .auditlog import key as signing
+    from .auditlog import verifier
+    from .core.models import AuditEntry
+
+    kept = {verifier.fingerprint(signing.current()[1]), verifier.fingerprint(signing.derived(settings.SECRET_KEY))}
+    kept |= {verifier.fingerprint(verifier.key_bytes(text)) for text in signing._previous()}
+    carry = []
+    for secret in settings.SECRET_KEY_PREVIOUS:
+        key = signing.derived(secret)
+        mark = verifier.fingerprint(key)
+        if mark in kept:
+            continue
+        signed = db.execute(
+            select(func.count()).select_from(AuditEntry).where(AuditEntry.key_id == f"derived-{mark}")
+        ).scalar()
+        if signed:
+            kept.add(mark)
+            carry.append("hex:" + key.hex())
+    return carry
+
+
 def plan(db: OrmSession, name: str) -> dict[str, Any]:
     """What a change of this key will touch, counted now: what the screen shows before it is asked for."""
+    if name == AUDIT:
+        signed = audit_signed(db)
+        entries = sum(entry["entries"] for entry in signed["byKey"]) + signed["unsigned"]
+        return {
+            "items": [
+                {
+                    "what": "entry of the audit log that keeps the key that signed it (nothing is signed again: "
+                    "the new key signs from the next entry, the earlier one stays known to the server)",
+                    "count": entries,
+                },
+            ],
+            "total": 0,
+            "restarts": ["api", "automation"],
+            "command": f"deploy/secrets.sh rotate {SLUGS[AUDIT]}",
+        }
     if name == STORE:
         found = store_seal.census()
         return {
@@ -294,7 +383,17 @@ def plan(db: OrmSession, name: str) -> dict[str, Any]:
         "total": sum(counts.values()),
         "restarts": ["api", "automation"],
         "command": f"deploy/secrets.sh rotate {SLUGS[SECRET]}",
+        # On a server that signs its audit log with the key derived from SECRET_KEY, the entries
+        # signed so far keep that derived key: the script writes it beside the audit keys before
+        # it takes the earlier SECRET_KEY away.
+        "auditKeyDerived": not _audit_key_is_set(),
     }
+
+
+def _audit_key_is_set() -> bool:
+    from .auditlog import key as signing
+
+    return signing.is_set()
 
 
 def secret_needed(doc: dict[str, Any]) -> bool:
@@ -397,6 +496,8 @@ def request(db: OrmSession, name: str, actor: str, now: float | None = None) -> 
     doc = read(db)
     requests = dict(doc.get("requests") or {})
     requests[name] = {"by": actor, "at": _iso(now), "until": now + REQUEST_LASTS}
+    if name == AUDIT:
+        requests[name]["from"] = fingerprint(AUDIT)
     doc["requests"] = requests
     _write(db, doc)
     planned = plan(db, name)
@@ -404,7 +505,9 @@ def request(db: OrmSession, name: str, actor: str, now: float | None = None) -> 
         db,
         actor,
         "key.rotate.request",
-        f"Asked for {name} to be changed ({planned['total']} item(s) to put under the new key)",
+        f"Asked for {name} to be changed (a new key signs the audit log from the next entry on)"
+        if name == AUDIT
+        else f"Asked for {name} to be changed ({planned['total']} item(s) to put under the new key)",
         target=name,
     )
     return {"request": _request_out(requests[name], now), **planned}
@@ -469,7 +572,7 @@ def note_seen() -> None:
         doc = read(db)
         seen = dict(doc.get("keys") or {})
         changed = False
-        for name in ROTATED:
+        for name in ASKED:
             mine = fingerprint(name)
             if not mine:
                 continue
@@ -479,6 +582,18 @@ def note_seen() -> None:
                 entry = {"fingerprint": mine, "since": _iso(time.time()), "rotatedAt": entry.get("rotatedAt") or ""}
                 if seen.get(name):
                     entry["rotatedAt"] = entry["since"]
+                    if name == AUDIT:
+                        # Nothing is moved when this key changes, so nothing else says it happened.
+                        # The entry is itself among the first the new key signs.
+                        from .core import audit
+
+                        was = str((seen.get(name) or {}).get("fingerprint") or "")
+                        said = (
+                            f"The audit log is signed with another key from now on ({mine}; until now {was}). "
+                            "The entries before this keep the key that signed them"
+                        )
+                        audit.record(db, SYSTEM, "key.rotate.done", said, target=AUDIT)
+                        _tell_admins(db, "keys.rotated", said + ".")
                 seen[name] = entry
                 changed = True
             elif not entry.get("since"):
@@ -496,6 +611,13 @@ def note_seen() -> None:
             and str(rewrap.get("verifiedAt") or "") >= str(requests[STORE].get("at") or "")
         ):
             requests.pop(STORE)
+            doc["requests"] = requests
+            changed = True
+        # A change of the audit key is over once the server runs with another key than the one it
+        # had when the change was asked for.
+        asked = requests.get(AUDIT) or {}
+        if asked and asked.get("from") and asked["from"] != fingerprint(AUDIT):
+            requests.pop(AUDIT)
             doc["requests"] = requests
             changed = True
         if changed:
@@ -522,9 +644,24 @@ def overview(db: OrmSession) -> dict[str, Any]:
             "holders": key["holders"],
             "source": source,
             "set": source != keys.DEFAULT,
-            "rotates": name in ROTATED,
+            "rotates": name in ASKED,
             "how": key.get("how") or "",
         }
+        if name == AUDIT:
+            from .auditlog import key as signing
+
+            entry.update(
+                fingerprint=fingerprint(AUDIT),
+                # Without a key of its own the server signs with one made from SECRET_KEY.
+                derived=not entry["set"],
+                since=(seen.get(name) or {}).get("since") or "",
+                rotatedAt=(seen.get(name) or {}).get("rotatedAt") or "",
+                # Nothing is moved by a change of this key: it is never half-way.
+                rotation={"state": "idle", "previousKept": len(signing._previous()), "last": None},
+                request=_request_out((doc.get("requests") or {}).get(name), now),
+                command=f"deploy/secrets.sh rotate {SLUGS[name]}",
+                signed=audit_signed(db),
+            )
         if name in ROTATED:
             entry.update(
                 fingerprint=fingerprint(name),
@@ -692,13 +829,16 @@ def start() -> None:
 # What deploy/secrets.sh asks the running server                              #
 # --------------------------------------------------------------------------- #
 def main(argv: list[str] | None = None) -> int:
-    """``python -m app.key_rotation new-key | status NAME | requested NAME``.
+    """``python -m app.key_rotation new-key | status NAME | requested NAME | audit-carry | audit-unchecked``.
 
     ``new-key`` prints a new key on standard output and nothing else: the
     script that asks pipes it into the place keys live. ``status`` prints one
     word (``idle``, ``running``, ``failed``, ``verified``) and, on the next
     lines, what a person wants to know. ``requested`` exits 0 when an
-    administrator asked for the change on the screen.
+    administrator asked for the change on the screen. ``audit-carry`` prints the
+    earlier audit keys that would leave with ``SECRET_KEY_PREVIOUS`` (secrets,
+    one a line, as ``AUDIT_KEY_PREVIOUS`` takes them); ``audit-unchecked`` how
+    many entries of the audit log this server cannot check for want of their key.
     """
     import argparse
     import sys
@@ -706,8 +846,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.key_rotation")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("new-key")
-    for command in ("status", "requested"):
-        commands.add_parser(command).add_argument("name", choices=ROTATED)
+    commands.add_parser("status").add_argument("name", choices=ROTATED)
+    commands.add_parser("requested").add_argument("name", choices=ASKED)
+    commands.add_parser("audit-carry")
+    commands.add_parser("audit-unchecked")
     args = parser.parse_args(argv)
     if args.command == "new-key":
         sys.stdout.write(random_source.token_hex(32) + "\n")
@@ -715,6 +857,14 @@ def main(argv: list[str] | None = None) -> int:
     from .core.db import SessionLocal
 
     with SessionLocal() as db:
+        if args.command == "audit-carry":
+            # Secrets, one a line, for the script that pipes them where the keys are kept.
+            for text in audit_keys_to_carry(db):
+                sys.stdout.write(text + "\n")
+            return 0
+        if args.command == "audit-unchecked":
+            print(audit_signed(db)["cannotBeChecked"])
+            return 0
         if args.command == "requested":
             asked = requested(db, args.name)
             if asked is None:

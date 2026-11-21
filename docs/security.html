@@ -669,8 +669,8 @@
         </li>
         <li>
           The <strong>audit log is written by the server</strong> for every change, whoever makes it and however: the
-          app, a script with a key, a request sent by hand. It cannot be written from the browser, and clearing it
-          leaves an entry naming who did.
+          app, a script with a key, a request sent by hand. It cannot be written from the browser. It is a chain, and it
+          can be sent to a syslog receiver as it is written: <a href="#audit-chain">see below</a>.
         </li>
         <li>Changes by two people to the same incident are merged or refused, never silently overwritten.</li>
       </ul>
@@ -795,6 +795,207 @@
         itself (rootless podman, Docker Desktop): the server recognises that, says on the policy page that the
         restriction cannot work there, refuses the list, and counts failures per account only.
       </p>
+
+      <h3 id="audit-chain">The audit log is a chain, and leaves the server</h3>
+      <p>
+        An audit log that sits in the database it describes can be changed by whoever can change that database: an
+        administrator whose account was taken, an operator of the host. Nik does two things about it. Every entry is
+        <strong>linked to the one before it by a hash</strong>, so a change shows when the log is walked; and every
+        entry is <strong>sent to a syslog receiver as it is written</strong>, so a copy exists where that person cannot
+        reach.
+      </p>
+      <ul>
+        <li>
+          <strong>The chain.</strong> Each entry has a number, counted from 1 with no gap, the hash of the entry before
+          it, and its own: the SHA-256 of a canonical form of its number, the previous hash and its eight fields, each
+          written with its length (the exact bytes are specified at the top of
+          <code>backend/app/auditlog/verifier.py</code>, a file that needs nothing of Nik and can be copied out). The
+          numbers are given when the transaction that holds the entries commits, under one lock taken last and held for
+          an instant, so writers that work at the same time never give the same number and none waits for long.
+        </li>
+        <li>
+          <strong>Nothing edits or removes an entry</strong>, with one exception that says so itself: a signed-in
+          administrator (not an API key) can remove the oldest entries, and the chain then keeps an entry that says how
+          many went, their numbers, by whom and the hash of the last one, so the log still verifies from where it now
+          starts. While the log is forwarded, an entry that was not sent yet is never removed. Entries that come in a
+          file of content from another server join the chain when they arrive, with the time and the author the file
+          gives them: the entry of the import says how many, and the chain shows where they joined. Each of them is
+          <strong>marked as imported</strong> (<code>origin: import</code>), on the screen, in the API and in the
+          message sent to syslog, and the mark is hashed with the entry: nobody reading the receiver's copy can take an
+          entry of another server, with a date of years ago, for something this server saw. Entries imported before 6.8
+          have no mark: nothing told them apart then.
+        </li>
+        <li>
+          <strong>Verification.</strong> The server walks the chain every five minutes (only what is new; every entry
+          once a day), on demand from <em>Settings → System → Audit log</em>, and from the command line (<code
+            >python -m app.auditlog verify-audit</code
+          >). It names the first thing that does not hold: an entry whose content was <em>edited</em>, entries
+          <em>missing</em> from the middle, entries <em>reordered</em>, an entry that does not follow the one before it,
+          a log that starts late without saying why, a log whose end was <em>cut</em>. Every administrator is told once
+          when a break is found.
+        </li>
+        <li>
+          <strong>What a chain cannot show alone.</strong> Removing the newest entries leaves a chain that still holds
+          together, and so does computing the whole chain again from the point of a change. Only a head (a number and
+          its hash) kept somewhere else tells. The server holds the end of the log against every head it can find: the
+          head row, a file of heads it writes into the backup directory at each good walk
+          (<code>audit-heads.jsonl</code>: outside the database, still on the server), the cursor of the forwarding, and
+          a head typed by hand, such as the last checkpoint the syslog receiver got. Somebody who controls the database
+          <em>and</em> the host can make all of those on the server agree. What they cannot change is what already left:
+          that is what the forwarding is for.
+        </li>
+        <li>
+          <strong>The chain is signed with a key that is not in the database.</strong> Beside its hash every entry
+          carries an HMAC-SHA-256 of that hash and the id of the key that made it. Whoever can write to the database can
+          compute the hashes of a rewritten log again; without the key they cannot make its signatures, and the walk
+          names the first entry that has none (<em>unsigned</em>) or one the key did not make (<em>forged</em>). The key
+          is <code>AUDIT_KEY</code>, a secret of its own, kept like the other <a href="#keys">keys of the server</a>
+          and given to the two containers that write entries; when it is not set, a key derived from
+          <code>SECRET_KEY</code> is used, so an upgraded server is protected without anybody doing anything. The hashes
+          stay what anybody can check, the syslog receiver included; the signatures are checked by who holds the key
+          (the standalone verifier takes it from a file or from its environment, never from its command line, and says
+          "not checked: no key" without it). The signature and the id of the key travel in the syslog messages; the key
+          never leaves the server.
+        </li>
+        <li>
+          <strong>The server signs as its own only what its own transactions wrote.</strong> An entry it finds in the
+          table without a number (the one a restore leaves; one inserted by hand; one whose number was taken away so
+          that it would be linked again) is linked and signed, and marked <code>origin: outside</code>, which is hashed
+          and shown. Without that, emptying the numbers of a stretch of the log would be a way to have the server sign
+          whatever was put there.
+        </li>
+        <li>
+          <strong>When the key changes</strong>, the new one signs from the next entry on and the entries before it keep
+          the id of theirs. They stay verifiable while the server can still make their key: the earlier keys in
+          <code>AUDIT_KEY_PREVIOUS</code>, and the keys derived from <code>SECRET_KEY</code> and from every
+          <code>SECRET_KEY_PREVIOUS</code>. Setting <code>AUDIT_KEY</code> on a server that used the derived key
+          therefore loses nothing. Changing <code>SECRET_KEY</code> starts a new derived key; the old entries verify
+          while <code>SECRET_KEY_PREVIOUS</code> holds the old value, and after that only if the old derived key is in
+          <code>AUDIT_KEY_PREVIOUS</code>: <code>deploy/secrets.sh rotate secret-key</code> writes it there by itself
+          before it takes the earlier <code>SECRET_KEY</code> away, and refuses to take it away if it cannot (<a
+            href="#key-rotation"
+            >Changing a key</a
+          >). An entry whose key the server can no longer make is reported as one that
+          <strong>cannot be checked</strong>, never as tampering, and its place in the chain of hashes is verified all
+          the same.
+        </li>
+        <li>
+          <strong>What the key does not change.</strong> Somebody who holds the key as well as the database (the
+          backend's container, its environment) can sign what they rewrite: the copy outside the server remains what
+          shows it. And a signature says nothing of entries removed from the end of the log.
+        </li>
+        <li>
+          <strong>There is no database trigger</strong> that refuses an <code>UPDATE</code> or a <code>DELETE</code> on
+          the table. A trigger is an object the backups refuse to carry, and the role the server connects with owns the
+          table, so privileges could not hold it back either. The chain and the copy outside are the protection.
+        </li>
+        <li>
+          <strong>Entries written before 6.8</strong> were linked once, at the upgrade, as they were found. The entry
+          that follows them says so: the chain vouches for them from that day, not before.
+        </li>
+        <li>
+          <strong>After a restore</strong> the log on the server is the log of the backup. The restore writes the first
+          new entry (<code>audit.restore</code>, naming the backup) and the chain goes on from the head the backup had.
+          What the server wrote between the backup and the restore is not in its log any more: it exists only on the
+          syslog receiver, which sees the same numbers arrive again with other content, the first of them being that
+          entry.
+        </li>
+      </ul>
+
+      <h3 id="audit-forwarding">Forwarding to syslog</h3>
+      <ul>
+        <li>
+          <strong>What is sent.</strong> One RFC 5424 message for each entry, with the entry as a JSON object and, in
+          the structured data, its number, its hash and the hash of the entry before: the receiver's copy can be
+          verified on its own, and held against an export of the server, with <code>verifier.py</code>. Every few
+          minutes a <strong>checkpoint</strong> carries the head of the chain and the number of entries, whether
+          anything happened or not: silence is told from a cut line, and the receiver always holds a recent head.
+          Nothing but the audit log is sent.
+        </li>
+        <li>
+          <strong>How.</strong> TCP with TLS (RFC 5425) is the one to use: the certificate of the receiver is always
+          verified, against the authority or the certificate pasted in the settings (then only that is trusted) or the
+          system's authorities, and a client certificate can be presented, its key pasted or taken from a stored
+          credential. Plain TCP (RFC 6587, octet counting) and UDP exist for receivers that take nothing else; the
+          screen says what they are: not encrypted, not authenticated, and for UDP lossy.
+        </li>
+        <li>
+          <strong>Who sends.</strong> The backend has no way out. The automation worker sends, in the order of the
+          chain, at least once: a batch counts as arrived only when the connection is still up a moment later, and is
+          sent again otherwise, so a receiver can see an entry twice and never out of order. Writing to the log never
+          waits for the receiver. A receiver that is down makes a backlog, bounded only by the table, shown on the
+          screen and on the health page, told to the administrators when it lasts and when it drained.
+        </li>
+        <li>
+          <strong>A log changed after it was sent.</strong> The sender remembers the hash of the last entries the
+          receiver took. When the table no longer holds them as they were sent, it writes an entry that says so
+          (<code>audit.forward.diverged</code>) and sends again from the last entry that is still the one the receiver
+          got: the receiver then holds what the log said and what it says now, the same numbers with different content,
+          which is what the verifier reports. The walk of the chain is held against the highest entry the receiver ever
+          took, and that is never moved back.
+        </li>
+        <li>
+          <strong>The receiver is an exception of its own to the egress rules.</strong> A SIEM is usually on a private
+          address, which the automation worker refuses for everything a playbook does unless the host is listed. The
+          forwarding connects to the host and the port an administrator set, whatever range the address is in, and to
+          nothing else; it sends syslog messages there and reads nothing back. It opens nothing for playbooks: their
+          requests go through other code that does not read this setting, and the same host stays refused to them. A
+          name is resolved once and the connection goes to that address. Link-local addresses (a cloud's metadata
+          service), multicast and unspecified addresses are refused whatever is set.
+        </li>
+        <li>
+          <strong>The last word.</strong> Changing the forwarding needs a signed-in administrator and is itself an entry
+          of the log. The sender keeps the settings it had until the receiver it had took that entry: turning the
+          forwarding off, or pointing it elsewhere, is the last thing the old receiver hears. If that receiver does not
+          take it within thirty seconds the change takes effect anyway, and an entry says it went unheard.
+        </li>
+      </ul>
+
+      <h3 id="what-is-audited">What is in the audit log, and what is not</h3>
+      <p>
+        <strong>Recorded</strong>: sign-ins, sign-outs and failed sign-ins (the first failure of a run, then each one
+        from the number that starts the waits: the ones between are counted, not listed); an administrator refused for
+        the network they come from; second factors turned on, turned off, reset, wrong codes, recovery codes used and
+        made again; sessions ended by their owner or by an administrator; accounts created, changed (roles, password,
+        disabled), deleted; API keys made and revoked; the sign-in policy; every change of settings, with the names of
+        what changed; backups (settings, passphrase, each run, each restore test, each copy, each download and
+        deletion), the export and the import of content; the data guard opened and closed, for playbooks and for
+        look-ups; hosts a playbook is let reach; playbooks created, saved as a version, enabled, run by a person,
+        stopped, deleted, imported; approvals answered; connectors, instances and credentials; packs; evidence uploaded,
+        deleted, downloaded (samples, attachments, captures and what is exported from them), incident exports and
+        reports; webhooks added and removed (from 6.8); the audit log itself (verified, old entries removed, forwarding
+        changed and tested, a restore) and the health page (thresholds, the scrape token).
+      </p>
+      <p>
+        <strong>Not recorded</strong>, by design so far: what is only read (an incident opened, a list of accounts, the
+        audit log itself, a query), the use of an API key, a session that ends by itself for lack of use. And, as things
+        stand: the start of a second-factor enrolment (its confirmation is recorded); runs a playbook starts by
+        schedule, trigger or inbound webhook (they are in the runs, not in the audit log); the draft of a playbook or a
+        script saved without making a version; tests of an instance and of its keys; saved filters and dashboards
+        created; tags and notes of an indicator in the library; a task given to somebody else; the export of a playbook,
+        a script, a dashboard or a list as a file; reading the source of an e-mail or an attachment's bytes in the page.
+        Old values are not kept: an entry says what changed, not what it was before.
+      </p>
+
+      <h3 id="health-and-metrics-security">The health page and the metrics</h3>
+      <ul>
+        <li>
+          <code>/api/health</code> says that the process is up and nothing else, to anybody. The details are for
+          administrators (<code>/api/health/details</code>).
+        </li>
+        <li>
+          <code>/api/metrics</code> answers to a <strong>scrape token</strong> and to nothing else: a bearer token made
+          on the health page by a signed-in administrator, shown once and kept as a hash. A session cookie is not looked
+          at, so no page a browser opens, of Nik or of another site, can read the metrics; an API key is not a scrape
+          token and a scrape token opens no other route. No label of a metric carries an account, an incident, a host or
+          anything a person typed.
+        </li>
+        <li>
+          The certificate of the web container is read by the backend as a browser gets it (a connection to the web
+          container, nothing verified, nothing sent): the backend does not hold the certificate's key and does not mount
+          its volume.
+        </li>
+      </ul>
 
       <h2 id="secrets">Secrets and backups</h2>
       <ul>
@@ -970,6 +1171,14 @@
               <td><code>api</code>, <code>automation</code>, <code>sandbox</code></td>
             </tr>
             <tr>
+              <td><code>AUDIT_KEY</code> (and the earlier ones, <code>AUDIT_KEY_PREVIOUS</code>)</td>
+              <td>The signature of every entry of the audit log</td>
+              <td>
+                <code>api</code>, <code>automation</code>: the two that write entries, with the same key. No worker, and
+                not the sandbox
+              </td>
+            </tr>
+            <tr>
               <td><code>METRICS_TOKEN</code> (optional)</td>
               <td>Who reads <code>/api/metrics</code></td>
               <td><code>api</code></td>
@@ -993,12 +1202,12 @@
       <ul>
         <li>
           <strong>Asked for in Nik, carried out on the host.</strong> In <em>Settings → Keys</em> a signed-in
-          administrator asks for <code>SECRET_KEY</code> or <code>STORE_KEY</code> to be changed, giving the password
-          again and a code when the account has a second factor (an API key cannot). The page says what will be put
-          under the new key and which command to run. The server cannot write where its own keys are kept, so
-          <code>deploy/secrets.sh rotate …</code> does that on the host: the new key is made by the running server and
-          piped straight into its place, never shown on a screen or in a log. Run without a request, the script says
-          that nobody asked and waits for the operator to confirm.
+          administrator asks for <code>SECRET_KEY</code>, <code>STORE_KEY</code> or <code>AUDIT_KEY</code> to be
+          changed, giving the password again and a code when the account has a second factor (an API key cannot). The
+          page says what will be put under the new key and which command to run. The server cannot write where its own
+          keys are kept, so <code>deploy/secrets.sh rotate …</code> does that on the host: the new key is made by the
+          running server and piped straight into its place, never shown on a screen or in a log. Run without a request,
+          the script says that nobody asked and waits for the operator to confirm.
         </li>
         <li>
           <strong>Both keys are held until the new one is proven.</strong> The key in use is kept beside the new one
@@ -1020,12 +1229,31 @@
           disk afterwards. No backup of Nik depends on the store key.
         </li>
         <li>
+          <strong>The audit key signs and stores nothing</strong>, so its change moves nothing and is never half-way:
+          <code>deploy/secrets.sh rotate audit-key</code> keeps the key in use among the earlier ones
+          (<code>AUDIT_KEY_PREVIOUS</code>), writes the new one and restarts the two containers that sign. The entries
+          written before keep the key that signed them, for good; the first entry the new key signs says that the key
+          changed. The Keys page lists every key that signed entries by its id, with how many, and says how many entries
+          cannot be checked because their key is not among the keys of the server.
+        </li>
+        <li>
+          <strong>A change of <code>SECRET_KEY</code> does not cost the audit log its key.</strong> A server without an
+          audit key of its own signs with one derived from <code>SECRET_KEY</code>; when that changes, the entries
+          written so far depend on the earlier one. Before the script takes the earlier <code>SECRET_KEY</code> away it
+          asks the server which derived keys signed entries and would be lost, and writes them into
+          <code>AUDIT_KEY_PREVIOUS</code> (from the server to the place keys are kept, never shown). If it cannot, it
+          stops and the earlier key stays. The key of the client certificate the audit log is forwarded with is one of
+          the secrets that are put under the new <code>SECRET_KEY</code> and read back before the change is verified.
+        </li>
+        <li>
           <strong>The backup passphrase</strong> is changed on the same page (or in Backup). Earlier backups keep the
           passphrase they were made with; the server remembers the earlier ones to test them.
         </li>
         <li>
-          A key is spoken of by its <strong>fingerprint</strong>, eight characters derived from it through two hashes:
-          two people check they speak of the same key without either seeing it. No route returns a key or a part of one.
+          A key is spoken of by its <strong>fingerprint</strong>, eight characters derived from it through two hashes
+          (for the audit key, the id its entries carry: <code>set-</code> or <code>derived-</code> and twelve digits of
+          a hash): two people check they speak of the same key without either seeing it. No route returns a key or a
+          part of one.
         </li>
       </ul>
       <h3 id="backup-security">Backups</h3>
@@ -1054,6 +1282,19 @@
           for. A restore seals each file again as it is written, under the store key of the server that restores, so the
           files are in clear on neither disk. The restore test still proves every file against its checksum, and a
           backup taken before 6.8 is the same thing and restores the same way.
+        </li>
+        <li>
+          <strong>A backup and the audit log.</strong> The manifest of a backup, and the <code>.json</code> in clear
+          beside it (which is sent off the server with it), give the end of the audit log the backup holds: the number
+          of its last entry, its hash, and the id of the key that signed it, never a key. That is a head kept outside
+          the database and outside the server: the verifier holds a log against it (<code>--head</code>). The keys the
+          log was signed with are <strong>not</strong> in a backup, unless an administrator chose to include
+          <code>SECRET_KEY</code>: then <code>AUDIT_KEY</code> and the earlier audit keys travel with it, inside the
+          encrypted file, and <code>deploy/restore.sh --secret-key</code> adds them to the earlier audit keys of the
+          server that restores. That server signs with its own key from then on; entries whose key it was not given are
+          shown as ones that cannot be checked. The file of heads the verification keeps in the backup directory
+          (<code>audit-heads.jsonl</code>) is not a backup: it is not listed, not sent off the server, not removed by
+          the retention, and not part of a restore.
         </li>
         <li>
           <strong>The snapshot before an upgrade</strong> is encrypted the same way; while no passphrase is set (the
@@ -1135,6 +1376,11 @@
           the copies to a second host; keep <code>.env</code> elsewhere; and restore once on that second host, to know
           how long it takes.
         </li>
+        <li>
+          Send the audit log to a syslog receiver on another machine, over TLS (<em>Settings → System → Audit log</em>),
+          and keep what it receives where the administrators of Nik cannot change it: it is the copy that shows a log
+          that was altered here.
+        </li>
         <li>Give each person an account; disable, do not delete, the account of someone who leaves.</li>
         <li>
           Under <em>Settings → Sign-in and sessions</em>, turn on <em>Administrators must have a second factor</em>, and
@@ -1213,6 +1459,17 @@
         <li>
           A second factor does not protect an API key, nor the server itself: whoever can run commands in the backend
           container can reset any account's second factor.
+        </li>
+        <li>
+          The chain of the audit log shows a change to what is there. Without a copy off the server (the syslog
+          receiver, its checkpoints) it cannot show that the newest entries were removed, nor that the whole log was
+          computed again by somebody who controls the database and holds the key that signs it (the host). Anybody who
+          can write to the database can also add entries: a chain says that nothing was changed, not that everything in
+          it is true.
+        </li>
+        <li>
+          Over plain TCP and UDP the audit log crosses the network in clear and the receiver is not authenticated; over
+          UDP messages can be lost in silence, and one that does not fit a datagram is shortened.
         </li>
         <li>Analysts can read every incident: there is no per-incident access control.</li>
         <li>

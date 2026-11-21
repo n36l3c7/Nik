@@ -8,6 +8,7 @@ file and its passphrase:
     python -m app.backups.restore restore FILE     put it back
     python -m app.backups.restore list [DIRECTORY] the backups of a directory, from their notes
     python -m app.backups.restore secret-key FILE  print the SECRET_KEY a backup holds, if it holds one
+    python -m app.backups.restore audit-keys FILE  print the keys of the audit log it holds, one a line
 
 ``restore`` goes through the file twice. The first time it changes nothing:
 every chunk is decrypted and every checksum compared, and what the file says
@@ -97,6 +98,23 @@ def describe(manifest: dict[str, Any]) -> list[str]:
         "  SECRET_KEY "
         + ("included" if manifest.get("includesSecretKey") else "not included: it is where the keys of the server are"),
     ]
+    head = manifest.get("auditHead")
+    if head:
+        lines.append(
+            f"  audit log  ends at entry {head['seq']}:{head['hash']}"
+            + (f" (signed with the key {head['keyId']})" if head.get("keyId") else "")
+        )
+        if manifest.get("includesSecretKey"):
+            count = int(manifest.get("includesAuditKeys") or 0)
+            lines.append(
+                f"  AUDIT_KEY  {count} key(s) of the audit log included"
+                if count
+                else "  AUDIT_KEY  none to include: the log was signed with the key derived from SECRET_KEY"
+            )
+        else:
+            lines.append(
+                "  AUDIT_KEY  not included: the keys the log was signed with are where the keys of the server are"
+            )
     return lines
 
 
@@ -213,6 +231,10 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
 
         store_seal.after_restore()
         checks.append("every file of the store was sealed under the store key of this server as it was written")
+    # The log on this server is now the log of the backup: its first new entry says so.
+    from ..auditlog import restored
+
+    restored.note(url, str(manifest.get("name") or path.name), str(manifest.get("createdAt") or ""))
     _say(f"Done in {time.monotonic() - clock:.0f} s. Checked:")
     for check in checks:
         _say(f"  - {check}")
@@ -224,11 +246,23 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
             "stored secrets (keys of instances, credentials) cannot be read: deploy/restore.sh --secret-key puts "
             "the one of the backup where the keys of this server are (.env, or the secrets directory)."
         )
+        _say(
+            "The audit log that came back was signed with the keys of the server the backup was taken on. "
+            "--secret-key also adds those the backup holds to the earlier audit keys of this server "
+            "(AUDIT_KEY_PREVIOUS); without them its entries are shown as ones that cannot be checked."
+        )
     else:
         _say(
             "The stored secrets (keys of instances, credentials) are readable only with the SECRET_KEY the backup "
             "was made under: it must be the one of this server. If it is lost, they have to be entered again."
         )
+        if manifest.get("auditHead"):
+            _say(
+                "The audit log that came back was signed with the keys of the server the backup was taken on: "
+                "its AUDIT_KEY and what its AUDIT_KEY_PREVIOUS held belong in the AUDIT_KEY_PREVIOUS of this "
+                "server (a key derived from its SECRET_KEY needs nothing when the SECRET_KEY is the same). "
+                "Without them its entries are shown as ones that cannot be checked, never as tampered with."
+            )
     _say(
         f"Nobody is signed in on the restored server: the {ended.get('sessions', 0)} session(s) that were open when "
         "the backup was taken are ended. Accounts, second factors, recovery codes and the sign-in policy are as "
@@ -272,7 +306,7 @@ def listing(folder: Path) -> list[dict[str, Any]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.backups.restore", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("inspect", "restore", "secret-key"):
+    for name in ("inspect", "restore", "secret-key", "audit-keys"):
         command = commands.add_parser(name)
         command.add_argument("file")
         if name == "restore":
@@ -334,6 +368,20 @@ def main(argv: list[str] | None = None) -> int:
                 raise BackupError("This backup does not hold a SECRET_KEY: it was not asked to")
             # With its name in front: the shell script that reads it tells it from anything else printed.
             print(f"SECRET_KEY={found[0]}")
+            return 0
+        if args.command == "audit-keys":
+            held: list[str] = []
+
+            def keys_of(part) -> None:
+                if part.name == "audit-keys":
+                    held.extend(line for line in part.read().decode("utf-8").splitlines() if line.strip())
+
+            with open(path, "rb") as source:
+                walk(source, _secrets(peek(path)), keys_of)
+            # None is not an error: a server that always signed with the key derived from its
+            # SECRET_KEY has no other key to carry.
+            for text in held:
+                print(f"AUDIT_KEY_PREVIOUS={text}")
             return 0
         return restore(path, replace=args.replace, database_only=args.database_only)
     except BackupError as error:

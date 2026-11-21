@@ -37,6 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 
+from ..auditlog.verifier import IMPORTED
 from ..browser_profiles import normalize_browser_data
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, Setting, User
@@ -249,6 +250,8 @@ def import_backup(
                     details=str(e.get("details") or ""),
                     incident_id=e.get("incidentId"),
                     incident_name=e.get("incidentName"),
+                    # Its time and its author are the file's word: marked, and the mark is hashed.
+                    origin=IMPORTED,
                 )
             )
             added["audit"] += 1
@@ -268,7 +271,8 @@ def import_backup(
             caller.actor,
             "backup.import",
             f"Imported a file of content: added {added['users']} of {len(users)} accounts, "
-            f"{added['incidents']} of {len(incidents)} incidents, {added['audit']} of {len(audit)} audit entries; "
+            f"{added['incidents']} of {len(incidents)} incidents, {added['audit']} of {len(audit)} audit entries "
+            "(they join the chain of this server here, with the time and the author the file gives them); "
             "nothing that was here was changed",
         )
         db.commit()

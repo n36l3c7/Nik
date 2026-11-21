@@ -95,6 +95,14 @@ services:
       STORE_KEY_FILE: /run/secrets/store_key
       STORE_KEY_PREVIOUS: ${STORE_KEY_PREVIOUS:-}
       STORE_KEY_PREVIOUS_FILE: /run/secrets/store_key_previous
+      # Signs every entry of the audit log (the same key in this container and in the other
+      # one that writes entries). Without it the key derived from SECRET_KEY signs.
+      # deploy/secrets.sh rotate audit-key sets or changes it; the earlier keys stay in
+      # AUDIT_KEY_PREVIOUS so that the entries they signed can still be checked.
+      AUDIT_KEY: ${AUDIT_KEY:-}
+      AUDIT_KEY_FILE: /run/secrets/audit_key
+      AUDIT_KEY_PREVIOUS: ${AUDIT_KEY_PREVIOUS:-}
+      AUDIT_KEY_PREVIOUS_FILE: /run/secrets/audit_key_previous
       # How fast a store from before 6.8 is sealed, in megabytes a second (0: as fast as the disk).
       STORE_SEAL_MBPS: ${STORE_SEAL_MBPS:-40}
       # The app is served over HTTPS only, so the session cookie is Secure.
@@ -171,6 +179,8 @@ services:
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key_previous:/run/secrets/secret_key_previous:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/store_key:/run/secrets/store_key:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/store_key_previous:/run/secrets/store_key_previous:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/audit_key:/run/secrets/audit_key:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/audit_key_previous:/run/secrets/audit_key_previous:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/metrics_token:/run/secrets/metrics_token:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/analyzer_token:/run/secrets/analyzer_token:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/capa_token:/run/secrets/capa_token:ro,z
@@ -224,6 +234,12 @@ services:
       SECRET_KEY_FILE: /run/secrets/secret_key
       SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
       SECRET_KEY_PREVIOUS_FILE: /run/secrets/secret_key_previous
+      # This container writes entries of the audit log too (playbooks, the forwarding): it signs
+      # them with the same key as the backend.
+      AUDIT_KEY: ${AUDIT_KEY:-}
+      AUDIT_KEY_FILE: /run/secrets/audit_key
+      AUDIT_KEY_PREVIOUS: ${AUDIT_KEY_PREVIOUS:-}
+      AUDIT_KEY_PREVIOUS_FILE: /run/secrets/audit_key_previous
       # The backend applies the migrations; this container waits for it and applies none.
       NIK_SKIP_MIGRATIONS: "1"
       # No store key here, and no store: files are asked of the backend.
@@ -251,6 +267,8 @@ services:
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/db_password:/run/secrets/db_password:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key:/run/secrets/secret_key:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key_previous:/run/secrets/secret_key_previous:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/audit_key:/run/secrets/audit_key:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/audit_key_previous:/run/secrets/audit_key_previous:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/sandbox_token:/run/secrets/sandbox_token:ro,z
     networks: [default, automation-egress, automation-internal]
     depends_on:

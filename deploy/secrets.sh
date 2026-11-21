@@ -5,6 +5,7 @@
 #   deploy/secrets.sh move                 # take the secrets out of .env, into files
 #   deploy/secrets.sh rotate secret-key    # change SECRET_KEY
 #   deploy/secrets.sh rotate store-key     # change STORE_KEY
+#   deploy/secrets.sh rotate audit-key     # give the audit log a key of its own, or change it
 #   deploy/secrets.sh rotate tokens        # change the tokens of the workers
 #   deploy/secrets.sh back                 # put the secrets back into .env (to return to a version before 6.8)
 #
@@ -34,6 +35,17 @@
 # first be asked for in Nik (Settings → Keys → Rotate…) by an administrator
 # who gives the password again; when nobody did, this says so and asks.
 #
+# rotate audit-key. The key that signs the entries of the audit log. Nothing
+# is stored under it, so nothing is moved: the new key signs from the next
+# entry on, and the key in use until now is added to AUDIT_KEY_PREVIOUS, where
+# it stays for as long as the entries it signed are to be checked (for good,
+# unless the log is cut). A server that never had a key of its own signs with
+# one derived from SECRET_KEY: this gives it one, and the derived key is still
+# made from SECRET_KEY. When SECRET_KEY itself is changed on such a server,
+# rotate secret-key writes the derived key of the earlier SECRET_KEY into
+# AUDIT_KEY_PREVIOUS before it takes that earlier key away: otherwise every
+# entry signed until then could no longer be checked.
+#
 # Options:
 #   --yes          do not ask (before changing a key nobody asked for in Nik; before stopping)
 #   --no-start     with move and back: write the files, do not restart the stack
@@ -59,7 +71,7 @@ die() {
 }
 
 TOKENS="ANALYZER_TOKEN CAPA_TOKEN DOCVIEW_TOKEN BROWSER_TOKEN PCAP_TOKEN SANDBOX_TOKEN"
-SECRETS="DB_PASSWORD SECRET_KEY STORE_KEY $TOKENS SECRET_KEY_PREVIOUS STORE_KEY_PREVIOUS METRICS_TOKEN"
+SECRETS="DB_PASSWORD SECRET_KEY STORE_KEY $TOKENS SECRET_KEY_PREVIOUS STORE_KEY_PREVIOUS METRICS_TOKEN AUDIT_KEY AUDIT_KEY_PREVIOUS"
 
 YES=0
 START=1
@@ -69,7 +81,7 @@ while [ $# -gt 0 ]; do
     --yes) YES=1 ;;
     --no-start) START=0 ;;
     -h | --help)
-      sed -n '2,45p' "$0"
+      sed -n '2,57p' "$0"
       exit 0
       ;;
     -*) die "unknown option: $1 (see --help)" ;;
@@ -78,7 +90,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 COMMAND=${ARGS[0]:-}
-[ -n "$COMMAND" ] || die "say what to do: status, move, rotate secret-key, rotate store-key, rotate tokens, back (see --help)"
+[ -n "$COMMAND" ] || die "say what to do: status, move, rotate secret-key, rotate store-key, rotate audit-key, rotate tokens, back (see --help)"
 
 cd "$NIK_DIR"
 [ -f docker-compose.yml ] || die "no docker-compose.yml in $NIK_DIR"
@@ -235,14 +247,21 @@ status() {
     else
       case "$name" in
         *_PREVIOUS | METRICS_TOKEN) printf '  %-22s -\n' "$name" >&2 ;;
+        AUDIT_KEY) printf '  %-22s - (the audit log is signed with the key derived from SECRET_KEY)\n' "$name" >&2 ;;
         *) printf '  %-22s MISSING\n' "$name" >&2 ;;
       esac
     fi
   done
   if [ -n "$(container api)" ]; then
     for name in SECRET_KEY STORE_KEY; do
-      log "$name: $(in_api python -m app.key_rotation status "$name" 2>/dev/null | head -n 1 || echo unknown)"
+      log "$name: $(in_api python -m app.key_rotation status "$name" 2>/dev/null | sed -n 1p || echo unknown)"
     done
+    log "AUDIT_KEY: $(in_api python -m app.auditlog key 2>/dev/null | sed -n 1p || echo unknown)"
+    unchecked=$(in_api python -m app.key_rotation audit-unchecked 2>/dev/null || echo unknown)
+    case "$unchecked" in
+      0) ;;
+      *) log "AUDIT_KEY: $unchecked entries of the audit log cannot be checked: the key that signed them is not among AUDIT_KEY_PREVIOUS" ;;
+    esac
   else
     log "the stack is not running: where a change of key stands is not known"
   fi
@@ -350,6 +369,50 @@ back() {
 # --------------------------------------------------------------------------- #
 # rotate                                                                      #
 # --------------------------------------------------------------------------- #
+add_earlier_audit_key() { # VALUE: one more key in AUDIT_KEY_PREVIOUS, unless it is there
+  local earlier one=$1
+  # The earlier keys are separated by commas: a key that was typed with one in it is written
+  # as the bytes it is (hex:…), which the server reads as the same key.
+  case "$one" in
+    *,*) one="hex:$(printf '%s' "$one" | od -An -v -tx1 | tr -d ' \n')" ;;
+  esac
+  earlier=$(get AUDIT_KEY_PREVIOUS)
+  case ",$earlier," in
+    *",$one,"*) ;;
+    *) put AUDIT_KEY_PREVIOUS "${earlier:+$earlier,}$one" ;;
+  esac
+  unset one earlier
+}
+
+carry_audit_keys() { # before an earlier SECRET_KEY goes: the audit keys derived from it stay known
+  local carried count=0 line
+  # The server names the keys that would be lost (none when the log has a key of its own and
+  # always had). They are secrets: from the server to the place keys are kept, never shown.
+  carried=$(in_api python -m app.key_rotation audit-carry) ||
+    die "SECRET_KEY: the server did not say which keys of the audit log leave with the earlier SECRET_KEY, so the earlier key stays where it is. Nothing is lost: run this again once the server answers ($COMPOSE logs api)."
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    add_earlier_audit_key "$line"
+    count=$((count + 1))
+  done <<EOF
+$carried
+EOF
+  unset carried line
+  if [ "$count" -gt 0 ]; then
+    log "SECRET_KEY: the audit log was signed with a key derived from the earlier SECRET_KEY: that derived key ($count) is written into AUDIT_KEY_PREVIOUS, so that the entries signed until now can still be checked"
+  fi
+}
+
+say_unchecked() { # after a change: whether entries of the audit log lost their key
+  local unchecked
+  unchecked=$(in_api python -m app.key_rotation audit-unchecked 2>/dev/null || echo unknown)
+  case "$unchecked" in
+    0) log "every signed entry of the audit log can still be checked with the keys this server holds." ;;
+    unknown) log "the server did not say whether every entry of the audit log can still be checked: Settings → Keys shows it." ;;
+    *) log "$unchecked entries of the audit log cannot be checked: the key that signed them is not among the keys of this server (Settings → Keys names it). Put it back into AUDIT_KEY_PREVIOUS if you have it." ;;
+  esac
+}
+
 retire() { # NAME: the earlier key leaves the place keys are read from, into a file nothing reads
   local earlier folder file
   earlier=$(get "${1}_PREVIOUS")
@@ -372,7 +435,7 @@ rotate_key() { # SECRET_KEY | STORE_KEY, and the services that hold it
   local state line
   [ -n "$(container api)" ] || die "the stack is not running: start it first ($COMPOSE up -d). A key is changed on a running server, which puts everything under the new one."
   [ -n "$(get "$name")" ] || die "$name is not set where this stack keeps its secrets: run deploy/init-env.sh first"
-  state=$(in_api python -m app.key_rotation status "$name" | head -n 1)
+  state=$(in_api python -m app.key_rotation status "$name" | sed -n 1p)
   case "$state" in
     idle)
       if [ -n "$(get "${name}_PREVIOUS")" ]; then
@@ -430,6 +493,8 @@ rotate_key() { # SECRET_KEY | STORE_KEY, and the services that hold it
     sleep 5
   done
   RETIRED=""
+  # Refused, and the earlier key kept, when the keys of the audit log cannot be carried first.
+  if [ "$name" = SECRET_KEY ]; then carry_audit_keys; fi
   retire "$name"
   log "$name: verified. Restarting ${services[*]} once more, without the earlier key"
   restart "${services[@]}"
@@ -445,7 +510,41 @@ rotate_key() { # SECRET_KEY | STORE_KEY, and the services that hold it
       log "No backup of Nik needs it. Destroy it (shred -u), unless you keep copies of the store volume made before now."
     fi
   fi
+  if [ "$name" = SECRET_KEY ]; then say_unchecked; fi
   log "Keep a copy of the new key away from this server."
+}
+
+rotate_audit() {
+  local current
+  [ -n "$(container api)" ] || die "the stack is not running: start it first ($COMPOSE up -d)."
+  if asked=$(in_api python -m app.key_rotation requested AUDIT_KEY 2>/dev/null); then
+    log "AUDIT_KEY: the change was $asked"
+  else
+    confirm "No administrator asked for AUDIT_KEY to be changed in Nik (Settings → Keys → Rotate…)." "rotate"
+  fi
+  current=$(get AUDIT_KEY)
+  if [ -n "$current" ]; then
+    # The key in use joins the earlier keys first: whatever stops next, every entry is checked.
+    add_earlier_audit_key "$current"
+    log "AUDIT_KEY: the key in use until now is kept in AUDIT_KEY_PREVIOUS: the entries it signed are checked with it"
+  else
+    log "AUDIT_KEY: the log was signed with the key derived from SECRET_KEY, which the server still makes: the entries it signed are checked with it"
+  fi
+  unset current
+  new_key | {
+    IFS= read -r made
+    [ "${#made}" -ge 32 ] || die "no new key was made: AUDIT_KEY is as it was"
+    put AUDIT_KEY "$made"
+  }
+  log "AUDIT_KEY: a new key was made by the server and written where the keys are kept (it is never shown). Restarting api automation: both sign with it"
+  restart api automation
+  case "$(wait_for_server)" in
+    *'"ok"'*) ;;
+    *) die "the server does not answer after the restart: $COMPOSE ps, $COMPOSE logs api. The keys are where the keys are kept: nothing is lost." ;;
+  esac
+  log "AUDIT_KEY: $(in_api python -m app.auditlog key 2>/dev/null | sed -n 1p || echo "the server did not say which key signs")"
+  say_unchecked
+  log "Keep a copy of AUDIT_KEY and of AUDIT_KEY_PREVIOUS away from this server, where the copy of SECRET_KEY is: a restored server checks its audit log with them."
 }
 
 rotate_tokens() {
@@ -472,8 +571,9 @@ case "$COMMAND" in
     case "${ARGS[1]:-}" in
       secret-key) rotate_key SECRET_KEY api automation ;;
       store-key) rotate_key STORE_KEY api ;;
+      audit-key) rotate_audit ;;
       tokens) rotate_tokens ;;
-      *) die "rotate what: secret-key, store-key or tokens" ;;
+      *) die "rotate what: secret-key, store-key, audit-key or tokens" ;;
     esac
     ;;
   *) die "unknown command: $COMMAND (see --help)" ;;

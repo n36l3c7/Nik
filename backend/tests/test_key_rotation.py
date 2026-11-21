@@ -141,16 +141,16 @@ def test_the_screen_lists_every_secret_and_never_a_value(server: TestClient, mon
     found = answer.json()
     by_name = {entry["name"]: entry for entry in found["keys"]}
     assert list(by_name) == [
-        "SECRET_KEY", "STORE_KEY", "DB_PASSWORD", "ANALYZER_TOKEN", "CAPA_TOKEN", "DOCVIEW_TOKEN", "BROWSER_TOKEN",
-        "PCAP_TOKEN", "SANDBOX_TOKEN", "METRICS_TOKEN",
+        "SECRET_KEY", "STORE_KEY", "AUDIT_KEY", "DB_PASSWORD", "ANALYZER_TOKEN", "CAPA_TOKEN", "DOCVIEW_TOKEN",
+        "BROWSER_TOKEN", "PCAP_TOKEN", "SANDBOX_TOKEN", "METRICS_TOKEN",
     ]  # fmt: skip
     assert by_name["SECRET_KEY"]["source"] == "environment" and by_name["ANALYZER_TOKEN"]["source"] == "file"
     assert by_name["STORE_KEY"]["source"] == "default" and by_name["METRICS_TOKEN"]["set"] is False
     assert found["inEnvironment"] == ["SECRET_KEY", "DB_PASSWORD", "SANDBOX_TOKEN"]
     assert found["moveCommand"] == "deploy/secrets.sh move"
-    # Each container that holds a key is named, and only the two keys that encrypt are changed by Nik.
+    # Each container that holds a key is named, and three keys are changed with a procedure of Nik.
     assert by_name["STORE_KEY"]["holders"] == ["api"] and by_name["SECRET_KEY"]["holders"] == ["api", "automation"]
-    assert [name for name, entry in by_name.items() if entry["rotates"]] == ["SECRET_KEY", "STORE_KEY"]
+    assert [name for name, entry in by_name.items() if entry["rotates"]] == ["SECRET_KEY", "STORE_KEY", "AUDIT_KEY"]
     assert by_name["DB_PASSWORD"]["how"].startswith("Change it in PostgreSQL first")
     for name in ("SECRET_KEY", "STORE_KEY"):
         entry = by_name[name]
@@ -551,7 +551,7 @@ def test_what_a_health_page_can_show(server: TestClient):
         "storeStuck": 0,
         "damagedFiles": 0,
         "keysInEnvironment": shown["keysInEnvironment"],
-        "rotations": {"SECRET_KEY": "idle", "STORE_KEY": "idle"},
+        "rotations": {"SECRET_KEY": "idle", "STORE_KEY": "idle", "AUDIT_KEY": "idle"},
         "backupPassphraseSet": False,
     }
     assert io.StringIO(json.dumps(shown)).read()  # plain values: it goes into an answer as it is
@@ -575,8 +575,225 @@ def test_the_two_facts_a_health_page_asks_for(server: TestClient):
         held = key_rotation.keys_state(db)
     assert after["state"] == "sealed" and after["clearRemains"] is False and after["sealedSince"]
     assert after["left"] == {"files": 0, "bytes": 0} and after["stuck"] == 0 and after["damaged"] == 0
-    assert [entry["name"] for entry in held][:3] == ["SECRET_KEY", "STORE_KEY", "DB_PASSWORD"]
+    assert [entry["name"] for entry in held][:4] == ["SECRET_KEY", "STORE_KEY", "AUDIT_KEY", "DB_PASSWORD"]
     assert all(entry["source"] in ("file", "environment", "default") for entry in held)
-    assert held[0]["since"] and held[0]["rotation"] == "idle" and held[2]["rotation"] is None
+    assert held[0]["since"] and held[0]["rotation"] == "idle" and held[3]["rotation"] is None
+    assert held[2]["rotation"] == "idle" and held[2]["since"]  # the audit key: dated, never half-way
     assert not any("fingerprint" in entry for entry in held)
     assert json.dumps([after, held])  # plain values
+
+
+# --------------------------------------------------------------------------- #
+# The key that signs the audit log                                            #
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def derived_audit_key(monkeypatch):
+    """A server that was given no audit key: the one derived from SECRET_KEY signs."""
+    for name in ("AUDIT_KEY", "AUDIT_KEY_FILE", "AUDIT_KEY_PREVIOUS", "AUDIT_KEY_PREVIOUS_FILE"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def write_entries(count: int, action: str = "test.note") -> None:
+    from app.core import audit as audit_log
+
+    with SessionLocal() as db:
+        for index in range(count):
+            audit_log.record(db, "anna", action, f"entry {index}")
+        db.commit()
+
+
+def audit_key_on_screen(server: TestClient) -> dict:
+    return {entry["name"]: entry for entry in server.get("/api/system/keys").json()["keys"]}["AUDIT_KEY"]
+
+
+def test_the_audit_key_is_shown_with_what_each_key_signed(server: TestClient, derived_audit_key, monkeypatch):
+    from app.auditlog import key as signing
+
+    write_entries(3)
+    key_rotation.note_seen()
+    shown = audit_key_on_screen(server)
+    assert shown["holders"] == ["api", "automation"] and shown["rotates"] is True
+    assert shown["source"] == "default" and shown["set"] is False and shown["derived"] is True
+    assert shown["fingerprint"] == signing.current()[0] and shown["fingerprint"].startswith("derived-")
+    assert shown["rotation"] == {"state": "idle", "previousKept": 0, "last": None} and shown["since"]
+    assert shown["command"] == "deploy/secrets.sh rotate audit-key"
+    signed = shown["signed"]
+    assert signed["cannotBeChecked"] == 0 and signed["unsigned"] == 0
+    assert [(entry["keyId"], entry["current"], entry["known"]) for entry in signed["byKey"]] == [
+        (shown["fingerprint"], True, True)
+    ]
+    assert signed["byKey"][0]["entries"] >= 3
+
+    # The log is given a key of its own: it signs from the next entry, and the derived key is still made.
+    monkeypatch.setenv("AUDIT_KEY", "a key of its own for the audit log 0123456789")
+    write_entries(2)
+    now = audit_key_on_screen(server)
+    assert now["source"] == "environment" and now["derived"] is False and now["fingerprint"].startswith("set-")
+    by_key = {entry["keyId"]: entry for entry in now["signed"]["byKey"]}
+    assert by_key[now["fingerprint"]]["current"] is True and by_key[now["fingerprint"]]["entries"] >= 2
+    assert by_key[shown["fingerprint"]] == {**by_key[shown["fingerprint"]], "current": False, "known": True}
+    assert now["signed"]["cannotBeChecked"] == 0
+    # No key and no part of one is on the screen: an id is twelve digits of a hash of the key.
+    text = json.dumps(now)
+    assert "a key of its own" not in text and signing.current()[1].hex() not in text
+
+    # The key is changed again and the one before it is not kept: what it signed cannot be checked, and is counted.
+    monkeypatch.setenv("AUDIT_KEY", "another key for the audit log 9876543210")
+    lost = audit_key_on_screen(server)
+    assert lost["signed"]["cannotBeChecked"] == by_key[now["fingerprint"]]["entries"]
+    assert [entry["known"] for entry in lost["signed"]["byKey"] if entry["keyId"] == now["fingerprint"]] == [False]
+    monkeypatch.setenv("AUDIT_KEY_PREVIOUS", "something else,a key of its own for the audit log 0123456789")
+    kept = audit_key_on_screen(server)
+    assert kept["signed"]["cannotBeChecked"] == 0 and kept["rotation"]["previousKept"] == 2
+
+
+def test_a_change_of_the_audit_key_is_asked_for_and_said_once_it_happened(
+    server: TestClient, derived_audit_key, monkeypatch, capsys
+):
+    write_entries(2)
+    key_rotation.note_seen()
+    before = audit_key_on_screen(server)
+    assert key_rotation.main(["requested", "AUDIT_KEY"]) == 1
+    plan = server.get("/api/system/keys/AUDIT_KEY/rotation").json()
+    assert plan["command"] == "deploy/secrets.sh rotate audit-key" and plan["restarts"] == ["api", "automation"]
+    assert plan["total"] == 0 and "keeps the key that signed it" in plan["items"][0]["what"]
+    assert plan["items"][0]["count"] >= 2
+    assert server.post("/api/system/keys/AUDIT_KEY/rotation", json={"password": "wrong"}).status_code in (400, 401, 403)
+    asked = server.post("/api/system/keys/AUDIT_KEY/rotation", json={"password": ADMIN["password"]})
+    assert asked.status_code == 200 and asked.json()["request"]["by"] == ADMIN["username"]
+    capsys.readouterr()
+    assert key_rotation.main(["requested", "AUDIT_KEY"]) == 0 and "asked for by admin" in capsys.readouterr().out
+    key_rotation.note_seen()  # nothing changed yet: the request stays
+    assert audit_key_on_screen(server)["request"]["by"] == ADMIN["username"]
+    assert [entry.target for entry in audit("key.rotate.request")] == ["AUDIT_KEY"]
+    assert "a new key signs the audit log from the next entry on" in audit("key.rotate.request")[0].details
+
+    # The host wrote a new key and both processes restarted with it.
+    monkeypatch.setenv("AUDIT_KEY", "the key the script wrote, 0123456789abcdef")
+    key_rotation.note_seen()
+    after = audit_key_on_screen(server)
+    assert after["request"] is None and after["rotatedAt"] and after["fingerprint"] != before["fingerprint"]
+    said = [entry for entry in audit("key.rotate.done") if entry.target == "AUDIT_KEY"]
+    assert len(said) == 1 and after["fingerprint"] in said[0].details and before["fingerprint"] in said[0].details
+    # The entry that says so is itself signed with the new key, and nothing lost its key.
+    assert said[0].key_id == after["fingerprint"] and after["signed"]["cannotBeChecked"] == 0
+    assert len(notices("keys.rotated")) == 1
+    key_rotation.note_seen()
+    assert len([entry for entry in audit("key.rotate.done") if entry.target == "AUDIT_KEY"]) == 1
+    # A request for this key is withdrawn like the others.
+    server.post("/api/system/keys/AUDIT_KEY/rotation", json={"password": ADMIN["password"]})
+    assert server.delete("/api/system/keys/AUDIT_KEY/rotation").json() == {"request": None}
+    assert server.get("/api/system/keys/DB_PASSWORD/rotation").status_code == 404
+
+
+def test_the_end_of_a_change_of_secret_key_does_not_cost_the_audit_log_its_key(
+    server: TestClient, derived_audit_key, monkeypatch, capsys
+):
+    """On a server that signs with the derived key, every entry written before a change of SECRET_KEY
+    was signed with a key made from the earlier one. Taking that earlier key away would turn them all
+    into entries that cannot be checked: the derived key is carried into AUDIT_KEY_PREVIOUS first."""
+    from app.auditlog import key as signing
+    from app.auditlog import verifier
+
+    monkeypatch.setattr(settings, "SECRET_KEY", OLD)
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+    write_entries(4)
+    old_id = signing.current()[0]
+    with SessionLocal() as db:
+        assert key_rotation.audit_keys_to_carry(db) == []  # no earlier key is held: nothing leaves
+        assert key_rotation.plan(db, "SECRET_KEY")["auditKeyDerived"] is True
+    change_secret_key(monkeypatch)
+    write_entries(2)
+    assert signing.current()[0] != old_id and signing.current()[0].startswith("derived-")
+    with SessionLocal() as db:
+        # While both keys are held everything is checked.
+        assert key_rotation.audit_signed(db)["cannotBeChecked"] == 0
+        carry = key_rotation.audit_keys_to_carry(db)
+    assert carry == ["hex:" + signing.derived(OLD).hex()]
+    capsys.readouterr()
+    assert key_rotation.main(["audit-carry"]) == 0
+    printed = capsys.readouterr()
+    assert printed.out == carry[0] + "\n" and printed.err == ""  # the key, on standard output alone
+
+    # What would happen without it: the earlier SECRET_KEY goes, and its entries lose their key.
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+    with SessionLocal() as db:
+        lost = key_rotation.audit_signed(db)
+    assert lost["cannotBeChecked"] >= 4
+    assert [entry["known"] for entry in lost["byKey"] if entry["keyId"] == old_id] == [False]
+    assert key_rotation.main(["audit-unchecked"]) == 0 and int(capsys.readouterr().out) == lost["cannotBeChecked"]
+
+    # What the script does: the derived key is written beside the audit keys, then the earlier key goes.
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [OLD])
+    monkeypatch.setenv("AUDIT_KEY_PREVIOUS", carry[0])
+    with SessionLocal() as db:
+        assert key_rotation.audit_keys_to_carry(db) == []  # carried already: a second run adds nothing
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+    with SessionLocal() as db:
+        kept = key_rotation.audit_signed(db)
+    assert kept["cannotBeChecked"] == 0 and all(entry["known"] for entry in kept["byKey"])
+    assert key_rotation.main(["audit-unchecked"]) == 0 and capsys.readouterr().out.strip() == "0"
+    # And the chain itself agrees: a full walk finds no entry it cannot check.
+    from app.auditlog import chain
+
+    with SessionLocal() as db:
+        state = chain.verify(db, full=True)
+        db.commit()
+    assert not state.get("problem") and not (state.get("unchecked") or {})
+    assert verifier.fingerprint(signing.derived(OLD)) in signing.known()
+
+
+@pytest.fixture()
+def own_audit_key(monkeypatch):
+    """A server that had an audit key of its own from its first entry (asked for before the server)."""
+    monkeypatch.setenv("AUDIT_KEY", "a key of its own for the audit log 0123456789")
+    monkeypatch.delenv("AUDIT_KEY_PREVIOUS", raising=False)
+
+
+def test_a_server_with_an_audit_key_of_its_own_carries_nothing_at_a_change_of_secret_key(
+    own_audit_key, server: TestClient, monkeypatch
+):
+    monkeypatch.setattr(settings, "SECRET_KEY", OLD)
+    write_entries(3)
+    change_secret_key(monkeypatch)
+    with SessionLocal() as db:
+        assert key_rotation.audit_keys_to_carry(db) == []
+        assert key_rotation.plan(db, "SECRET_KEY")["auditKeyDerived"] is False
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+    with SessionLocal() as db:
+        assert key_rotation.audit_signed(db)["cannotBeChecked"] == 0
+
+
+def test_the_key_of_the_forwarding_certificate_is_moved_by_the_same_change(server: TestClient, monkeypatch):
+    """The audit log is forwarded with a client certificate whose key is kept under SECRET_KEY, in the
+    settings and in the settings in force (two rows). One list says every place, one pass moves them."""
+    from app.auditlog import forward
+
+    monkeypatch.setattr(settings, "SECRET_KEY", OLD)
+    with SessionLocal() as db:
+        kept = "vault:" + vault.encrypt("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n")
+        db.merge(Setting(id=forward.SETTINGS_ID, doc={"version": 3, "settings": {"host": "siem", "clientKey": kept}}))
+        db.merge(
+            Setting(id=forward.STATE_ID, doc={"version": 3, "sentHead": {"seq": 7}, "active": {"clientKey": kept}})
+        )
+        db.commit()
+        listed = [what for what, _token in vault.inventory(db)]
+    assert listed.count("key of the certificate the audit log is forwarded with") == 2
+    assert tuple(row for row, _part in vault.FORWARDING_ROWS) == (forward.SETTINGS_ID, forward.STATE_ID)
+    change_secret_key(monkeypatch)
+    progress = key_rotation.secret_pass()
+    assert progress["state"] == "verified" and progress["moved"] == 2 and progress["done"] == progress["total"] == 2
+    monkeypatch.setattr(settings, "SECRET_KEY_PREVIOUS", [])
+    with SessionLocal() as db:
+        assert all(vault.reads_alone(token) for _what, token in vault.inventory(db))
+        assert forward.client_key(db, forward.read(db)).startswith("-----BEGIN PRIVATE KEY-----")
+        state = db.get(Setting, forward.STATE_ID).doc
+        # Nothing else of the row the sender writes was touched.
+        assert state["sentHead"] == {"seq": 7} and state["version"] == 3
+        assert forward.client_key(db, forward._active(state)).startswith("-----BEGIN PRIVATE KEY-----")
+    # A key named by a credential is not a stored secret of the forwarding: nothing to list.
+    with SessionLocal() as db:
+        db.merge(Setting(id=forward.SETTINGS_ID, doc={"settings": {"clientKey": "{{ credentials.syslog_key }}"}}))
+        db.merge(Setting(id=forward.STATE_ID, doc={"active": None}))
+        db.commit()
+        assert "key of the certificate the audit log is forwarded with" not in [w for w, _t in vault.inventory(db)]
