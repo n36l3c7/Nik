@@ -13,17 +13,17 @@ RUN pip install --no-cache-dir "flare-capa==${CAPA_VERSION}" \
     && python fetch_rules.py "${CAPA_VERSION}" "${CAPA_RULES_SHA256}" "${CAPA_SOURCE_SHA256}" /opt/capa \
     && rm fetch_rules.py \
     && useradd --create-home --uid 1000 capa
-COPY nik_capa.py server.py ./
+COPY given.py nik_capa.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    SAMPLE_DIR=/samples \
     CAPA_RULES=/opt/capa/rules \
     CAPA_SIGNATURES=/opt/capa/sigs \
     CAPA_PORT=8710 \
     HOME=/tmp
 
-# Unprivileged; the sample store is mounted read-only. capa's rule cache
+# Unprivileged. It is given the sample it reads (the store of files is sealed
+# and it does not see it) and keeps it in /tmp for one analysis. capa's rule cache
 # (~/.cache) and vivisect's settings go under HOME=/tmp, the only writable
 # path (a plain tmpfs in Compose): no uid/gid tmpfs options, which Podman
 # rejects.

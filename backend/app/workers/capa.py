@@ -1,9 +1,11 @@
 """Client of the capa worker and the background job.
 
 The backend never runs capa itself: it asks the worker (``CAPA_URL``, see
-workers/capa/) to analyse a sample that is already in the shared store and saves the
-reduced report in ``sample_capa``. capa reads x86 / x64 PE and ELF files;
-other samples are marked ``unsupported`` without calling the worker.
+workers/capa/) to analyse a sample and saves the reduced report in
+``sample_capa``. The worker does not see the store: it is given the sample
+(``handover.py``) and the admin rules travel with the request. capa reads
+x86 / x64 PE and ELF files; other samples are marked ``unsupported`` without
+calling the worker.
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ from ..core.db import SessionLocal
 from ..core.models import SampleCapa
 from ..core.security import now_iso
 from ..malware import capa_rules
-from .analyzer import AnalyzerError, WorkerBusy, post_worker
+from ..malware.samples import sample_path
+from .analyzer import AnalyzerError, WorkerBusy, post_with_files
 
 SUPPORTED_TYPES = {"pe32", "pe64", "pe", "elf"}
 BUSY_RETRY_SECONDS = 15
@@ -35,13 +38,20 @@ def supported(type_id: str) -> bool:
     return type_id in SUPPORTED_TYPES
 
 
-def request_capabilities(sha256: str, rules: list[str]) -> dict[str, Any]:
+def request_capabilities(sha256: str, rules: list[dict[str, str]]) -> dict[str, Any]:
     """POST /analyze to the capa worker: the sample's capabilities.
 
-    rules are the enabled admin rule files, relative to the store.
+    rules are the enabled admin rules, each with its file name and its source.
     """
     payload = {"sha256": sha256, "rules": rules}
-    return post_worker(settings.CAPA_URL, settings.CAPA_TOKEN, "/analyze", payload, settings.CAPA_TIMEOUT + 30)
+    return post_with_files(
+        settings.CAPA_URL,
+        settings.CAPA_TOKEN,
+        "/analyze",
+        payload,
+        settings.CAPA_TIMEOUT + 30,
+        {f"{sha256}.bin": sample_path(sha256)},
+    )
 
 
 def _run_seconds() -> int:
@@ -54,7 +64,7 @@ def _queue_seconds() -> int:
     return QUEUE_RUNS * _run_seconds()
 
 
-def _request_when_free(sha256: str, rules: list[str]) -> dict[str, Any]:
+def _request_when_free(sha256: str, rules: list[dict[str, str]]) -> dict[str, Any]:
     """Ask the worker, waiting while it is busy with a sample sent by another backend process."""
     waited = 0.0
     while True:
@@ -82,7 +92,7 @@ def run_capa_job(sha256: str) -> None:
             row.status, row.started_at = "running", now_iso()
             db.commit()
             try:
-                rules = capa_rules.enabled_paths(db)
+                rules = capa_rules.enabled_sources(db)
                 row.result, row.status, row.error = _request_when_free(sha256, rules), "done", None
             except AnalyzerError as exc:
                 row.status, row.error = "error", str(exc)

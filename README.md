@@ -198,7 +198,9 @@ made the rail lead home and ask before unsaved work is lost, kept
 credentials once for every instance, gave playbooks nodes for files and
 their analyses, and put the data guard on every look-up; 6.7 made Nik
 take and test its own backups, rehearse an upgrade before it touches the
-data, and ask for a second factor at sign-in.
+data, and ask for a second factor at sign-in; 6.8 encrypted the store on
+the disk, took the keys out of `.env`, made the audit log a signed chain
+sent to syslog, and added a page that says whether the server is well.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

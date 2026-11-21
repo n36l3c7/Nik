@@ -545,8 +545,9 @@ def export_artifacts(
     """Download artifacts as a zip another Nik can import: the registry entries
     and the analyses, and with ``files`` the original files too, inside an
     AES-encrypted ``files.zip`` (password ``infected``)."""
-    from fastapi.responses import FileResponse
     from starlette.background import BackgroundTask
+
+    from ..core.files import stored_response
 
     rows = [row for row in (db.get(Artifact, artifact_id) for artifact_id in dict.fromkeys(body.ids)) if row]
     if not rows:
@@ -567,12 +568,13 @@ def export_artifacts(
     )
     db.commit()
     name = f"nik-artifacts-{now[:10]}{'-with-files' if body.files else ''}.zip"
-    return FileResponse(
-        path,
-        media_type="application/zip",
-        filename=name,
-        background=BackgroundTask(lambda: path.unlink(missing_ok=True)),
-    )
+    try:
+        response = stored_response(path, "application/zip", name)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    response.background = BackgroundTask(lambda: path.unlink(missing_ok=True))
+    return response
 
 
 def request_version() -> str:
@@ -590,18 +592,18 @@ async def import_artifacts(
     """Add the artifacts of an export that this server does not have
     (**admin**). A file is stored only when its SHA-256 is the one its
     artifact is named by; nothing is run and no analysis is started."""
-    import tempfile
+    import uuid
     from pathlib import Path
+
+    from ..core import store
 
     # Twice an upload, and room for a mailbox: an export with one in it is as large as the mailbox.
     limit = (settings.ARTIFACT_MAX_MB * 2 + settings.MAILBOX_MAX_MB) * 1024 * 1024
-    handle = tempfile.NamedTemporaryFile(
-        prefix="nik-import-", suffix=".zip", delete=False, dir=artifact_transfer.workdir()
-    )
-    path = Path(handle.name)
+    # Sealed as it arrives, like every file of the store: the archive holds files in clear.
+    path = artifact_transfer.workdir() / f"nik-import-{uuid.uuid4().hex}.zip"
     try:
         size = 0
-        with handle:
+        with store.writing(path) as handle:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > limit:

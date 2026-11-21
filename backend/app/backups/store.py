@@ -9,6 +9,18 @@ file and folder under the store, made while the files are read (nothing is
 copied anywhere first). ``store.index`` follows it: one JSON line for each
 file with its path, its size and the SHA-256 of what went into the tar.
 
+**The store is sealed; the backup does not hold it sealed.** On the disk every
+file of the store is encrypted under the store key of the server
+(``core/store.py``). Each is decrypted as it is read into the tar, so what a
+backup holds is the files themselves, protected by the backup alone (its
+passphrase): a backup is read with its passphrase and nothing else, on a host
+that never had this server's store key. That is the point of a backup, and
+the store key may be lost with the host. Coming back, every file is sealed
+again as it is written, under the store key of the server that restores. So
+the sizes and the checksums of the index are those of the files, whatever
+key they sit under, and a backup taken before 6.8 (files in clear on the
+disk) is the same thing as one taken after.
+
 A file that disappears between being listed and being read is left out (an
 analyst deleted it meanwhile); one that changes size while it is read stops
 the backup, which the next run takes again. Links are not followed and not
@@ -30,10 +42,12 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
+from ..core import store as sealed_store
 from .container import CHUNK, BackupError, Part, Writer
 
 TAR_PART = "store.tar"
 INDEX_PART = "store.index"
+LEFTOVERS = (".part", ".sealing")
 
 
 class _Hashing:
@@ -84,15 +98,24 @@ def pack(writer: Writer, root: str | os.PathLike) -> dict[str, Any]:
                     continue
                 if not stat.S_ISREG(found.st_mode):
                     continue
+                if name.endswith(LEFTOVERS) or name.startswith("_transfer/"):
+                    continue  # what an interrupted write left: never a file of the store
                 try:
-                    handle = open(path, "rb")  # noqa: SIM115 - closed below, after the tar took it
+                    # Decrypted as it is read: the content, whatever it sits under on the disk.
+                    handle = sealed_store.open(path, name)
                 except FileNotFoundError:
                     continue
+                except sealed_store.SealError as error:
+                    # A backup that left a damaged file out would look whole: it fails, and says which.
+                    raise BackupError(f"A file of the store cannot be read: {error}") from None
                 with handle:
-                    info.size = os.fstat(handle.fileno()).st_size
+                    info.size = handle.seek(0, os.SEEK_END)
+                    handle.seek(0)
                     reader = _Hashing(handle, info.size)
                     try:
                         tar.addfile(info, reader)
+                    except sealed_store.SealError as error:
+                        raise BackupError(f"A file of the store cannot be read: {error}") from None
                     except OSError as error:
                         raise BackupError(f"A file of the store changed while it was read ({name}): {error}") from None
                 index.append({"path": name, "size": info.size, "sha256": reader.digest.hexdigest()})
@@ -168,22 +191,25 @@ class Unpacker:
                     source = tar.extractfile(member)
                     digest = hashlib.sha256()
                     size = 0
-                    out = None
+                    writing = out = None
                     if place is not None:
                         place.parent.mkdir(parents=True, exist_ok=True)
-                        out = open(place, "wb")  # noqa: SIM115 - closed in the finally below
+                        # Sealed as it arrives, under the store key of this server: never in clear
+                        # on its disk, whatever the server that made the backup kept it under.
+                        writing = sealed_store.writing(place, name=relative.as_posix())
+                        out = writing.__enter__()
                     try:
                         for piece in iter(lambda source=source: source.read(CHUNK), b""):
                             digest.update(piece)
                             size += len(piece)
                             if out is not None:
                                 out.write(piece)
-                    finally:
-                        if out is not None:
-                            out.close()
-                    if place is not None:
-                        # As the store keeps them: readable by the workers, never executable.
-                        os.chmod(place, member.mode & 0o666 or 0o640)
+                    except BaseException as error:
+                        if writing is not None:
+                            writing.__exit__(type(error), error, error.__traceback__)
+                        raise
+                    if writing is not None:
+                        writing.__exit__(None, None, None)
                     self.seen[relative.as_posix()] = (size, digest.hexdigest())
         except tarfile.TarError as error:
             raise BackupError(f"The store in the backup cannot be read: {error}") from None
@@ -212,7 +238,8 @@ def is_empty(root: str | os.PathLike) -> bool:
 
 
 def measure(root: str | os.PathLike) -> int:
-    """How many bytes the store holds (for the room a backup needs)."""
+    """How many bytes the store holds (for the room a backup needs). As they are on the disk: a
+    sealed file is a fifth of a thousandth larger than what it holds."""
     total = 0
     for folder, _folders, names in os.walk(root, onerror=lambda _error: None):
         for name in names:

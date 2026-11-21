@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import {
+  Activity,
   Clock,
   DatabaseBackup,
   FileCode2,
@@ -9,6 +10,7 @@ import {
   Filter,
   Fingerprint,
   Globe,
+  FileKey2,
   HardDrive,
   KeyRound,
   ListOrdered,
@@ -56,6 +58,8 @@ import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
 import MyAccountSection from './sections/MyAccountSection.jsx'
 import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
+import HealthSection from './sections/HealthSection.jsx'
+import KeysSection from './sections/KeysSection.jsx'
 import StorageSection from './sections/StorageSection.jsx'
 import WorkersSection from './sections/WorkersSection.jsx'
 import ThreatIntelSection from './sections/ThreatIntelSection.jsx'
@@ -104,7 +108,9 @@ const SECTION_VIEWS = {
   accounts: { icon: Users, Component: AccountsSection },
   signin: { icon: ShieldCheck, Component: SignInPolicySection },
   apikeys: { icon: KeyRound, Component: ApiKeysSection },
+  health: { icon: Activity, Component: HealthSection },
   storage: { icon: HardDrive, Component: StorageSection },
+  keys: { icon: FileKey2, Component: KeysSection },
   workers: { icon: ServerCog, Component: WorkersSection },
   backup: { icon: DatabaseBackup, Component: BackupSection },
   audit: { icon: ScrollText, Component: AuditLogSection },

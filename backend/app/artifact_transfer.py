@@ -19,6 +19,13 @@ no analysis is started: the analyses come with the archive.
 A mailbox travels with its file or not at all: its index says where each
 message is in that file, so without it there is nothing to read. Its file is
 copied in pieces, never held in memory, and its index must fit it.
+
+**What protects an export.** Nothing but who holds it: it is made for another
+server to read, so it is not sealed under the store key of this one, and the
+password of ``files.zip`` is the one everybody knows. While it is being put
+together or taken apart on this server it is a sealed file of the store like
+any other (``_transfer/``): the files it holds are never in clear on the disk
+here. Once downloaded it is the business of whoever downloaded it.
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from . import artifacts, mailboxes
 from . import urlscan as urlscan_store
+from .core import store
 from .core.config import settings
 from .core.models import (
     Artifact,
@@ -130,9 +138,23 @@ MAILBOX_FILE = "mailbox.mbox"
 CHUNK = 1024 * 1024
 
 
+class _Sealing:
+    """What a zip is written to when it goes into a sealed file: it is written from start to end,
+    never sought back into (the zip formats allow it), and is never in clear on the disk."""
+
+    def __init__(self, out) -> None:
+        self._out = out
+
+    def write(self, data) -> int:
+        return self._out.write(data)
+
+    def flush(self) -> None:
+        return None
+
+
 def workdir() -> Path:
     """Where an archive is put together and taken apart: on the disk of the store, because a mailbox
-    does not fit in the memory a temporary directory may be."""
+    does not fit in the memory a temporary directory may be. What is written there is sealed."""
     path = Path(settings.SAMPLE_STORE) / "_transfer"
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -191,7 +213,8 @@ def _summary(row: Artifact) -> dict[str, Any]:
 
 
 def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: str, version: str) -> Path:
-    """Write the archive to a temporary file and return its path (the caller removes it)."""
+    """Write the archive to a temporary file of the store, sealed, and return its path (the caller
+    serves it with ``stored_response`` and removes it)."""
     ids = {row.id for row in rows}
     relations = [
         {"parent": r.parent_id, "child": r.child_id, "relation": r.relation, "createdAt": r.created_at}
@@ -204,16 +227,24 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
     inner = Path(name + ".files")
     try:
         entries = []
-        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with (
+            store.writing(path) as sealed_out,
+            zipfile.ZipFile(_Sealing(sealed_out), "w", compression=zipfile.ZIP_DEFLATED) as archive,
+        ):
             packed: set[str] = set()
             if with_files:
-                with pyzipper.AESZipFile(
-                    inner, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES
-                ) as files:
+                with (
+                    store.writing(inner) as sealed_inner,
+                    pyzipper.AESZipFile(
+                        _Sealing(sealed_inner), "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES
+                    ) as files,
+                ):
                     files.setpassword(PASSWORD.encode())
                     for row in rows:
                         for source, target in _files_of(row):
-                            files.write(source, target)
+                            with files.open(target, "w", force_zip64=True) as packed_file:
+                                for piece in store.pieces(source):
+                                    packed_file.write(piece)
                             packed.add(target)
             for row in rows:
                 if row.kind not in _MODELS:
@@ -243,7 +274,11 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
             archive.writestr("manifest.json", json.dumps(manifest, indent=2))
             if with_files:
                 # Stored, not deflated again: it is compressed and encrypted already.
-                archive.write(inner, FILES, compress_type=zipfile.ZIP_STORED)
+                listed = zipfile.ZipInfo(FILES)
+                listed.compress_type = zipfile.ZIP_STORED
+                with archive.open(listed, "w", force_zip64=True) as out:
+                    for piece in store.pieces(inner):
+                        out.write(piece)
         return path
     except BaseException:
         path.unlink(missing_ok=True)
@@ -340,7 +375,7 @@ def _restore_mailbox(
     target = mailboxes.mbox_path(ref)
     try:
         size = 0
-        with files.open(listed) as source, open(target, "wb") as out:
+        with files.open(listed) as source, store.writing(target) as out:
             while chunk := source.read(CHUNK):
                 size += len(chunk)
                 if size > limit:
@@ -435,7 +470,7 @@ def _restore(db: OrmSession, entry: dict[str, Any], record: Any, files, names: l
                 return "its file is not a packet capture"
             capture_store.write_capture(ref, ext, [blob[1]])
         if log is not None:
-            (capture_store.directory(ref) / "log.jsonl").write_bytes(log[1])
+            store.write(capture_store.directory(ref) / "log.jsonl", log[1])
         # A session that was live when exported is over here.
         if values.get("status") in ("live", "indexing"):
             values["status"] = "ready" if values.get("summary") else "stored"
@@ -443,10 +478,10 @@ def _restore(db: OrmSession, entry: dict[str, Any], record: Any, files, names: l
         values["id"] = ref
         shot = _read_file(files, names, (".jpg",))
         if shot is not None:
-            urlscan_store.screenshot_path(ref).write_bytes(shot[1])
+            store.write(urlscan_store.screenshot_path(ref), shot[1])
         code = _read_file(files, names, ("scripts.json",))
         if code is not None:
-            urlscan_store.scripts_path(ref).write_bytes(code[1])
+            store.write(urlscan_store.scripts_path(ref), code[1])
         if values.get("status") not in ("done", "error"):
             values["status"], values["error"] = "error", "Imported before the scan had finished."
     required = {"file": ("sha1", "md5", "size"), "mail": ("size",), "pcap": (), "url": ("url",)}[kind]
@@ -472,11 +507,13 @@ def _restore(db: OrmSession, entry: dict[str, Any], record: Any, files, names: l
 def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
     """Add the archive's artifacts that the server does not have. Returns
     ``{added, existing, skipped: [{name, reason}]}``."""
+    opened = store.open(path)
     try:
-        archive = zipfile.ZipFile(path)
+        archive = zipfile.ZipFile(opened)
     except zipfile.BadZipFile:
+        opened.close()
         raise TransferError("Not a zip archive.") from None
-    with archive:
+    with opened, archive:
         manifest = _json(archive, "manifest.json", 20 * 1024 * 1024)
         if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
             raise TransferError("Not an artifact export of Nik.")
@@ -485,14 +522,15 @@ def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
         entries = manifest.get("artifacts")
         if not isinstance(entries, list) or len(entries) > MAX_ARTIFACTS:
             raise TransferError(f"The archive must list at most {MAX_ARTIFACTS} artifacts.")
-        files = None
+        files = inner_file = None
         inner = Path(str(path) + ".files")
         if FILES in archive.namelist():
-            # To the disk, in pieces: with a mailbox in it, it does not fit in memory.
-            with archive.open(FILES) as source, open(inner, "wb") as out:
+            # To the disk, in pieces and sealed: with a mailbox in it, it does not fit in memory.
+            with archive.open(FILES) as source, store.writing(inner) as out:
                 while chunk := source.read(CHUNK):
                     out.write(chunk)
-            files = pyzipper.AESZipFile(inner)
+            inner_file = store.open(inner)
+            files = pyzipper.AESZipFile(inner_file)
             files.setpassword(PASSWORD.encode())
         added, existing, skipped = [], 0, []
         for entry in entries:
@@ -533,5 +571,6 @@ def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
         db.commit()
         if files is not None:
             files.close()
+            inner_file.close()
         inner.unlink(missing_ok=True)
     return {"added": len(added), "ids": added, "existing": existing, "skipped": skipped}

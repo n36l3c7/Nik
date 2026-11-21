@@ -19,8 +19,9 @@ export const PASSPHRASE_WARNING =
   'with: if it is lost, every backup made under it is lost with it. Nobody can recover it, Nik included.'
 export const INCLUDE_KEY_WARNING =
   'With the key inside, a backup and its passphrase are enough to read every stored secret (the keys of ' +
-  'instances, the credentials). Without it, .env must be kept somewhere else, or those secrets have to be ' +
-  'entered again after a restore.'
+  'instances, the credentials). Without it, the key (in .env, or in the secrets directory) must be kept ' +
+  'somewhere else, or those secrets have to be entered again after a restore. The store key is never put ' +
+  'in a backup: a restore needs none but its own.'
 
 const text = (value) => String(value ?? '').trim()
 const whole = (value) => (/^\d+$/.test(text(value)) ? Number(text(value)) : NaN)

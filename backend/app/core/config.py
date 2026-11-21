@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 from urllib.parse import quote_plus
 
+from . import keys
+
 # Load a local .env file if python-dotenv is installed. This is optional: in
 # production the environment is typically populated by systemd / the container
 # runtime, so a missing dotenv package is not an error.
@@ -38,7 +40,7 @@ def _database_url() -> str:
     if explicit:
         return explicit
 
-    password = os.getenv("DB_PASSWORD")
+    password = keys.value("DB_PASSWORD")
     if password:
         user = quote_plus(os.getenv("DB_USER", "nik"))
         host = os.getenv("DB_HOST", "localhost")
@@ -71,6 +73,9 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+DEV_STORE_KEY = "dev-insecure-store-key-change-me"
+
+
 class Settings:
     """Runtime configuration container.
 
@@ -89,12 +94,24 @@ class Settings:
         # with the backups. Session tokens are random and do not depend on it.
         # The default is for development only: the container refuses it
         # (app/preflight.py).
-        self.SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-insecure-change-me")
-        # Old values of SECRET_KEY (comma-separated), set for one start after
-        # changing it: what they encrypted is re-encrypted with the new key.
-        self.SECRET_KEY_PREVIOUS: list[str] = [
-            value.strip() for value in os.getenv("SECRET_KEY_PREVIOUS", "").split(",") if value.strip()
-        ]
+        # Every secret is asked of core/keys.py: a file named by <NAME>_FILE
+        # (a mounted secret) or the variable itself.
+        self.SECRET_KEY: str = keys.value("SECRET_KEY", "dev-insecure-change-me")
+        # Old values of SECRET_KEY (comma-separated), kept while it is being
+        # changed: what they encrypted is re-encrypted with the new key
+        # (app/key_rotation.py).
+        self.SECRET_KEY_PREVIOUS: list[str] = keys.several("SECRET_KEY_PREVIOUS")
+        # Store key: every file of the store is sealed under it
+        # (core/sealed.py). It is in no database and is not derived from
+        # SECRET_KEY: who has a copy of the disk, of a volume or of the
+        # database reads no file without it. Empty in a process that is not
+        # given it (the automation worker), which then asks the API process
+        # for the files it needs. The default is for development only.
+        self.STORE_KEY: str = keys.value("STORE_KEY", "" if _get_bool("NIK_NO_STORE_KEY", False) else DEV_STORE_KEY)
+        # The earlier store keys, kept while the store key is being changed.
+        self.STORE_KEY_PREVIOUS: list[str] = keys.several("STORE_KEY_PREVIOUS")
+        # Where a process without the store key asks for a file of the store.
+        self.STORE_API_URL: str = os.getenv("NIK_STORE_API_URL", "").rstrip("/")
 
         # Whether the session cookie carries the Secure attribute (HTTPS only).
         # Default True for safety; set COOKIE_SECURE=false for plain-HTTP local dev.
@@ -117,7 +134,7 @@ class Settings:
         # Observability / ops.
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
         # When set, /api/metrics answers only to `Authorization: Bearer <token>`.
-        self.METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
+        self.METRICS_TOKEN: str = keys.value("METRICS_TOKEN")
         # When false, startup does NOT create tables (Alembic owns the schema).
         self.RUN_CREATE_ALL: bool = _get_bool("RUN_CREATE_ALL", True)
 
@@ -149,12 +166,12 @@ class Settings:
         # Analyzer worker (rizin) for disassembly, functions and graphs; see
         # workers/analyzer/. Empty URL = the Code view reports "not configured".
         self.ANALYZER_URL: str = os.getenv("ANALYZER_URL", "").rstrip("/")
-        self.ANALYZER_TOKEN: str = os.getenv("ANALYZER_TOKEN", "")
+        self.ANALYZER_TOKEN: str = keys.value("ANALYZER_TOKEN")
         self.ANALYZER_TIMEOUT: int = _get_int("ANALYZER_TIMEOUT", 600)
         # capa worker for the Capabilities view; see workers/capa/. Empty URL = the
         # view reports "not configured".
         self.CAPA_URL: str = os.getenv("CAPA_URL", "").rstrip("/")
-        self.CAPA_TOKEN: str = os.getenv("CAPA_TOKEN", "")
+        self.CAPA_TOKEN: str = keys.value("CAPA_TOKEN")
         self.CAPA_TIMEOUT: int = _get_int("CAPA_TIMEOUT", 1800)
         # Automatic threat-intelligence lookups (Settings -> Threat
         # intelligence turns them on per type). false = no background thread.
@@ -181,19 +198,19 @@ class Settings:
         self.AUTOMATION_RUNS_KEPT: int = max(10, _get_int("AUTOMATION_RUNS_KEPT", 500))
         # The script sandbox (workers/sandbox/). Empty URL = scripts say "not configured".
         self.SANDBOX_URL: str = os.getenv("SANDBOX_URL", "").rstrip("/")
-        self.SANDBOX_TOKEN: str = os.getenv("SANDBOX_TOKEN", "")
+        self.SANDBOX_TOKEN: str = keys.value("SANDBOX_TOKEN")
         self.SANDBOX_MAX_TIMEOUT: int = max(1, min(600, _get_int("SANDBOX_MAX_TIMEOUT", 60)))
         self.SANDBOX_TIMEOUT: int = max(1, min(self.SANDBOX_MAX_TIMEOUT, _get_int("SANDBOX_TIMEOUT", 10)))
         # Previews of mail attachments: document viewer and isolated browser
         # (workers/docview/, workers/browser/). Empty URL = the buttons say "not configured".
         self.DOCVIEW_URL: str = os.getenv("DOCVIEW_URL", "").rstrip("/")
-        self.DOCVIEW_TOKEN: str = os.getenv("DOCVIEW_TOKEN", "")
+        self.DOCVIEW_TOKEN: str = keys.value("DOCVIEW_TOKEN")
         self.BROWSER_URL: str = os.getenv("BROWSER_URL", "").rstrip("/")
-        self.BROWSER_TOKEN: str = os.getenv("BROWSER_TOKEN", "")
+        self.BROWSER_TOKEN: str = keys.value("BROWSER_TOKEN")
         # Packet capture worker (workers/pcap/): Wireshark's engine for the Network
         # Analysis tab. Empty URL = captures are stored but not analysed.
         self.PCAP_URL: str = os.getenv("PCAP_URL", "").rstrip("/")
-        self.PCAP_TOKEN: str = os.getenv("PCAP_TOKEN", "")
+        self.PCAP_TOKEN: str = keys.value("PCAP_TOKEN")
         self.PCAP_MAX_MB: int = _get_int("PCAP_MAX_MB", 500)
         # Backups (app/backups): the directory they are written to. In the Compose stack it is a
         # volume of its own (NIK_BACKUP_DIR chooses a path of the host instead).

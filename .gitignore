@@ -24,6 +24,11 @@ Bookmarks.plist
 
 # Environment files with real secrets (docker-compose reads ./.env)
 .env
+# The secrets as files (deploy/init-env.sh, deploy/secrets.sh), the key kept after a change of
+# SECRET_KEY on a server whose secrets are in .env, and the .env kept from before a move
+/secrets/
+/secrets-retired/
+.env.before-*
 
 # Backend (Python)
 backend/.venv/

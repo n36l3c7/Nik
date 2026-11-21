@@ -1,12 +1,19 @@
 """HTTP front of the Nik capa worker (standard library only).
 
     GET  /health                       → {"status": "ok", "engine": "capa x.y.z"}
-    POST /analyze {"sha256", "rules"}  → the capabilities of SAMPLE_DIR/<sha256>.bin
+    PUT  /files/<sha256>.bin           → the worker is given a sample (the body)
+    POST /analyze {"sha256", "rules"}  → the capabilities of the sample <sha256>.bin
     POST /validate {"source", "others"} → whether a capa rule parses and fits the rule set
 
-``rules`` are admin rule files the backend stored in the shared sample store
-(``_capa_rules/<id>.yml``), matched with the bundled rules; ``others`` are
-the sources of the other admin rules, so a rule may depend on them.
+``rules`` are the admin rules, each ``{"name": "<id>.yml", "source": "…"}``,
+matched with the bundled rules; ``others`` are the sources of the other admin
+rules, so a rule may depend on them.
+
+The worker does not see the store of files, which is sealed: the backend
+gives it the sample (``given.py``). ``/analyze`` on a sample the worker does
+not hold is answered ``409`` with the name that is ``missing``; the backend
+sends it and asks again. The sample and the rules are in memory (``/tmp``,
+never a disk) for the time of the analysis and are deleted when it ends.
 
 Only the Nik backend talks to this server: it is not published outside the
 container network, and every request must carry the shared token in
@@ -20,29 +27,39 @@ import hmac
 import json
 import os
 import re
+import shutil
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import given
 from nik_capa import CapaError, CapaTimeout, analyze, capa_version, validate_rule
 
-SAMPLE_DIR = os.environ.get("SAMPLE_DIR", "/samples")
-TOKEN = os.environ.get("CAPA_TOKEN", "")
+TOKEN = given.secret("CAPA_TOKEN")
 TIMEOUT = float(os.environ.get("CAPA_TIMEOUT", "1800"))
 MAX_JOBS = int(os.environ.get("CAPA_MAX_JOBS", "1"))
 PORT = int(os.environ.get("CAPA_PORT", "8710"))
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-RULE_FILE = re.compile(r"^_capa_rules/[0-9a-f]{32}\.yml$")
+RULE_FILE = re.compile(r"^[0-9a-f]{32}\.yml$")
 MAX_VALIDATE_BYTES = 4 * 1024 * 1024  # one rule plus the other admin rules it may depend on
 _slots = threading.BoundedSemaphore(MAX_JOBS)
+WORK_DIR = os.environ.get("CAPA_WORK_DIR", "/tmp/nik-given")
+GIVEN = given.Given(
+    WORK_DIR,
+    (re.compile(r"[0-9a-f]{64}\.bin"),),
+    max_bytes=int(os.environ.get("CAPA_FILES_MB", "1024")) * 1024 * 1024,
+)
 
 
-def in_store(relative: str) -> str:
-    """The absolute path of ``relative`` in the store; ValueError when it would leave the store."""
-    root = os.path.realpath(SAMPLE_DIR)
-    path = os.path.realpath(os.path.join(root, relative))
-    if not path.startswith(root + os.sep):
-        raise ValueError("Not a path in the sample store.")
-    return path
+def write_rules(rules: list[dict], folder: str) -> list[str]:
+    """The admin rules of one analysis as files of ``folder``; their paths, in the order given."""
+    paths = []
+    for rule in rules:
+        path = os.path.join(folder, rule["name"])
+        with open(path, "w", encoding="utf-8") as out:
+            out.write(rule["source"])
+        paths.append(path)
+    return paths
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -74,13 +91,16 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("Request body must be an object")
         return body
 
+    def do_PUT(self) -> None:  # noqa: N802
+        given.take_request(self, GIVEN, self._authorized())
+
     def do_POST(self) -> None:  # noqa: N802
         if self.path not in ("/analyze", "/validate"):
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong analyzer token"})
         try:
-            body = self._body(MAX_VALIDATE_BYTES if self.path == "/validate" else 64 * 1024)
+            body = self._body(MAX_VALIDATE_BYTES)
         except (ValueError, json.JSONDecodeError) as exc:
             return self._send(400, {"detail": f"Invalid request body: {exc}"})
         if self.path == "/validate":
@@ -97,23 +117,38 @@ class Handler(BaseHTTPRequestHandler):
         sha256, rules = body.get("sha256", ""), body.get("rules") or []
         if not isinstance(sha256, str) or not SHA256.fullmatch(sha256):
             return self._send(400, {"detail": "sha256 must be 64 lowercase hex characters"})
-        if not isinstance(rules, list) or not all(isinstance(r, str) and RULE_FILE.fullmatch(r) for r in rules):
-            return self._send(400, {"detail": "rules must be _capa_rules/<32 hex>.yml paths"})
-        try:
-            path = in_store(f"{sha256}.bin")
-            rule_paths = [p for p in (in_store(r) for r in rules) if os.path.isfile(p)]
-        except ValueError:
-            return self._send(400, {"detail": "Not a path in the sample store"})
+        if not isinstance(rules, list) or not all(
+            isinstance(r, dict)
+            and isinstance(r.get("name"), str)
+            and RULE_FILE.fullmatch(r["name"])
+            and isinstance(r.get("source"), str)
+            for r in rules
+        ):
+            return self._send(400, {"detail": "rules must be {name: <32 hex>.yml, source} objects"})
+        name = f"{sha256}.bin"
+        if GIVEN.missing([name]):
+            return self._send(409, {"detail": "The worker does not hold this sample", "missing": [name]})
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "capa is busy with another sample; try again later"})
+        os.makedirs(WORK_DIR, exist_ok=True)
+        folder = tempfile.mkdtemp(prefix="rules-", dir=WORK_DIR)
         try:
-            self._send(200, analyze(path, timeout=TIMEOUT, extra_rules=rule_paths))
+            with GIVEN.hold([name]):
+                path = GIVEN.path(name)
+                if path is None:
+                    answer = (409, {"detail": "The worker does not hold this sample", "missing": [name]})
+                else:
+                    answer = (200, analyze(path, timeout=TIMEOUT, extra_rules=write_rules(rules, folder)))
         except CapaTimeout as exc:
-            self._send(504, {"detail": str(exc)})
+            answer = (504, {"detail": str(exc)})
         except CapaError as exc:
-            self._send(422, {"detail": str(exc)})
+            answer = (422, {"detail": str(exc)})
         finally:
+            # One analysis, then nothing of the sample stays here: gone before the answer leaves.
+            shutil.rmtree(folder, ignore_errors=True)
+            GIVEN.drop(name)
             _slots.release()
+        self._send(*answer)
 
     def log_message(self, fmt: str, *args) -> None:
         print(f"{self.address_string()} {fmt % args}", flush=True)
@@ -123,5 +158,7 @@ if __name__ == "__main__":
     if not TOKEN or TOKEN.startswith("please-change-this"):
         # An empty token, or the public one of the example file, protects nothing.
         raise SystemExit("CAPA_TOKEN is not set (or is the example value): refusing to start.")
-    print(f"nik-capa listening on :{PORT} (capa {capa_version()}, samples in {SAMPLE_DIR})", flush=True)
+    GIVEN.clear()
+    shutil.rmtree(WORK_DIR, ignore_errors=True)
+    print(f"nik-capa listening on :{PORT} (capa {capa_version()})", flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

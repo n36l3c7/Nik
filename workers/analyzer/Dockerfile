@@ -3,14 +3,14 @@
 FROM docker.io/rizin/rizin:v0.9.1
 
 WORKDIR /opt/nik-analyzer
-COPY nik_analyzer.py server.py ./
+COPY given.py nik_analyzer.py server.py ./
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    SAMPLE_DIR=/samples \
     ANALYZER_PORT=8700
 
-# Runs as the image's non-root `rizin` user; the sample store is mounted read-only.
+# Runs as the image's non-root `rizin` user. It is given the samples it reads (the
+# store of files is sealed and it does not see it) and keeps them in /tmp, a tmpfs.
 USER rizin
 EXPOSE 8700
 ENTRYPOINT ["python3", "/opt/nik-analyzer/server.py"]

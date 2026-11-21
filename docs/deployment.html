@@ -43,6 +43,7 @@
           <li><a href="#quick-start-with-docker-podman">Quick start with Docker / Podman</a></li>
           <li><a href="#production-deployment">Production deployment</a></li>
           <li><a href="#docker-podman-in-production">Docker / Podman in production: TLS, start on boot</a></li>
+          <li><a href="#keys-of-the-server">Keys of the server: where they are kept, changing one</a></li>
           <li><a href="#backups">Backups: what they hold, where they go, how they are tested</a></li>
           <li><a href="#backup-second-host">The copy off the server: SFTP to a second host</a></li>
           <li><a href="#restore-a-backup">Restoring</a></li>
@@ -55,6 +56,8 @@
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
           <li><a href="#automation-containers">The automation containers</a></li>
           <li><a href="#worker-watch">When a worker is down</a></li>
+          <li><a href="#audit-log-forwarding">The audit log: its chain, and sending it to syslog</a></li>
+          <li><a href="#health-and-metrics">Health, warnings and Prometheus</a></li>
           <li><a href="#sign-in-and-sessions">Sign-in: the client's address, and getting back in</a></li>
           <li><a href="#upgrading-to-30">Upgrading to 3.0</a></li>
           <li><a href="#upgrading-to-postgresql-18-2122">Upgrading to PostgreSQL 18</a></li>
@@ -67,7 +70,7 @@
         The fastest way to run the whole stack — nginx (static SPA + <code>/api</code> reverse proxy), the FastAPI
         backend and PostgreSQL — is the bundled Compose file:
       </p>
-      <pre><code class="language-bash">deploy/init-env.sh            # writes .env with fresh random secrets
+      <pre><code class="language-bash">deploy/init-env.sh            # writes .env, and the secrets as files in ./secrets
 docker compose up -d --build  # build the images and start the whole stack
 </code></pre>
       <p>
@@ -76,9 +79,11 @@ docker compose up -d --build  # build the images and start the whole stack
         migrated by the <code>api</code> container at every start.
       </p>
       <p>
-        The stack does not start without its secrets (<code>DB_PASSWORD</code>, <code>SECRET_KEY</code> and one token
-        per analysis worker) and refuses the values printed in <code>.env.example</code>, which are public.
-        <code>deploy/init-env.sh</code> generates them; it is safe to run again.
+        The stack does not start without its secrets (<code>DB_PASSWORD</code>, <code>SECRET_KEY</code>,
+        <code>STORE_KEY</code> and one token per analysis worker) and refuses the values printed in
+        <code>.env.example</code>, which are public. <code>deploy/init-env.sh</code> generates them, each into a file of
+        <code>./secrets</code> (<a href="#keys-of-the-server">Keys of the server</a>); it is safe to run again. Keep a
+        copy of that directory away from the server.
       </p>
       <blockquote>
         <p>
@@ -169,6 +174,193 @@ podman-compose up -d --build  # or: podman compose up -d --build
         <code>--uninstall</code>. Before 6.7 it also installed a nightly <code>nik-backup.timer</code>; the server takes
         its backups itself now, and the script removes that timer where an earlier run left it.
       </p>
+      <h3 id="keys-of-the-server">Keys of the server</h3>
+      <p>
+        The stack has two keys that encrypt, one that signs the audit log, a database password and a token for each
+        worker.
+        <a href="security.html#keys">The security guide</a> says what each protects and which container holds it;
+        <strong>Settings → System → Keys</strong> shows where each one comes from on this server and when it last
+        changed. This is the operator's side.
+      </p>
+      <h4 id="keys-where">Where they are kept</h4>
+      <p>
+        <strong>A new install keeps them in files.</strong> <code>deploy/init-env.sh</code> makes
+        <code>./secrets</code> beside <code>docker-compose.yml</code>, a directory only you can enter, with one file for
+        each secret, and writes <code>NIK_SECRETS_DIR=./secrets</code> in <code>.env</code>, which then holds no secret
+        (the lines <code>SECRET_KEY=</code>, <code>DB_PASSWORD=</code>… stay, empty: Compose asks for them by name).
+        Each container is given the files it uses and no other, read-only, under <code>/run/secrets</code>. Nothing else
+        is needed: <code>podman compose up -d --build</code> as before.
+      </p>
+      <ul>
+        <li>
+          The directory is mode 700 and the files in it 644: what protects them is the directory. The containers run as
+          users that are nobody on the host, and neither Docker nor rootless Podman changes who owns a mounted file, so
+          a file only its owner could read would be unreadable to the server. Create the directory as the user that runs
+          the stack.
+        </li>
+        <li>
+          To keep it elsewhere, set <code>NIK_SECRETS_DIR</code> to an absolute path: another disk than the data, a
+          volume that is unlocked at boot, a mount of another machine. A store key that sits on the disk it protects
+          does not protect a host that is stolen whole.
+        </li>
+        <li>
+          <strong>Keep a copy of the directory away from the server.</strong> <code>SECRET_KEY</code> with the backups
+          (the secrets inside a backup are under it), <code>AUDIT_KEY</code> and <code>AUDIT_KEY_PREVIOUS</code> where
+          that copy of <code>SECRET_KEY</code> is (a restored server checks its audit log with them),
+          <code>STORE_KEY</code> apart from them. If the store key is lost with the host nothing is lost with it: a
+          backup holds the files themselves, under its passphrase.
+        </li>
+        <li>
+          The files are mounted with the option <code>z</code>, which gives them the SELinux label a container needs to
+          read them. A directory outside the folder of Nik may need it once by hand:
+          <code>chcon -Rt container_file_t /srv/nik-secrets</code>.
+        </li>
+        <li>
+          <code>podman secret</code> / <code>docker secret</code> work too, with a Compose override that mounts each
+          secret at the same <code>/run/secrets/&lt;name&gt;</code>: the server reads whatever file
+          <code>&lt;NAME&gt;_FILE</code> names. The Compose file does not use <code>secrets:</code> itself because
+          external secrets exist only under Podman, and file secrets are mounted without the SELinux label there.
+        </li>
+      </ul>
+      <p>
+        <strong>A server from before 6.8 keeps them in <code>.env</code></strong
+        >, and goes on working that way: the Compose file mounts the empty files of <code>deploy/no-secrets</code> in
+        the place of each secret, an empty file counts as none, and the values come from the environment as before. The
+        administrators are told once, in Nik, that the keys are in the environment. To take them out:
+      </p>
+      <pre><code class="language-bash">deploy/secrets.sh status      # where each secret is; never a value
+deploy/secrets.sh move        # from .env into ./secrets
+</code></pre>
+      <p>
+        <code>move</code> writes each secret into a file, keeps the <code>.env</code> as it was in
+        <code>.env.before-secrets</code>, writes an <code>.env</code> that names the directory and holds no secret,
+        makes the containers again on it (about a minute) and checks that the server answers and reads its keys from the
+        files. If it does not, it puts the <code>.env</code> back and starts the stack on it again: nothing was moved.
+        It can be run twice. At the end <code>.env.before-secrets</code> still holds every secret in clear:
+        <strong>destroy it (<code>shred -u</code>) or lock it away</strong> once you have seen the server work. A secret
+        must never be in both places: the server refuses to start and says which one is given twice.
+      </p>
+      <h4 id="keys-rotate">Changing a key</h4>
+      <p>
+        Ask for it in <strong>Settings → System → Keys → Rotate…</strong> (a signed-in administrator, with the password
+        again and a code when the account has a second factor): the dialog counts what will be put under the new key and
+        shows the command. Then, on the server, within a day:
+      </p>
+      <pre><code class="language-bash">deploy/secrets.sh rotate secret-key     # or: rotate store-key, rotate audit-key
+</code></pre>
+      <p>For the two keys that encrypt:</p>
+      <ol>
+        <li>
+          The running server makes the new key; the script writes it straight where the keys are kept (it is never on a
+          screen) and keeps the key in use beside it as the earlier key.
+        </li>
+        <li>
+          It restarts the containers that hold the key: <code>api</code> and <code>automation</code> for
+          <code>SECRET_KEY</code>, <code>api</code> alone for <code>STORE_KEY</code>.
+          <strong>Nik does not answer for the time of that restart</strong>, about a minute.
+        </li>
+        <li>
+          The server puts everything under the new key and reads it back with the new key alone. The script waits and
+          shows how far it is; the Keys page shows the same. For <code>SECRET_KEY</code> this takes seconds. For
+          <code>STORE_KEY</code> only the head of each file is rewritten and written to the disk, then each file is
+          opened once with the new key: the time goes with the number of files, not with their size.
+        </li>
+        <li>
+          Once the server says the change is <em>verified</em>, the script moves the earlier key into
+          <code>secrets/retired/</code>, which nothing reads, restarts the same containers once more so that they forget
+          it, and says what to do with that file: keep the earlier <code>SECRET_KEY</code> with the backups taken before
+          the change (their secrets are under it) and destroy it when they are gone; destroy the earlier
+          <code>STORE_KEY</code> unless you keep copies of the store volume made before.
+        </li>
+      </ol>
+      <p>
+        <strong>The audit key</strong> (<code>rotate audit-key</code>) signs the entries of the audit log; nothing is
+        stored under it, so nothing is moved and nothing is waited for. The script adds the key in use to
+        <code>AUDIT_KEY_PREVIOUS</code>, writes the new one, and restarts <code>api</code> and
+        <code>automation</code> once (both write entries, and both must sign with the same key). The new key signs from
+        the next entry on; the entries before it are checked with the earlier keys, which stay in
+        <code>AUDIT_KEY_PREVIOUS</code> for as long as the log holds what they signed. The script ends by saying which
+        key signs and whether any entry lost its key. This is also how a server from before 6.8 is given an audit key of
+        its own: until then it signs with a key derived from <code>SECRET_KEY</code>, which it can always make again, so
+        nothing is lost by the change.
+      </p>
+      <p>
+        <strong>Changing <code>SECRET_KEY</code> on a server that signs with the derived key.</strong> The entries
+        written so far were signed with a key made from the <code>SECRET_KEY</code> that is leaving. Before the script
+        takes that earlier key away (step 4) it asks the server for the key derived from it and writes it into
+        <code>AUDIT_KEY_PREVIOUS</code>, without showing it; if the server cannot be asked, the earlier key stays where
+        it is and the script stops. Nothing has to be done by hand, and the Keys page and
+        <code>deploy/secrets.sh status</code> say how many entries, if any, cannot be checked for want of their key. A
+        key that is retired by hand instead (the line removed from <code>.env</code>) is not carried:
+        <code>python -m app.auditlog key --derived</code>, run while the old <code>SECRET_KEY</code> is still the one in
+        use, writes what belongs in <code>AUDIT_KEY_PREVIOUS</code>. It is a key: the command refuses to write it to a
+        terminal, so send it to a file only you can read (<code>compose exec -T api … &gt; file</code>).
+      </p>
+      <p>
+        Stopped at any step, it is run again and goes on: until the change is verified the server holds both keys and
+        everything is readable. If the server says it could not put something under the new key, the script stops, shows
+        what, and leaves the earlier key in place. Run when nobody asked in Nik, it says so and asks before going on
+        (<code>--yes</code> answers for it). On a server that keeps its keys in <code>.env</code> it edits
+        <code>.env</code> instead and makes the containers again. <code>deploy/secrets.sh rotate tokens</code> writes
+        new tokens for the workers and restarts the stack; the database password is changed in PostgreSQL first (<code
+          >ALTER ROLE nik PASSWORD '…'</code
+        >), then where the keys are kept.
+      </p>
+      <h4 id="keys-stopped">"Nik did not start": a key is missing or is not the right one</h4>
+      <p>
+        When a key is missing, is still an example value, is given both as a file and in <code>.env</code>, sits in a
+        file the server cannot read, or when <code>STORE_KEY</code> is not the key the store is sealed under, the
+        <code>api</code> container does not exit and does not start either: it answers every request with the sentence
+        that says what is wrong, the page shows it, and the same lines are in <code>podman compose logs api</code>.
+        Nothing is written meanwhile. Set it right and start again:
+      </p>
+      <ul>
+        <li><em>is not set</em>: <code>deploy/init-env.sh</code> writes what is missing and changes nothing else;</li>
+        <li>
+          <em>is given twice</em>: remove the value from <code>.env</code> (or run <code>deploy/secrets.sh move</code>,
+          which does it for all of them);
+        </li>
+        <li>
+          <em>cannot be read</em>: the file must exist and be readable by everybody inside a directory only you can
+          enter (<code>chmod 700 secrets; chmod 644 secrets/*</code>);
+        </li>
+        <li>
+          <em>is not the key the store is sealed under</em>: the message gives the fingerprint of the key the store
+          expects and of the one given. Put back the store key this server had. A server restored from a backup never
+          meets this: its files were sealed under its own key as they were written.
+        </li>
+      </ul>
+      <h4 id="store-conversion">The store of a server from before 6.8</h4>
+      <p>
+        Its files are in clear. At the first start with a store key the server begins to seal them in the background,
+        one at a time (each is read, sealed beside itself, read back, compared, and only then put in the place of the
+        clear one), while it is used as before: both forms are read, and new files are sealed as they arrive.
+        <strong>Settings → System → Storage</strong> shows how many files and bytes are done, how long is left, and a
+        <em>Pause</em>; the administrators are told when it has ended, or when a file is stuck. It needs the room of the
+        largest file, never a second copy of the store, and goes on where it was after a restart.
+      </p>
+      <ul>
+        <li>
+          It reads at most <code>STORE_SEAL_MBPS</code> megabytes a second (40 unless set in <code>.env</code>;
+          <code>0</code> is as fast as the disk goes): about half a minute for each gigabyte at 40.
+        </li>
+        <li>
+          Until it has ended, the files it has not reached are in clear on the disk, as they were before the upgrade.
+        </li>
+        <li>
+          A file there is no room for, or that cannot be read, is listed on the Storage page and tried again every ten
+          minutes. Once the store is sealed, a file put back by hand from a copy made before 6.8 is refused until
+          <em>Check again</em> on that page has sealed it.
+        </li>
+      </ul>
+      <h4 id="work-volumes">The work volumes</h4>
+      <p>
+        No worker mounts the store any more. The packet capture worker has a volume of its own,
+        <code>pcap-work</code>, as the document worker has <code>pst-work</code>: a capture larger than
+        <code>PCAP_MEMORY_FILE_MB</code> (64) is kept there, in clear, while it is open, and both volumes are emptied
+        when their worker starts. They hold nothing to back up. To keep even a large capture off the disk, replace the
+        volume with a tmpfs in a Compose override and give the worker the memory for it.
+      </p>
       <h3 id="backups">Backups</h3>
       <p>
         <strong
@@ -193,7 +385,9 @@ podman-compose up -d --build  # or: podman compose up -d --build
         </li>
         <li>
           <strong>the store of files</strong>, whole: samples (<strong>live malware</strong>), e-mails, captures,
-          mailboxes, screenshots, added rule files;
+          mailboxes, screenshots, added rule files. On the disk they are sealed under the store key; in the backup they
+          are the files themselves, under the backup passphrase like everything else, so a backup is read with its
+          passphrase alone;
         </li>
         <li>
           <strong>a manifest</strong>: the version of Nik, the revision of the database, when it was taken, the number
@@ -204,12 +398,13 @@ podman-compose up -d --build  # or: podman compose up -d --build
       <p><strong>Not in a backup</strong>, to keep somewhere else:</p>
       <ul>
         <li>
-          <code>.env</code>, and in it <code>SECRET_KEY</code>. Without the <code>SECRET_KEY</code> the backup was made
-          under, a restored server works, but the stored secrets (keys of instances, credentials, TLS key logs) cannot
-          be read and have to be entered again. The screen can put the key <em>inside</em> the encrypted backup (<strong
-            >Include SECRET_KEY</strong
-          >, off by default): then a backup and its passphrase are enough to bring everything back, and are also enough,
-          for whoever holds both, to read every stored secret. It is never written anywhere in clear;
+          <code>.env</code> and the secrets directory, and in them <code>SECRET_KEY</code>. Without the
+          <code>SECRET_KEY</code> the backup was made under, a restored server works, but the stored secrets (keys of
+          instances, credentials, TLS key logs) cannot be read and have to be entered again. The store key is not needed
+          to restore: the server that restores seals the files under its own. The screen can put the key
+          <em>inside</em> the encrypted backup (<strong>Include SECRET_KEY</strong>, off by default): then a backup and
+          its passphrase are enough to bring everything back, and are also enough, for whoever holds both, to read every
+          stored secret. It is never written anywhere in clear;
         </li>
         <li>the TLS certificate and its key (the <code>web-certs</code> volume, or the files you mounted);</li>
         <li>your Compose overrides and anything else you added to the deployment.</li>
@@ -352,8 +547,24 @@ deploy/restore.sh --inspect nik-20261120-023000            # only read it and sa
         unless you add <code>--replace</code>, which replaces both with what the backup holds. The database arrives in
         one transaction. Then it starts the stack, checks that the server answers, and says what to look at.
         <code>--database-only</code> leaves the files alone; <code>--no-start</code> leaves the stack stopped;
-        <code>--secret-key</code> first writes the <code>SECRET_KEY</code> a backup holds into
-        <code>.env</code> (keeping the file as it was in <code>.env.before-restore</code>).
+        <code>--secret-key</code> first writes the <code>SECRET_KEY</code> a backup holds where the keys of the stack
+        are kept: into the secrets directory (keeping the key as it was beside it, as
+        <code>secret_key.before-restore</code>), or into <code>.env</code> on a server that keeps them there (keeping
+        the file as it was in <code>.env.before-restore</code>), and adds the keys the audit log of the backup was
+        signed with to <code>AUDIT_KEY_PREVIOUS</code> of this server. Every file of the store is sealed under the store
+        key of this server as it is written.
+      </p>
+      <p>
+        <strong>The audit log after a restore.</strong> The log on the server is then the log of the backup. Its first
+        new entry, <code>audit.restore</code>, says which backup was put back; it was written by the restore and not by
+        a session of the server, and is marked so (<em>written outside</em>). What the old server wrote after that
+        backup is in the copy of the syslog receiver, if the log was forwarded. <code>--inspect</code> and the
+        <code>.json</code> beside each backup give the end of the log the backup holds (<code>auditHead</code>: the
+        number of its last entry, its hash, the id of the key that signed it):
+        <code>python -m app.auditlog verify-audit --head SEQ:HASH</code> holds a log against it. The entries that come
+        back keep the signatures of the server that wrote them: this server checks them with the keys in its
+        <code>AUDIT_KEY_PREVIOUS</code>, and shows those whose key it lacks as entries that cannot be checked, never as
+        tampered with.
       </p>
       <p>
         <strong>Versions.</strong> A backup made by the version that is installed, or by an earlier one, is restored as
@@ -365,7 +576,9 @@ deploy/restore.sh --inspect nik-20261120-023000            # only read it and sa
       <p>
         What you need: the second host with Docker or Podman and git, the backups it received
         (<code>/srv/nik-backups/incoming</code>), the backup passphrase, and the <code>SECRET_KEY</code> of the first
-        host (from wherever you keep its <code>.env</code>; or inside the backups, if you chose to include it).
+        host with its <code>AUDIT_KEY</code> and <code>AUDIT_KEY_PREVIOUS</code> (from wherever you keep the copy of its
+        secrets; or inside the backups, if you chose to include the key). The store key of the first host is
+        <strong>not</strong> needed: the second host makes its own.
       </p>
       <ol>
         <li>
@@ -377,10 +590,13 @@ git checkout v6.7.0
 </code></pre>
         </li>
         <li>
-          Make the <code>.env</code> of this host, then put the old <code>SECRET_KEY</code> in it (skip the edit if the
-          backup holds the key: step 3 writes it):
+          Make the settings and the secrets of this host (a store key and an audit key of its own among them), then put
+          the old <code>SECRET_KEY</code> in its file, and the audit keys of the first host among the earlier audit keys
+          of this one (skip both if the backup holds the key: step 3 writes them):
           <pre><code class="language-bash">deploy/init-env.sh
-$EDITOR .env        # SECRET_KEY=&lt;the one of the first host&gt;; TLS_HOSTNAME, ports
+$EDITOR secrets/secret_key     # the SECRET_KEY of the first host, on one line
+$EDITOR secrets/audit_key_previous   # its AUDIT_KEY, then what its AUDIT_KEY_PREVIOUS held: one line, commas between
+$EDITOR .env                   # TLS_HOSTNAME, ports
 </code></pre>
         </li>
         <li>
@@ -404,7 +620,10 @@ deploy/restore.sh /srv/nik-restore/nik-20261120-023000.nikbak
           around this host, <code>python -m app.account</code> in the api container clears them:
           <a href="#sign-in-and-sessions">Sign-in and sessions</a>). Check the list of incidents, open a file of the
           store, look at <strong>Settings → System → Workers</strong> and at an instance of a connector (its key is
-          readable only with the right <code>SECRET_KEY</code>).
+          readable only with the right <code>SECRET_KEY</code>). <strong>Settings → System → Keys</strong> says, under
+          the audit key, how many entries each key signed and whether any cannot be checked: none should, once the keys
+          of the first host are in place. A first host that never had an audit key of its own (it signed with the key
+          derived from its <code>SECRET_KEY</code>) needs nothing more than that <code>SECRET_KEY</code>.
         </li>
         <li>
           Put the TLS certificate in place, point the name of the service at this host, and set up
@@ -526,16 +745,22 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           tag the snapshot names when the folder is a git clone with nothing uncommitted (otherwise it tells you exactly
           which version to put there, and leaves the stack stopped), starts the stack and checks that the server
           answers. <code>--no-checkout</code> never touches the code. Running it twice does no harm.
+          <strong>Back to a version before 6.8</strong>, which reads its store in clear and its secrets in
+          <code>.env</code>, it does two things more, with the code that is still there: it unseals every file of the
+          store (one at a time, each compared before it takes the place of the sealed one; if one cannot be opened it
+          stops before the database is touched and says which), and it puts the secrets back into <code>.env</code> if
+          they had been moved to files.
         </li>
         <li>
           Sign in and look at the latest incidents.
           <strong>What was written after the upgrade is not in the snapshot</strong>: it is lost. Everybody signs in
-          again: a database that is put back keeps no session. The files of the store are untouched; no release so far
-          changes a file that is there, and a rollback refuses a snapshot whose upgrade did.
+          again: a database that is put back keeps no session. What the files of the store hold is untouched: no release
+          so far changes it, and a rollback refuses a snapshot whose upgrade did. (6.8 seals them, and a rollback to an
+          earlier version unseals them: the same bytes either way.)
         </li>
         <li>
-          A snapshot taken while no passphrase was set is read with the <code>SECRET_KEY</code> of <code>.env</code>;
-          otherwise the rollback asks for the backup passphrase.
+          A snapshot taken while no passphrase was set is read with the <code>SECRET_KEY</code> of the server; otherwise
+          the rollback asks for the backup passphrase.
         </li>
       </ol>
       <h4 id="upgrading-to-43">Upgrading to 4.3</h4>
@@ -561,6 +786,45 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           the connectors <em>ServiceNow</em> and <em>Jira</em> are replaced by version 2 of their files, which also
           write the ticket they open to the context of the incident. A connector you changed and installed with a higher
           version is left as it is.
+        </li>
+      </ul>
+      <h4 id="upgrading-to-68">Upgrading to 6.8</h4>
+      <p>
+        <code>git pull</code>, then <code>deploy/init-env.sh</code>, then <code>docker compose up -d --build</code>. The
+        script adds the store key, <code>STORE_KEY</code>, to an existing install and changes nothing else; a server
+        started without it stays up and says the key is missing. Migration <code>0051_audit_chain</code> runs after the
+        snapshot and the rehearsal.
+      </p>
+      <ul>
+        <li>
+          <strong>Keep a copy of <code>STORE_KEY</code> off the server, apart from the backups.</strong> The files of
+          the store cannot be read without it. The backups can: they hold the files under the backup passphrase;
+        </li>
+        <li>
+          the store is sealed in the background, about half a minute for each gigabyte, shown in
+          <em>Settings → Storage</em>. The server is used meanwhile, and the files from before stay in clear until it
+          ends;
+        </li>
+        <li>
+          the entries the audit log already holds are linked and signed once, about a minute for a million. To send the
+          log to a syslog receiver, set it in <em>Settings → Audit log</em>;
+        </li>
+        <li>
+          to take the secrets out of <code>.env</code>, run <code>deploy/secrets.sh move</code> when it suits: the stack
+          is recreated, and the file it leaves beside <code>.env</code> holds every secret in clear until it is
+          destroyed;
+        </li>
+        <li>
+          the analysis workers and the automation worker no longer mount the store, and a volume
+          <code>pcap-work</code> is new;
+        </li>
+        <li>
+          <code>/api/metrics</code> answers 401 without a scrape token made in <em>Settings → System → Health</em>, and
+          the <code>path</code> label of the request metrics now begins with <code>/api</code>;
+        </li>
+        <li>
+          going back below 6.8, <code>deploy/rollback.sh</code> unseals the store and puts the secrets back in
+          <code>.env</code> first.
         </li>
       </ul>
       <h4 id="upgrading-to-67">Upgrading to 6.7</h4>
@@ -1071,6 +1335,350 @@ podman compose up -d --build
           <code>podman compose logs -f &lt;service&gt;</code>.
         </li>
       </ul>
+      <h4 id="audit-log-forwarding">The audit log: its chain, and sending it to syslog</h4>
+      <p>
+        From 6.8 the audit log is a chain of hashes (<a href="security.html#audit-chain"
+          >what that protects, and what it cannot</a
+        >). Nothing has to be set for the chain: the server links the entries it writes, walks the chain every five
+        minutes and tells the administrators when it finds a break. What an operator sets is where the log goes.
+      </p>
+      <ul>
+        <li>
+          <strong>Send it to a receiver.</strong> <em>Settings → System → Audit log → Forwarding to syslog</em>: the
+          host and the port of the receiver, the protocol (TLS on 6514 is the one to use), the authority or the
+          certificate the receiver presents, a client certificate if the receiver asks for one. Save, press
+          <em>Test</em> (a marked message is sent over a connection of its own and the page says what the socket said),
+          then turn it on. A new receiver gets the whole log from its first entry, or only what follows, as chosen.
+        </li>
+        <li>
+          <strong>The automation worker sends</strong>, not the backend: the receiver must be reachable from the
+          <code>automation</code> container (its <code>automation-egress</code> network). It connects straight to the
+          receiver (syslog does not go through an HTTP proxy), on a private address too: that host and that port are an
+          exception of their own, and playbooks gain nothing from it. With <code>AUTOMATION_WORKER=off</code> nothing is
+          sent; with <code>inline</code> the backend process sends, if it can reach the receiver.
+        </li>
+        <li>
+          <strong>A receiver that is down</strong> loses nothing: the entries wait in the table and leave in order when
+          it is back. The page and the health page show how many wait and since when; the administrators are told when
+          that lasts (five minutes by default, a problem after thirty) and when it drained. Entries that wait are never
+          removed by clearing the log.
+        </li>
+        <li>
+          <strong>On the receiver</strong> each message is one line: an RFC 5424 header, the structured data
+          <code>[nik@32473 seq="…" hash="…" prev="…" id="…" action="…"]</code> and the entry as JSON (with
+          <code>origin="import"</code> and <code>"origin":"import"</code> for an entry that came in a file of content
+          from another server: its date is that file's word). Keep the raw message (rsyslog: a template with
+          <code>%rawmsg%</code>; syslog-ng: <code>${MSG}</code> with <code>flags(syslog-protocol)</code> keeps the
+          JSON), in a file the administrators of Nik cannot write to. A message with the id
+          <code>checkpoint</code> arrives every five minutes even when nothing happened: alert on its absence.
+        </li>
+        <li>
+          <strong>Checking the log against the receiver's copy</strong>, on any machine with Python:
+          <pre><code class="language-bash"># on the server: every entry, one JSON object a line
+podman compose exec api python -m app.auditlog export &gt; audit-export.jsonl
+# anywhere: the export alone, then held against what the receiver got
+python backend/app/auditlog/verifier.py audit-export.jsonl
+python backend/app/auditlog/verifier.py audit-export.jsonl --syslog /var/log/nik-audit.log
+# or against the last checkpoint only (its seq and hash)
+podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
+</code></pre>
+          It exits 0 when everything holds, and names what does not: an entry edited, entries missing, a log cut at its
+          end (the receiver knows entries the server no longer has), a log rewritten (the same number with another
+          content). The signatures are checked only when the verifier is given the key, in a file (<code
+            >--keys FILE</code
+          >, one key a line) or in <code>NIK_AUDIT_KEYS</code>; without it, it says
+          <em>signatures not checked: no key</em>.
+        </li>
+        <li>
+          <strong>The key the log is signed with</strong> is one of the
+          <a href="#keys-of-the-server">keys of the server</a>, kept and changed like the others. A new install is given
+          an <code>AUDIT_KEY</code> of its own by <code>deploy/init-env.sh</code>; a server from before 6.8 signs with a
+          key derived from <code>SECRET_KEY</code> until <code>deploy/secrets.sh rotate audit-key</code> gives it one
+          (nothing has to be done for the log to be signed). The <code>api</code> <em>and</em> the
+          <code>automation</code> containers are both given it, and no other: both write entries, and with different
+          keys each could not check what the other signed. A text is taken as it is; <code>hex:…</code> as the bytes it
+          spells. <code>python -m app.auditlog key</code> says which key signs now and which earlier ones the server can
+          still make; <strong>Settings → Keys</strong>
+          shows the same, with how many entries each key signed. The earlier keys stay in
+          <code>AUDIT_KEY_PREVIOUS</code> (several, separated by commas): an entry whose key is not there is reported as
+          one that cannot be checked, not as a break. <a href="#keys-rotate">Changing a key</a> says what happens to
+          them when <code>SECRET_KEY</code> changes. The key is in no database, so a copy of the database alone does not
+          hold it. A backup carries it only when it was asked to carry <code>SECRET_KEY</code> too (<em
+            >Include the key</em
+          >), inside the encrypted file; otherwise keep a copy of it where the copy of <code>SECRET_KEY</code> is.
+        </li>
+        <li>
+          <strong>After a restore</strong> the server's log is the backup's, with one new entry that says so. The
+          receiver then sees numbers it already has arrive again with other content, starting with that entry
+          (<code>audit.restore</code>): the verifier reads it as a restore, and reports how many entries exist only on
+          the receiver. Those are the ones written between the backup and the restore.
+        </li>
+        <li>
+          <strong>Nothing is trimmed by itself</strong>: the audit log is kept without limit.
+          <strong>Removing old entries</strong> (<em>Remove the entries…</em> on the page, or
+          <code>DELETE /api/audit?olderThanDays=N</code> as a signed-in administrator) leaves an entry that says how
+          many went and up to which hash. Nothing removes entries by itself: there is no retention to set.
+        </li>
+      </ul>
+
+      <h4 id="health-and-metrics">Health, warnings and Prometheus</h4>
+      <p>
+        <strong>Settings → System → Health</strong> says in one place whether the server is well: the disks (the store
+        of files and the backup directory, how fast each fills and when it will be full at that rate), the size of the
+        database, every queue with what waits and for how long, the workers, the backups, the database (connections,
+        long transactions, whether its schema is the one this version expects), the certificate of the web container,
+        the chain of the audit log and its forwarding, two warnings about the sign-in, the keys of the server and the
+        encryption of the store, and the clock against the database. Each row is fine, needs attention or is a problem,
+        by thresholds an administrator can change at the foot of the page, and leads to the page that has the whole
+        story.
+      </p>
+      <ul>
+        <li>
+          <strong>Warnings.</strong> The server looks once a minute, from the backend and from the automation worker
+          (whichever is alive), and every administrator gets one notification when a row gets worse and one when it is
+          fine again: a disk past 80% (a problem at 90%) or that will be full within 30 days (7), a queue whose oldest
+          item has waited 10 minutes (60), a schedule or a fetch 5 minutes late (60), the certificate 30 days from its
+          end (7), an audit entry that has waited 5 minutes to be forwarded (30), a broken chain, the database at 80% of
+          its connections (95%) or a pool with none left, a transaction open for 15 minutes (the one a backup reads the
+          database in is not counted), clocks 5 seconds apart (60). A value has to be found twice in a row before
+          anybody is told. Workers and backups keep their own notices; this page does not repeat them.
+        </li>
+        <li>
+          <strong>Keys and encryption.</strong> <em>Keys of the server</em> needs attention while the secrets are in the
+          environment of the containers (<code>deploy/secrets.sh move</code>), while a change of key is half-way or
+          stopped on something it could not put under the new key, and when entries of the audit log cannot be checked
+          because the key that signed them is not among the keys of the server. <em>Encryption of the store</em> needs
+          attention while a store from before 6.8 is being sealed (it says how much is left), and is a problem when a
+          file failed its check or when files stay in clear that the server could not seal. The keys and the store keep
+          their own notices; this page does not repeat them.
+        </li>
+        <li>
+          <strong>The disk of the database</strong> cannot be read from the backend (it belongs to the
+          <code>db</code> container): the page gives the size of the database and how fast it grows. Watch the volume on
+          the host.
+        </li>
+        <li>
+          <strong>The certificate</strong> is read by the backend from the web container itself
+          (<code>NIK_WEB_TLS</code>, <code>web:443</code> in the stack; set it empty where there is no web container, or
+          to the host and port of your own proxy on a manual install).
+        </li>
+        <li>
+          <strong>Prometheus.</strong> The same numbers are at <code>/api/metrics</code>, through the web port like
+          everything else, for whoever presents the <strong>scrape token</strong>: make it at the foot of the health
+          page (it is shown once), put it in a file only Prometheus reads, and add the job the page gives:
+          <pre><code class="language-yaml">scrape_configs:
+  - job_name: nik
+    scheme: https
+    metrics_path: /api/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/nik-metrics-token
+    tls_config:
+      ca_file: /etc/prometheus/nik-ca.crt # the certificate of Nik, or of its authority
+    static_configs:
+      - targets: ["nik.example:8443"]
+</code></pre>
+          Without the token the route answers 401, to a signed-in administrator too. <code>METRICS_TOKEN</code> in
+          <code>.env</code>, the way of earlier versions, is still accepted beside it; with neither, nobody reads the
+          metrics.
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Labels</th>
+              <th>What it is</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>nik_health_state</code></td>
+              <td><code>check</code></td>
+              <td>State of each row of the health page: 0 fine, 1 attention, 2 problem, -1 not known.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_disk_total_bytes</code>, <code>nik_disk_used_bytes</code>, <code>nik_disk_free_bytes</code>
+              </td>
+              <td><code>disk</code> (<code>store</code>, <code>backups</code>)</td>
+              <td>The disk that holds the store of files, and the one of the backup directory.</td>
+            </tr>
+            <tr>
+              <td><code>nik_disk_growth_bytes_per_day</code>, <code>nik_disk_full_in_seconds</code></td>
+              <td><code>disk</code></td>
+              <td>
+                How fast it fills, over the last days, and the time left at that rate (absent when it is not filling).
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_database_size_bytes</code>, <code>nik_database_growth_bytes_per_day</code></td>
+              <td></td>
+              <td>Size of the database and its growth.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_connections</code>, <code>nik_database_connections_max</code></td>
+              <td></td>
+              <td>Connections open on the database, and how many the server accepts.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_pool_in_use</code>, <code>nik_database_pool_size</code></td>
+              <td></td>
+              <td>The pool of the API process that answered the scrape.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_longest_transaction_seconds</code></td>
+              <td></td>
+              <td>Age of the oldest open transaction.</td>
+            </tr>
+            <tr>
+              <td><code>nik_database_revision_current</code></td>
+              <td></td>
+              <td>1 when the schema is the one this version expects.</td>
+            </tr>
+            <tr>
+              <td><code>nik_clock_skew_seconds</code></td>
+              <td></td>
+              <td>Clock of the server minus clock of the database.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_queue_waiting</code>, <code>nik_queue_running</code>, <code>nik_queue_oldest_seconds</code>
+              </td>
+              <td>
+                <code>queue</code> (<code>artifact_jobs</code>, <code>url_scans</code>, <code>uploads</code>,
+                <code>playbook_steps</code>, <code>events</code>, <code>fetch</code>, <code>lookups</code>,
+                <code>mirror</code>, <code>backup_copies</code>)
+              </td>
+              <td>What waits, what is being done, and how long the oldest has waited.</td>
+            </tr>
+            <tr>
+              <td><code>nik_playbook_runs</code></td>
+              <td><code>state</code></td>
+              <td>Runs the server keeps, by state.</td>
+            </tr>
+            <tr>
+              <td><code>nik_schedules</code>, <code>nik_schedules_late</code></td>
+              <td></td>
+              <td>Schedules of playbooks, and those whose time passed without a run.</td>
+            </tr>
+            <tr>
+              <td><code>nik_fetch_instances</code></td>
+              <td><code>state</code> (<code>ok</code>, <code>failing</code>, <code>paused</code>)</td>
+              <td>Instances that fetch.</td>
+            </tr>
+            <tr>
+              <td><code>nik_worker_up</code></td>
+              <td><code>worker</code></td>
+              <td>1 when a worker answered its last check.</td>
+            </tr>
+            <tr>
+              <td><code>nik_automation_heartbeat_age_seconds</code></td>
+              <td></td>
+              <td>Time since the automation worker last said it was alive.</td>
+            </tr>
+            <tr>
+              <td><code>nik_backup_last_good_age_seconds</code>, <code>nik_backup_last_good_size_bytes</code></td>
+              <td></td>
+              <td>The last backup that passed its restore test.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_backup_problems</code>, <code>nik_backup_next_run_timestamp_seconds</code>,
+                <code>nik_upgrade_snapshots</code>
+              </td>
+              <td></td>
+              <td>
+                Problems the watch of the backups holds; when the next backup is due; snapshots kept from before
+                upgrades.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_certificate_expiry_timestamp_seconds</code></td>
+              <td></td>
+              <td>When the certificate of the web container expires.</td>
+            </tr>
+            <tr>
+              <td><code>nik_audit_entries_total</code>, <code>nik_audit_entries</code></td>
+              <td></td>
+              <td>Entries ever linked into the chain; entries the log holds now.</td>
+            </tr>
+            <tr>
+              <td><code>nik_audit_chain_ok</code>, <code>nik_audit_chain_verified_timestamp_seconds</code></td>
+              <td></td>
+              <td>1 when the last walk found nothing wrong; when the chain was last walked without a problem.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_audit_forward_enabled</code>, <code>nik_audit_forward_backlog</code>,
+                <code>nik_audit_forward_oldest_seconds</code>, <code>nik_audit_forward_sent_total</code>
+              </td>
+              <td></td>
+              <td>
+                The forwarding to syslog: on or off, what waits, for how long, how many were sent to the current
+                receiver.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_signin_failures_total</code>, <code>nik_signin_waiting</code></td>
+              <td></td>
+              <td>Failed sign-ins the audit log holds; accounts and addresses that must wait.</td>
+            </tr>
+            <tr>
+              <td><code>nik_administrators_without_second_factor</code></td>
+              <td></td>
+              <td>Administrators with no second factor.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_keys_in_environment</code>, <code>nik_key_rotation_state</code>,
+                <code>nik_key_rotated_timestamp_seconds</code>
+              </td>
+              <td><code>key</code> (the name of the variable, on the last two)</td>
+              <td>
+                Secrets that are in the environment of the containers; where a change of a key stands (0 none, 1
+                half-way, 2 failed); when a key last changed.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_audit_entries_unchecked</code></td>
+              <td></td>
+              <td>Entries of the audit log whose key the server cannot make any more.</td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_store_encrypted</code>, <code>nik_store_files_in_clear</code>,
+                <code>nik_store_bytes_in_clear</code>, <code>nik_store_files_stuck</code>,
+                <code>nik_store_files_damaged</code>
+              </td>
+              <td></td>
+              <td>
+                1 when every file of the store is sealed; the files and bytes still to seal; the files the server could
+                not seal; the files that failed their check.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_info</code></td>
+              <td><code>version</code></td>
+              <td>The version of Nik.</td>
+            </tr>
+            <tr>
+              <td><code>nik_http_requests_total</code></td>
+              <td>
+                <code>method</code>, <code>path</code> (the route as the API writes it,
+                <code>/api/incidents/{incident_id}</code>, never the address asked), <code>status</code>
+              </td>
+              <td>Requests answered, by every API process.</td>
+            </tr>
+            <tr>
+              <td><code>nik_http_request_duration_seconds</code></td>
+              <td><code>method</code>, <code>path</code>, <code>le</code></td>
+              <td>How long they took (a histogram).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <h4 id="sign-in-and-sessions">Sign-in: the client's address, and getting back in</h4>
       <p>
         The rules of signing in are an admin's, under <strong>Settings → Sign-in and sessions</strong> (the

@@ -921,6 +921,63 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/storage/encryption</code></td>
+              <td>
+                Admins. Whether every file of the store is sealed: <code>state</code> (<code>sealed</code>,
+                <code>converting</code>, <code>paused</code>, <code>starting</code>), <code>encrypted</code>,
+                <code>since</code>; while a store from before 6.8 is being sealed, <code>total</code>,
+                <code>done</code> and <code>left</code> (<code>files</code>, <code>bytes</code>),
+                <code>secondsLeft</code>, <code>bytesPerSecond</code>, the files that are
+                <code>stuck</code> (<code>name</code>, <code>reason</code>); the files found <code>damaged</code>;
+                <code>keyFingerprint</code>, the fingerprint of the store key the store is under.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/storage/encryption</code></td>
+              <td>
+                Admins. <code>{ action }</code>: <code>pause</code> or <code>resume</code> the sealing of the store, or
+                <code>check</code> a sealed store again (a file found in clear is sealed). Answers as the
+                <code>GET</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/system/keys</code></td>
+              <td>
+                Admins. The secrets of the server in <code>keys</code>: <code>name</code>, <code>label</code>,
+                <code>protects</code>, <code>holders</code> (the containers given it),
+                <code>source</code> (<code>file</code>, <code>environment</code>, <code>default</code>), and for
+                <code>SECRET_KEY</code> and <code>STORE_KEY</code> the <code>fingerprint</code>, <code>since</code>,
+                <code>rotatedAt</code>, the <code>request</code> an administrator made and the
+                <code>rotation</code> (<code>state</code>: <code>idle</code>, <code>running</code>, <code>failed</code>,
+                <code>verified</code>; <code>done</code>, <code>total</code>). <code>AUDIT_KEY</code> has the same
+                fields (its <code>fingerprint</code> is the id its entries carry; <code>derived</code> when the server
+                signs with the key made from <code>SECRET_KEY</code>) and <code>signed</code>: for each key that signed
+                entries of the audit log its <code>keyId</code>, how many <code>entries</code>, whether it is the
+                <code>current</code> one and whether the server still holds it (<code>known</code>), with
+                <code>cannotBeChecked</code> and <code>unsigned</code>. Also <code>backupPassphrase</code>,
+                <code>inEnvironment</code> and the state of the <code>store</code>.
+                <strong>No value of a key is ever returned, nor a part of one.</strong>
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/system/keys/{name}/rotation</code></td>
+              <td>
+                Admins. What a change of <code>SECRET_KEY</code> or <code>STORE_KEY</code> would put under the new key,
+                counted now (<code>items</code>, <code>total</code>), the containers that restart and the
+                <code>command</code> to run on the host. For <code>AUDIT_KEY</code> nothing is put under the new key
+                (<code>total</code> 0): the item counts the entries that keep the key that signed them.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/system/keys/{name}/rotation</code></td>
+              <td>
+                <code>{ password, code | recoveryCode }</code>: ask for the key to be changed (a
+                <strong>signed-in admin</strong>: not an API key; the code when the account has a second factor). The
+                request is good for a day and is written to the audit log; the change itself is carried out on the host
+                (<code>deploy/secrets.sh rotate …</code>). <code>DELETE</code> withdraws it.
+              </td>
+            </tr>
+            <tr>
               <td><code>POST /api/artifacts/export</code> · <code>POST /api/artifacts/import</code></td>
               <td>
                 Export <code>{ ids, files }</code> (500 artifacts at most) as a zip: <code>manifest.json</code> (<code
@@ -1307,14 +1364,96 @@
             </tr>
             <tr>
               <td><code>DELETE /api/audit</code></td>
-              <td>Clear the log (<strong>admin</strong>); the new log starts with an entry saying who did.</td>
+              <td>
+                Remove old entries (a <strong>signed-in admin</strong>: not an API key): all of them, or with
+                <code>olderThanDays</code> those from the start of the log that are older. Answers
+                <code>{"removed", "entries"}</code>. An <code>audit.trim</code> entry stays and says how many went and
+                up to which hash; what was not forwarded yet is never removed.
+              </td>
             </tr>
             <tr>
-              <td><code>GET /api/health</code> · <code>/api/ready</code> · <code>/api/metrics</code></td>
+              <td><code>GET /api/audit/chain</code></td>
               <td>
-                Liveness · readiness (database) · Prometheus metrics. None needs authentication, so the bundled nginx
-                does not publish <code>/api/metrics</code>: scrape <code>http://api:8000/api/metrics</code> on the
-                compose network, with <code>Authorization: Bearer …</code> when <code>METRICS_TOKEN</code> is set.
+                Where the chain of the log stands (<code>audit.read</code>): <code>head</code> (<code>seq</code>,
+                <code>hash</code>), <code>entries</code>, <code>verified</code> (<code>seq</code>, <code>hash</code>,
+                <code>at</code>), <code>problem</code> (<code>kind</code>: <code>edited</code>, <code>missing</code>,
+                <code>reordered</code>, <code>relinked</code>, <code>start</code>, <code>cut</code>,
+                <code>rewritten</code>; <code>seq</code>, <code>text</code>, <code>since</code>) or null. Every entry of
+                <code>GET /api/audit</code> carries its <code>seq</code>, <code>prev</code> and <code>hash</code>, and
+                <code>origin</code>: <code>import</code> for an entry that came in a file of content from another server
+                (its time and author are that file's), null otherwise; <code>q=origin:import</code> asks for them;
+                <code>outside</code> for one the server found in the table and did not write itself.
+                <code>mac</code> and <code>keyId</code> are its signature and the id of the key that made it;
+                <code>GET /api/audit/chain</code> gives the <code>keyId</code> in use, and <code>unchecked</code>: how
+                many entries were signed by keys the server can no longer make.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/audit/chain/verify</code></td>
+              <td>
+                Walk the chain now (<code>audit.read</code>). <code>{"full": true}</code> reads every entry;
+                <code>{"head": {"seq", "hash"}}</code> holds the end of the log against a head noted outside the server.
+                Answers as <code>GET /api/audit/chain</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/audit/forwarding</code></td>
+              <td>
+                The forwarding to syslog (<strong>admin</strong>): <code>settings</code> (never the key of a client
+                certificate, only <code>clientKeySet</code>) and <code>state</code> (<code>destination</code>,
+                <code>backlog</code>, <code>error</code>, <code>sent</code>, <code>pendingChange</code>).
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/audit/forwarding</code></td>
+              <td>
+                Change it (a <strong>signed-in admin</strong>); only the keys sent change: <code>enabled</code>,
+                <code>host</code>, <code>port</code>, <code>protocol</code> (<code>tls</code>, <code>tcp</code>,
+                <code>udp</code>), <code>ca</code>, <code>verifyName</code>, <code>clientCert</code>,
+                <code>clientKey</code> (PEM, or <code>{{ credentials.name }}</code>), <code>facility</code>,
+                <code>severity</code>, <code>appName</code>, <code>hostname</code>, <code>checkpointMinutes</code>,
+                <code>startFrom</code> (<code>beginning</code>, <code>now</code>), <code>maxDatagram</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/audit/forwarding/test</code></td>
+              <td>
+                Send a marked test message to the receiver that is saved (a <strong>signed-in admin</strong>); answers
+                <code>{"ok", "message", "mark"}</code> within a few seconds.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/health</code> · <code>/api/ready</code></td>
+              <td>Liveness · readiness (database). No authentication, and nothing but that the process is up.</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/health/details</code></td>
+              <td>
+                The health page (<strong>admin</strong>): <code>rows</code> (<code>id</code>, <code>group</code>,
+                <code>label</code>, <code>value</code>, <code>state</code>: <code>fine</code>, <code>attention</code>,
+                <code>problem</code>, <code>unknown</code>; <code>since</code>, <code>detail</code>, <code>link</code>),
+                <code>counts</code>, <code>thresholds</code>, <code>metricsToken</code>.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/health/thresholds</code></td>
+              <td>
+                Change thresholds of the health page (a <strong>signed-in admin</strong>); only the names sent change.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/health/metrics-token</code> · <code>DELETE</code></td>
+              <td>
+                Make the scrape token (a <strong>signed-in admin</strong>): it is in the answer, once, and replaces the
+                one before. <code>DELETE</code> removes it.
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/metrics</code></td>
+              <td>
+                Prometheus metrics, for <code>Authorization: Bearer &lt;scrape token&gt;</code> only:
+                <code>401</code> to anything else, a session or an API key included. Reached through the web port like
+                the rest of the API. <a href="deployment.html#health-and-metrics">The metrics</a>.
               </td>
             </tr>
           </tbody>
@@ -2464,7 +2603,7 @@ labels:vip due:&lt;today sender_domain:""</code></pre>
         </li>
         <li>
           <strong>Operations</strong>: 600 requests a minute per client address (10 a minute for signing in), answered
-          <code>429</code> beyond; Prometheus metrics at <code>/api/metrics</code> (not published by the bundled nginx);
+          <code>429</code> beyond; Prometheus metrics at <code>/api/metrics</code> (for the bearer of the scrape token);
           an <code>X-Request-ID</code> on every response.
         </li>
         <li>

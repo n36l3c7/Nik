@@ -12,8 +12,6 @@ public to view; calling the write endpoints requires an ``X-API-Key`` header
 
 from __future__ import annotations
 
-import hmac
-
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -23,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifact_jobs, urlscan_queue, worker_watch
+from . import artifact_jobs, key_rotation, store_seal, urlscan_queue, worker_watch
 from .artifacts import backfill as backfill_artifacts
 
 # Import models so their tables are registered on the shared metadata before
@@ -38,9 +36,9 @@ from .core.db import Base, SessionLocal, engine, get_db
 from .core.observability import metrics_response, observability_middleware, setup_logging
 from .core.ratelimit import limiter
 from .core.security import Refused
+from .core.store import SealError
 from .enrichment import worker as enrichment_worker
 from .iocs import backfill as backfill_iocs
-from .malware.samples import repair_store_permissions
 from .query import QueryError, QueryForbidden
 from .routers import (
     annotations,
@@ -84,6 +82,7 @@ from .routers import (
     search,
     settings,
     storage,
+    system_keys,
     tasks,
     urls,
     users,
@@ -91,9 +90,14 @@ from .routers import (
     webhooks,
     yara_rules,
 )
+from .routers import (
+    health as health_details,
+)
 from .routers import workers as worker_status
 
 setup_logging(app_settings.LOG_LEVEL)
+# The store asks this whether files in clear may still be there, and tells it of a damaged one.
+store_seal.install()
 
 API_DESCRIPTION = """
 Nik is a forensic analysis platform. This REST API lets external clients drive
@@ -155,12 +159,16 @@ TAGS_METADATA = [
         "name": "backup",
         "description": "The backups Nik takes by itself, and the export of content as one file (admins).",
     },
-    {"name": "health", "description": "Liveness probe."},
+    {
+        "name": "keys",
+        "description": "The keys of the server: where each comes from, what it protects, changing one (admins).",
+    },
+    {"name": "health", "description": "Liveness probe; for administrators, the health page of the server."},
 ]
 
 app = FastAPI(
     title="Nik API",
-    version="6.7.1",
+    version="6.8.0",
     description=API_DESCRIPTION,
     openapi_tags=TAGS_METADATA,
     docs_url="/api/docs",
@@ -203,18 +211,16 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables when not using migrations, repair the sample store, index IOCs.
+    """Create all tables when not using migrations, index IOCs, start the loops of the process.
 
     In production run Alembic (``alembic upgrade head``, see backend/alembic).
-    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema. The
-    store pass makes samples saved by older releases readable by the workers.
+    ``RUN_CREATE_ALL=false`` disables this so migrations own the schema.
     """
     if app_settings.RUN_CREATE_ALL:
         Base.metadata.create_all(bind=engine)
-    # SECRET_KEY was changed: move what the old one encrypted to the new one.
+    # SECRET_KEY was changed: move what the old one encrypted to the new one (the key of the client
+    # certificate the audit log is forwarded with is among it: core/vault.py lists every place).
     vault.reencrypt(SessionLocal)
-    # Samples stored by releases before 2.7.0 are 0o440: the workers could not read them.
-    repair_store_permissions()
     # Incidents saved before 2.12.0 have no indicator index yet.
     backfill_iocs(SessionLocal)
     # Samples, e-mails and captures stored before 2.19.0 have no artifact entry yet.
@@ -243,6 +249,9 @@ def on_startup() -> None:
     # The administrators are told when a worker stops answering (one process at a time, see worker_watch.py).
     if app_settings.API_BACKGROUND:
         worker_watch.start()
+        # A store from before 6.8 is sealed file by file, and a key that was changed is followed to
+        # its end (one process at a time, see store_seal.py and key_rotation.py).
+        key_rotation.start()
         # Backups are taken and tested here (one process at a time, see backups/scheduler.py).
         from .backups import scheduler as backup_scheduler
 
@@ -250,6 +259,18 @@ def on_startup() -> None:
         # Their copies off the server leave from the process that runs playbooks: this one only when it does.
         if app_settings.AUTOMATION_WORKER == "inline":
             backup_scheduler.start_shipper()
+        # The chain of the audit log is walked here every few minutes (one process at a time, see
+        # auditlog/chain.py); the log leaves for syslog from the process that runs playbooks.
+        from .auditlog import chain as audit_chain
+        from .auditlog import forward as audit_forward
+
+        audit_chain.start()
+        if app_settings.AUTOMATION_WORKER == "inline":
+            audit_forward.start()
+        # The health of the server is looked at once a minute, and the administrators told (health/watch.py).
+        from .health import watch as health_watch
+
+        health_watch.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -323,13 +344,14 @@ def ready(db: OrmSession = Depends(get_db)) -> dict:
 
 
 @app.get("/api/metrics", tags=["health"], include_in_schema=False)
-def metrics(request: Request):
-    """Prometheus metrics exposition (with ``METRICS_TOKEN`` set, for its bearer only)."""
-    token = app_settings.METRICS_TOKEN
-    sent = request.headers.get("Authorization", "")
-    if token and not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return metrics_response()
+def metrics(request: Request, db: OrmSession = Depends(get_db)):
+    """Prometheus metrics, for the bearer of the scrape token and nobody else (``health/metrics.py``):
+    a session cookie or an API key gets 401 like no credential at all."""
+    from .health import metrics as health_metrics
+
+    if not health_metrics.allowed(db, request.headers.get("Authorization", "")):
+        raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    return metrics_response(health_metrics.exposition(db))
 
 
 @app.exception_handler(QueryError)
@@ -344,6 +366,13 @@ def _refused(_request: Request, error: Refused) -> JSONResponse:
     return JSONResponse(
         status_code=error.status_code, content={"detail": error.detail, "code": error.code}, headers=error.headers
     )
+
+
+@app.exception_handler(SealError)
+def _damaged_file(_request: Request, error: SealError) -> JSONResponse:
+    """A file of the store that does not open is never served as if it were fine: the sentence names
+    it and says why. The audit log and the administrators were told where it was found."""
+    return JSONResponse(status_code=500, content={"detail": str(error), "code": "file_damaged"})
 
 
 @app.exception_handler(QueryForbidden)
@@ -398,7 +427,10 @@ app.include_router(capa_rules.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(system_keys.router, prefix="/api")
+app.include_router(system_keys.internal, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(worker_status.router, prefix="/api")
+app.include_router(health_details.router, prefix="/api")

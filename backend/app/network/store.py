@@ -1,10 +1,15 @@
 """Files of the network captures: ``SAMPLE_STORE/_captures/<id>/``.
 
-- ``capture.<pcap|pcapng|gz>``: the capture, read-only for everyone (0o444)
-  so the packet capture worker reads it through its read-only mount;
+- ``capture.<pcap|pcapng|gz>``: the capture. The packet capture worker does
+  not see the store: it is sent the capture when it has to read it
+  (``service.py``);
 - ``log.jsonl``: an isolated browser session's network log, one entry per
   line; a later line for the same ``id`` replaces the earlier one (an entry
-  changes until its request ends). Readable by the backend only.
+  changes until its request ends).
+
+Both are sealed like every file of the store (``core/store.py``). A sealed
+file is not added to: the log is written again, whole, each time entries
+arrive (a session's log is a few megabytes at most).
 """
 
 from __future__ import annotations
@@ -12,14 +17,12 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
-import stat
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..core import store
 from ..core.config import settings
 
-STORE_MODE = 0o444
 _ID = re.compile(r"^[0-9a-f]{32}$")
 
 # Magic bytes of the formats the worker reads, and the extension each is stored with.
@@ -57,24 +60,14 @@ def capture_path(capture_id: str, ext: str) -> Path:
 
 
 def relative_path(capture_id: str, ext: str) -> str:
-    """The path the packet capture worker opens (relative to the sample store)."""
+    """The name the packet capture worker knows the capture by (its path inside the store)."""
     return f"_captures/{capture_id}/capture.{ext}"
-
-
-def seal(part: Path, path: Path) -> Path:
-    """Make a finished file read-only and give it its final name."""
-    os.chmod(part, STORE_MODE)
-    part.replace(path)
-    return path
 
 
 def write_capture(capture_id: str, ext: str, chunks: Iterable[bytes]) -> Path:
     path = capture_path(capture_id, ext)
-    part = path.with_suffix(".part")
-    with open(part, "wb") as handle:
-        for chunk in chunks:
-            handle.write(chunk)
-    return seal(part, path)
+    store.write(path, chunks)
+    return path
 
 
 def find_capture(capture_id: str) -> Path | None:
@@ -88,11 +81,7 @@ def find_capture(capture_id: str) -> Path | None:
 def remove(capture_id: str) -> None:
     if not is_capture_id(capture_id):
         return
-    folder = Path(settings.SAMPLE_STORE) / "_captures" / capture_id
-    if folder.is_dir():
-        for item in folder.iterdir():
-            os.chmod(item, stat.S_IRUSR | stat.S_IWUSR)
-        shutil.rmtree(folder, ignore_errors=True)
+    store.remove_tree(Path(settings.SAMPLE_STORE) / "_captures" / capture_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -101,9 +90,13 @@ def remove(capture_id: str) -> None:
 def append_log(capture_id: str, entries: list[dict[str, Any]]) -> None:
     if not entries:
         return
-    with open(directory(capture_id) / "log.jsonl", "a", encoding="utf-8") as handle:
-        for entry in entries:
-            handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    path = directory(capture_id) / "log.jsonl"
+    added = "".join(json.dumps(entry, separators=(",", ":")) + "\n" for entry in entries).encode("utf-8")
+    with store.writing(path) as out:
+        if path.is_file():
+            for piece in store.pieces(path):
+                out.write(piece)
+        out.write(added)
 
 
 def read_log(capture_id: str) -> list[dict[str, Any]]:
@@ -112,7 +105,7 @@ def read_log(capture_id: str) -> list[dict[str, Any]]:
     if not is_capture_id(capture_id) or not path.is_file():
         return []
     entries: dict[int, dict[str, Any]] = {}
-    with open(path, encoding="utf-8") as handle:
+    with store.open(path) as handle:
         for line in handle:
             try:
                 entry = json.loads(line)

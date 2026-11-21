@@ -238,11 +238,29 @@ export const SETTINGS_GROUPS = [
     label: 'System',
     sections: [
       {
+        id: 'health',
+        slug: 'health',
+        label: 'Health',
+        permission: 'admin',
+        keywords:
+          'status monitoring disk full queues late workers certificate expiry tls database connections clock thresholds ' +
+          'warnings prometheus metrics scrape token',
+      },
+      {
         id: 'storage',
         slug: 'storage',
         label: 'Storage',
         permission: 'admin',
-        keywords: 'disk space free largest files mailboxes captures',
+        keywords: 'disk space free largest files mailboxes captures encryption encrypted at rest sealed store',
+      },
+      {
+        id: 'keys',
+        slug: 'keys',
+        label: 'Keys',
+        permission: 'admin',
+        keywords:
+          'secret key store key audit key signature signed rotate rotation fingerprint secrets env environment files ' +
+          'passphrase tokens encryption',
       },
       {
         id: 'workers',

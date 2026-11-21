@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { test, expect } from '@playwright/test'
 import { buildSamplePe, nextCode, phishingEml } from './helpers.js'
 import { crossings } from '../src/domain/automation/layout.js'
@@ -1330,6 +1331,131 @@ test('Storage shows how full the disk is and what fills it', async () => {
   await expect(settings).toBeHidden()
 })
 
+test('the store is encrypted: Storage says so, the disk holds no file in clear, a download is what was uploaded', async () => {
+  // A capture goes in through the API, as an upload does.
+  const fixture = readFileSync(new URL('./fixtures/phish.pcapng', import.meta.url))
+  const incidentId = lastIncident.split('/').pop()
+  const uploaded = await page.request.post(`/api/incidents/${incidentId}/captures`, {
+    multipart: { file: { name: 'sealed.pcapng', mimeType: 'application/octet-stream', buffer: fixture } },
+  })
+  expect(uploaded.status()).toBe(201)
+  const captureId = (await uploaded.json()).capture.id
+
+  // On the disk of the server it is sealed: nothing of the capture can be read there.
+  const stored = readFileSync(`../backend/.e2e-samples/_captures/${captureId}/capture.pcapng`)
+  expect(stored.subarray(0, 8).toString('latin1')).toBe('NIKSEAL1')
+  expect(stored.length).toBeGreaterThan(fixture.length)
+  expect(fixture.includes('login-paypa1.example')).toBe(true)
+  expect(stored.includes('login-paypa1.example')).toBe(false)
+  expect(stored.includes(fixture.subarray(0, 64))).toBe(false)
+
+  // What comes back is the capture, byte for byte; a range of it is served without the rest.
+  const whole = await page.request.get(`/api/captures/${captureId}/file`)
+  expect(whole.status()).toBe(200)
+  expect((await whole.body()).equals(fixture)).toBe(true)
+  const part = await page.request.get(`/api/captures/${captureId}/file`, { headers: { Range: 'bytes=100-199' } })
+  expect(part.status()).toBe(206)
+  expect((await part.body()).equals(fixture.subarray(100, 200))).toBe(true)
+  expect((await page.request.delete(`/api/incidents/${incidentId}/captures/${captureId}`)).status()).toBe(204)
+
+  // The screen says the whole store is encrypted, and since when (a new server: from its first start).
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Storage').click()
+  const encryption = settings.getByRole('region', { name: 'Encryption of the store' })
+  await expect(encryption).toContainText('Every file of the store is encrypted since', { timeout: 30_000 })
+  await expect(encryption).toContainText('Encrypted')
+  await expect(encryption).toContainText(/store key [0-9a-f]{4}-[0-9a-f]{4}/)
+  await expect(encryption.getByRole('button', { name: 'Check again' })).toBeVisible()
+  await expect(encryption.getByRole('button', { name: 'Pause' })).toHaveCount(0)
+  await expect(encryption.getByRole('list', { name: 'Damaged files' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+})
+
+test('Keys lists the keys of the server without a value, and a change of key is asked for from the screen', async () => {
+  await page.getByRole('button', { name: 'Platform settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Keys', { exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/keys$/)
+
+  const encrypting = settings.getByRole('list', { name: 'Keys that encrypt and sign' })
+  await expect(encrypting.getByRole('listitem')).toHaveCount(4)
+  // The key that signs the audit log: the test server was given none, so the one derived from the secret key
+  // signs; every entry written so far was signed with it, and none has lost its key.
+  const auditKey = encrypting.getByRole('listitem', { name: 'Audit key' })
+  await expect(auditKey).toContainText('from the secret key, derived')
+  await expect(auditKey).toContainText(/fingerprint derived-[0-9a-f]{12}/)
+  await expect(auditKey).toContainText('Held by: api, automation')
+  await expect(auditKey.getByRole('group', { name: 'What each key signed' })).toContainText(
+    /derived-[0-9a-f]{12}: \d+ entries, the key in use/,
+  )
+  await expect(auditKey).not.toContainText('cannot be checked')
+  const secretKey = encrypting.getByRole('listitem', { name: 'Secret key' })
+  const storeKey = encrypting.getByRole('listitem', { name: 'Store key' })
+  // A key is spoken of by its fingerprint; the test server has no key given to it, and the page says so.
+  await expect(secretKey).toContainText(/fingerprint [0-9a-f]{4}-[0-9a-f]{4}/)
+  await expect(storeKey).toContainText(/fingerprint [0-9a-f]{4}-[0-9a-f]{4}/)
+  await expect(storeKey).toContainText('Held by: api')
+  await expect(secretKey).toContainText('Held by: api, automation')
+  await expect(storeKey).toContainText('from not set')
+  await expect(encrypting.getByRole('listitem', { name: 'Backup passphrase' })).toContainText(/set|not set/)
+  // The keys the server runs with in development are known to everybody: none of them is on the page.
+  await expect(settings).not.toContainText('dev-insecure')
+  const others = settings.getByRole('list', { name: 'Passwords and tokens' })
+  await expect(others.getByRole('listitem')).toHaveCount(8)
+  await expect(others.getByRole('listitem', { name: 'Database password' })).toContainText('ALTER ROLE nik PASSWORD')
+  await expect(settings.getByText('The store of files', { exact: true })).toBeVisible()
+
+  // The audit key is changed from the same place; its dialog says that nothing is signed again.
+  await auditKey.getByRole('button', { name: 'Rotate…' }).click()
+  const auditDialog = page.getByRole('dialog', { name: 'Change the audit key' })
+  await expect(auditDialog).toContainText('signs the audit log from the next entry on')
+  await expect(auditDialog.getByRole('list', { name: 'What keeps its key' })).toContainText(
+    /\d+ × entry of the audit log that keeps the key that signed it/,
+  )
+  await expect(auditDialog).toContainText('The containers api and automation restart once')
+  await auditDialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(auditDialog).toBeHidden()
+
+  // Asking for the store key to be changed: what it touches, who asks, then the command for the server.
+  await storeKey.getByRole('button', { name: 'Rotate…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Change the store key' })
+  await expect(dialog.getByRole('list', { name: 'What will be put under the new key' })).toContainText(
+    /file of the store|Nothing is stored under this key yet/,
+  )
+  await expect(dialog).toContainText('never shown')
+  const ask = dialog.getByRole('button', { name: 'Ask for the change' })
+  await expect(ask).toBeDisabled()
+  await dialog.getByLabel('Your password').fill('not the password')
+  await ask.click()
+  await expect(dialog.getByRole('alert')).toContainText('The current password is not correct')
+  await dialog.getByLabel('Your password').fill(ADMIN.password)
+  await ask.click()
+  await expect(dialog.getByRole('status')).toContainText('The change was asked for')
+  await expect(dialog).toContainText('deploy/secrets.sh rotate store-key')
+  await expect(dialog).toContainText('The container api restarts twice')
+  await dialog.getByRole('button', { name: 'Done' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(storeKey).toContainText('change asked for')
+  await expect(secretKey).not.toContainText('change asked for')
+
+  // The request is in the audit log, and can be withdrawn.
+  const audit = await (await page.request.get('/api/audit?q=STORE_KEY')).json()
+  expect(audit.entries.some((entry) => entry.action === 'key.rotate.request' && entry.target === 'STORE_KEY')).toBe(
+    true,
+  )
+  await storeKey.getByRole('button', { name: 'How to change it…' }).click()
+  await expect(dialog).toContainText('deploy/secrets.sh rotate store-key')
+  await dialog.getByRole('button', { name: 'Withdraw the request' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(storeKey).not.toContainText('change asked for')
+  await expect(storeKey.getByRole('button', { name: 'Rotate…' })).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(settings).toBeHidden()
+})
+
 test('Workers lists every worker of the server and says which are not configured', async () => {
   await page.getByRole('button', { name: 'Platform settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
@@ -1518,6 +1644,248 @@ test('Settings → Backup: the passphrase, the settings and the unsaved question
   await expect(gone).toHaveCount(0)
   await expect(settings.getByText('No backup yet')).toBeVisible()
   await expect(settings.getByText('The server takes one at the next run of the schedule.')).toBeVisible()
+
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  await expect(settings).toHaveCount(0)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('Settings → Audit log: the chain is verified on demand, and the log is forwarded to a syslog receiver', async () => {
+  test.setTimeout(180_000)
+  const before = new URL(page.url()).pathname
+  // A syslog receiver of the test's own, over TCP: it keeps every message, read by its length.
+  const got = []
+  const receiver = createServer((socket) => {
+    let pending = Buffer.alloc(0)
+    socket.on('data', (data) => {
+      pending = Buffer.concat([pending, data])
+      for (;;) {
+        const space = pending.indexOf(0x20)
+        if (space < 0) break
+        const size = Number(pending.subarray(0, space).toString('ascii'))
+        if (!Number.isInteger(size) || pending.length < space + 1 + size) break
+        got.push(pending.subarray(space + 1, space + 1 + size).toString('utf8'))
+        pending = pending.subarray(space + 1 + size)
+      }
+    })
+    socket.on('error', () => {})
+  })
+  await new Promise((resolve) => receiver.listen(0, '127.0.0.1', resolve))
+  const port = receiver.address().port
+  const bodies = (kind) =>
+    got.map((line) => JSON.parse(line.slice(line.indexOf('{"nik":')))).filter((body) => body.nik === kind)
+
+  try {
+    await page.goto('/settings/system/audit-log')
+    const settings = page.getByRole('region', { name: 'Settings' })
+    await expect(settings.getByRole('heading', { name: 'Audit log', level: 2 })).toBeVisible()
+
+    // ---- The chain: its state, and Verify now ----
+    const chain = settings.getByRole('region', { name: 'Chain of the audit log' })
+    const chainState = chain.getByRole('status', { name: 'State of the chain' })
+    await expect(chainState).toBeVisible()
+    await chain.getByRole('button', { name: 'Verify now' }).click()
+    await expect(chain.getByText(/^The chain holds up to entry \d+\.$/)).toBeVisible()
+    await expect(chain).toContainText(/Holds up to entry \d+/)
+    await expect(chainState).toContainText('Verified ')
+    // Verifying is itself in the log, linked like every entry.
+    const said = (await (await page.request.get('/api/audit?q=action:audit.verify')).json()).entries[0]
+    expect(said.details).toMatch(/^Verified the audit log: it holds up to entry \d+$/)
+    expect(said.seq).toBeGreaterThan(1)
+    expect(said.hash).toMatch(/^[0-9a-f]{64}$/)
+    // Held against a head from outside that is past its end: the newest entries were removed, it says.
+    await chain.getByText('Hold it against a head from outside').click()
+    const outside = chain.getByLabel('Head from outside')
+    await outside.fill('nonsense')
+    await expect(chain).toContainText('A head is the number of an entry, a colon, and its hash')
+    await outside.fill(`999999:${'a'.repeat(64)}`)
+    await chain.getByRole('button', { name: 'Verify now' }).click()
+    await expect(chain).toContainText('Broken at entry')
+    await expect(chainState).toContainText('The head given knows the log up to entry 999999')
+    await expect(chain.getByRole('alert')).toContainText('verifier.py')
+    // Without it the log holds: nothing on the server says otherwise.
+    await outside.fill('')
+    await chain.getByRole('button', { name: 'Verify now' }).click()
+    await expect(chain.getByText(/^The chain holds up to entry \d+\.$/)).toBeVisible()
+
+    // ---- The forwarding: off, set, the unsaved question, Test, on ----
+    const forwarding = settings.getByRole('region', { name: 'Forwarding to syslog' })
+    const state = forwarding.getByRole('status', { name: 'State of the forwarding' })
+    await expect(forwarding).toContainText('Not forwarded')
+    await expect(state).toContainText('The log exists on this server only.')
+    const form = forwarding.getByRole('form', { name: 'Forwarding settings' })
+    const save = form.getByRole('button', { name: 'Save the forwarding' })
+    const tryIt = form.getByRole('button', { name: 'Test', exact: true })
+    await expect(save).toBeDisabled()
+    await expect(tryIt).toBeDisabled()
+    await form.getByLabel('Receiver', { exact: true }).fill('127.0.0.1')
+    await form.getByLabel('Protocol').selectOption('udp')
+    await expect(form).toContainText('Lossy and unauthenticated')
+    await expect(form.getByLabel('Largest datagram (bytes)')).toBeVisible()
+    await form.getByLabel('Protocol').selectOption('tcp')
+    await expect(form).toContainText('Nothing is encrypted and the receiver is not authenticated')
+    await expect(form.getByLabel('Port', { exact: true })).toHaveValue('514')
+    await form.getByLabel('Port', { exact: true }).fill('0')
+    await expect(save).toBeDisabled()
+    await expect(form).toContainText('The port is a number from 1 to 65535.')
+    await form.getByLabel('Port', { exact: true }).fill(String(port))
+    await form.getByLabel('A new receiver gets').selectOption('now')
+    await expect(save).toBeEnabled()
+    // What is typed and not saved is asked about before leaving.
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Incidents' }).click()
+    const ask = page.getByRole('dialog', { name: 'Leave without saving?' })
+    await expect(ask).toContainText('The forwarding of the audit log')
+    await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+    await expect(ask).toHaveCount(0)
+    await expect(form.getByLabel('Receiver', { exact: true })).toHaveValue('127.0.0.1')
+    await save.click()
+    await expect(save).toBeDisabled()
+
+    // Test: a marked message over a connection of its own, and what the socket said.
+    await tryIt.click()
+    const result = form.getByRole('status', { name: 'Result of the test' })
+    await expect(result).toContainText(`Connected to 127.0.0.1:${port}`, { timeout: 60_000 })
+    await expect(result).toContainText('the receiver kept the connection open')
+    await expect.poll(() => bodies('test').length).toBe(1)
+    expect(got[0]).toMatch(/^<109>1 \S+Z nik nik - test \[nik@32473 test="[0-9a-f]{12}"\] \{"nik":"test"/)
+    await expect(result).toContainText(`The message is marked ${bodies('test')[0].test}.`)
+    expect(bodies('audit')).toHaveLength(0)
+
+    // Turned on: the entries arrive in order, each with its place in the chain, and the state says where they go.
+    await form.getByRole('switch', { name: 'Send the audit log to a syslog receiver' }).click()
+    await save.click()
+    await expect(forwarding).toContainText(`Sent to tcp://127.0.0.1:${port}`, { timeout: 60_000 })
+    await expect.poll(() => bodies('audit').length, { timeout: 30_000 }).toBeGreaterThan(0)
+    await page.request.post('/api/audit', { data: { action: 'incident.export', details: 'Exported for the e2e run' } })
+    await expect
+      .poll(() => bodies('audit').some((body) => body.details === 'Exported for the e2e run'), { timeout: 30_000 })
+      .toBe(true)
+    const entries = bodies('audit')
+    // "From this change on": the first entry it got is the one that named it as the receiver, and
+    // the one that turned the forwarding on follows.
+    expect(entries[0].action).toBe('audit.forward.settings')
+    expect(entries[0].details).toContain('Changed the forwarding of the audit log: the receiver, the port')
+    expect(
+      entries.some((entry) =>
+        entry.details.startsWith(`Turned on the forwarding of the audit log to tcp://127.0.0.1:${port}`),
+      ),
+    ).toBe(true)
+    for (let index = 1; index < entries.length; index += 1) {
+      expect(entries[index].seq).toBe(entries[index - 1].seq + 1)
+      expect(entries[index].prev).toBe(entries[index - 1].hash)
+    }
+    expect(bodies('checkpoint').length).toBeGreaterThan(0)
+    await expect(state).toContainText('Nothing waits.', { timeout: 30_000 })
+
+    // Turned off: the last thing the receiver hears is that.
+    await form.getByRole('switch', { name: 'Send the audit log to a syslog receiver' }).click()
+    await save.click()
+    await expect(forwarding).toContainText('Not forwarded', { timeout: 60_000 })
+    await expect
+      .poll(() => bodies('audit').at(-1)?.details ?? '', { timeout: 30_000 })
+      .toContain('Turned off the forwarding of the audit log')
+
+    await settings.getByRole('button', { name: 'Close settings' }).click()
+    await expect(settings).toHaveCount(0)
+  } finally {
+    receiver.close()
+    await page.request.put('/api/audit/forwarding', { data: { enabled: false } })
+  }
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('Settings → Health: every row with its state, one made to need attention, the thresholds, the scrape token', async () => {
+  test.setTimeout(120_000)
+  const before = new URL(page.url()).pathname
+  await page.goto('/settings/system/health')
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await expect(settings.getByRole('heading', { name: 'Health', level: 2 })).toBeVisible()
+  const summary = settings.getByRole('status', { name: 'Summary' })
+  await expect(summary).toBeVisible()
+  // The groups of the page, each a list of rows with a value and a state.
+  for (const group of ['Disk', 'Database', 'Queues', 'Backups', 'Audit log', 'Sign-in', 'Server']) {
+    await expect(settings.getByRole('list', { name: group, exact: true })).toBeVisible()
+  }
+  const disk = settings.getByRole('list', { name: 'Disk', exact: true })
+  const store = disk.getByRole('listitem').filter({ hasText: 'Store of files' })
+  await expect(store).toContainText(/\d+% used, .+ free of .+/)
+  await expect(settings.getByRole('list', { name: 'Audit log', exact: true })).toContainText('Holds up to entry')
+  await expect(settings.getByRole('list', { name: 'Server', exact: true })).toContainText(/Nik \d+\.\d+\.\d+/)
+  // A row leads to the page that has the whole story.
+  await store.getByRole('button', { name: 'Open the page of Store of files' }).click()
+  await expect(page).toHaveURL(/\/settings\/system\/storage$/)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/settings\/system\/health$/)
+
+  // ---- The thresholds: a disk made to need attention on purpose ----
+  const form = settings.getByRole('form', { name: 'Thresholds' })
+  const save = form.getByRole('button', { name: 'Save the thresholds' })
+  const attention = form.getByLabel('A disk needs attention when it is this full, in percent')
+  await expect(attention).toHaveValue('80')
+  await expect(save).toBeDisabled()
+  await attention.fill('0')
+  await expect(form).toContainText(
+    'A disk needs attention when it is this full, in percent: a whole number from 1 to 99.',
+  )
+  await expect(save).toBeDisabled()
+  await attention.fill('1')
+  // Not saved yet: asked about before leaving.
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Incidents' }).click()
+  const ask = page.getByRole('dialog', { name: 'Leave without saving?' })
+  await expect(ask).toContainText('The thresholds of the health page')
+  await ask.getByRole('button', { name: 'Stay', exact: true }).click()
+  await expect(ask).toHaveCount(0)
+  await save.click()
+  await expect(save).toBeDisabled()
+  const wrong = settings.getByRole('list', { name: 'What needs attention' })
+  await expect(wrong.getByRole('listitem').filter({ hasText: 'Store of files' })).toContainText(/attention|problem/)
+  await expect(wrong).toContainText('Free some room or give it a larger disk before it is full')
+  await expect(summary).toContainText(/need(s)? attention/)
+  await page.reload()
+  await expect(form.getByLabel('A disk needs attention when it is this full, in percent')).toHaveValue('1')
+  await expect(settings.getByRole('list', { name: 'What needs attention' })).toContainText('Store of files')
+  // Put back to what a server starts with.
+  await form.getByLabel('A disk needs attention when it is this full, in percent').fill('80')
+  await save.click()
+  await expect(save).toBeDisabled()
+  const kept = (await (await page.request.get('/api/health/details')).json()).thresholds
+  expect(kept.find((entry) => entry.name === 'diskAttentionPercent').value).toBe(80)
+
+  // ---- The metrics: nobody reads them without the token, which is shown once ----
+  const metrics = settings.getByRole('region', { name: 'Metrics for Prometheus' })
+  const token = metrics.getByRole('status', { name: 'Scrape token' })
+  await expect(token).toContainText('No token is set: the metrics answer to nobody.')
+  // The signed-in administrator's own cookie is not a way in.
+  expect((await page.request.get('/api/metrics')).status()).toBe(401)
+  await metrics.getByRole('button', { name: 'Make a token…' }).click()
+  const shown = page.getByRole('dialog', { name: 'Scrape token' })
+  await expect(shown).toContainText('This is the only time the token is shown.')
+  const secret = (await shown.getByLabel('The token').textContent()).trim()
+  expect(secret).toMatch(/^nikm_[A-Za-z0-9_-]{40,}$/)
+  await shown.getByRole('button', { name: 'I copied it' }).click()
+  await expect(shown).toHaveCount(0)
+  await expect(token).toContainText(`A token is set (it ends in ${secret.slice(-4)}), made by admin`)
+  await expect(settings).not.toContainText(secret)
+  const scraped = await page.request.get('/api/metrics', { headers: { Authorization: `Bearer ${secret}` } })
+  expect(scraped.status()).toBe(200)
+  const text = await scraped.text()
+  expect(text).toContain('# TYPE nik_health_state gauge')
+  expect(text).toMatch(/nik_disk_used_bytes\{disk="store"\} \d+/)
+  expect(text).toMatch(/nik_audit_entries_total \d+/)
+  // No account is named in a label.
+  expect(text).not.toMatch(/="admin"/)
+  expect((await page.request.get('/api/metrics', { headers: { Authorization: 'Bearer nope' } })).status()).toBe(401)
+  // How an operator points Prometheus at it: the address in use, and a file for the token.
+  await metrics.getByText('How to point Prometheus at it').click()
+  await expect(metrics).toContainText('metrics_path: /api/metrics')
+  await expect(metrics).toContainText(`- targets: ["${new URL(page.url()).host}"]`)
+  await metrics.getByRole('button', { name: 'Remove the token' }).click()
+  await expect(token).toContainText('No token is set')
+  expect((await page.request.get('/api/metrics', { headers: { Authorization: `Bearer ${secret}` } })).status()).toBe(
+    401,
+  )
 
   await settings.getByRole('button', { name: 'Close settings' }).click()
   await expect(settings).toHaveCount(0)

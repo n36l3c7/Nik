@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from . import artifacts
+from .core import store
 from .core.config import settings
 from .core.locking import lock_incident
 from .core.models import Artifact, ArtifactLink, ArtifactRelation, Incident, NetworkCapture
@@ -70,7 +71,7 @@ def fitting(row: Artifact) -> list[str]:
     if row.kind != "file":
         return []
     try:
-        with open(sample_path(row.ref), "rb") as handle:
+        with store.open(sample_path(row.ref)) as handle:
             head = handle.read(8192)
     except (OSError, ValueError):
         return []
@@ -101,6 +102,8 @@ def _file(db: OrmSession, row: Artifact) -> bytes:
         raise ConvertError("Only a file is analysed as an e-mail or as a capture")
     try:
         return read_sample(row.ref)
+    except store.SealError as error:
+        raise ConvertError(str(error), 500) from None
     except (OSError, ValueError):
         raise ConvertError("The file could not be read from the store", 404) from None
 

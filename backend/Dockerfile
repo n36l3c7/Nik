@@ -33,6 +33,8 @@ RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin nik \
     && chown nik:nik /app/samples /app/backups
 ENV HOME=/tmp \
     XDG_CACHE_HOME=/tmp/.cache
+# The API processes add up their request counts for /api/metrics in this directory (memory-backed).
+ENV PROMETHEUS_MULTIPROC_DIR=/tmp/nik-metrics
 
 EXPOSE 8000
 

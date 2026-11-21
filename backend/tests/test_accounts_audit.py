@@ -252,10 +252,14 @@ def test_the_log_cannot_be_written_by_hand_and_clearing_it_leaves_a_trace(admin:
     exported = admin.post("/api/audit", json={"action": "incident.export", "details": 'Exported incident "x"'})
     assert exported.status_code == 201 and exported.json()["actor"] == "admin"
 
-    assert admin.delete("/api/audit").status_code == 204
+    # Clearing removes the entries and leaves one that says how many went and up to which hash.
+    before = admin.get("/api/audit").json()["entries"]
+    cleared = admin.delete("/api/audit")
+    assert cleared.status_code == 200 and cleared.json() == {"removed": len(before), "entries": 1}
     entries = admin.get("/api/audit").json()["entries"]
-    assert [entry["action"] for entry in entries] == ["audit.clear"]
-    assert entries[0]["actor"] == "admin" and "entries)" in entries[0]["details"]
+    assert [entry["action"] for entry in entries] == ["audit.trim"]
+    assert entries[0]["actor"] == "admin"
+    assert f"Removed {len(before)} entries, sequence 1 to {len(before)}, up to hash" in entries[0]["details"]
 
 
 def test_sign_in_sign_out_keys_and_accounts_are_recorded(admin: TestClient):

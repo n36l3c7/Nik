@@ -1275,3 +1275,119 @@ def test_migration_0049_adds_the_second_factor_and_keeps_the_open_sessions(tmp_p
         assert "signin_notice" not in {column["name"] for column in inspector.get_columns("users")}
         assert conn.execute(sa.text("SELECT count(*) FROM sessions")).scalar() == 2
         assert conn.execute(sa.text("SELECT failed_logins FROM users")).scalar() == 3
+
+
+def test_migration_0051_links_the_entries_that_are_there_as_they_are_and_says_so(tmp_path, monkeypatch):
+    from app.auditlog import verifier
+    from app.core.models import AUDIT_CHAIN_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    old = [
+        ("c", "2026-03-01T10:00:00+00:00", "anna", "incident.create", "Case 1", 'Created "Case 1"', "i1", "Case 1"),
+        ("a", "2026-01-05T08:00:00+00:00", "admin", "user.create", None, "Created the account anna", None, None),
+        ("b", "2026-01-05T08:00:00+00:00", "admin", "auth.login", None, "", None, None),
+        ("d", "not a time", "imported", "odd", None, "from a file of another server é", None, None),
+    ]
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE audit_log (id VARCHAR PRIMARY KEY, at VARCHAR NOT NULL, actor VARCHAR NOT NULL,"
+                " action VARCHAR NOT NULL, target VARCHAR, details VARCHAR NOT NULL DEFAULT '',"
+                " incident_id VARCHAR, incident_name VARCHAR)"
+            )
+        )
+        for row in old:
+            conn.execute(
+                sa.text("INSERT INTO audit_log VALUES (:a, :b, :c, :d, :e, :f, :g, :h)"),
+                dict(zip("abcdefgh", row, strict=True)),
+            )
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0049_two_factor")
+    command.upgrade(cfg, "0051_audit_chain")
+
+    def entries():
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("SELECT * FROM audit_log ORDER BY seq")).mappings().all()
+        return [dict(row) | {"prev": row["prev_hash"]} for row in rows]
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(AUDIT_CHAIN_TABLES) <= set(inspector.get_table_names())
+        assert {"seq", "prev_hash", "hash", "origin", "mac", "key_id"} <= {
+            column["name"] for column in inspector.get_columns("audit_log")
+        }
+        assert any(
+            index["name"] == "ux_audit_log_seq" and index["unique"] for index in inspector.get_indexes("audit_log")
+        )
+    found = entries()
+    # In the order of their time (then of their id), each exactly as it was.
+    assert [entry["id"] for entry in found[:4]] == ["a", "b", "c", "d"]
+    assert sorted(tuple(entry[name] for name in verifier.FIELDS) for entry in found[:4]) == sorted(old)
+    assert [entry["seq"] for entry in found] == [1, 2, 3, 4, 5] and found[0]["prev"] == "0" * 64
+    # The link the server answers for comes after them and says what it cannot answer for.
+    marker = found[4]
+    assert (marker["action"], marker["actor"], marker["prev"]) == ("audit.chain", "nik", found[3]["hash"])
+    assert marker["details"].startswith("The 4 entries before this one were written before the audit log was chained")
+    assert f"sequence 1 to 4, up to hash {found[3]['hash']}" in marker["details"]
+    walk = verifier.check(found)
+    assert walk.problem is None and walk.count == 5
+    # Signed in the same pass, every one, with the key of the server; none is marked.
+    from app.auditlog import key as signing
+
+    signed = verifier.check(found, signing.known())
+    assert signed.problem is None and signed.signed == 5 and signed.unchecked == {}
+    assert {entry["key_id"] for entry in found} == {signing.current()[0]} and {entry["origin"] for entry in found} == {
+        None
+    }
+    with engine.connect() as conn:
+        assert tuple(conn.execute(sa.text("SELECT seq, hash FROM audit_chain WHERE id = 1")).one()) == (
+            5,
+            marker["hash"],
+        )
+    # Again: nothing is linked twice, and nothing is said twice. An entry that arrived since is linked after.
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "INSERT INTO audit_log (id, at, actor, action, details) VALUES ('e', '2026-12-01', 'x', 'late', '')"
+            )
+        )
+    command.stamp(cfg, "0049_two_factor")
+    command.upgrade(cfg, "0051_audit_chain")
+    again = entries()
+    assert again[:5] == found and [entry["id"] for entry in again] == ["a", "b", "c", "d", marker["id"], "e"]
+    assert verifier.check(again).problem is None
+    command.downgrade(cfg, "0049_two_factor")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(AUDIT_CHAIN_TABLES) & set(inspector.get_table_names())
+        assert not {"seq", "prev_hash", "hash", "origin", "mac", "key_id"} & {
+            column["name"] for column in inspector.get_columns("audit_log")
+        }
+        # The entries are as they were, with the one the upgrade added.
+        assert conn.execute(sa.text("SELECT count(*) FROM audit_log")).scalar() == 6
+
+
+def test_migration_0051_on_a_log_that_is_empty_starts_the_chain_at_nothing(tmp_path, monkeypatch):
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE audit_log (id VARCHAR PRIMARY KEY, at VARCHAR NOT NULL, actor VARCHAR NOT NULL,"
+                " action VARCHAR NOT NULL, target VARCHAR, details VARCHAR NOT NULL DEFAULT '',"
+                " incident_id VARCHAR, incident_name VARCHAR)"
+            )
+        )
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0049_two_factor")
+    command.upgrade(cfg, "0051_audit_chain")
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT count(*) FROM audit_log")).scalar() == 0
+        assert tuple(conn.execute(sa.text("SELECT seq, hash FROM audit_chain")).one()) == (0, "0" * 64)

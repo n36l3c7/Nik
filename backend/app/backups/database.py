@@ -376,6 +376,24 @@ def _same_schema(taken: dict[str, Any], restored: dict[str, Any]) -> list[str]:
     return different
 
 
+def _audit_head(fetch, tables: list[str]) -> dict[str, Any] | None:
+    """The head of the chain of the audit log as the dump holds it: the number and the hash of its
+    last entry, and the id of the key that signed it (never the key). It goes into the manifest
+    and the note of the backup, so that it travels with the copy off the server: the verifier is
+    given it (``--head``) to hold a log against. ``fetch`` runs a query in the transaction of the
+    dump and returns its first row. None for a database from before the chain."""
+    if "audit_chain" not in tables or "audit_log" not in tables:
+        return None
+    try:
+        head = fetch("SELECT seq, hash FROM audit_chain WHERE id = 1", ())
+        if not head or not head[0]:
+            return None
+        signed = fetch("SELECT key_id FROM audit_log WHERE seq = %s", (head[0],))
+    except Exception:  # noqa: BLE001 - a backup is not refused for want of this line
+        return None
+    return {"seq": int(head[0]), "hash": str(head[1]), "keyId": str((signed or [""])[0] or "")}
+
+
 def _pg_revision(cur, tables: list[str]) -> str | None:
     if "alembic_version" not in tables:
         return None
@@ -467,6 +485,14 @@ def dump(writer: Writer, url: URL | None = None, *, migrating: bool = False) -> 
         }
         with writer.part(SCHEMA_PART) as part:
             part.write(json.dumps(schema, sort_keys=True).encode("utf-8"))
+
+        def fetch(query: str, values: tuple):
+            # A savepoint: a query that fails must not end the transaction the dump reads in.
+            with conn.transaction():
+                cur.execute(query, values)
+                return cur.fetchone()
+
+        audit_head = _audit_head(fetch, tables)
         counts: dict[str, int] = {}
         for entry in described["tables"]:
             table = entry["name"]
@@ -490,6 +516,7 @@ def dump(writer: Writer, url: URL | None = None, *, migrating: bool = False) -> 
         "revision": schema["revision"],
         "rows": counts,
         "sequences": len(described["sequences"]),
+        "auditHead": audit_head,
     }
 
 
@@ -505,6 +532,13 @@ def _dump_sqlite(writer: Writer, url: URL) -> dict[str, Any]:
             source.close()
             target.close()
         counts, revision = _sqlite_counts(copy)
+        held = sqlite3.connect(f"file:{Path(copy).as_posix()}?mode=ro", uri=True)
+        try:
+            audit_head = _audit_head(
+                lambda query, values: held.execute(query.replace("%s", "?"), values).fetchone(), list(counts)
+            )
+        finally:
+            held.close()
         schema = {"engine": "sqlite", "serverVersion": sqlite3.sqlite_version, "revision": revision}
         with writer.part(SCHEMA_PART) as part:
             part.write(json.dumps(schema, sort_keys=True).encode("utf-8"))
@@ -519,6 +553,7 @@ def _dump_sqlite(writer: Writer, url: URL) -> dict[str, Any]:
         "revision": revision,
         "rows": counts,
         "sequences": 0,
+        "auditHead": audit_head,
     }
 
 

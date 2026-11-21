@@ -215,16 +215,33 @@ def housekeeping(db, now: float) -> None:
     db.commit()
 
 
+def _store_disk(db, now: float, usage):
+    """The room of the disk of the evidence: measured here when this process sees the store, else as
+    the API process last measured it (the automation container is given neither the store nor its
+    key). None when it is not known."""
+    from types import SimpleNamespace
+
+    from .. import store_seal
+    from ..core import store
+
+    if store.local() or usage is not shutil.disk_usage:
+        try:
+            return usage(Path(settings.SAMPLE_STORE))
+        except OSError:
+            return None
+    seen = store_seal.disk_seen(db)
+    if not seen or now - float(seen.get("at") or 0) > 3600:
+        return None
+    return SimpleNamespace(total=int(seen.get("total") or 0), free=int(seen.get("free") or 0))
+
+
 def storage_low(db, now: float, usage=shutil.disk_usage) -> bool:
     """Write ``storage.low`` when the disk of the evidence has less than a tenth
     free, once a day for as long as it stays so. Says whether it did."""
     if now - float(state.read(db).get("storageLowAt") or 0) < STORAGE_LOW_EVERY:
         return False
-    try:
-        disk = usage(Path(settings.SAMPLE_STORE))
-    except OSError:
-        return False
-    if not disk.total or disk.free * 100 >= disk.total * STORAGE_LOW_PERCENT:
+    disk = _store_disk(db, now, usage)
+    if disk is None or not disk.total or disk.free * 100 >= disk.total * STORAGE_LOW_PERCENT:
         return False
     triggers.storage_low(db, disk.total, disk.free)
     state.write(db, storageLowAt=now)
@@ -375,6 +392,53 @@ def _wait_for_the_schema() -> None:
         _stopping.wait(5)
 
 
+# How long a backend that does not answer is waited for at the start of this process, and how often it is asked.
+BACKEND_WAIT, BACKEND_PAUSE = 90, 5
+
+
+def backend_health() -> str:
+    """What the backend answers to its health check: ``ok``, the word of a server that did not
+    start (``stopped``: a key is missing or wrong, app/stopped.py; ``upgrade-stopped``:
+    backups/upgrade.py), or nothing when it does not answer or this process was not told where it is."""
+    # Asked where the files of the store are asked: the address of the API container, on the
+    # network of the stack. Nothing of this package opens a connection itself but egress.py.
+    from .. import store_handover
+
+    return store_handover.backend_health()
+
+
+def _wait_for_the_backend() -> None:
+    """A backend that did not start says so and stays up (a key is missing, or is not the one the
+    store is sealed under; an upgrade was stopped): its health check passes, so this container is
+    started. Nothing must run beside a server that refused to: no playbook, no copy of a backup,
+    no entry sent to syslog as if all were well. This waits until the backend says it runs.
+
+    A backend that does not answer yet is given a moment: after the host or the engine restarts every
+    container starts at once, and the backend is still waiting for the database, migrating, or
+    about to say that it will not start. One that still does not answer after that is not waited
+    for: this worker runs without it, as before. A process that was not told where the backend is
+    (a development server) asks nothing."""
+    if not settings.STORE_API_URL:
+        return
+    said, unanswered = False, 0
+    while not _stopping.is_set():
+        status = backend_health()
+        if status == "ok":
+            return
+        if not status:
+            unanswered += 1
+            if unanswered * BACKEND_PAUSE >= BACKEND_WAIT:
+                logger.warning("The backend does not answer: this worker goes on without it")
+                return
+            _stopping.wait(BACKEND_PAUSE)
+            continue
+        unanswered = 0
+        if not said:
+            logger.warning("The backend says it did not start (%s): waiting. Its log and the page say why", status)
+            said = True
+        _stopping.wait(5)
+
+
 def main() -> None:
     from ..core.observability import setup_logging
 
@@ -384,10 +448,19 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: _stopping.set())
     logger.info("Automation worker started")
     _wait_for_the_schema()
+    _wait_for_the_backend()
     # The copies of the backups off the server leave from here: this container has the way out.
     from ..backups import scheduler as backup_scheduler
 
     backup_scheduler.start_shipper()
+    # So does the audit log, entry by entry, to the syslog receiver an administrator set.
+    from ..auditlog import forward as audit_forward
+
+    audit_forward.start()
+    # And the health of the server is looked at from here too, for the day the API process is what is stuck.
+    from ..health import watch as health_watch
+
+    health_watch.start()
     loop()
     logger.info("Automation worker stopped")
 

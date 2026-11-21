@@ -340,6 +340,15 @@
 │   ├── offsite.py                  #   the copy off the server (SFTP), sent by the automation worker
 │   ├── upgrade.py                  #   before migrating: snapshot, rehearsal (the entrypoint runs it)
 │   └── restore.py · now.py         #   the command line behind deploy/restore.sh, rollback.sh, backup.sh
+├── auditlog/                       # The audit log as a chain of hashes, and its forwarding to syslog
+│   ├── verifier.py                 #   the canonical form of an entry and the walk; also runs alone, without Nik
+│   ├── chain.py · restored.py      #   linking at commit, verifying, removing old entries; the entry a restore leaves
+│   ├── syslog.py · transport.py    #   an entry as an RFC 5424 message; the socket (TLS, TCP, UDP)
+│   └── forward.py                  #   the settings, and the pass that sends (run by the automation worker)
+├── health/                         # Whether the server is well
+│   ├── checks.py · thresholds.py   #   every row of the health page; what counts as attention and as a problem
+│   ├── watch.py                    #   the pass that keeps a little history and tells the admins
+│   └── metrics.py                  #   the same numbers for Prometheus, and the scrape token
 ├── signin.py                       # Signing in: waits after failures, second factors, recovery codes, sessions
 ├── account.py                      # python -m app.account: reset a second factor, clear the admins' networks
 ├── artifacts.py                    # Artifact registry: files, e-mails, captures and URLs analysed on their own,

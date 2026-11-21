@@ -413,7 +413,10 @@ def test_a_large_file_crosses_the_database_in_parts(vault, read_only, monkeypatc
     waiting = step(vault, "download", args={"hash": "big"}, now=NOW)
     with SessionLocal() as db:
         parts = db.scalars(select(artifact_jobs.ArtifactJobPart).order_by(artifact_jobs.ArtifactJobPart.seq)).all()
-        assert len(parts) == 48 and all(len(part.data) == 16 for part in parts)
+        # Each part is encrypted on its way through the database: 16 bytes of the file, and what
+        # sealing adds (a mark, a nonce, a tag). No row holds a piece of the file in clear.
+        assert len(parts) == 48 and all(len(part.data) == 16 + 32 for part in parts)
+        assert not any(large[n * 16 : n * 16 + 16] in bytes(part.data) for n, part in enumerate(parts))
     assert read_only() == 1
     done = step(vault, "download", args={"hash": "big"}, now=NOW + 2, state=waiting.state)
     from app.malware.samples import read_sample

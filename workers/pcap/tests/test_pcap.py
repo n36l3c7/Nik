@@ -21,6 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import given  # noqa: E402
 import nik_pcap  # noqa: E402
 import server  # noqa: E402
 
@@ -30,10 +31,20 @@ CAPTURE_ID = "c" * 32
 
 @pytest.fixture()
 def store(tmp_path, monkeypatch):
+    """A capture on the disk of the test, and a worker that holds nothing yet: what it is given goes
+    to a folder of its own (memory in the image), or to its work folder when it is large."""
     directory = tmp_path / "_captures" / CAPTURE_ID
     directory.mkdir(parents=True)
     shutil.copy(FIXTURE, directory / "capture.pcapng")
-    monkeypatch.setattr(server, "SAMPLE_DIR", str(tmp_path))
+    (tmp_path / "work").mkdir()
+    held = given.Given(
+        str(tmp_path / "memory"),
+        server.GIVEN.allowed,
+        max_bytes=10**8,
+        large=str(tmp_path / "work"),
+        large_from=10**7,
+    )
+    monkeypatch.setattr(server, "GIVEN", held)
     yield tmp_path
     nik_pcap.SESSIONS.drop(CAPTURE_ID)
 
@@ -113,11 +124,34 @@ def _post(url, body, token="test-token"):
         return exc.code, json.loads(exc.read())
 
 
+def _give(url, name, data, token="test-token"):
+    request = urllib.request.Request(f"{url}/files/{name}", data=data, method="PUT", headers={"X-Pcap-Token": token})
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return response.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
 def test_server(worker):
-    body = {"id": CAPTURE_ID, "path": f"_captures/{CAPTURE_ID}/capture.pcapng"}
+    name = f"_captures/{CAPTURE_ID}/capture.pcapng"
+    body = {"id": CAPTURE_ID, "path": name}
     assert _post(f"{worker}/analyze", body, token="wrong")[0] == 401
     assert _post(f"{worker}/analyze", {**body, "path": "../../etc/passwd"})[0] == 400
     assert _post(f"{worker}/analyze", {**body, "path": f"_captures/{'d' * 32}/capture.pcapng"})[0] == 400
+    # The worker does not see the store: it says which capture it lacks, and is given it.
+    status, lacking = _post(f"{worker}/analyze", body)
+    assert status == 409 and lacking["missing"] == [name]
+    assert _post(f"{worker}/rpc", {**body, "method": "status"})[0] == 409
+    with open(FIXTURE, "rb") as handle:
+        capture = handle.read()
+    assert _give(worker, name, capture, token="wrong") == 401
+    assert _give(worker, "../../etc/passwd", capture) == 400
+    assert _give(worker, f"{'a' * 64}.bin", capture) == 400
+    assert _give(worker, name, capture) == 200
+    held = server.GIVEN.path(name)
+    # A small capture is kept in the folder that is memory in the image, never in the work folder.
+    assert held and "memory" in held and not os.listdir(server.GIVEN.large)
     status, summary = _post(f"{worker}/analyze", body)
     assert status == 200 and summary["objects"] and summary["beacons"]
     status, result = _post(f"{worker}/rpc", {**body, "method": "status"})
@@ -126,6 +160,24 @@ def test_server(worker):
     status, item = _post(f"{worker}/rpc", {**body, "method": "download", "params": {"token": exe["token"]}})
     assert status == 200 and base64.b64decode(item["data"]).startswith(b"MZ")
     assert _post(f"{worker}/close", {"id": CAPTURE_ID})[0] == 200
+    # Closed: its file is gone from the worker, and the next request asks for it again.
+    assert server.GIVEN.path(name) is None and not os.path.exists(held)
+    assert _post(f"{worker}/rpc", {**body, "method": "status"})[0] == 409
+
+
+def test_a_large_capture_goes_to_the_work_folder_and_is_wiped_at_start(worker):
+    name = f"_captures/{CAPTURE_ID}/capture.pcapng"
+    server.GIVEN.large_from = 100  # anything is "large" here
+    with open(FIXTURE, "rb") as handle:
+        assert _give(worker, name, handle.read()) == 200
+    held = server.GIVEN.path(name)
+    assert held.startswith(server.GIVEN.large)
+    status, result = _post(f"{worker}/rpc", {"id": CAPTURE_ID, "path": name, "method": "status"})
+    assert status == 200 and result["result"]["frames"] > 50
+    nik_pcap.SESSIONS.drop(CAPTURE_ID)
+    # What a worker that stopped left in clear on its work folder is removed when it starts.
+    server.GIVEN.clear()
+    assert not os.path.exists(held) and server.GIVEN.path(name) is None
 
 
 def _fake_tshark(tmp_path, monkeypatch, script: str):

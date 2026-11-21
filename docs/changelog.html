@@ -40,6 +40,32 @@
       </p>
 
       <section class="release">
+        <h3>6.8.0 <span class="date">2026-11-21</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>The store is encrypted on the disk</strong> under a key of its
+            own; the workers no longer mount it.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Secrets in files instead of <code>.env</code></strong
+            >, a Keys page, and a guided change of each key.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>The audit log is a signed chain</strong>, verified by the
+            server and sent to syslog as it is written.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>A Health page</strong> with warnings before things break, and
+            metrics for Prometheus behind a token.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Run <code>deploy/init-env.sh</code> before starting: the server
+            needs its store key (<a href="deployment.html#upgrading-to-68">Upgrading to 6.8</a>).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.7.1 <span class="date">2026-11-21</span></h3>
         <ul>
           <li>

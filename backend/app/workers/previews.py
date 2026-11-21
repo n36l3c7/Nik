@@ -2,19 +2,20 @@
 
 Both run in their own containers (``workers/docview/``, ``workers/browser/``) and take a
 shared token. A rendered document is kept under ``SAMPLE_STORE/_previews``
-(named by the attachment's SHA-256), so opening it again costs nothing.
+(named by the attachment's SHA-256, sealed like every file of the store), so
+opening it again costs nothing.
 """
 
 from __future__ import annotations
 
 import base64
 import json
-import os
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
+from ..core import store
 from ..core.config import settings
 
 DOCUMENT_TIMEOUT = 180
@@ -32,9 +33,11 @@ HTML = {"html", "htm", "shtml", "xhtml", "svg"}
 
 
 class WorkerError(Exception):
-    def __init__(self, message: str, status: int = 502) -> None:
+    def __init__(self, message: str, status: int = 502, missing: list[str] | None = None) -> None:
         super().__init__(message)
         self.status = status
+        # The files a worker says it does not hold (workers/handover.py sends them).
+        self.missing = missing or []
 
 
 def docview_configured() -> bool:
@@ -66,11 +69,16 @@ def _call(base: str, header: str, token: str, method: str, path: str, body: Any,
             raw = response.read()
     except urllib.error.HTTPError as exc:
         try:
-            detail = json.loads(exc.read()).get("detail")
+            answer = json.loads(exc.read())
+            detail = answer.get("detail")
         except (ValueError, AttributeError):
-            detail = None
-        status = exc.code if exc.code in (400, 404, 413, 422, 503) else 502
-        raise WorkerError(detail or f"the worker answered HTTP {exc.code}", status) from exc
+            answer, detail = None, None
+        status = exc.code if exc.code in (400, 404, 413, 422, 503, 507) else 502
+        from . import handover
+
+        raise WorkerError(
+            detail or f"the worker answered HTTP {exc.code}", status, handover.missing_of(exc, answer)
+        ) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise WorkerError(f"the worker cannot be reached: {getattr(exc, 'reason', exc)}") from exc
     return json.loads(raw) if raw else {}
@@ -81,7 +89,8 @@ def _call(base: str, header: str, token: str, method: str, path: str, body: Any,
 # --------------------------------------------------------------------------- #
 def _cache_path(sha256: str) -> Path:
     directory = Path(settings.SAMPLE_STORE) / "_previews"
-    directory.mkdir(parents=True, exist_ok=True)
+    if store.local():
+        directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{sha256}.json"
 
 
@@ -89,8 +98,9 @@ def render_document(name: str, data: bytes, sha256: str) -> dict[str, Any]:
     cached = _cache_path(sha256)
     if cached.exists():
         try:
-            return json.loads(cached.read_text())
-        except ValueError:
+            return json.loads(store.read_text(cached))
+        except (ValueError, store.SealError):
+            # Made again from the attachment: a preview is a copy, never the evidence.
             cached.unlink(missing_ok=True)
     if len(data) > DOCUMENT_MAX_BYTES:
         raise WorkerError("The document is too large to preview (50 MB at most)", 413)
@@ -103,14 +113,12 @@ def render_document(name: str, data: bytes, sha256: str) -> dict[str, Any]:
         {"name": name, "data": base64.b64encode(data).decode()},
         DOCUMENT_TIMEOUT,
     )
-    tmp = cached.with_suffix(".part")
-    tmp.write_text(json.dumps(result))
-    os.replace(tmp, cached)
+    store.write_text(cached, json.dumps(result))
     return result
 
 
 def forget_document(sha256: str) -> None:
-    _cache_path(sha256).unlink(missing_ok=True)
+    store.remove(_cache_path(sha256))
 
 
 # --------------------------------------------------------------------------- #
@@ -176,9 +184,9 @@ def convert_pst(source, target, progress=None) -> None:
     as it comes back."""
     if not docview_configured():
         raise WorkerError("The document worker is not configured (DOCVIEW_URL): a PST cannot be read.", 503)
-    size = os.path.getsize(source)
+    size = store.size(source)
     told = progress or (lambda done, total: None)
-    with open(source, "rb") as raw:
+    with store.open(source) as raw:
         # Until the worker says how large the mbox is, it is taken to be as large as the PST.
         handle = _Counted(raw, lambda sent: told(sent, size * 2))
         request = urllib.request.Request(  # noqa: S310 - operator-configured URL
@@ -192,7 +200,10 @@ def convert_pst(source, target, progress=None) -> None:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=PST_TIMEOUT) as response, open(target, "wb") as out:  # noqa: S310
+            with (
+                urllib.request.urlopen(request, timeout=PST_TIMEOUT) as response,  # noqa: S310
+                store.writing(target) as out,
+            ):
                 expected = int(response.headers.get("Content-Length") or 0) or size
                 received = 0
                 while chunk := response.read(1024 * 1024):

@@ -31,6 +31,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from . import artifacts, jsanalysis
 from .automation import triggers as automation_triggers
+from .core import store
 from .core.config import settings
 from .core.db import SessionLocal
 from .core.locking import relock
@@ -102,7 +103,8 @@ def screenshot_path(scan: str) -> Path:
     if not is_scan_id(scan):
         raise ValueError("Not a scan id.")
     folder = Path(settings.SAMPLE_STORE) / "_urls"
-    folder.mkdir(parents=True, exist_ok=True)
+    if store.local():
+        folder.mkdir(parents=True, exist_ok=True)
     return folder / f"{scan}.jpg"
 
 
@@ -374,12 +376,12 @@ def run_scan(scan: str, actor: str) -> None:
             scripts, code = collect_scripts(entries, page, final_url, jsanalysis.load_signatures(db))
             verdict = with_scripts(verdict, scripts)
             if code:
-                scripts_path(scan).write_text(json.dumps(code), encoding="utf-8")
+                store.write_text(scripts_path(scan), json.dumps(code))
             else:
-                scripts_path(scan).unlink(missing_ok=True)
+                store.remove(scripts_path(scan))
             shot = inspected.get("screenshot")
             if shot:
-                screenshot_path(scan).write_bytes(base64.b64decode(shot))
+                store.write(screenshot_path(scan), base64.b64decode(shot))
             row.result = {
                 "finalUrl": final_url,
                 "title": str(inspected.get("title") or "")[:300],
@@ -547,8 +549,8 @@ def delete(db: OrmSession, row: UrlScan) -> None:
         capture = db.get(NetworkCapture, row.capture_id)
         if capture is not None:
             network_service.remove_capture(db, capture)
-    screenshot_path(row.id).unlink(missing_ok=True)
-    scripts_path(row.id).unlink(missing_ok=True)
+    store.remove(screenshot_path(row.id))
+    store.remove(scripts_path(row.id))
     artifacts.forget(db, "url", row.id)
     db.delete(row)
 

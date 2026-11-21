@@ -45,21 +45,22 @@ def record(
     incident: Incident | None = None,
     *,
     target: str | None = None,
-) -> None:
-    """Add an audit entry to the session (the caller commits)."""
+) -> AuditEntry:
+    """Add an audit entry to the session (the caller commits). The entry gets its place in
+    the chain when the transaction commits (``app/auditlog/chain.py``)."""
     doc = (incident.doc if incident is not None else {}) or {}
-    db.add(
-        AuditEntry(
-            id=str(uuid.uuid4()),
-            at=now_iso(),
-            actor=actor,
-            action=action,
-            target=target if target is not None else doc.get("name"),
-            details=details[:MAX_DETAILS],
-            incident_id=incident.id if incident is not None else None,
-            incident_name=doc.get("name"),
-        )
+    entry = AuditEntry(
+        id=str(uuid.uuid4()),
+        at=now_iso(),
+        actor=actor,
+        action=action,
+        target=target if target is not None else doc.get("name"),
+        details=details[:MAX_DETAILS],
+        incident_id=incident.id if incident is not None else None,
+        incident_name=doc.get("name"),
     )
+    db.add(entry)
+    return entry
 
 
 def _label(flag: Any) -> str:

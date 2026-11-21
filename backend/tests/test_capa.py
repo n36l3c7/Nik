@@ -144,8 +144,9 @@ def test_admin_capa_rules_are_checked_stored_and_used(admin: TestClient, capa_wo
         "function",
         True,
     )
+    # A rule is a row: since 6.8 the worker is sent its source and no file of the store holds it.
     stored = Path(settings.SAMPLE_STORE) / "_capa_rules" / f"{rule['id']}.yml"
-    assert stored.read_text(encoding="utf-8") == _rule("team mutex")
+    assert not stored.exists()
 
     assert admin.post("/api/capa-rules", json={"source": _rule("INVALID")}).status_code == 400
     assert admin.post("/api/capa-rules", json={"source": _rule("team mutex")}).status_code == 400  # same name
@@ -177,7 +178,7 @@ def test_admin_capa_rules_are_checked_stored_and_used(admin: TestClient, capa_wo
 
     monkeypatch.setattr(capa, "request_capabilities", record)
     sha = _upload(admin, analyst, "k4", minimal_pe(b"\x31\xc0\xc3"))
-    assert sent == [[f"_capa_rules/{rule['id']}.yml"]]
+    assert sent == [[{"name": f"{rule['id']}.yml", "source": _rule("team mutex") + "# tuned\n"}]]
     found = {c["name"]: c["custom"] for c in admin.get(f"/api/samples/{sha}/capabilities").json()["capabilities"]}
     assert found == {"link function at runtime on Windows": False, "team mutex": True}
 

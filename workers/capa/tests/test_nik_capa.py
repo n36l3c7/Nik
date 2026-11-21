@@ -54,7 +54,7 @@ def _completed(returncode=0, stdout=b"", stderr=b""):
 def test_run_capa_reports_capa_errors_and_timeouts(tmp_path, monkeypatch):
     sample = tmp_path / "s.bin"
     sample.write_bytes(b"MZ")
-    with pytest.raises(CapaError, match="not in the store"):
+    with pytest.raises(CapaError, match="was not given to the worker"):
         run_capa(str(tmp_path / "missing.bin"), timeout=5)
 
     stderr = (  # as capa logs it: blank and ruler lines around the message, source locations on the right

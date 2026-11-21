@@ -9,7 +9,6 @@ mailbox keeps them together with the graph of who answered whom.
 from __future__ import annotations
 
 import logging
-import os
 import time
 import uuid
 from typing import Any, Optional
@@ -22,6 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts, mailboxes
 from ..automation import triggers as automation_triggers
+from ..core import store
 from ..core.config import settings
 from ..core.db import SessionLocal, get_db
 from ..core.models import Artifact, AuditEntry, Incident, Mail, Mailbox, MailboxMessage
@@ -136,9 +136,10 @@ def prepare(mailbox_id: str) -> None:
                         progress=lambda written, count: converting(written, 0, count),
                     )
                 else:
-                    os.replace(upload, target)
+                    # An mbox uploaded before 6.8 and not yet taken up: sealed again under its own name.
+                    store.write(target, store.pieces(upload))
                 upload.unlink(missing_ok=True)
-            size = target.stat().st_size if target.exists() else 0
+            size = store.size(target) if target.exists() else 0
             indexing = _said(db, row, "indexing")
             mailboxes.index(db, row, progress=lambda read, count: indexing(read, size, count))
             row.meta = {key: value for key, value in (row.meta or {}).items() if key != "preparing"}
@@ -173,10 +174,12 @@ async def upload_mailbox(
         raise HTTPException(status_code=422, detail="Not an mbox, a Maildir archive (zip, tar) or a PST file.")
     limit_mb = settings.PST_MAX_MB if kind == "pst" else settings.MAILBOX_MAX_MB
     mailbox_id = uuid.uuid4().hex
-    upload = mailboxes.directory(mailbox_id) / "upload.bin"
+    # Sealed as it arrives. An mbox is kept as it is, so it is written under the name it keeps
+    # (a sealed file is bound to its name); what has to be converted waits as upload.bin.
+    upload = mailboxes.mbox_path(mailbox_id) if kind == "mbox" else mailboxes.directory(mailbox_id) / "upload.bin"
     size = len(head)
     try:
-        with open(upload, "wb") as out:
+        with store.writing(upload) as out:
             out.write(head)
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)

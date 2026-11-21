@@ -18,16 +18,17 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import artifacts
+from ..core import store as sealed_store
 from ..core import vault
 from ..core.config import settings
 from ..core.db import get_db
-from ..core.files import attachment_headers, safe_name
+from ..core.files import attachment_headers, safe_name, stored_response
 from ..core.models import AuditEntry, Incident, NetworkCapture
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..malware.samples import DEFAULT_ZIP_PASSWORD, zip_sample
@@ -126,9 +127,9 @@ async def store_capture(
     capture_id = uuid.uuid4().hex
     limit = settings.PCAP_MAX_MB * 1024 * 1024
     digest, size = hashlib.sha256(), 0
-    part = store.capture_path(capture_id, ext).with_suffix(".part")
     try:
-        with open(part, "wb") as handle:
+        # Sealed as it arrives: no part of an upload is on the disk in clear.
+        with sealed_store.writing(store.capture_path(capture_id, ext)) as handle:
             chunk = head
             while chunk:
                 size += len(chunk)
@@ -140,7 +141,6 @@ async def store_capture(
     except HTTPException:
         store.remove(capture_id)
         raise
-    store.seal(part, store.capture_path(capture_id, ext))
     row = NetworkCapture(
         id=capture_id,
         incident_id=incident.id if incident is not None else None,
@@ -332,7 +332,9 @@ async def object_to_sample(
 
 
 @router.get("/captures/{capture_id}/file")
-def download_capture(capture_id: str, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)):
+def download_capture(
+    capture_id: str, request: Request, caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+):
     """The capture file as stored (pcap, pcapng or gzip). Audited."""
     row = _capture_or_404(db, capture_id)
     path = store.find_capture(row.id)
@@ -341,7 +343,7 @@ def download_capture(capture_id: str, caller: Principal = Depends(reader_princip
     _audit(db, caller, "capture.download", f"Downloaded capture {row.file_name}", None)
     db.commit()
     name = re.sub(r'[\\/"\x00-\x1f]', "_", row.file_name) or path.name
-    return FileResponse(path, media_type="application/vnd.tcpdump.pcap", filename=name)
+    return stored_response(path, "application/vnd.tcpdump.pcap", name, range_header=request.headers.get("range"))
 
 
 @router.get("/captures/{capture_id}/har")

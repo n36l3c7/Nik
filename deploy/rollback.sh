@@ -15,8 +15,16 @@
 #   4. starts the stack on that version and checks that the server answers.
 #
 # What was written after the upgrade is not in the snapshot: it is lost. The
-# store of files is not touched: no upgrade of Nik changes the files that are
-# there (one that ever did would say so, and this would refuse).
+# store of files is not touched: no upgrade of Nik changes what the files that
+# are there hold (one that ever did would say so, and this would refuse).
+#
+# Coming back to a version before 6.8, which reads its store in clear and its
+# secrets in .env, two more things are done first, with the code that is here:
+# every file of the store is unsealed (decrypted in place, one at a time, each
+# compared with what was read before it takes the place of the sealed one),
+# and the secrets are put back into .env if they had been moved to files
+# (deploy/secrets.sh back). Neither loses anything; if a file cannot be
+# unsealed this stops before the database is touched, and says which.
 #
 # Running it twice does no harm: the same snapshot gives the same database.
 #
@@ -27,10 +35,20 @@
 #
 # Settings (environment): NIK_DIR, ENGINE, COMPOSE, NIK_BACKUP_PASSPHRASE,
 # NIK_BACKUP_PASSPHRASE_FILE, as for deploy/restore.sh. A snapshot taken while
-# no backup passphrase was set is read with the SECRET_KEY of .env.
+# no backup passphrase was set is read with the SECRET_KEY of this server.
 set -euo pipefail
 
 NIK_DIR=${NIK_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
+# Step 3 checks out another version of the code, and with it another version of this very file, while
+# it runs: a shell reads its script as it goes, and would go on in the middle of the other one. So the
+# script runs from a copy of itself, which nothing replaces.
+if [ -z "${NIK_ROLLBACK_RUNNING:-}" ]; then
+  NIK_ROLLBACK_RUNNING=$(mktemp "${TMPDIR:-/tmp}/nik-rollback.XXXXXX")
+  cat "$0" >"$NIK_ROLLBACK_RUNNING"
+  export NIK_DIR NIK_ROLLBACK_RUNNING
+  exec bash "$NIK_ROLLBACK_RUNNING" "$@"
+fi
+trap 'rm -f "$NIK_ROLLBACK_RUNNING"' EXIT
 if [ -z "${ENGINE:-}" ]; then
   if command -v podman >/dev/null 2>&1; then ENGINE=podman; else ENGINE=docker; fi
 fi
@@ -52,7 +70,7 @@ while [ $# -gt 0 ]; do
     --no-start) START=0 ;;
     --yes) YES=1 ;;
     -h | --help)
-      sed -n '2,31p' "$0"
+      sed -n '2,38p' "$0"
       exit 0
       ;;
     -*) die "unknown option: $1 (see --help)" ;;
@@ -127,6 +145,12 @@ if [ "$YES" -eq 0 ]; then
   [ "$typed" = "rollback" ] || die "nothing was changed."
 fi
 
+# The version the snapshot goes with: before 6.8, the store is read in clear and the secrets in .env.
+before_68=0
+case "${tag#v}" in
+  [0-5].* | 6.[0-7] | 6.[0-7].*) before_68=1 ;;
+esac
+
 log "stopping the stack; the database alone is started"
 # shellcheck disable=SC2086
 $COMPOSE stop >/dev/null
@@ -141,11 +165,25 @@ for _ in $(seq 1 60); do
 done
 [ -n "$db" ] || die "the database container did not start: $COMPOSE logs db"
 
+if [ "$before_68" -eq 1 ]; then
+  log "$tag reads its store in clear: unsealing the files of the store with the code that is here"
+  # shellcheck disable=SC2086
+  if ! $COMPOSE run --rm --no-deps -T -e NIK_SKIP_MIGRATIONS=1 api python -m app.store_seal unseal; then
+    die "some files of the store could not be unsealed (above): the database was not touched. The stack is stopped; started again on this version it seals the store again by itself."
+  fi
+fi
+
 # With the code that is here now (the newer one): it reads every earlier snapshot.
 if ! tool restore "$NAME" --replace --database-only; then
   die "the snapshot was not put back (see above): the database is as it was. The stack is stopped."
 fi
 log "the database is as it was before the upgrade"
+
+if [ "$before_68" -eq 1 ] && grep -q '^NIK_SECRETS_DIR=.' .env; then
+  log "$tag reads its secrets in .env: putting them back there (deploy/secrets.sh back)"
+  export NIK_DIR ENGINE COMPOSE
+  deploy/secrets.sh back --no-start --yes
+fi
 
 # The code. A tag is checked out only into a clean clone: nothing of the operator's is ever overwritten.
 code_ready=0

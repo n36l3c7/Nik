@@ -2,7 +2,9 @@
 and the isolated browser sessions' network logs.
 
 - An uploaded pcap / pcapng is stored, then analysed in the background
-  (``run_analysis``): the worker reads it with tshark and sharkd and returns
+  (``run_analysis``): the worker, which does not see the store, is given the
+  capture when it does not hold it (``workers/handover.py``), reads it with
+  tshark and sharkd and returns
   the summary (hosts, DNS, HTTP, TLS server names, POSTs, beacons, Expert
   Info, exported objects with their SHA-256).
 - An isolated browser session opened from an incident is a capture too: its
@@ -31,7 +33,7 @@ from ..core.db import SessionLocal
 from ..core.locking import lock_incident
 from ..core.models import Incident, NetworkCapture
 from ..core.security import now_iso
-from ..workers import previews
+from ..workers import handover, previews
 from . import pcapng, store
 
 logger = logging.getLogger("nik.network")
@@ -48,7 +50,20 @@ def configured() -> bool:
 
 
 def _worker(path: str, body: dict[str, Any], timeout: int) -> Any:
-    return previews._call(settings.PCAP_URL, "X-Pcap-Token", settings.PCAP_TOKEN, "POST", path, body, timeout)
+    """Ask the packet capture worker, giving it the capture the request names when it lacks it."""
+    files = {}
+    if body.get("path"):
+        found = store.find_capture(str(body.get("id") or ""))
+        if found is not None:
+            files[body["path"]] = found
+    return handover.with_files(
+        lambda: previews._call(settings.PCAP_URL, "X-Pcap-Token", settings.PCAP_TOKEN, "POST", path, body, timeout),
+        files,
+        settings.PCAP_URL,
+        "X-Pcap-Token",
+        settings.PCAP_TOKEN,
+        lambda sentence: previews.WorkerError(sentence, 502),
+    )
 
 
 def _target(row: NetworkCapture) -> dict[str, Any]:
