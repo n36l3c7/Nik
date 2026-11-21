@@ -27,6 +27,7 @@ and the new one after it.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import os
 import time
@@ -39,11 +40,18 @@ from ..backups.container import CHUNK, PASSPHRASE, BackupError, Key, Reader, Sec
 # How long one derived key seals files: a new salt, and so a new key, a few times a day.
 KEY_LIFE = 6 * 3600
 OPENING = ".opening"
+# Not a secret: it keeps the mark of a passphrase apart from every other use of the same derivation.
+MARK_SALT = b"nik recovery passphrase"
 
 
+@functools.lru_cache(maxsize=4)
 def fingerprint(passphrase: str) -> str:
-    """What tells one passphrase from another in a row of settings, without being the passphrase."""
-    return hashlib.sha256(b"nik recovery passphrase\0" + passphrase.encode("utf-8")).hexdigest()[:16]
+    """What tells one passphrase from another in a row of settings, without being the passphrase.
+
+    It is written in the database, where a quick hash would let whoever reads it try passphrases
+    at leisure: it is derived as slowly as the key of a backup is, once for a passphrase."""
+    derived = hashlib.scrypt(passphrase.encode("utf-8"), salt=MARK_SALT, n=2**14, r=8, p=1, maxmem=2**26, dklen=8)
+    return derived.hex()
 
 
 class Sealer:

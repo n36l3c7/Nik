@@ -300,7 +300,8 @@ def test_a_changed_passphrase_is_used_after_the_segment_that_carries_the_change(
     assert envelope.passphrase_for(seg(8), "new one", change, "old one") == "new one"
     assert envelope.passphrase_for(seg(6), "new one", change, None) == "new one", "no earlier one to go on with"
     assert envelope.passphrase_for(seg(6), "the one", {"mark": "x"}, None) == "the one"
-    assert envelope.fingerprint("a") != envelope.fingerprint("b") and "a" not in envelope.fingerprint("a")
+    one, two = envelope.fingerprint("the first passphrase"), envelope.fingerprint("the second passphrase")
+    assert one != two and "passphrase" not in one and len(one) == 16
 
 
 # --------------------------------------------------------------------------- #

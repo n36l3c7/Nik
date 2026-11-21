@@ -37,7 +37,7 @@ from ..backups.container import PASSPHRASE, SUFFIX, BackupError, Key, Reader, Se
 from ..core.config import settings
 from . import archive, envelope, layout
 
-SECRETS = (
+CARRIED = (
     "DB_PASSWORD",
     "SECRET_KEY",
     "SECRET_KEY_PREVIOUS",
@@ -671,7 +671,7 @@ def pack_secrets(_args) -> int:
     phrase = os.environ.get("NIK_TRANSFER_PASSPHRASE", "")
     if len(phrase) < TRANSFER_MIN:
         raise BackupError(f"The passphrase of the transfer needs at least {TRANSFER_MIN} characters")
-    held = {name: keys.value(name) for name in SECRETS}
+    held = {name: keys.value(name) for name in CARRIED}
     held = {name: value for name, value in held.items() if value}
     for needed in ("DB_PASSWORD", "SECRET_KEY", "STORE_KEY"):
         if needed not in held:
@@ -689,6 +689,8 @@ def pack_secrets(_args) -> int:
 
 
 def unpack_secrets(_args) -> int:
+    from ..core import keys
+
     phrase = os.environ.get("NIK_TRANSFER_PASSPHRASE", "")
     try:
         text = Path(_args.file).read_text(encoding="ascii") if _args.file else sys.stdin.read()
@@ -702,10 +704,12 @@ def unpack_secrets(_args) -> int:
     for part in reader.parts():
         if part.name == "secrets.json":
             held = json.loads(part.read())
-    for name in SECRETS:
-        value = str(held.get(name) or "")
-        if value and "\n" not in value:
-            print(f"{name}={value}")
+    # Keys, one a line, for the script that puts them where this stack keeps its own: into a pipe,
+    # never onto a screen.
+    lines = [f"{name}={held[name]}" for name in CARRIED if held.get(name) and "\n" not in str(held[name])]
+    if keys.to_a_terminal("The keys of the other host"):
+        return 2
+    sys.stdout.write("".join(line + "\n" for line in lines))
     return 0
 
 
