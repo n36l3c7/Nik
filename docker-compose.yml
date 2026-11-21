@@ -1,6 +1,6 @@
 # Nik — the full stack: nginx (static app + reverse proxy), the FastAPI
-# backend, PostgreSQL, the automation worker with its script sandbox and the
-# five analysis workers.
+# backend, PostgreSQL with the service that takes its base backups, the
+# automation worker with its script sandbox and the five analysis workers.
 #
 # Works with both `docker compose` and `podman-compose` (and `podman compose`).
 #
@@ -52,6 +52,12 @@ services:
       DB_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: nik
       NIK_PG_UPGRADE: ${NIK_PG_UPGRADE:-}
+      # The archive of the write-ahead log (deploy/db-entrypoint.sh turns it on): what brings the
+      # database back to any moment, and what a standby replays. `off` keeps no archive. A
+      # segment is closed at least every NIK_ARCHIVE_TIMEOUT seconds while something is written:
+      # the most that is lost when this host dies and its last segments had not left it.
+      NIK_WAL_ARCHIVE: ${NIK_WAL_ARCHIVE:-on}
+      NIK_ARCHIVE_TIMEOUT: ${NIK_ARCHIVE_TIMEOUT:-300}
     volumes:
       # PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker.
       - db-data-18:/var/lib/postgresql
@@ -59,6 +65,12 @@ services:
       # a rollback after deploy/upgrade-postgres.sh, empty on a new install.
       - db-data:/var/lib/postgresql-16:ro
       - ./deploy/db-entrypoint.sh:/usr/local/bin/nik-db-entrypoint.sh:ro,z
+      # The scripts PostgreSQL archives and restores its log with (deploy/db).
+      - ./deploy/db:/usr/local/lib/nik:ro,z
+      # The archive: the segments of the log and the base backups, as PostgreSQL wrote them.
+      - ${NIK_WAL_ARCHIVE_DIR:-wal-archive}:/wal-archive
+      # The socket of PostgreSQL, shared with the `recovery` service and nothing else.
+      - db-socket:/var/run/postgresql
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/db_password:/run/secrets/db_password:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nik -d nik"]
@@ -66,6 +78,39 @@ services:
       timeout: 3s
       retries: 12
     pids_limit: 512
+    logging: *logging
+    restart: unless-stopped
+
+  # The tools of PostgreSQL, run for the backend (deploy/db/recovery-agent.sh):
+  # the image of the database with another command. It takes the base backups,
+  # proves the archive by replaying it into a scratch server of its own, and
+  # removes what the retention no longer keeps, each when the backend leaves a
+  # request for it in the archive volume. It has no network at all: it reaches
+  # the database through its socket, on a volume the two share, so it holds no
+  # password. It does not mount the data directory of the database. Read-only
+  # filesystem, no capabilities, the user of PostgreSQL from the start.
+  recovery:
+    image: docker.io/library/postgres:18-alpine
+    entrypoint: ["sh", "/usr/local/lib/nik/recovery-agent.sh"]
+    user: postgres
+    environment:
+      POSTGRES_USER: nik
+      POSTGRES_DB: nik
+    volumes:
+      - ./deploy/db:/usr/local/lib/nik:ro,z
+      - ${NIK_WAL_ARCHIVE_DIR:-wal-archive}:/wal-archive
+      - db-socket:/var/run/postgresql
+    network_mode: none
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${RECOVERY_MEMORY:-1g}
+    cpus: ${RECOVERY_CPUS:-2}
+    pids_limit: 256
     logging: *logging
     restart: unless-stopped
 
@@ -169,8 +214,19 @@ services:
       # a copy first; `false` skips that rehearsal (never the snapshot) on a very large database.
       BACKUP_DIR: /app/backups
       NIK_UPGRADE_REHEARSAL: ${NIK_UPGRADE_REHEARSAL:-true}
+      # Recovery to a moment (Settings → Backup): the archive of the log of PostgreSQL, as this
+      # container sees it. It asks the `recovery` service for the base backups there, and a
+      # deleted file of the store is kept for as long as a recovery could go back to it.
+      WAL_ARCHIVE_DIR: /app/wal-archive
+      NIK_ARCHIVE_TIMEOUT: ${NIK_ARCHIVE_TIMEOUT:-300}
+      # A standby (deploy/standby.sh): the directory of this host the first one sends its copies
+      # to. NIK_SERVER_NAME is what this server calls itself to the other host of a pair.
+      STANDBY_INBOX: /app/inbox
+      NIK_SERVER_NAME: ${NIK_SERVER_NAME:-${TLS_HOSTNAME:-}}
     volumes:
       - sample-store:/app/samples
+      - ${NIK_WAL_ARCHIVE_DIR:-wal-archive}:/app/wal-archive
+      - ${NIK_STANDBY_INBOX:-./deploy/no-inbox}:/app/inbox:z
       # The volume `backups`, or a directory of the host when NIK_BACKUP_DIR names one
       # (another disk than the data: /srv/nik-backups).
       - ${NIK_BACKUP_DIR:-backups}:/app/backups
@@ -260,10 +316,17 @@ services:
       HTTPS_PROXY: ${AUTOMATION_HTTPS_PROXY:-}
       NO_PROXY: ${AUTOMATION_NO_PROXY:-}
       BACKUP_DIR: /app/backups
+      # The archive of the log, read-only: this container seals each segment and each base
+      # backup and sends them to the second host. The files of the store it sends are asked of
+      # the backend one by one, sealed as they are on the disk.
+      WAL_ARCHIVE_DIR: /app/wal-archive
+      NIK_ARCHIVE_TIMEOUT: ${NIK_ARCHIVE_TIMEOUT:-300}
+      NIK_SERVER_NAME: ${NIK_SERVER_NAME:-${TLS_HOSTNAME:-}}
     volumes:
       # Read-only: this container sends the copy of each backup off the server (it is the one
       # with a way out) and never writes one.
       - ${NIK_BACKUP_DIR:-backups}:/app/backups:ro
+      - ${NIK_WAL_ARCHIVE_DIR:-wal-archive}:/app/wal-archive:ro
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/db_password:/run/secrets/db_password:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key:/run/secrets/secret_key:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/secret_key_previous:/run/secrets/secret_key_previous:ro,z
@@ -488,6 +551,12 @@ services:
 
 volumes:
   db-data-18:
+  # The archive of the log of PostgreSQL and its base backups (in clear, like the data
+  # directory): what deploy/restore.sh --to recovers from. NIK_WAL_ARCHIVE_DIR names a
+  # directory of the host instead (another disk than the data).
+  wal-archive:
+  # The socket of PostgreSQL, for the `recovery` service.
+  db-socket:
   # PostgreSQL 16 data (releases before 2.12.2). After the upgrade, remove it
   # with `podman volume rm <project>_db-data` once you no longer need a rollback.
   db-data:

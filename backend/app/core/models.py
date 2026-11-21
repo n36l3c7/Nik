@@ -605,6 +605,64 @@ class Backup(Base):
     offsite: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class RecoveryBase(Base):
+    """A base backup of the database: the physical copy a recovery to a moment starts from
+    (app/recovery).
+
+    ``id`` is the name of its folder in the archive volume (``base-20261121-033000``). The
+    recovery service takes it with ``pg_basebackup``; this row is what the server knows of it:
+    the first segment of the log a recovery from it needs (``start_wal``), whether its folder is
+    still on the server, and where its copy on the second host stands. As for a backup, the API
+    process writes every column but ``offsite``, which belongs to the process that sends the copies.
+    """
+
+    __tablename__ = "recovery_bases"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    # requested | done | failed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="requested")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    timeline: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    start_wal: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    requested_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # What the recovery service said of it: how long it took, that it was checked against its manifest.
+    facts: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    local: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    # "" (no copy asked for) | pending | copied | failed | delete (the copy is to be removed)
+    offsite_state: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    offsite: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class StoreCopy(Base):
+    """A file of the store and where its copy on the second host stands (app/recovery).
+
+    ``name`` is its path inside the store. A file is copied as it is on the disk, sealed. When
+    it is deleted here (``gone_at``) its copy stays for as long as a recovery could still need
+    it, and is then removed (``removed_at``): a standby reads the same row to remove its own.
+    """
+
+    __tablename__ = "store_copies"
+
+    name: Mapped[str] = mapped_column(String(500), primary_key=True)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    mtime: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # pending | copied | failed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    seen_at: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    copied_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gone_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    removed_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    __table_args__ = (Index("ix_store_copies_state", "state"),)
+
+
+RECOVERY_TABLES = ("recovery_bases", "store_copies")
+
+
 class SampleCode(Base):
     """Disassembly of a sample by the analyzer worker (rizin): one row per sample.
 

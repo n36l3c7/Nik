@@ -187,6 +187,8 @@ def remove_tree(folder: str | os.PathLike) -> None:
         return
     with _swap():
         if folder.is_dir():
+            if _set_aside(folder):
+                return
             for item in folder.iterdir():
                 with contextlib.suppress(OSError):
                     os.chmod(item, 0o600)
@@ -294,4 +296,15 @@ def remove(path: str | os.PathLike) -> None:
         if path.exists():
             with contextlib.suppress(OSError):
                 os.chmod(path, 0o600)
+            if _set_aside(path):
+                return
             path.unlink()
+
+
+def _set_aside(path: Path) -> bool:
+    """On a server that can be brought back to an earlier moment, a deleted file is kept for as
+    long as a recovery could name it again (``app/recovery/kept.py``): moved aside, not removed.
+    Says whether it was; everywhere else, and for what is not worth keeping, it was not."""
+    from ..recovery import kept
+
+    return kept.keep(path)

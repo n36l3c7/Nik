@@ -29,7 +29,7 @@ RUN chmod +x entrypoint.sh
 # (see entrypoint.sh), and steps down before anything else runs. The
 # filesystem is read-only in the stack: caches go to /tmp.
 RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin nik \
-    && mkdir -p /app/samples /app/backups \
+    && mkdir -p /app/samples /app/backups /app/wal-archive /app/inbox \
     && chown nik:nik /app/samples /app/backups
 ENV HOME=/tmp \
     XDG_CACHE_HOME=/tmp/.cache

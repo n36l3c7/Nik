@@ -1391,3 +1391,34 @@ def test_migration_0051_on_a_log_that_is_empty_starts_the_chain_at_nothing(tmp_p
     with engine.connect() as conn:
         assert conn.execute(sa.text("SELECT count(*) FROM audit_log")).scalar() == 0
         assert tuple(conn.execute(sa.text("SELECT seq, hash FROM audit_chain")).one()) == (0, "0" * 64)
+
+
+def test_migration_0052_adds_the_tables_of_the_recovery_and_touches_nothing_else(tmp_path, monkeypatch):
+    from app.core.models import RECOVERY_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE settings (id INTEGER PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO settings (id, doc) VALUES (1, '{}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0051_audit_chain")
+    command.upgrade(cfg, "0052_recovery")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(RECOVERY_TABLES) <= set(inspector.get_table_names())
+        bases = {column["name"] for column in inspector.get_columns("recovery_bases")}
+        assert {"id", "state", "created_at", "finished_at", "size", "timeline", "start_wal", "facts", "local"} <= bases
+        assert {"offsite_state", "offsite", "error", "requested_by"} <= bases
+        copies = {column["name"] for column in inspector.get_columns("store_copies")}
+        assert copies == {"name", "size", "mtime", "state", "seen_at", "copied_at", "gone_at", "removed_at", "error"}
+        assert conn.execute(sa.text("SELECT count(*) FROM settings")).scalar() == 1
+    command.stamp(cfg, "0051_audit_chain")
+    command.upgrade(cfg, "0052_recovery")  # again: the tables are there, nothing to do
+    command.downgrade(cfg, "0051_audit_chain")
+    with engine.connect() as conn:
+        assert not set(RECOVERY_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT count(*) FROM settings")).scalar() == 1

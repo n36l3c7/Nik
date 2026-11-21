@@ -1352,6 +1352,157 @@
         </li>
       </ul>
 
+      <h3 id="recovery-security">Recovery to a moment, and the standby</h3>
+      <p>
+        From 6.9 the server archives the log of its database, takes base backups, and can send both, with the files of
+        the store, to a second host that may be kept as a standby (<a href="deployment.html#recovery-to-a-moment"
+          >deployment guide</a
+        >). What that adds, and what it does not:
+      </p>
+      <ul>
+        <li>
+          <strong>Nothing new listens.</strong> No port is published and none is opened between the two hosts. The first
+          host connects out, over SSH, to the SFTP account of its backups, with the key made for it and the host key an
+          administrator pinned: a destination with no pinned key, or one that presents another, receives nothing. The
+          second host never connects to the first. There is no streaming replication, so PostgreSQL is reachable from no
+          other host, as before. The connection is made by the <code>automation</code> container, the one that already
+          had a way out; the backend still has none.
+        </li>
+        <li>
+          <strong>On the server, the archive is in clear.</strong> The volume <code>wal-archive</code> holds the log of
+          PostgreSQL and the base backups as PostgreSQL wrote them: everything the database holds, readable by whoever
+          reads the disk, exactly like the data directory beside it. It is not sealed under any key. What protects it is
+          what protects the database: the host, and the encryption of its disk. Put on another disk with
+          <code>NIK_WAL_ARCHIVE_DIR</code>, it needs the same care there. The databases a recovery keeps aside are whole
+          databases in clear too, until an operator removes them.
+        </li>
+        <li>
+          <strong>What is written on the second host, and under which key.</strong> Under <code>recovery/</code> of the
+          directory of the copies:
+          <ul>
+            <li>
+              <code>wal/&lt;segment&gt;.nikwal</code> and <code>base/&lt;label&gt;.nikbak</code>: each segment of the
+              log and each base backup, sealed in the container format of the backups (AES-256-GCM in authenticated
+              chunks, the key derived with scrypt) under the <strong>backup passphrase</strong>. A file that was changed
+              or cut short is refused when it is opened;
+            </li>
+            <li>
+              <code>store/&lt;path&gt;</code>: the files of the store as they are on the disk of the first host, sealed
+              under <strong><code>STORE_KEY</code></strong
+              >. A file that is still in clear (a store from before 6.8 that is being sealed) is not sent;
+            </li>
+            <li>
+              <code>heartbeat.json</code>, <strong>in clear</strong>: when the first host last spoke, the name it gives
+              itself, its generation, its version of Nik, the name of the last segment sent and when it was closed, how
+              far behind the copies are, how many files of the store wait, and the archive timeout;
+            </li>
+            <li>
+              <code>superseded.json</code>, <strong>in clear</strong>, written when a standby is promoted or a server is
+              recovered from the copies: a generation number, the moment, the name of the server that took over, and a
+              random mark;
+            </li>
+            <li>
+              <code>store.have</code>, <strong>in clear</strong>, written by a standby: the sizes and names of the
+              samples and e-mails its store holds.
+            </li>
+          </ul>
+          Each file is written under a temporary name, renamed, then read back and compared with what was sent.
+        </li>
+        <li>
+          <strong>What the account of the second host learns.</strong> No content. It sees names, sizes and times: the
+          names of the segments (a position in the log), the dates of the base backups, the paths of the files of the
+          store, and a sample or an e-mail is named by its SHA-256. If the hash of a sample is itself something to keep
+          from the administrators of the second host, that host is not the place for the copies. Folders and files are
+          written readable by the other users of that host, on purpose: the standby reads them as another user than the
+          SFTP account.
+        </li>
+        <li>
+          <strong>What the account of the second host can do.</strong> Delete or withhold what it received, as for the
+          backups. And one thing more: <code>superseded.json</code> is not signed, so whoever can write in that
+          directory can write one, and the first host, reading a generation later than its own, stops serving. That is a
+          way to stop the server, not to read or change anything. Give that account to nobody who should not be able to
+          do that.
+        </li>
+        <li>
+          <strong>The <code>recovery</code> service</strong> runs the tools of PostgreSQL for the backend
+          (<code>pg_basebackup</code>, <code>pg_verifybackup</code>, the scratch server of the recovery test). It has
+          <strong>no network at all</strong> (<code>network_mode: none</code>): it reaches the database through its
+          socket, on a volume the two share and nothing else mounts, so it holds no password and no key. Its filesystem
+          is read-only, it has no capabilities, it runs as the user of PostgreSQL from the start, and it does not mount
+          the data directory of the database. It takes no command: the backend leaves a small request file in the
+          archive volume, whose values both sides check, and reads the answer there. The scratch server of the test
+          listens on a socket inside that container only, and archives nothing.
+        </li>
+        <li>
+          <strong>The automation worker still holds neither the store nor its key.</strong> It is the process that
+          sends, and the files of the store must be sent. It does not mount the store: it asks the backend for each
+          file, on a route that is not for people, <code>/api/internal/store-sealed</code>, which the web server does
+          not publish. The request carries a proof computed under a key derived from <code>SECRET_KEY</code>, for that
+          one file name and good for two minutes; without it the route answers as if it did not exist. It gives the file
+          <em>as it is on the disk, sealed</em>, and refuses a file that is in clear, a path that leaves the store, and
+          the files kept after a deletion. So the worker, which runs playbooks and has a way out, handles ciphertext it
+          cannot open: <code>STORE_KEY</code> is still given to the <code>api</code>
+          container alone. It mounts the archive volume read-only, and seals each segment in its own memory-backed
+          <code>/tmp</code> before sending it; a base backup is sealed straight onto the other host.
+        </li>
+        <li>
+          <strong>A standby holds the keys of the first host</strong>: the database password, <code>SECRET_KEY</code>,
+          <code>STORE_KEY</code>, <code>AUDIT_KEY</code> and their earlier values. It has to: the database it replays is
+          the first host's, the files it receives are sealed under the first host's store key, and once promoted it
+          signs the same audit log. It reads the backup passphrase from that database, under <code>SECRET_KEY</code>, to
+          open the segments. A standby is therefore as sensitive as the server, although it serves nothing: harden and
+          watch it the same way.
+        </li>
+        <li>
+          <strong>How the keys travel.</strong> <code>deploy/standby.sh secrets export FILE</code>, on the first host,
+          has the running server seal those keys into one file, in the container format of the backups, under a
+          passphrase typed for that transfer (twelve characters or more, asked twice, never on a command line). The file
+          is text and can be carried by any channel; the passphrase goes by another. <code>secrets import</code>
+          on the other host writes each key where that stack keeps its keys and keeps the ones that were there beside
+          them (<code>*.before-standby</code>). Remove the file from both hosts afterwards. No route of the API gives a
+          key: the export is a command on the host.
+        </li>
+        <li>
+          <strong>Deleted files stay for a while.</strong> On a server with an archive, a file that is deleted is moved
+          inside the store and removed for good only when no recovery can reach back to before its deletion (two days by
+          default), on the server and on the second host. It stays sealed. A sample somebody deleted is therefore still
+          on the disk for those days; <em>Settings → Storage</em> counts it on a line of its own.
+        </li>
+        <li>
+          <strong>Never two servers.</strong> Each promotion, and each recovery on a new host from the copies, adds one
+          to a generation number kept in the database, and leaves <code>superseded.json</code> beside the copies. A
+          server that sends copies reads that file before anything else at each pass, and asks before it serves when it
+          starts: finding a later generation, it writes it down, stops, and from then on answers every request with one
+          sentence. It fetches nothing and runs no playbook. The role itself is not a setting: a standby is a server
+          whose database is replaying another's, and the database cannot be wrong about that.
+        </li>
+        <li>
+          <strong>The limit of that, said plainly.</strong> A server that cannot reach the second host cannot know it
+          was replaced. After waiting 45 seconds for an answer at its start it serves, and tells its administrators it
+          could not ask. Nothing inside a host can tell a cut network from a dead peer, and a server that stopped
+          whenever its standby was out of reach would depend on the standby to work. Keeping the old host off, or off
+          the network, after a promotion is the operator's part (<a href="deployment.html#first-host-back"
+            >The first host is back</a
+          >).
+        </li>
+        <li>
+          <strong>Nothing on a screen promotes, and nothing promotes by itself.</strong> Going back to a moment, setting
+          up a standby, promoting one and making an old host rejoin are commands on the host concerned (<code
+            >deploy/restore.sh --to</code
+          >, <code>deploy/standby.sh</code>), run by somebody who has a shell there. The routes of
+          <code>/api/recovery</code> read the state, ask for a base backup or a recovery test, and change five settings;
+          an administrator's API key can do the first three, the settings need a signed-in administrator. Each is in the
+          audit log (<code>recovery.*</code>), with <code>standby.promote</code> on the server that took over,
+          <code>standby.superseded</code> on the one that was replaced, and <code>audit.restore</code> after a recovery
+          to a moment.
+        </li>
+        <li>
+          <strong>What a server says when it does not serve</strong> (a standby, a server that was replaced, one being
+          promoted, one that is asking) is a fixed sentence, to anybody who reaches the port: it names the state, the
+          command an operator runs and, for a server that was replaced, when and by which server name.
+        </li>
+      </ul>
+
       <h2 id="checklist">Hardening checklist</h2>
       <ol>
         <li>Create the first account yourself, at once: whoever reaches a new install first becomes its admin.</li>
@@ -1375,6 +1526,10 @@
           Set the backup passphrase (<em>Settings → System → Backup</em>) and write it down away from the server; send
           the copies to a second host; keep <code>.env</code> elsewhere; and restore once on that second host, to know
           how long it takes.
+        </li>
+        <li>
+          If the second host is a standby, treat it as the server: it holds the same keys. Encrypt the disk that holds
+          the archive of the log, on both hosts.
         </li>
         <li>
           Send the audit log to a syslog receiver on another machine, over TLS (<em>Settings → System → Audit log</em>),
@@ -1426,8 +1581,21 @@
           proxy would still keep anything that slipped through away from private addresses.
         </li>
         <li>
-          A backup is as recent as the schedule: what was written since the last one is lost with the server. There is
-          no continuous archiving of the database yet.
+          A backup is as recent as the schedule. The archive of the database log closes that gap only once it leaves the
+          host: with a second host, what a lost server loses is at most the archive timeout (five minutes by default)
+          and a few seconds; without one, the archive is lost with the disk and the last backup is what is left. There
+          is no streaming replication.
+        </li>
+        <li>
+          The archive of the log and the base backups on the server are in clear, like the database. A standby holds
+          every key of the first host. A server that cannot reach the second host cannot know that its standby was
+          promoted, and the file that tells it so is not signed (<a href="#recovery-security"
+            >Recovery to a moment, and the standby</a
+          >).
+        </li>
+        <li>
+          A file of the store that is rewritten in place exists in one version: a recovery to a moment brings back the
+          database of that moment and the latest content of such a file.
         </li>
         <li>
           The store of files is encrypted at rest; the database is not. What the analyses found in a file (strings,

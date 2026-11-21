@@ -1,0 +1,2 @@
+# Mounted in the place of the directory of the first host on a server that is not a standby
+# (docker-compose.yml, NIK_STANDBY_INBOX). Nothing is written here.

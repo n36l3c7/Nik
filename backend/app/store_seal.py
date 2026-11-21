@@ -177,7 +177,11 @@ def forget() -> None:
 # Walking the store                                                           #
 # --------------------------------------------------------------------------- #
 def _files(root: Path) -> Iterator[tuple[str, Path]]:
-    """Every regular file of the store as ``(name, path)``, in a steady order."""
+    """Every regular file of the store as ``(name, path)``, in a steady order. A deleted file that
+    is kept for a recovery (``app/recovery/kept.py``) is one of them, under the name it had: it is
+    sealed, and follows a change of the store key, like the others."""
+    from .recovery import kept
+
     for folder, folders, names in os.walk(root, followlinks=False):
         folders.sort()
         for name in sorted(names):
@@ -187,7 +191,7 @@ def _files(root: Path) -> Iterator[tuple[str, Path]]:
                     continue
             except OSError:
                 continue
-            yield path.relative_to(root).as_posix(), path
+            yield kept.real_name(path.relative_to(root).as_posix()), path
 
 
 def _is_leftover(name: str) -> bool:

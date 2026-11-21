@@ -76,6 +76,7 @@ from .routers import (
     preprocess,
     previews,
     query,
+    recovery,
     report,
     samples,
     script_signatures,
@@ -259,6 +260,13 @@ def on_startup() -> None:
         # Their copies off the server leave from the process that runs playbooks: this one only when it does.
         if app_settings.AUTOMATION_WORKER == "inline":
             backup_scheduler.start_shipper()
+        # The archive of the log of PostgreSQL: base backups, what is kept, the proof (one process at
+        # a time, see recovery/archive.py); its copies leave from the process that runs playbooks.
+        from .recovery import scheduler as recovery_scheduler
+
+        recovery_scheduler.start()
+        if app_settings.AUTOMATION_WORKER == "inline":
+            recovery_scheduler.start_shipper()
         # The chain of the audit log is walked here every few minutes (one process at a time, see
         # auditlog/chain.py); the log leaves for syslog from the process that runs playbooks.
         from .auditlog import chain as audit_chain
@@ -431,6 +439,8 @@ app.include_router(system_keys.router, prefix="/api")
 app.include_router(system_keys.internal, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
+app.include_router(recovery.router, prefix="/api")
+app.include_router(recovery.internal, prefix="/api")
 app.include_router(storage.router, prefix="/api")
 app.include_router(worker_status.router, prefix="/api")
 app.include_router(health_details.router, prefix="/api")

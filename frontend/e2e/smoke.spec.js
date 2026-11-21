@@ -1651,6 +1651,30 @@ test('Settings → Backup: the passphrase, the settings and the unsaved question
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
+test('Settings → Backup: a server without an archive of its log says it cannot be brought back to a moment', async () => {
+  const before = new URL(page.url()).pathname
+  await page.goto('/settings/system/backup')
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await expect(settings.getByRole('heading', { name: 'Backup', level: 2 })).toBeVisible()
+
+  // Under the backups and the export: the recovery to a moment, which this server does not have.
+  const recovery = settings.getByRole('region', { name: 'Recovery to a moment' })
+  await expect(recovery.getByRole('heading', { name: 'Recovery to a moment' })).toBeVisible()
+  await expect(recovery).toContainText(
+    'This server keeps no archive of its database log, so it cannot be brought back to a moment. ' +
+      'The archive is part of the Compose stack.',
+  )
+  // Nothing else of it is shown: no command, no base backup to ask for, no settings.
+  await expect(recovery.getByRole('button')).toHaveCount(0)
+  await expect(settings.getByRole('form', { name: 'Recovery settings' })).toHaveCount(0)
+  await expect(settings.getByRole('table', { name: 'Base backups' })).toHaveCount(0)
+
+  await settings.getByRole('button', { name: 'Close settings' }).click()
+  await expect(settings).toHaveCount(0)
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
 test('Settings → Audit log: the chain is verified on demand, and the log is forwarded to a syslog receiver', async () => {
   test.setTimeout(180_000)
   const before = new URL(page.url()).pathname

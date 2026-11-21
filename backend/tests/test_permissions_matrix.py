@@ -41,6 +41,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     # A file of the store for the automation worker: the request proves it comes from a process of
     # this server (store_handover.py), and nginx does not publish /api/internal/.
     ("GET", "/api/internal/store/{kind}/{ref}"): "public",
+    # The same proof: a file of the store as it is on the disk, for the copy on the second host.
+    ("GET", "/api/internal/store-sealed"): "public",
     ("GET", "/api/auth/bootstrap"): "public",
     ("POST", "/api/auth/login"): "public",
     ("POST", "/api/auth/login/code"): "public",
@@ -447,6 +449,11 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/backups/{backup_id}/verify"): ("admin",),
     ("DELETE", "/api/backups/{backup_id}"): "admin-session",
     ("GET", "/api/backups/{backup_id}/download"): "admin-session",
+    # Recovery to a moment and the standby: reading and asking for work, like the backups.
+    ("GET", "/api/recovery"): ("admin",),
+    ("PUT", "/api/recovery/settings"): "admin-session",
+    ("POST", "/api/recovery/base"): ("admin",),
+    ("POST", "/api/recovery/test"): ("admin",),
     ("GET", "/api/storage"): ("admin",),
     ("GET", "/api/workers"): ("admin",),
 }

@@ -16,6 +16,32 @@
 # It refuses a database or a store that is not empty: add --replace to put the
 # backup in their place (what they hold is then gone).
 #
+# Going back to a moment (6.9) is the other thing this script does: the
+# database as it was at any moment the archive of its log reaches, not as it
+# was when the last backup was taken.
+#
+#   deploy/restore.sh --to "2026-11-21 14:03:00+00"    # a minute before the mistake
+#   deploy/restore.sh --to latest                      # everything the archive holds
+#   deploy/restore.sh --to latest --from /srv/nik-copies   # on a new host, from the copies of the second host
+#   deploy/restore.sh --asides                         # the databases kept aside by earlier runs
+#
+# It picks the base backup taken before the moment, puts it in the place of
+# the database (the one that is there is kept aside, not removed), has
+# PostgreSQL replay its log up to the moment, checks what came back (the
+# revision, the audit log against its own chain, every file the database
+# names) and starts the stack. It ends with what was lost. The files of the
+# store are not in the log: the ones deleted since the moment are put back
+# from where deletions are kept, and the ones that cannot be are named.
+# Without --from the archive of this stack is used (no passphrase is needed);
+# with it, the sealed copies in that directory, and the backup passphrase.
+#
+# Options of --to:
+#   --from DIR         the directory the copies of the archive were sent to (it holds recovery/)
+#   --replace          a database is there: keep it aside and put the recovered one in its place
+#   --no-aside         with --replace, when the disk has no room for both: remove the database that is there
+#   --drop-aside NAME  remove a database kept aside by an earlier run (see --asides)
+#   --put-back NAME    put a database kept aside back in its place (the one that is there is kept aside)
+#
 # Options:
 #   --replace          replace a database and a store that are not empty
 #   --database-only    leave the store of files as it is
@@ -66,8 +92,36 @@ INSPECT=0
 START=1
 YES=0
 BACKUP=""
+TO=""
+FROM=""
+ASIDE=1
+ASIDES=0
+DROP_ASIDE=""
+PUT_BACK=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --to)
+      [ $# -ge 2 ] || die "--to needs a moment (\"2026-11-21 14:03:00+00\") or latest"
+      TO=$2
+      shift
+      ;;
+    --from)
+      [ $# -ge 2 ] || die "--from needs the directory the copies were sent to"
+      FROM=$2
+      shift
+      ;;
+    --no-aside) ASIDE=0 ;;
+    --asides) ASIDES=1 ;;
+    --drop-aside)
+      [ $# -ge 2 ] || die "--drop-aside needs a name (see --asides)"
+      DROP_ASIDE=$2
+      shift
+      ;;
+    --put-back)
+      [ $# -ge 2 ] || die "--put-back needs a name (see --asides)"
+      PUT_BACK=$2
+      shift
+      ;;
     --replace) REPLACE=1 ;;
     --database-only) DATABASE_ONLY=1 ;;
     --secret-key) WITH_KEY=1 ;;
@@ -75,7 +129,7 @@ while [ $# -gt 0 ]; do
     --no-start) START=0 ;;
     --yes) YES=1 ;;
     -h | --help)
-      sed -n '2,42p' "$0"
+      sed -n '2,72p' "$0"
       exit 0
       ;;
     -*) die "unknown option: $1 (see --help)" ;;
@@ -86,6 +140,16 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+if [ -n "$TO" ] || [ "$ASIDES" -eq 1 ] || [ -n "$DROP_ASIDE" ] || [ -n "$PUT_BACK" ]; then
+  [ -z "$BACKUP" ] || die "--to goes back to a moment of the archive; a backup is restored without it: one or the other"
+  # The recovery to a moment has a file of its own: the same settings, the same engine.
+  export NIK_DIR ENGINE COMPOSE
+  export PITR_TO="$TO" PITR_FROM="$FROM" PITR_REPLACE="$REPLACE" PITR_ASIDE="$ASIDE" PITR_START="$START" PITR_YES="$YES"
+  export PITR_ASIDES="$ASIDES" PITR_DROP_ASIDE="$DROP_ASIDE" PITR_PUT_BACK="$PUT_BACK"
+  exec bash "$NIK_DIR/deploy/recover-to.sh"
+fi
+[ -n "$FROM" ] && die "--from goes with --to (see --help)"
 [ -n "$BACKUP" ] || die "name the backup: a file, or the name of a backup of this stack (see --help)"
 
 cd "$NIK_DIR"

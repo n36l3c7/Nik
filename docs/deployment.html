@@ -47,7 +47,14 @@
           <li><a href="#backups">Backups: what they hold, where they go, how they are tested</a></li>
           <li><a href="#backup-second-host">The copy off the server: SFTP to a second host</a></li>
           <li><a href="#restore-a-backup">Restoring</a></li>
-          <li><a href="#first-host-gone">The first host is gone: bring Nik up on the second</a></li>
+          <li><a href="#recovery-to-a-moment">Recovery to a moment: the archive of the log</a></li>
+          <li><a href="#go-back-to-a-moment">Go back to a moment</a></li>
+          <li><a href="#standby-host">A standby host</a></li>
+          <li><a href="#first-host-gone">The first host is gone</a></li>
+          <li><a href="#first-host-back">The first host is back</a></li>
+          <li><a href="#upgrading-a-pair">Upgrading a pair</a></li>
+          <li><a href="#recovery-secrets">Which secrets you need for each way back</a></li>
+          <li><a href="#recovery-loss-and-time">What is lost, and how long it takes</a></li>
           <li><a href="#upgrades">Updates, and the snapshot before each</a></li>
           <li><a href="#upgrade-went-wrong">An upgrade went wrong</a></li>
           <li><a href="#upgrading-to-43">Upgrading to 4.3</a></li>
@@ -429,9 +436,10 @@ deploy/secrets.sh move        # from .env into ./secrets
         The schedule is set on the screen: every few hours, every day at a time, or every week, in the time zone you
         name. Until you change it a backup is taken <strong>every six hours</strong>, counted through the day from 02:30
         UTC: at 02:30, 08:30, 14:30 and 20:30. What is written between two backups is what a lost server loses: at most
-        six hours with this schedule. It runs once a passphrase is set. <strong>Back up now</strong> and
-        <code>deploy/backup.sh</code> ask for one more, the same way. Never two at once, and none while a release is
-        migrating the database.
+        six hours with this schedule, when the backups are all there is. The archive of the database log closes most of
+        that gap (<a href="#recovery-to-a-moment">Recovery to a moment</a>). The schedule runs once a passphrase is set.
+        <strong>Back up now</strong> and <code>deploy/backup.sh</code> ask for one more, the same way. Never two at
+        once, and none while a release is migrating the database.
       </p>
       <p>
         A file is written under <code>….nikbak.partial</code> and renamed when its last byte is on the disk: a file with
@@ -572,7 +580,393 @@ deploy/restore.sh --inspect nik-20261120-023000            # only read it and sa
         upgrade. A backup made by a <em>later</em> version is refused with the version to check out: this code does not
         know what it holds.
       </p>
-      <h4 id="first-host-gone">The first host is gone: bring Nik up on the second</h4>
+      <h4 id="recovery-to-a-moment">Recovery to a moment</h4>
+      <p>
+        A backup is the server as it was when the backup was taken. From 6.9 the Compose stack also keeps the log of its
+        database as it is written, and a physical copy of the database taken every day (a <em>base backup</em>). With
+        the two, the database can be brought back to any moment since the oldest base backup kept: a minute before a
+        mistake, or the last thing the server wrote before its host died. The backups of 6.7 are unchanged and stay
+        beside it: the encrypted file every six hours, readable with its passphrase alone on any PostgreSQL, and the
+        snapshot and the rehearsal before an upgrade. What is described here is physical: it goes back into the same
+        major version of PostgreSQL.
+      </p>
+      <p><strong>What turns on by itself</strong>, at the first <code>compose up -d --build</code> on 6.9:</p>
+      <ul>
+        <li>
+          <strong>the archive of the log.</strong> PostgreSQL hands every finished segment of its write-ahead log to the
+          volume <code>wal-archive</code>, compressed, and never writes over one that is there. While something is
+          written it closes a segment at least every <code>NIK_ARCHIVE_TIMEOUT</code> seconds (300): that is the most a
+          host that dies can lose, once its segments leave it. The settings are given to PostgreSQL on its command line
+          by the entrypoint of the <code>db</code> container, so they hold on a database made by any earlier release and
+          nothing is written into its configuration;
+        </li>
+        <li>
+          <strong>the <code>recovery</code> service</strong>, a new container: the image of the database with another
+          command. It takes the base backups (<code>pg_basebackup</code>, each checked against its manifest with
+          <code>pg_verifybackup</code>), proves the archive, and removes what is no longer kept, each when the backend
+          asks. It has no network: it reaches PostgreSQL through its socket, on the volume <code>db-socket</code> the
+          two share, and talks with the backend only through small files in the archive volume;
+        </li>
+        <li>
+          <strong>a base backup every day at 03:30 UTC</strong>, and one at once when there is none, and after each
+          recovery or promotion;
+        </li>
+        <li>
+          <strong>two days to go back in</strong>: the base backups of the last two days are kept, with the one before
+          them (a recovery to the first of those days starts from it), and all the log since the oldest one kept;
+        </li>
+        <li>
+          <strong>a recovery test</strong> every 24 hours and after each new base backup: the latest base backup and the
+          archive are replayed into a scratch server inside the <code>recovery</code> container, to a moment a minute
+          before the last segment archived, and the audit log found there is held against the one of the server. The
+          server itself is not touched;
+        </li>
+        <li>
+          <strong>deleted files are kept.</strong> The files of the store are not in the log of the database. On a
+          server with an archive, a file that is deleted is moved to <code>.kept/</code> inside the store and really
+          removed when no recovery can reach back to before its deletion (two days, with the defaults). Previews and
+          what an interrupted transfer left are not kept.
+        </li>
+      </ul>
+      <p>
+        <strong>What does not turn on by itself:</strong> the copies off the host. They start when a backup passphrase
+        and a destination with its pinned host key are set in <strong>Settings → System → Backup</strong>: there is one
+        passphrase and one destination for the backups and for the recovery. Until then the archive is on the server
+        only, and is lost with its disk. All of it is set and watched at the foot of that page, under
+        <a href="guide.html#recovery-screen">Recovery to a moment</a>; every administrator is told when the archive
+        stops, when the recovery service does not answer, when a base backup or a recovery test fails, when the second
+        host is not reached or falls behind.
+      </p>
+      <p>
+        <strong>What it takes on the disk.</strong> In the archive volume: as many base backups as are kept (one more
+        than the days to go back in, so three with the defaults), each about the size of the database compressed, and
+        the log of those days. In the store: the files deleted in those days. The screen gives the figures of the server
+        it is on, and what they lead to once the archive has run for the days it keeps. Measured on the test pair of the
+        release:
+      </p>
+      <ul>
+        <li>a base backup of a nearly empty database: 5.4 MB;</li>
+        <li>
+          a segment closed by the timer: 16 to 20 KB compressed (6 to 100 KB when a checkpoint falls in it). A segment
+          is 16 MB before it is compressed, whatever it holds;
+        </li>
+        <li>
+          with the default of 300 seconds, a server nobody works on archives roughly 10 to 30 MB of log a day. A server
+          in use archives what it writes, on top of that.
+        </li>
+      </ul>
+      <p>
+        So the room is about (days + 1) × (the database compressed + the log of one day). Raising the days one can go
+        back, or taking base backups more often, multiplies the first term; a lower
+        <code>NIK_ARCHIVE_TIMEOUT</code> adds small files to the second. The archive and the base backups on the server
+        are <strong>in clear</strong>, like the data directory of PostgreSQL beside them: what protects them is what
+        protects the host. What leaves the host is sealed.
+      </p>
+      <p>
+        <strong>When the archive cannot be written</strong> (its disk is full, the volume is gone), nothing is lost:
+        PostgreSQL keeps every segment it could not hand over and tries again. But it keeps them in its own log
+        directory, on the disk of the database, which then fills. The administrators are told after five minutes, with
+        how much waits; the reason is in <code>docker compose logs db</code>.
+      </p>
+      <p>The variables, in <code>.env</code>:</p>
+      <pre><code class="language-bash">NIK_ARCHIVE_TIMEOUT=300                # seconds: lower loses less when the host dies, and writes more small files
+NIK_WAL_ARCHIVE_DIR=/srv/nik-archive   # a directory of the host, in place of the volume wal-archive
+NIK_WAL_ARCHIVE=off                    # no archive at all
+</code></pre>
+      <ul>
+        <li>
+          <code>NIK_WAL_ARCHIVE_DIR</code> puts the archive on another disk than the data, as
+          <code>NIK_BACKUP_DIR</code> does for the backups. The <code>db</code> container gives its folders the owners
+          they need each time it starts. Where SELinux is enforcing, label the directory once:
+          <code>chcon -Rt container_file_t /srv/nik-archive</code>.
+        </li>
+        <li>
+          <code>NIK_WAL_ARCHIVE=off</code> starts PostgreSQL without the archive. The server then cannot be brought back
+          to a moment and cannot have a standby; the screen says the archive is off and the administrators are told so.
+        </li>
+        <li>
+          A change of any of the three is read when the containers are made again (<code>compose up -d</code>).
+          <code>RECOVERY_MEMORY</code> (1g) and <code>RECOVERY_CPUS</code> (2) are the limits of the
+          <code>recovery</code> container.
+        </li>
+      </ul>
+      <p>
+        An installation without containers (<a href="#manual-deployment-on-rhel">manual deployment</a>) has no archive:
+        it is part of the Compose stack. The screen says so and shows nothing else.
+      </p>
+      <h4 id="go-back-to-a-moment">Go back to a moment</h4>
+      <p>
+        Like a restore, this is done on the server, from the command line, by somebody who can see the host: no button
+        does it. <code>deploy/restore.sh --to</code> is the command. It never writes over a database: the one that is
+        there is kept aside by a rename, under a name that says when.
+      </p>
+      <p><strong>On the server itself</strong>, from its own archive. No passphrase is asked.</p>
+      <ol>
+        <li>
+          Find the moment. <strong>Settings → System → Backup</strong>, under <em>Recovery to a moment</em>, says from
+          when to when one can go back, and gives the command for the latest moment, to copy. Write the moment with its
+          offset (<code>+00</code>, <code>+01</code>); without one it is read as UTC.
+        </li>
+        <li>
+          Run it on the server, as the user that runs the stack:
+          <pre><code class="language-bash">deploy/restore.sh --to "2026-11-21 14:03:00+00" --replace   # a minute before the mistake
+deploy/restore.sh --to latest --replace                     # everything the archive holds
+</code></pre>
+          It says which base backup it starts from, how many segments follow it and what will be left out, then asks for
+          the word <code>replace</code>. If the archive does not reach the moment (it is before the first base backup,
+          after the last segment, or a segment is missing) it says up to when it can go, and changes nothing. Without
+          <code>--replace</code> it refuses a stack that holds a database.
+        </li>
+        <li>
+          It stops the stack, keeps the database aside, puts the base backup in its place, has PostgreSQL replay the log
+          to the moment, and checks what came back: the revision of the database, the audit log against its own chain
+          from the first entry to the last of that moment, and every file the database names. A file deleted since the
+          moment is put back from where deletions are kept; one that is named and is nowhere is listed by name. Then it
+          starts the stack and waits until the server answers.
+        </li>
+        <li>
+          Read what it ends with: <em>What was lost</em> (everything written after the moment: that is what going back
+          means), and what to check before anybody works on the server: sign in, open the incident you came back for and
+          one file of the store; <em>Settings → System → Audit log</em>, where the chain verifies and the first new
+          entry, <code>audit.restore</code>, says to which moment the database was brought back;
+          <em>Settings → Backup</em>, where a new base backup is being taken (the database writes a new timeline from
+          here). Connectors that fetch start again from where they were at that moment: what they fetched since comes
+          again.
+        </li>
+        <li>
+          Once all is well, remove the database kept aside (step 2 of the list below). It takes the room of a whole
+          database until then.
+        </li>
+      </ol>
+      <p>
+        Run twice, it does the same thing twice: the second run keeps the database of the first aside and recovers
+        again. So a moment that turns out to be too early or too late is corrected by running the command with another
+        one. <code>--no-start</code> leaves the stack stopped at the end; <code>--yes</code> does not ask.
+        <code>NIK_RECOVERY_WAIT</code> (3600) is how many seconds the script waits for a replay before it gives up.
+      </p>
+      <p id="go-back-asides"><strong>The databases kept aside.</strong></p>
+      <ol>
+        <li>
+          List them: <code>deploy/restore.sh --asides</code> gives each with its name
+          (<code>….before-20261121-141002</code>) and its size.
+        </li>
+        <li>
+          Remove one for good: <code>deploy/restore.sh --drop-aside NAME</code> (it asks for the word
+          <code>remove</code>).
+        </li>
+        <li>
+          Put one back in the place of the database: <code>deploy/restore.sh --put-back NAME</code>. The stack is
+          stopped, the database that is there is kept aside in its turn, and the stack is started. This is how a
+          recovery is undone.
+        </li>
+      </ol>
+      <p>
+        Keeping a database aside needs free room for it on the disk of the database: the script stops before it changes
+        anything when there is not enough, and says how much is missing. <code>--no-aside</code>, with
+        <code>--replace</code>, removes the database that is there instead of keeping it: only when the disk has no room
+        for both, and only when you are sure of the archive.
+      </p>
+      <p id="go-back-new-host">
+        <strong>On a new host, from the copies.</strong> When the first host sent its copies to a second one, any host
+        that can read that directory can bring the server back, with the backup passphrase and the keys of the first
+        host (<a href="#recovery-secrets">which ones</a>).
+      </p>
+      <ol>
+        <li>
+          Get the code at the version the first host ran, and make the settings of this host:
+          <pre><code class="language-bash">git clone https://github.com/n36l3c7/Nik.git /opt/Nik &amp;&amp; cd /opt/Nik
+git checkout v6.9.0
+deploy/init-env.sh
+$EDITOR .env                   # TLS_HOSTNAME, ports
+</code></pre>
+        </li>
+        <li>
+          Put the keys of the first host where this stack keeps its keys. With the file made by
+          <code>deploy/standby.sh secrets export</code> while the first host was alive:
+          <pre><code class="language-bash">deploy/standby.sh secrets import nik-keys.txt    # asks for the passphrase of that transfer
+</code></pre>
+          Without that file, write them by hand from your copy of the secrets of the first host, each on one line:
+          <code>secrets/db_password</code>, <code>secrets/secret_key</code>, <code>secrets/store_key</code>,
+          <code>secrets/audit_key</code>, and the <code>…_previous</code> files if the first host had any.
+        </li>
+        <li>
+          Make the directory of the copies readable by the other users of the host (the recovery runs in a container, as
+          a user that is nobody on the host; everything in the directory is sealed):
+          <pre><code class="language-bash">sudo chmod -R o+rX /srv/nik-backups/incoming
+</code></pre>
+        </li>
+        <li>
+          Recover:
+          <pre><code class="language-bash">deploy/restore.sh --to latest --from /srv/nik-backups/incoming
+</code></pre>
+          It asks for the backup passphrase (or reads <code>NIK_BACKUP_PASSPHRASE</code> or
+          <code>NIK_BACKUP_PASSPHRASE_FILE</code>), opens the base backup and the log that follows it, comparing every
+          checksum, takes the files of the store that were copied, and goes on as on the server itself. A moment can be
+          named in the place of <code>latest</code>.
+        </li>
+        <li>
+          <strong>This server now takes the place of the old one.</strong> It is one generation later, and the script
+          leaves <code>recovery/superseded.json</code> beside the copies: an old server that comes back and still sends
+          its copies there reads it and serves nothing more. Point the users at this host, and look at
+          <em>Settings → Backup</em>: the destination that came back is the one the old server sent to. If that is this
+          very host, set another.
+        </li>
+      </ol>
+      <p id="go-back-rehearsal">
+        <strong>Rehearsing it, without replacing the server.</strong> To find out how long a recovery takes on your
+        data, do it on a host that is not the second host: copy the directory of the copies to it, keep it off the
+        network of the second host, and run step 4 on the copy. The file it leaves is then in the copy and tells nobody.
+        Do not rehearse on the directory the server sends to: the server would read the file and stop.
+      </p>
+      <h4 id="standby-host">A standby host</h4>
+      <p>
+        A standby is a second host that runs the same stack with a database that replays, as it arrives, the log the
+        first host sends. It serves nothing and says so; it becomes the server when an operator runs one command on it.
+      </p>
+      <p>
+        <strong>The link is the one of the backups.</strong> The first host writes into a directory of the second over
+        the SFTP account of its backups: every segment of the log and every base backup, sealed under the backup
+        passphrase, and the files of the store as they are on the disk, sealed under the store key. The stack of the
+        second host mounts that directory. <strong>No port is opened between the two hosts</strong> but the SSH one the
+        backups already use, and the first host is the only one that connects; the second host needs no route to the
+        first. There is no streaming replication, so no PostgreSQL port is published, and the standby is behind by the
+        archive timeout and a few seconds. The first host connects when it has something to send, and at least once a
+        minute to leave a small file that says it is alive.
+      </p>
+      <ol>
+        <li>
+          <strong>On the second host</strong>, make the SFTP account and the directory as for the copies of the backups
+          (<a href="#backup-second-host">steps 1 to 4 there</a>), then let the other users of the host read the
+          directory: the stack reads it as a user that is not the SFTP account, and everything in it is sealed.
+          <pre><code class="language-bash">sudo chmod 755 /srv/nik-backups/incoming
+</code></pre>
+          Install Docker or Podman, and git.
+        </li>
+        <li>
+          <strong>On the first host</strong>, in <strong>Settings → Backup</strong>: set the passphrase, and the
+          destination (the second host, the account, the directory as the account sees it, the host key pinned). Save,
+          <strong>Test the destination</strong>, and wait until, under <em>Recovery to a moment</em>, the list of base
+          backups shows one on the second host and <em>The second host</em> names the last segment sent.
+        </li>
+        <li>
+          <strong>On the first host</strong>, write the keys the second one needs into a file:
+          <pre><code class="language-bash">deploy/standby.sh secrets export nik-keys.txt
+</code></pre>
+          It asks twice for a passphrase made for this transfer (12 characters or more) and seals the file under it: the
+          database password, <code>SECRET_KEY</code>, <code>STORE_KEY</code>, <code>AUDIT_KEY</code> and their earlier
+          values. Carry the file to the second host by any channel, and the passphrase by another.
+        </li>
+        <li>
+          <strong>On the second host</strong>, get the same version and make it the standby:
+          <pre><code class="language-bash">git clone https://github.com/n36l3c7/Nik.git /opt/Nik &amp;&amp; cd /opt/Nik
+git checkout v6.9.0
+deploy/init-env.sh
+$EDITOR .env                                           # TLS_HOSTNAME, ports
+deploy/standby.sh secrets import nik-keys.txt          # the keys init-env.sh made stay beside them, as *.before-standby
+deploy/standby.sh init --inbox /srv/nik-backups/incoming
+</code></pre>
+          <code>init</code> asks for the backup passphrase, once: afterwards the standby reads it from the database it
+          replays, and follows it when it is changed. It asks for the word <code>standby</code>, opens the latest base
+          backup and the log after it, writes <code>NIK_STANDBY_INBOX</code> in <code>.env</code>, and starts four
+          containers: the database, the recovery service, the backend and the web server. Nothing else runs on a
+          standby. On a stack that already holds a database it refuses, unless <code>--replace</code> is added: the
+          database is then kept aside, as in a recovery.
+        </li>
+        <li>
+          Check, and remove <code>nik-keys.txt</code> from both hosts. The address of the second host shows one sentence
+          in the place of the sign-in:
+          <em>This server is the standby: it follows the first host and serves nothing.</em> The state of a standby is
+          read on its host:
+          <pre><code class="language-bash">deploy/standby.sh status
+</code></pre>
+          It says the role and the generation, the last file received, how old the last change replayed is and how many
+          segments wait, when the first host last spoke, and what a promotion would lose now. On the first host the same
+          command, the Backup page and the row <em>Second host</em> of the health page say how far behind the second
+          host is.
+        </li>
+      </ol>
+      <p>
+        <strong>What a standby does and does not do.</strong> Its database is read-only. Its backend answers every
+        request with the sentence above (the health check of the container passes, with the word <code>standby</code>),
+        takes in what arrives, and copies the files of the store into its own store. It migrates nothing, fetches
+        nothing, runs no playbook, takes no backup and sends nothing. It holds the keys of the first host: it is the
+        first host, one step behind. Give it the same protection.
+      </p>
+      <p>
+        <strong>When the link is cut</strong> the first host goes on working and archiving on its own disk: its archive
+        is local, so the log directory of its database does not grow. The administrators are told when the second host
+        has not been reached for ten minutes, and when what it holds is older than the limit set on the screen (15
+        minutes). When the link is back the first host sends what waited, in order.
+      </p>
+      <h4 id="first-host-gone">The first host is gone</h4>
+      <p>
+        Three ways back, the best first. Which one is open depends on what was set up before the host was lost; what
+        each needs is in <a href="#recovery-secrets">one table</a>, and what each loses in
+        <a href="#recovery-loss-and-time">another</a>.
+      </p>
+      <p id="promote-the-standby">
+        <strong>1. Promote the standby.</strong> Minutes, and what is lost is at most the archive timeout and a few
+        seconds. <strong>Nothing promotes by itself</strong>: not a screen, not a timer, not the first host falling
+        silent. Somebody who can see both hosts decides.
+      </p>
+      <ol>
+        <li>
+          Make sure the first host is down, or off the network.
+          <strong>Two servers must never work at once</strong>: each would take in events, run playbooks and write an
+          audit log of its own.
+        </li>
+        <li>
+          On the second host:
+          <pre><code class="language-bash">deploy/standby.sh status     # what a promotion would lose now
+deploy/standby.sh promote
+</code></pre>
+          <code>promote</code> says first what would be lost (what the first host wrote after the last segment that
+          arrived), and asks for the word <code>promote</code>. It then takes in and replays everything that arrived,
+          has PostgreSQL leave recovery, makes this server the server (one generation later than the first host), leaves
+          <code>recovery/superseded.json</code> in the directory of the copies, starts the whole stack and waits until
+          it answers. It ends with what to do next, which is steps 3 to 5.
+        </li>
+        <li>
+          Point the users at this host: the name they type must reach it (DNS, or the address of the proxy in front).
+          Nik cannot move an address. The certificate must carry that name (<code>TLS_HOSTNAME</code>).
+        </li>
+        <li>
+          Keep the old host off, or off the network, until it is made the standby (<a href="#first-host-back"
+            >The first host is back</a
+          >).
+        </li>
+        <li>
+          Sign in and check the last incidents: what the old host wrote after the moment the command named is not here.
+          The audit log has an entry <code>standby.promote</code> that says on which entry the log of this server ends;
+          entries a syslog receiver holds after that one were written on the old host. In
+          <strong>Settings → Backup</strong> the destination is still this host itself, so nothing is sent (the screen
+          says <em>the copies point at this server itself</em>, and the administrators are told): until another host is
+          set there, there is no standby and no copy off the host.
+        </li>
+      </ol>
+      <p>
+        If not everything that arrived can be replayed (a file that is damaged, a replay that does not end in two
+        minutes), <code>promote</code> stops and changes nothing; <code>--force</code> promotes with what was replayed.
+        <strong>A promotion that is interrupted</strong> is finished by running the command again: until it has
+        finished, the page of that host says <em>This standby is being promoted</em> and the server does not start. A
+        database promoted by hand, outside the command, waits for the command the same way. If the file for the old
+        server cannot be written, the command prints its one line and where to write it. <code>--name</code> sets what
+        this server calls itself in that file (by default the name set on the screen, then <code>NIK_SERVER_NAME</code>,
+        then the name of the machine).
+      </p>
+      <p id="first-host-gone-copies">
+        <strong>2. No standby, but the copies were sent: bring Nik up on a new host from them.</strong> The same loss as
+        a promotion, and the time to install a host. On the second host, or on any host that can read the directory:
+        <code>deploy/restore.sh --to latest --from /srv/nik-backups/incoming</code>, as numbered steps under
+        <a href="#go-back-new-host">On a new host, from the copies</a>. It needs the backup passphrase and the keys of
+        the first host, the store key among them.
+      </p>
+      <p id="first-host-gone-backup">
+        <strong>3. Restore the last backup.</strong> When there is no archive on the second host (the copies of the
+        recovery never left, or the first host ran a version before 6.9), or when the store key of the first host was
+        lost with it (a backup is read with its passphrase alone): the procedure of 6.7, below. It loses what was
+        written since that backup, up to six hours with the default schedule.
+      </p>
       <p>
         What you need: the second host with Docker or Podman and git, the backups it received
         (<code>/srv/nik-backups/incoming</code>), the backup passphrase, and the <code>SECRET_KEY</code> of the first
@@ -640,6 +1034,282 @@ deploy/restore.sh /srv/nik-restore/nik-20261120-023000.nikbak
         lost is what was written after the last backup that reached the second host: with a backup every N hours, at
         most N hours and the time of a backup.
       </p>
+      <h4 id="first-host-back">The first host is back</h4>
+      <p>
+        After a promotion, or after a recovery on a new host from the copies, the old first host holds a database that
+        is no longer the server's. It must not serve again as it is.
+      </p>
+      <ul>
+        <li>
+          <strong>Started where it can reach the second host, it does not serve.</strong> A server that sends copies
+          asks the second host, before it serves, whether it was replaced: its page says
+          <em>Nik is starting: it asks the second host whether this server was replaced while it was away</em>, then
+          <em>This server was replaced on … by …</em>. It then serves nothing, fetches nothing and runs no playbook, and
+          stays so. A server that is running when its standby is promoted learns it within a minute, the next time it
+          sends, and stops the same way.
+        </li>
+        <li>
+          <strong>Started where it cannot reach the second host, it cannot know.</strong> It waits 45 seconds for an
+          answer, then serves, and tells its administrators that the second host could not be asked. Nothing inside a
+          host can tell a network that is cut from a peer that is dead, and a server that refused to work whenever the
+          second host was out of reach would stop for the failure of its own standby. This is why the old host stays
+          off, or off the network of its users, until the steps below are done: that part is the operator's.
+        </li>
+      </ul>
+      <p>To make it the standby of the new server:</p>
+      <ol>
+        <li>
+          On the old host, make sure there is an SFTP account and a directory for the copies of the new server, readable
+          by the other users of the host, as on the second host (<a href="#standby-host">A standby host</a>, step 1).
+        </li>
+        <li>
+          On the new server, in <strong>Settings → Backup</strong>, set the old host as the destination, with its host
+          key pinned, and test it. Everything is sent again to the new destination: a base backup, the log, and the
+          files of the store, except the files named by their content (samples and e-mails) that the old host says it
+          already holds. Wait until the screen says a base backup was sent.
+        </li>
+        <li>
+          On the old host:
+          <pre><code class="language-bash">deploy/standby.sh rejoin --inbox /srv/nik-backups/incoming
+</code></pre>
+          It asks for the backup passphrase and for the word <code>standby</code>, keeps the old database aside, puts a
+          base backup of the new server in its place and starts the host as a standby. Nothing of the old database is
+          merged or rewound: a fresh base backup is what cannot go wrong. The two hosts already hold the same keys.
+        </li>
+        <li>
+          <code>deploy/standby.sh status</code> on the old host says it follows the new server.
+          <strong
+            >What the old host wrote after the last copy that reached the other host is in the database kept aside and
+            nowhere else</strong
+          >: if any of it matters, read it from there before you remove it (<a href="#go-back-asides"
+            >The databases kept aside</a
+          >).
+        </li>
+      </ol>
+      <p>
+        <strong>How long.</strong> The time of a base backup over the link, which grows with the size of the database:
+        27 to 40 seconds on the test pair, whose database was small. To give the roles back afterwards, do the same the
+        other way: stop the server, promote the standby, rejoin the other host.
+      </p>
+      <h4 id="upgrading-a-pair">Upgrading a pair</h4>
+      <p><strong>The standby first, then the server. Never the other way.</strong></p>
+      <ol>
+        <li>
+          On the standby:
+          <pre><code class="language-bash">git pull
+docker compose up -d --build db recovery api web
+</code></pre>
+          It migrates nothing: its database is read-only, and the step of the backend that takes the snapshot, rehearses
+          and migrates is never reached on a standby. No snapshot is taken and no rehearsal is run there.
+        </li>
+        <li>
+          On the server, as for any <a href="#upgrades">update</a>:
+          <pre><code class="language-bash">git pull
+docker compose up -d --build
+</code></pre>
+          The snapshot, the rehearsal and the migrations run there as always.
+        </li>
+        <li>
+          The migration reaches the standby through the log, like every other change, once the segment that holds it has
+          arrived and is replayed. Nothing is run on the standby for it. On the test pair the standby held the new
+          revision 83 seconds after the server (snapshot 0.2 seconds, rehearsal 1.5, migration 0.8, with an archive
+          timeout of 20 seconds).
+        </li>
+      </ol>
+      <p>
+        <strong>Why this order.</strong> A standby replays the database of the server, at whatever revision the server
+        left it. If the server were upgraded first, the standby would hold a database newer than its own code, and could
+        not start as the server if it had to be promoted then. Upgraded first, the standby holds code that is newer than
+        the database it replays: promoted in that state, it migrates the database as it starts, like any server after an
+        upgrade.
+      </p>
+      <p>
+        <strong>PostgreSQL.</strong> A new minor version (18.x) comes with the image of the <code>db</code> and
+        <code>recovery</code> services: pull it and recreate the containers in the same order, the standby first. Both
+        hosts must run the same major version: a base backup and the log go back into the version that wrote them. A
+        change of major version is not done through the pair; the backups of 6.7 do not depend on the version.
+      </p>
+      <h4 id="recovery-secrets">Which secrets you need for each way back</h4>
+      <p>
+        This table is the one place that lists them. <em>In place</em> means the host already holds it and nothing is
+        typed or carried.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>The way back</th>
+              <th>Backup passphrase</th>
+              <th>Database password</th>
+              <th><code>SECRET_KEY</code></th>
+              <th><code>STORE_KEY</code></th>
+              <th><code>AUDIT_KEY</code></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Go back to a moment on the server itself, from its own archive (<code>restore.sh --to</code>)</td>
+              <td>Not needed: the archive on the server is in clear</td>
+              <td>In place</td>
+              <td>In place</td>
+              <td>In place</td>
+              <td>In place</td>
+            </tr>
+            <tr>
+              <td>Promote the standby (<code>standby.sh promote</code>)</td>
+              <td>Not typed: the standby reads it from the database it replays</td>
+              <td>In place since the standby was set up</td>
+              <td>In place</td>
+              <td>In place</td>
+              <td>In place</td>
+            </tr>
+            <tr>
+              <td>Set up a standby, or make the old host one (<code>standby.sh init</code>, <code>rejoin</code>)</td>
+              <td>Typed once</td>
+              <td>The one of the first host, imported once</td>
+              <td>The one of the first host, imported once</td>
+              <td>The one of the first host, imported once</td>
+              <td>The one of the first host, with its earlier ones, imported once</td>
+            </tr>
+            <tr>
+              <td>Bring Nik up on a new host from the copies (<code>restore.sh --to … --from</code>)</td>
+              <td>Typed: it opens the base backups and the log</td>
+              <td>The one of the old server: the database that comes back knows no other</td>
+              <td>The one of the old server</td>
+              <td>The one of the old server: the copied files are sealed under it</td>
+              <td>The one of the old server, with its earlier ones</td>
+            </tr>
+            <tr>
+              <td>Restore a backup (<code>restore.sh &lt;backup&gt;</code>), as since 6.7</td>
+              <td>Typed</td>
+              <td>The one of the host that restores</td>
+              <td>
+                The one of the old server, by hand or with <code>--secret-key</code> when the backup holds it. Without
+                it the server works and the stored secrets are entered again
+              </td>
+              <td>Not needed: the host that restores seals the files under its own</td>
+              <td>
+                The one of the old server among the earlier keys (<code>AUDIT_KEY_PREVIOUS</code>), to check the entries
+                that come back
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        "Imported" is <code>deploy/standby.sh secrets export</code> on the first host and <code>secrets import</code> on
+        the other: one file, sealed under a passphrase typed for that transfer, which carries the database password,
+        <code>SECRET_KEY</code>, <code>STORE_KEY</code>, <code>AUDIT_KEY</code> and the earlier value of each. The
+        export needs the first host to be running. A host that is lost cannot export: keep a copy of its secrets
+        directory away from it (<a href="#keys-where">Where they are kept</a>), or keep an exported file and its
+        passphrase apart from each other and from the copies. Whoever holds the copies, the backup passphrase and those
+        keys holds everything the server held.
+      </p>
+      <h4 id="recovery-loss-and-time">What is lost, and how long it takes</h4>
+      <p>
+        The numbers below were measured on a small test pair: two Compose stacks on one machine, with little data, the
+        scripts run from Git Bash on Windows against Docker Desktop, and an archive timeout of
+        <strong>20 seconds</strong> in the place of the default 300. They say how the pieces behave, not how long your
+        data takes: rehearse on your own (<a href="#go-back-rehearsal">Rehearsing it</a>).
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>What happened, and the way back</th>
+              <th>What is lost</th>
+              <th>How long, on the test pair</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>A mistake found later: go back to a moment on the server</td>
+              <td>What was written after the moment gone back to, and nothing else</td>
+              <td>10 to 11 seconds for the recovery, 35 until the server answers</td>
+            </tr>
+            <tr>
+              <td>The host died during writes: the standby promoted</td>
+              <td>
+                The writes after the last segment that arrived: those of the last 9 to 12 seconds, as the command said
+                before it asked
+              </td>
+              <td>16 to 17 seconds from the command to a sign-in through the web server</td>
+            </tr>
+            <tr>
+              <td>The host died, no standby: a new host from the copies</td>
+              <td>The same as a promotion</td>
+              <td>
+                14 seconds for the recovery, 44 until the server answers; before that, the time to install the engine,
+                get the code and build the images
+              </td>
+            </tr>
+            <tr>
+              <td>The host died, no copies of the archive: the last backup restored</td>
+              <td>What was written since that backup: up to six hours with the default schedule</td>
+              <td>See <a href="#first-host-gone-backup">the procedure</a>: seconds for a store of 800 MB</td>
+            </tr>
+            <tr>
+              <td>The old host started again, with the link</td>
+              <td>Nothing: it never served</td>
+              <td>It said it was replaced 5 to 18 seconds after it started</td>
+            </tr>
+            <tr>
+              <td>The link cut for 164 seconds</td>
+              <td>Nothing</td>
+              <td>
+                The first host had sent everything 11 seconds after the link was back, and the standby had replayed it
+                24 seconds after
+              </td>
+            </tr>
+            <tr>
+              <td>Setting up a standby (<code>init</code>); making the old host one (<code>rejoin</code>)</td>
+              <td>—</td>
+              <td>28 seconds; 27 to 40 seconds</td>
+            </tr>
+            <tr>
+              <td>The scheduled recovery test</td>
+              <td>—</td>
+              <td>
+                It passes in 5 seconds. On an archive from which a segment had been removed it failed after about 95
+                seconds, and the administrators were told
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>What the default of 300 seconds changes.</strong> The loss when a host dies is bounded by the archive
+        timeout plus the few seconds a segment takes to leave: about five minutes with the default, where the test pair
+        lost seconds. The delay of the standby and the time for a migration to reach it follow the same number. Lower
+        <code>NIK_ARCHIVE_TIMEOUT</code> for less, at the price of more small files in the archive and on the second
+        host. The durations of the commands do not come from the timeout: they grow with the size of the database (a
+        base backup is unpacked, or sent) and with the amount of log to replay, and were not measured on large data.
+      </p>
+      <p><strong>Limits, as they are.</strong></p>
+      <ul>
+        <li>
+          None of this was run under Podman, on two separate machines, or across a corporate network. The scripts use
+          the same engine settings as the other scripts of <code>deploy/</code>; try them on your hosts before you
+          depend on them.
+        </li>
+        <li>
+          There is no streaming replication: a standby is never closer to the server than the last segment closed.
+        </li>
+        <li>
+          A file of the store that is rewritten in place (the log of a capture that is still open, the file of a
+          mailbox) exists in one version. A recovery to a moment brings back the database of that moment and the latest
+          content of such a file.
+        </li>
+        <li>
+          After a promotion or a change of destination everything is sent again, except the samples and e-mails the
+          other host already holds.
+        </li>
+        <li>
+          A server that cannot reach the second host cannot know it was replaced (<a href="#first-host-back"
+            >The first host is back</a
+          >).
+        </li>
+      </ul>
       <h4 id="reading-a-backup-without-nik">The file format, and reading a backup without Nik</h4>
       <p>
         The format is versioned (format 1) and described in full at the top of
@@ -1426,11 +2096,11 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
         <strong>Settings → System → Health</strong> says in one place whether the server is well: the disks (the store
         of files and the backup directory, how fast each fills and when it will be full at that rate), the size of the
         database, every queue with what waits and for how long, the workers, the backups, the database (connections,
-        long transactions, whether its schema is the one this version expects), the certificate of the web container,
-        the chain of the audit log and its forwarding, two warnings about the sign-in, the keys of the server and the
-        encryption of the store, and the clock against the database. Each row is fine, needs attention or is a problem,
-        by thresholds an administrator can change at the foot of the page, and leads to the page that has the whole
-        story.
+        long transactions, whether its schema is the one this version expects), the recovery to a moment and the second
+        host (<a href="guide.html#health-recovery">the rows</a>), the certificate of the web container, the chain of the
+        audit log and its forwarding, two warnings about the sign-in, the keys of the server and the encryption of the
+        store, and the clock against the database. Each row is fine, needs attention or is a problem, by thresholds an
+        administrator can change at the foot of the page, and leads to the page that has the whole story.
       </p>
       <ul>
         <li>
@@ -1502,8 +2172,11 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
               <td>
                 <code>nik_disk_total_bytes</code>, <code>nik_disk_used_bytes</code>, <code>nik_disk_free_bytes</code>
               </td>
-              <td><code>disk</code> (<code>store</code>, <code>backups</code>)</td>
-              <td>The disk that holds the store of files, and the one of the backup directory.</td>
+              <td><code>disk</code> (<code>store</code>, <code>backups</code>, <code>archive</code>)</td>
+              <td>
+                The disk that holds the store of files, the one of the backup directory, and the one of the archive of
+                the log.
+              </td>
             </tr>
             <tr>
               <td><code>nik_disk_growth_bytes_per_day</code>, <code>nik_disk_full_in_seconds</code></td>
@@ -1592,6 +2265,78 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
               <td>
                 Problems the watch of the backups holds; when the next backup is due; snapshots kept from before
                 upgrades.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_recovery_archive_ok</code>, <code>nik_recovery_archive_last_timestamp_seconds</code></td>
+              <td></td>
+              <td>
+                1 when PostgreSQL archives its log and the last attempt worked, 0 otherwise; when the last segment of
+                the log was archived.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_recovery_wal_waiting_bytes</code>, <code>nik_recovery_wal_bytes</code></td>
+              <td></td>
+              <td>
+                Bytes of log PostgreSQL has finished and not archived yet; bytes its log takes in its own directory.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_recovery_archive_bytes</code></td>
+              <td><code>what</code> (<code>log</code>, <code>base</code>, <code>kept</code>)</td>
+              <td>
+                What the archive takes, by what it is: the log, the base backups, the deleted files kept for a recovery.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_recovery_oldest_timestamp_seconds</code>,
+                <code>nik_recovery_base_last_timestamp_seconds</code>, <code>nik_recovery_base_last_size_bytes</code>
+              </td>
+              <td></td>
+              <td>
+                The oldest moment the server can be brought back to; when the last base backup was finished, and its
+                size.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_recovery_test_ok</code>, <code>nik_recovery_test_timestamp_seconds</code></td>
+              <td></td>
+              <td>
+                1 when the last recovery test passed, 0 when it failed; when the recovery to a moment was last proven.
+              </td>
+            </tr>
+            <tr>
+              <td><code>nik_recovery_service_up</code>, <code>nik_recovery_problems</code></td>
+              <td></td>
+              <td>
+                1 when the recovery service answered in the last two minutes; problems the watch of the recovery holds.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_recovery_copy_link_ok</code>, <code>nik_recovery_copy_behind_seconds</code>,
+                <code>nik_recovery_copy_behind_bytes</code>, <code>nik_recovery_store_files_waiting</code>
+              </td>
+              <td></td>
+              <td>
+                Only when copies are sent: 1 when the second host was reached at the last pass; how old what the second
+                host holds is; the distance in the log between what is written and what is on the second host (an upper
+                bound); files of the store that wait to be copied.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>nik_server_role</code>, <code>nik_server_generation</code>,
+                <code>nik_server_promoted_timestamp_seconds</code>
+              </td>
+              <td>
+                <code>role</code> (<code>primary</code>, <code>standby</code>, <code>superseded</code>), on the first
+              </td>
+              <td>
+                The role of this server, as a label; how many times a standby was promoted to become this server, plus
+                one; when this server was promoted from standby (absent when it never was).
               </td>
             </tr>
             <tr>

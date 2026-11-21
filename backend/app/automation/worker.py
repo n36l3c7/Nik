@@ -448,11 +448,18 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: _stopping.set())
     logger.info("Automation worker started")
     _wait_for_the_schema()
+    # A server of a pair asks the second host first whether it was replaced while it was away,
+    # and runs nothing if it was (recovery/role.py): this container is the one that can ask.
+    from ..recovery import scheduler as recovery_scheduler
+
+    recovery_scheduler.ask_at_start(_stopping)
     _wait_for_the_backend()
     # The copies of the backups off the server leave from here: this container has the way out.
     from ..backups import scheduler as backup_scheduler
 
     backup_scheduler.start_shipper()
+    # So do the copies of the archive of the log and of the store, for the second host.
+    recovery_scheduler.start_shipper()
     # So does the audit log, entry by entry, to the syslog receiver an administrator set.
     from ..auditlog import forward as audit_forward
 

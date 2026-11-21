@@ -35,6 +35,7 @@ import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import { usePageMenu } from '../../menu/usePageMenu.js'
 import { Badge, Button, EmptyState, Modal, Select, Wait } from '../../ui/index.js'
 import ContentExport from './ContentExport.jsx'
+import RecoverySection from './RecoverySection.jsx'
 import Switch from './Switch.jsx'
 
 /*
@@ -51,7 +52,9 @@ import Switch from './Switch.jsx'
  * command line, with the stack stopped. Each backup shows the command.
  *
  * At the foot, the export of content as one JSON file (what "Full backup"
- * was before 6.7) is kept as it worked.
+ * was before 6.7) is kept as it worked, and under it the recovery to a
+ * moment (RecoverySection.jsx): the archive of the database log, the base
+ * backups and the second host.
  */
 
 const INPUT =
@@ -991,6 +994,7 @@ export default function BackupSection() {
           </div>
 
           <ContentExport />
+          <RecoverySection />
         </>
       )}
 

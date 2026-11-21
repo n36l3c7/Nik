@@ -58,6 +58,7 @@
 │  ├─ parses small evidence │────▶│  ├─ static files, security headers          │
 │  │   (text, SQLite: WASM) │ TLS │  └─ /api/ ──▶ api: FastAPI                  │
 │  ├─ detection engine      │     │        ├─▶ db: PostgreSQL                   │
+│  │                        │     │        │     recovery (base backups; no net)│
 │  └─ REST client (/api)    │     │        ├─▶ sample store (a volume)          │
 └───────────────────────────┘     │        ├─▶ analyzer, capa, docview, pcap    │
                                   │        │     (workers with no route outside)│
@@ -217,11 +218,14 @@
 │                                   #   harness.py (the child a script runs in), runner.py (the limits),
 │                                   #   server.py, tests/
 ├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
-│                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh
+│                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh,
+│                                   #   recover-to.sh (restore.sh --to), standby.sh, recovery-lib.sh (what the
+│                                   #   two share), db/ (the scripts PostgreSQL archives and restores its log
+│                                   #   with, the recovery service, the base backup put in place)
 ├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
-├── docker-compose.yml              # db + api + automation + sandbox + analyzer + capa + docview +
-│                                   #   browser + pcap + web
+├── docker-compose.yml              # db + recovery + api + automation + sandbox + analyzer + capa +
+│                                   #   docview + browser + pcap + web
 ├── .env.example                    # Compose configuration template
 └── ruff.toml                       # Ruff settings for every Python component
 </code></pre>
@@ -340,6 +344,23 @@
 │   ├── offsite.py                  #   the copy off the server (SFTP), sent by the automation worker
 │   ├── upgrade.py                  #   before migrating: snapshot, rehearsal (the entrypoint runs it)
 │   └── restore.py · now.py         #   the command line behind deploy/restore.sh, rollback.sh, backup.sh
+├── recovery/                       # Recovery to a moment, and a standby host (6.9)
+│   ├── layout.py                   #   where things are in the archive volume and on the second host; segment names
+│   ├── config.py                   #   what an administrator sets, and the five rows of settings the package keeps
+│   ├── agent.py                    #   asking the recovery service through request files, reading its answers
+│   ├── archive.py                  #   the pass of the API process: base backups, what is kept, the proof
+│   ├── scheduler.py                #   the loops, in the API process and in the process that sends
+│   ├── envelope.py                 #   a segment or a base backup sealed in the container of the backups
+│   ├── remote.py                   #   the directory of the second host over SFTP: one connection a pass
+│   ├── ship.py                     #   the copies of the log, the base backups and the store; the delay; the heartbeat
+│   ├── files.py                    #   the rows of the copies of the store; the store held against the database
+│   ├── kept.py                     #   a deleted file kept for as long as a recovery could need it
+│   ├── role.py                     #   server, standby or replaced: the generation, the file a promotion leaves
+│   ├── gate.py                     #   the step of the entrypoint that decides whether this server serves
+│   ├── standby.py                  #   what a standby does while it waits: take in what the first host sends
+│   ├── watch.py                    #   the problems, and the notices to the admins
+│   ├── status.py                   #   everything put together for the screen, the health rows, the metrics
+│   └── tool.py                     #   the command line behind deploy/restore.sh --to and deploy/standby.sh
 ├── auditlog/                       # The audit log as a chain of hashes, and its forwarding to syslog
 │   ├── verifier.py                 #   the canonical form of an entry and the walk; also runs alone, without Nik
 │   ├── chain.py · restored.py      #   linking at commit, verifying, removing old entries; the entry a restore leaves
@@ -1019,10 +1040,25 @@
               <td>the shared settings, event subscriptions, background uploads, replay protection</td>
             </tr>
             <tr>
+              <td><code>recovery_bases</code>, <code>store_copies</code></td>
+              <td>
+                what the server knows of each base backup of the database, and, for each file of the store, where its
+                copy on the second host stands (<a href="#recovery">below</a>)
+              </td>
+            </tr>
+            <tr>
               <td>The sample store (a volume)</td>
               <td>
                 the files themselves: samples and e-mails named by SHA-256, captures (<code>_captures/</code>),
-                screenshots of scanned addresses (<code>_urls/</code>), FLIRT and capa rule files
+                screenshots of scanned addresses (<code>_urls/</code>), FLIRT and capa rule files; deleted files kept
+                for a recovery (<code>.kept/</code>)
+              </td>
+            </tr>
+            <tr>
+              <td>The archive (the volume <code>wal-archive</code>)</td>
+              <td>
+                the log of PostgreSQL as it archived it and the base backups, in clear; the requests the backend leaves
+                for the <code>recovery</code> service and its answers
               </td>
             </tr>
           </tbody>
@@ -1034,6 +1070,82 @@
         <a href="deployment.html#backups">Backups</a>). The export of content as one file covers the first four tables'
         worth of work only; see <a href="deployment.html#full-platform-backup">The export of content as one file</a>.
       </p>
+      <h3 id="recovery">Recovery to a moment, and the standby (6.9)</h3>
+      <p>
+        Beside the backups, the stack keeps the log of its database and a physical copy of it, so that the database can
+        be brought back to any moment and a second host kept up to date. The operator's side is in the
+        <a href="deployment.html#recovery-to-a-moment">deployment guide</a>; this is how it is put together.
+      </p>
+      <ul>
+        <li>
+          <strong>The <code>db</code> service</strong> archives. Its entrypoint (<code>deploy/db-entrypoint.sh</code>)
+          gives PostgreSQL its archive settings on the command line: <code>deploy/db/wal-archive.sh</code> compresses
+          each finished segment into the archive volume, and <code>deploy/db/wal-restore.sh</code> gives one back to a
+          server that recovers, to a standby and to the scratch server of the recovery test.
+        </li>
+        <li>
+          <strong>The <code>recovery</code> service</strong> is the image of the database with another command
+          (<code>deploy/db/recovery-agent.sh</code>): the backend has no PostgreSQL client and no way to run one. It
+          takes a base backup, proves the archive in a scratch server of its own, and removes what the retention
+          dropped, each when the backend asks. It has no network; a request is a small file in <code>requests/</code> of
+          the archive volume and the answer a file in <code>results/</code> (<code>recovery/agent.py</code> is the other
+          side).
+        </li>
+        <li>
+          <strong>Two volumes.</strong> <code>wal-archive</code> (or the directory
+          <code>NIK_WAL_ARCHIVE_DIR</code> names) is mounted by <code>db</code> and <code>recovery</code>, which own it,
+          by <code>api</code>, which leaves its requests there, and read-only by <code>automation</code>, which sends
+          from it. <code>db-socket</code> holds the socket of PostgreSQL and is mounted by <code>db</code> and
+          <code>recovery</code> alone: that is how the service reaches the database without a network or a password.
+        </li>
+        <li>
+          <strong>The API process</strong> runs the pass of <code>recovery/archive.py</code> under the lease
+          <code>recovery</code>: it reads what PostgreSQL says of its archive, asks for the base backups, applies the
+          retention, asks for the proof and judges it, and removes the deleted files no recovery can reach any more.
+          Once a minute it makes the rows of <code>store_copies</code> say what the store holds, since it is the process
+          that sees the store. It also runs the watch, and stops the server when it learns that it was replaced.
+        </li>
+        <li>
+          <strong>The automation worker</strong> sends (<code>recovery/ship.py</code>, under the lease
+          <code>recovery-ship</code>), as it sends the backups: it is the process with a way out. Segments in order,
+          base backups, the files of the store asked of the API process one by one
+          (<code>/api/internal/store-sealed</code>), what is no longer kept removed, and a heartbeat. When it starts it
+          first asks the second host whether this server was replaced. With <code>AUTOMATION_WORKER=inline</code> the
+          API process sends.
+        </li>
+        <li>
+          <strong>The step of the entrypoint.</strong> Before the snapshot, the rehearsal and the migrations, the
+          <code>api</code> container runs <code>python -m app.recovery.gate</code>. On the server it returns at once, or
+          after the worker has asked the second host. On a standby (a database that is replaying another's:
+          <code>pg_is_in_recovery()</code>, never a variable) it stays there: it answers every request with a sentence,
+          passes the health check with the word <code>standby</code>, and takes in what arrives
+          (<code>recovery/standby.py</code>); when the standby is promoted it returns and the server starts in the same
+          container. On a server that was replaced it stays for good. <code>/api/health</code> can therefore say
+          <code>standby</code>, <code>promoting</code>, <code>checking</code> or <code>superseded</code> besides
+          <code>ok</code>; the automation worker, which waits for <code>ok</code>, runs nothing meanwhile.
+        </li>
+        <li>
+          <strong>Five rows of <code>settings</code></strong
+          >, so that no two processes write the same one: 60, what an administrator sets; 61, what the pass of the API
+          process knows; 62, what the process that sends knows; 63, the problems the administrators were told about; 64,
+          which server this is (its generation, when it was promoted, whether it was replaced).
+        </li>
+        <li>
+          <strong>Two tables</strong>, added by the migration <code>0052_recovery</code> where they are missing:
+          <code>recovery_bases</code>, one row for each base backup (its state, its size, the first segment a recovery
+          from it needs, whether its folder is still on the server, where its copy stands), and
+          <code>store_copies</code>, one row for each file of the store (pending, copied or failed; when it was deleted
+          here; when its copy was removed). The API process writes every column but the one of the copy, which belongs
+          to the process that sends.
+        </li>
+        <li>
+          <strong>The scripts</strong> <code>deploy/restore.sh --to</code> (<code>deploy/recover-to.sh</code>) and
+          <code>deploy/standby.sh</code> do on the host what only the host can do (stop and start containers, put a base
+          backup in the place of the data directory with <code>deploy/db/pitr.sh</code>) and leave everything that reads
+          the archive, a sealed file or the database to <code>python -m app.recovery.tool</code>, run in a container of
+          the stack.
+        </li>
+      </ul>
       <h2 id="authentication-sessions-and-the-audit-log">Authentication, sessions and the audit log</h2>
       <h3 id="authentication">Authentication</h3>
       <p>

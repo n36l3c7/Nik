@@ -1348,6 +1348,68 @@
               </td>
             </tr>
             <tr>
+              <td><code>GET /api/recovery</code></td>
+              <td>
+                Where the <a href="deployment.html#recovery-to-a-moment">recovery to a moment</a> stands
+                (<strong>admin</strong>). <code>available</code> is false on a server without an archive of its log, and
+                the answer then holds only <code>name</code> and <code>role</code>. Otherwise: <code>role</code> (<code
+                  >primary</code
+                >
+                | <code>standby</code> | <code>superseded</code>), <code>name</code>,
+                <code>pair</code> (<code>generation</code>, <code>promotedAt</code>, <code>promotedBy</code>,
+                <code>superseded</code>, <code>asked</code>), <code>archive</code> (<code>on</code>, <code>stuck</code>,
+                <code>lastWal</code>, <code>lastAt</code>, <code>failedWal</code>, <code>failedAt</code>,
+                <code>waiting</code>, <code>waitingBytes</code>, <code>logBytes</code>, <code>timeline</code>,
+                <code>timeout</code>), <code>window</code> (<code>oldest</code>, <code>newest</code>: the moments one
+                can go back to), <code>bases</code>, the latest first (<code>id</code>, <code>state</code>:
+                <code>requested</code> | <code>done</code> | <code>failed</code>, <code>createdAt</code>,
+                <code>finishedAt</code>, <code>size</code>, <code>verified</code>, <code>seconds</code>,
+                <code>error</code>, <code>requestedBy</code>, <code>local</code>, <code>offsiteState</code>:
+                <code>pending</code> | <code>copied</code> | <code>failed</code>, <code>offsite</code>),
+                <code>test</code> (<code>running</code>, <code>last</code>, <code>proven</code>: each with
+                <code>state</code>, <code>at</code>, <code>target</code>, <code>base</code>, <code>seconds</code>,
+                <code>error</code>), <code>disk</code> (what the log, the base backups and the kept files take, the room
+                left, <code>perDay</code>, <code>steady</code>), <code>service</code> (<code>alive</code>,
+                <code>running</code>), <code>copies</code> (the second host: <code>on</code>, <code>where</code>,
+                <code>behind</code> in <code>seconds</code> and <code>bytes</code>, <code>shipped</code>,
+                <code>store</code>, <code>link</code>, <code>hold</code>), <code>settings</code>,
+                <code>problems</code> and <code>command</code>, the line to type on the server.
+              </td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/recovery/settings</code></td>
+              <td>
+                Change any of <code>base</code> (when the base backups are taken: <code>enabled</code>,
+                <code>every</code>: <code>day</code> | <code>week</code> | <code>hours</code>, <code>hours</code> 1 to
+                23, <code>at</code> <code>HH:MM</code>, <code>weekday</code> 0 = Monday, <code>timezone</code>),
+                <code>keepDays</code> (1 to 60: how many days one can go back), <code>lagMinutes</code> (2 to 1440: the
+                delay of the second host that is warned about), <code>testEveryHours</code> (1 to 720: how often the
+                archive is proven), <code>name</code> (what this server calls itself to the other host, 120 characters
+                at most). Only the keys sent change; <code>422</code> with a sentence for a value that is not accepted;
+                answers as <code>GET /api/recovery</code> (a <strong>signed-in admin</strong>: not an API key).
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/recovery/base</code></td>
+              <td>
+                Ask for a base backup now (<strong>admin</strong>). <code>202</code>, answering as
+                <code>GET /api/recovery</code>: the recovery service takes it, and its row goes from
+                <code>requested</code> to <code>done</code>. <code>409</code> with the reason when it cannot be asked
+                for.
+              </td>
+            </tr>
+            <tr>
+              <td><code>POST /api/recovery/test</code></td>
+              <td>
+                Ask for a recovery test now (<strong>admin</strong>): the latest base backup and the archive are
+                replayed into a scratch server, to a moment a minute before the last segment archived.
+                <code>202</code>, answering as <code>GET /api/recovery</code>; read it until
+                <code>test.running</code> is false. <code>409</code> on a server without an archive, or before there is
+                a base backup. No route goes back to a moment, sets up a standby or promotes one: each is a command on
+                the host (<code>deploy/restore.sh --to</code>, <code>deploy/standby.sh</code>).
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/audit</code></td>
               <td>
                 Audit log, newest first (<code>audit.read</code>): <code>limit</code>, <code>offset</code>,
@@ -1424,7 +1486,13 @@
             </tr>
             <tr>
               <td><code>GET /api/health</code> · <code>/api/ready</code></td>
-              <td>Liveness · readiness (database). No authentication, and nothing but that the process is up.</td>
+              <td>
+                Liveness · readiness (database). No authentication, and nothing but that the process is up. On a server
+                that is one of a pair of hosts, <code>status</code> can be <code>standby</code>, <code>promoting</code>,
+                <code>checking</code> or <code>superseded</code> in the place of <code>ok</code>: the server then
+                answers every other route with <code>503</code> and
+                <a href="guide.html#server-does-not-serve">a sentence</a>.
+              </td>
             </tr>
             <tr>
               <td><code>GET /api/health/details</code></td>

@@ -48,6 +48,7 @@ from .container import CHUNK, BackupError, Part, Writer
 TAR_PART = "store.tar"
 INDEX_PART = "store.index"
 LEFTOVERS = (".part", ".sealing")
+KEPT = ".kept"
 
 
 class _Hashing:
@@ -85,6 +86,8 @@ def pack(writer: Writer, root: str | os.PathLike) -> dict[str, Any]:
     with writer.part(TAR_PART) as part:
         with tarfile.open(fileobj=part, mode="w|", format=tarfile.PAX_FORMAT, bufsize=CHUNK) as tar:
             for name, path, is_folder in _walk(root) if root.is_dir() else ():
+                if name == KEPT or name.startswith(KEPT + "/"):
+                    continue  # deleted files kept for a recovery to a moment (app/recovery/kept.py): not the store
                 try:
                     found = os.lstat(path)
                 except OSError:

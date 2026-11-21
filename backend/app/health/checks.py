@@ -105,6 +105,13 @@ METRICS: dict[str, tuple[str, str]] = {
 }  # fmt: skip
 
 
+def _recovery_metrics() -> None:
+    """What the recovery to a moment and the standby can say (app/recovery/status.py lists them)."""
+    from ..recovery import status
+
+    METRICS.update(status.METRICS)
+
+
 def size(count: float) -> str:
     """A number of bytes as a person reads it."""
     count = float(count)
@@ -868,6 +875,19 @@ def _backups(db: OrmSession, now: float) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------- #
 # The certificate of the web container                                        #
 # --------------------------------------------------------------------------- #
+def _recovery(db: OrmSession, kept: dict[str, Any], limits: dict[str, int], now: float) -> list[dict[str, Any]]:
+    """The recovery to a moment and the standby: the disk the archive is on, then the rows of
+    app/recovery/status.py. Nothing on a server without an archive volume."""
+    from ..recovery import layout, status
+
+    found = status.rows(db, now)
+    if found and layout.root() is not None:
+        found.insert(
+            0, _disk("archive", "Archive volume", str(layout.root()), "/settings/system/backup", kept, limits, now)
+        )
+    return found
+
+
 def web_address() -> tuple[str, int] | None:
     """Where the web container listens for TLS, as the backend reaches it: ``NIK_WEB_TLS``
     (``web:443`` in the stack; empty for an installation that has none)."""
@@ -1296,6 +1316,7 @@ def gather(
         ("queues", lambda: _queues(db, limits, now)),
         ("workers", lambda: _workers(db, limits, now)),
         ("backups", lambda: _backups(db, now)),
+        ("recovery", lambda: _recovery(db, kept, limits, now)),
         ("certificate", lambda: _certificate(kept, limits, now)),
         ("audit", lambda: _audit(db, limits, now)),
         ("signin", lambda: _signin(db, now)),
@@ -1324,3 +1345,6 @@ def gather(
     # The clock belongs with the server, after its version.
     rows.sort(key=lambda found: found["id"] == "clock.skew")
     return rows
+
+
+_recovery_metrics()

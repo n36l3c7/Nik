@@ -45,6 +45,11 @@ fi
 # The automation container shares this image: the backend applies the
 # migrations, and two containers applying them at once would trip over each other.
 if [ "${NIK_SKIP_MIGRATIONS:-}" != "1" ]; then
+    # Whether this server serves at all (app/recovery/gate.py). A standby stays here, answering
+    # every request with what it is while it follows the first host, and goes on from here when it
+    # is promoted; a server that was replaced by its standby stays here for good. The server
+    # itself passes at once.
+    python -m app.recovery.gate
     echo "entrypoint: bringing the database to this version (snapshot, rehearsal, migrations)…" >&2
     python -m app.backups.upgrade
     # The store key against the store it is given: a key that is not the one the
