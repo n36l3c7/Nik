@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.1] - 2026-11-21
+
+### Fixed
+
+- **After a restart of the host, Nik stayed stopped.** When the machine
+  or the container engine restarts, every container starts at once and
+  PostgreSQL replays its log for a moment; the step that runs before the
+  server (snapshot, rehearsal, migrations) took the refused connection
+  for a failed upgrade and answered every request with "the upgrade was
+  stopped" until the container was restarted by hand. It now waits for
+  the database, saying so in the log, however long it takes.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  A server of 6.7.0 that answers "the upgrade was stopped" after a
+  restart, with nothing above that line about a snapshot or a
+  migration, only needs its `api` container started again
+  (`docker compose restart api automation`).
+
 ## [6.7.0] - 2026-11-20
 
 One can always go back: Nik takes its own backups and proves they
@@ -3561,7 +3581,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.7.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.7.1...HEAD
+[6.7.1]: https://github.com/n36l3c7/Nik/compare/v6.7.0...v6.7.1
 [6.7.0]: https://github.com/n36l3c7/Nik/compare/v6.6.1...v6.7.0
 [6.6.1]: https://github.com/n36l3c7/Nik/compare/v6.6.0...v6.6.1
 [6.6.0]: https://github.com/n36l3c7/Nik/compare/v6.5.0...v6.6.0

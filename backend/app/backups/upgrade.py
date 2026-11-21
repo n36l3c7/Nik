@@ -54,6 +54,7 @@ logger = logging.getLogger("nik.upgrade")
 SETTINGS_ID = 22  # which version of Nik last started on this database
 LOCK_WAIT = 30 * 60
 MIN_POSTGRES = 14
+DATABASE_WAIT_SAYS = 30  # seconds between two lines that say the database is still awaited
 # The revision a release ended at, for a database that never recorded its version (before 6.7).
 RELEASES = {"0047_playbook_files": "6.6.1"}
 PORT = 8000
@@ -280,11 +281,38 @@ def _rehearse(note: dict[str, Any], config: Path | None) -> list[str] | None:
             logger.exception("The scratch database %s could not be dropped", scratch.name)
 
 
+def wait_for_database(url, pause: float = 2.0, sleep=time.sleep) -> int:
+    """Wait until the database answers, however long that takes; gives the attempts it took.
+
+    After the host or the container engine restarts, every container starts at once and PostgreSQL
+    replays its log for a while ("the database system is starting up"); the order compose keeps at
+    ``up`` is not kept then. A database that does not answer yet is not a failed upgrade: nothing was
+    read and nothing changed, so the server waits, and says so, instead of stopping for good."""
+    attempts, said = 0, 0.0
+    while True:
+        attempts += 1
+        try:
+            database.about(url)
+            if attempts > 1:
+                logger.info("The database answers")
+            return attempts
+        except Exception as error:  # noqa: BLE001 - whatever the driver raises while the server is not there
+            if not database.is_postgres(url):
+                raise
+            clock = time.monotonic()
+            if attempts == 1 or clock - said >= DATABASE_WAIT_SAYS:
+                said = clock
+                reason = str(error).strip().splitlines()[-1] if str(error).strip() else type(error).__name__
+                logger.info("The database does not answer yet (%s): waiting for it", reason)
+            sleep(pause)
+
+
 def run(config: Path | None = None, now: float | None = None) -> Outcome:
     """Bring the database to the revision of this version. Raises ``Stopped`` when it could not,
     with the database either untouched (``checks``, ``rehearsal``) or to be put back (``migration``)."""
     url = database.live_url()
     outcome = Outcome()
+    wait_for_database(url)
     with _Lock(url):
         about = database.about(url)
         head = database.head_revision(config)
