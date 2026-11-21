@@ -30,7 +30,7 @@
 # dump file.
 name: urlscan.io
 id: urlscan
-version: 3
+version: 4
 description: Scans of web pages on urlscan.io - submit an address, read the result, search what was scanned before - and the urlscan Pro endpoints.
 api_version: "urlscan.io API v1 (OpenAPI description 1.0.0)"
 verified: false
@@ -255,6 +255,7 @@ commands:
     description: Change who may see a scan of yours or of your team, or delete it.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
       - { name: visibility, type: choice, required: true, choices: [public, unlisted, private, deleted], description: The new visibility of the result }
@@ -273,6 +274,7 @@ commands:
     description: Give a scan of yours or of your team the visibility it was submitted with.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: scan_id, type: text, required: true, description: The id (UUID) of the scan }
     request: { method: DELETE, path: "/api/v1/result/{{ args.scan_id }}/visibility/" }
@@ -573,6 +575,7 @@ commands:
     description: Keep a live scan as a permanent scan on urlscan.io (a node drops it after an hour otherwise).
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
       - { name: scan_id, type: text, required: true, description: The id (UUID) of the live scan }
@@ -590,6 +593,7 @@ commands:
     description: Remove a live scan from its node at once.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: scanner_id, type: text, required: true, description: "The id of the node: de01" }
       - { name: scan_id, type: text, required: true, description: The id (UUID) of the live scan }
@@ -646,6 +650,7 @@ commands:
     description: Change a Saved Search.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: search_id, type: text, required: true, description: The id of the Saved Search }
       - { name: name, type: text, description: The short name people see }
@@ -679,6 +684,7 @@ commands:
     description: Delete a Saved Search.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: search_id, type: text, required: true, description: The id of the Saved Search }
     request: { method: DELETE, path: "/api/v1/user/searches/{{ args.search_id }}/" }
@@ -761,6 +767,7 @@ commands:
     description: Change a Subscription.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: subscription_id, type: text, required: true, description: The id of the subscription }
       - { name: name, type: text, description: The name of the subscription }
@@ -808,6 +815,7 @@ commands:
     description: Delete a Subscription.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: subscription_id, type: text, required: true, description: The id of the subscription }
     request: { method: DELETE, path: "/api/v1/user/subscriptions/{{ args.subscription_id }}/" }
@@ -894,6 +902,7 @@ commands:
     description: Change a notification channel.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: channel_id, type: text, required: true, description: The id of the channel }
       - { name: name, type: text, required: true, description: The name of the channel }
@@ -1007,6 +1016,7 @@ commands:
     description: Change the options of an incident that runs.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: incident_id, type: text, required: true, description: The id of the incident }
       - { name: observable, type: text, description: "What to watch: a hostname, a domain, an IP address or an address" }
@@ -1062,6 +1072,7 @@ commands:
     description: Close an incident - it stops scanning.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: incident_id, type: text, required: true, description: The id of the incident }
     request: { method: PUT, path: "/api/v1/user/incidents/{{ args.incident_id }}/close" }
@@ -1072,6 +1083,7 @@ commands:
     description: Start a closed incident again. Its end is moved further and it starts with new states.
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: incident_id, type: text, required: true, description: The id of the incident }
     request: { method: PUT, path: "/api/v1/user/incidents/{{ args.incident_id }}/restart" }

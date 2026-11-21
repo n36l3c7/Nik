@@ -71,6 +71,12 @@ nothing twice.
   since.
 - The analysis workers answer 401, not 404, to a request without their
   token.
+- **Every shipped connector command that changes another system says
+  whether it may be repeated.** The 51 that said nothing (in AbuseIPDB,
+  GreyNoise, MalwareBazaar, OTX, Shodan, urlhaus, urlscan and VirusTotal)
+  now say `idempotent: false`: cut by a restart, they wait for a person
+  instead of being sent again. Those eight packs are a patch version
+  later.
 
 ### Fixed
 
@@ -102,6 +108,10 @@ nothing twice.
 - A standby is set up by the steps of *A standby host* in the deployment
   guide. After `deploy/secrets.sh rotate secret-key` on a pair, carry the
   keys to the standby again.
+- Update the eight packs above from *Settings → Content packs* to get
+  the rule for their commands; until then they are repeated after a
+  restart, as a connector of your own is when it says nothing: say
+  `idempotent: false` on every command that creates something.
 - A bare-metal install changes its unit: gunicorn runs with
   `-k app.serving.Worker`.
 - Going back below 6.9 leaves the volumes `wal-archive` and `db-socket`;

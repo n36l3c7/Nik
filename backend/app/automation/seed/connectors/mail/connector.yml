@@ -182,6 +182,7 @@ commands:
   - name: move
     description: Move a message to another folder.
     changes_outside: true
+    idempotent: true
     arguments:
       - { name: uid, type: number, required: true, description: The uid of the message }
       - { name: to, type: text, required: true, description: The folder to move it to }
@@ -194,6 +195,7 @@ commands:
   - name: mark-read
     description: Mark a message as read.
     changes_outside: true
+    idempotent: true
     arguments:
       - { name: uid, type: number, required: true, description: The uid of the message }
       - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }
@@ -204,6 +206,7 @@ commands:
   - name: mark-unread
     description: Mark a message as not read.
     changes_outside: true
+    idempotent: true
     arguments:
       - { name: uid, type: number, required: true, description: The uid of the message }
       - { name: folder, type: text, description: "The folder it is in (default: the instance's)" }

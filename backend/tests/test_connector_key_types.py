@@ -95,7 +95,7 @@ def requests_of(connector: cn.ConnectorFile, secrets: dict) -> dict[str, list[di
 def test_the_requests_are_the_same_on_the_wire_with_a_key_and_without(name: str):
     old, new = cn.load(before(name)), cn.load(now(name))
     assert [command.name for command in old.commands] == [command.name for command in new.commands]
-    assert new.version == old.version + 1
+    assert new.version > old.version
     # The key is said once, as credentials, and no command says it again but those on another host.
     kind, where, hosts = SENT_AS[name]
     assert (new.auth.type, new.auth.param if kind == "query" else new.auth.header) == (kind, where)
@@ -225,7 +225,8 @@ def test_the_three_packs_are_for_the_nik_that_carries_the_keys():
     for name in THREE:
         manifest = packs.read(packs.folder_bytes(vendor.REPO_PACKS / name)).manifest
         # An older Nik would install the new file and leave the key under the name nothing reads any more.
-        assert (manifest["version"], manifest["nik"]) == ("1.1.1", ">=6.6"), name
+        version = tuple(int(part) for part in manifest["version"].split("."))
+        assert version >= (1, 1, 1) and manifest["nik"] == ">=6.6", name
 
 
 def test_updating_the_pack_carries_the_keys(admin: TestClient, tmp_path: Path, monkeypatch):
@@ -239,7 +240,7 @@ def test_updating_the_pack_carries_the_keys(admin: TestClient, tmp_path: Path, m
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(path.read_bytes())
     manifest = (folder / "pack.yml").read_text(encoding="utf-8")
-    (folder / "pack.yml").write_text(manifest.replace("version: 1.1.1", "version: 1.1.0"), encoding="utf-8")
+    (folder / "pack.yml").write_text(manifest.replace("version: 1.1.2", "version: 1.1.0"), encoding="utf-8")
     (folder / "connectors" / "shodan" / "connector.yml").write_text(before("shodan"), encoding="utf-8", newline="\n")
     with SessionLocal() as db:
         packs.apply(db, packs.read(packs.folder_bytes(folder)), {}, "admin", source="folder")
@@ -249,7 +250,7 @@ def test_updating_the_pack_carries_the_keys(admin: TestClient, tmp_path: Path, m
     with SessionLocal() as db:
         vendor.install_pack(db, "shodan")
         db.commit()
-        assert db.get(Pack, "shodan").version == "1.1.1"
+        assert db.get(Pack, "shodan").version == "1.1.2"
         row = db.get(Connection, "shodan-old")
         assert ca.secrets_of(row) == {"value": KEY}
         # A command goes with the key, in the address, as it did.

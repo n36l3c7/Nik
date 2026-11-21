@@ -33,7 +33,7 @@
 # why.
 name: VirusTotal
 id: virustotal
-version: 3
+version: 4
 description: "Files, URLs, domains and IP addresses in VirusTotal: reports with a verdict, relationships, comments, votes, behaviour, search, and the premium services (Intelligence, Livehunt, Retrohunt, private scanning, Monitor)."
 api_version: "VirusTotal API v3"
 verified: false
@@ -5148,6 +5148,7 @@ commands:
     description: "Put a file Nik holds in your Monitor collection, or overwrite one that is there. Give the path it goes to, or the id of the Monitor item to overwrite. One larger than 32 MB goes to an address get-monitor-upload-url gives."
     premium: true
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: sample, type: file, required: true, description: "The file: an artifact of Nik (file-<sha256>) or the SHA-256 of a file Nik holds" }
       - { name: path, description: "Where it goes, from the root of your collection, with the name of the file: /folder/myfile.exe" }

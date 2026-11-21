@@ -198,3 +198,24 @@ def test_two_steps_that_use_a_key_for_the_first_time_at_once_both_count(admin: T
         two.commit()
     with SessionLocal() as db:
         assert [(found.key_id, found.total) for found in db.scalars(select(InstanceKeyUse))] == [("main", 2)]
+
+
+def test_every_shipped_command_that_changes_something_says_whether_it_may_be_repeated():
+    """After a restart a command that says nothing is done again: for one that changes another system
+    that must be a decision written in its file, never the default."""
+    from pathlib import Path
+
+    import yaml
+
+    from tests.vendor import REPO_PACKS
+
+    seed = Path(cn.__file__).resolve().parent / "seed" / "connectors"
+    files = sorted(REPO_PACKS.glob("*/connectors/*/connector.yml")) + sorted(seed.glob("*/connector.yml"))
+    assert len(files) > 20
+    silent = [
+        f"{path.parent.name}: {command['name']}"
+        for path in files
+        for command in yaml.safe_load(path.read_text(encoding="utf-8")).get("commands") or []
+        if command.get("changes_outside") is True and "idempotent" not in command and not command.get("idempotency_key")
+    ]
+    assert silent == []

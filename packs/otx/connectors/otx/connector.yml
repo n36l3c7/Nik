@@ -26,7 +26,7 @@
 # submitted (the reference gives them each other's fields).
 name: AlienVault OTX
 id: otx
-version: 2
+version: 3
 description: Indicators, pulses and users of LevelBlue's Open Threat Exchange - what is known of an address, a domain, a URL, a file or a CVE, and the pulses that name them.
 api_version: "OTX DirectConnect API v1 (otx.alienvault.com/api/v1)"
 verified: false
@@ -223,6 +223,7 @@ commands:
   - name: submit-url
     description: Give OTX a URL to analyse - it visits the address and analyses what it finds, a file it serves included.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: url, type: text, required: true, description: The address to analyse }
       - { name: tlp, type: choice, choices: [white, green, amber, red], description: The TLP of the submission }
@@ -236,6 +237,7 @@ commands:
   - name: submit-urls
     description: Give OTX several URLs to analyse at once.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: urls, type: list, required: true, description: The addresses to analyse }
       - { name: tlp, type: choice, choices: [white, green, amber, red], description: The TLP of the submission }
@@ -249,6 +251,7 @@ commands:
   - name: submit-file
     description: Give OTX a file to analyse - it is analysed statically, then in OTX's sandbox when that applies. The file leaves Nik and stays with OTX. list-submitted-files says how far the analysis is.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: sample, type: file, required: true, description: "The file to send: an artifact of Nik (file-<sha256>) or its SHA-256" }
     request:
@@ -308,6 +311,7 @@ commands:
   - name: edit-pulse
     description: Change a pulse of yours. Texts and yes/no values take the new value; lists take what to add and what to remove.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: pulse_id, type: text, required: true, description: The id of the pulse }
       - { name: name, type: text, description: The new name }
@@ -474,6 +478,7 @@ commands:
   - name: delete-pulse
     description: Delete a pulse you created.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: pulse_id, type: text, required: true, description: The id of the pulse }
     request: { method: GET, path: "/pulses/{{ args.pulse_id }}/delete" }
@@ -499,6 +504,7 @@ commands:
   - name: subscribe-to-pulse
     description: Subscribe to a pulse - it then comes with your subscribed pulses.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: pulse_id, type: text, required: true, description: The id of the pulse }
     request: { method: GET, path: "/pulses/{{ args.pulse_id }}/subscribe" }
@@ -511,6 +517,7 @@ commands:
   - name: unsubscribe-from-pulse
     description: Stop being subscribed to a pulse. A subscription to its author stays, but this pulse no longer comes with your subscribed pulses.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: pulse_id, type: text, required: true, description: The id of the pulse }
     request: { method: GET, path: "/pulses/{{ args.pulse_id }}/unsubscribe" }
@@ -523,6 +530,7 @@ commands:
   - name: add-pulse-to-group
     description: Put a pulse in a group you belong to.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: group_id, type: text, required: true, description: The id (a number) of the group }
       - { name: pulse_id, type: text, required: true, description: The id of the pulse }
@@ -533,6 +541,7 @@ commands:
   - name: remove-pulse-from-group
     description: Take a pulse out of a group.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: group_id, type: text, required: true, description: The id (a number) of the group }
       - { name: pulse_id, type: text, required: true, description: The id of the pulse }
@@ -665,6 +674,7 @@ commands:
   - name: subscribe-to-user
     description: Subscribe to a user - every pulse of theirs then comes with your subscribed pulses.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
     request: { method: GET, path: "/users/{{ args.username }}/subscribe" }
@@ -676,6 +686,7 @@ commands:
   - name: unsubscribe-from-user
     description: Stop being subscribed to a user - their pulses no longer come with your subscribed pulses.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
     request: { method: GET, path: "/users/{{ args.username }}/unsubscribe" }
@@ -687,6 +698,7 @@ commands:
   - name: follow-user
     description: Follow a user - their pulses come in your activity feed (not with your subscribed pulses).
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
     request: { method: GET, path: "/users/{{ args.username }}/follow" }
@@ -698,6 +710,7 @@ commands:
   - name: unfollow-user
     description: Stop following a user - their pulses leave your activity feed.
     changes_outside: true
+    idempotent: false
     arguments:
       - { name: username, type: text, required: true, description: "The name of the user: LevelBlue" }
     request: { method: GET, path: "/users/{{ args.username }}/unfollow" }
