@@ -108,8 +108,10 @@ echo "== a signed-in administrator's cookie does not open the metrics; the token
   fail "/api/metrics answers to a session cookie"
 token=$(get -b "$jar" -X POST "$base/api/health/metrics-token" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
 [ -n "$token" ] || fail "no scrape token was made"
-get -H "Authorization: Bearer $token" "$base/api/metrics" | grep -q '^nik_health_state{' ||
-  fail "/api/metrics does not answer to its scrape token"
+# Read whole, then searched: under pipefail a grep -q that stops at its first match cuts the pipe of
+# a long answer, and the cut reads as a failure.
+metrics=$(get -H "Authorization: Bearer $token" "$base/api/metrics")
+grep -q '^nik_health_state{' <<<"$metrics" || fail "/api/metrics does not answer to its scrape token"
 
 echo "== a script runs in the sandbox, which has no way out"
 script=$(get -b "$jar" -X POST "$base/api/automation/scripts" -H 'Content-Type: application/json' -d '{"name":"SmokeTest"}')
@@ -152,7 +154,8 @@ worker_container=$("${COMPOSE[@]}" ps -q automation)
 worker_status=$(docker exec "$worker_container" cat /proc/1/status)
 grep -q '^Uid:[[:space:]]*10001' <<<"$worker_status" || fail "the automation worker is not the unprivileged user"
 grep -q '^CapEff:[[:space:]]*0000000000000000' <<<"$worker_status" || fail "the automation worker holds capabilities"
-"${COMPOSE[@]}" logs automation 2>&1 | grep -q "bringing the database to this version" && fail "the automation worker applied migrations"
+worker_log=$("${COMPOSE[@]}" logs automation 2>&1)
+grep -q "bringing the database to this version" <<<"$worker_log" && fail "the automation worker applied migrations"
 
 codes=""
 # The limit (10 a minute) is counted by each backend process, and there are two:
