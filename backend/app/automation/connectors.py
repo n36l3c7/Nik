@@ -577,15 +577,76 @@ class MirrorComments(_Strict):
     add: MirrorCall | None = None
 
 
+class MirrorKind(_Strict):
+    """Another object of the product that an incident can be kept in step with (an alert beside a
+    threat): what is read, written and said of it. An incident is mirrored with one of a kind when
+    the id of its mirror is written ``<kind>:<id>``; the calls are then given the id alone, as
+    ``mirror.id``, and the kind as ``mirror.kind``."""
+
+    get: MirrorCall
+    item: str = Field(default="{{ result }}", max_length=500)
+    update: MirrorCall | None = None
+    comments: MirrorComments | None = None
+
+
+class MirrorThread(_Strict):
+    """A mirror the fetch feeds: an item that goes on with a conversation Nik already holds as an
+    incident becomes a line of its War Room and not an incident of its own (a reply to a message).
+
+    ``ids`` is a template over the fetched ``item`` that gives the ids of the earlier items this one
+    goes on from (a list, or a text of ids separated by spaces or commas); the id of the item itself
+    is ``mirror.id``. An incident mirrored in holds the ids of its conversation: an item that names
+    one of them, or is named by one, belongs to it. ``text``, ``author`` and ``at`` are what the
+    line says. Nothing is read at an interval and nothing is sent."""
+
+    ids: str = Field(min_length=1, max_length=500)
+    text: str = Field(default="{{ item.text }}", max_length=500)
+    author: str = Field(default="{{ item.author }}", max_length=500)
+    at: str = Field(default="{{ item.created }}", max_length=500)
+
+
 class MirrorSpec(_Strict):
     """Keeping an incident and one object of the other product in step."""
 
-    get: MirrorCall
+    # The id, on the other side, of the object a fetched item is: a template over the ``item``.
+    # Left out, it is the ``item_id`` of the fetch. With ``kinds`` it may give ``<kind>:<id>``.
+    id: str | None = Field(default=None, min_length=1, max_length=500)
+    # None for a mirror the fetch feeds (``thread``): there is nothing to read at an interval.
+    get: MirrorCall | None = None
     # The object in what ``get`` gave, in the shape a fetched item has: the incoming mapper reads it as ``item``.
     item: str = Field(default="{{ result }}", max_length=500)
     update: MirrorCall | None = None
     comments: MirrorComments | None = None
     interval_seconds: int = Field(default=120, ge=FETCH_MIN_INTERVAL, le=86_400)
+    kinds: dict[str, MirrorKind] = Field(default_factory=dict)
+    thread: MirrorThread | None = None
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.get is None and self.thread is None:
+            raise ValueError('a mirror says how the other side is read: "get", or "thread" when the fetch feeds it')
+        if self.get is None and (self.update is not None or self.comments is not None or self.kinds):
+            raise ValueError('a mirror with no "get" is fed by the fetch: it has no "update", "comments" nor "kinds"')
+        if self.id is not None and "{{" not in self.id:
+            raise ValueError('"id" is a template over the fetched item: "{{ item.id }}"')
+        if len(self.kinds) > 10:
+            raise ValueError("a mirror has 10 kinds at most")
+        for name in self.kinds:
+            if not NAME_RE.match(str(name)):
+                raise ValueError("the name of a kind is a lower-case letter, then letters, digits or _")
+        return self
+
+    def of(self, mirror_id: str) -> tuple[str, str, MirrorSpec | MirrorKind]:
+        """The kind an id names, the id without it, and what says how that kind is mirrored."""
+        kind, colon, rest = str(mirror_id).partition(":")
+        if colon and rest and kind in self.kinds:
+            return kind, rest, self.kinds[kind]
+        return "", str(mirror_id), self
+
+
+def can_send(part: MirrorSpec | MirrorKind) -> bool:
+    """Whether something can be sent to the other side: its fields, or a comment."""
+    return part.update is not None or (part.comments is not None and part.comments.add is not None)
 
 
 class Login(_Strict):
@@ -691,6 +752,9 @@ class ConnectorFile(_Strict):
     schema_: SchemaSpec | None = Field(default=None, alias="schema")
     ext_fields: list[ExtField] = Field(default_factory=list, max_length=100)
     mirror: MirrorSpec | None = None
+    # Why a connector that fetches cannot mirror: what it brings in has nothing to go back to, or the
+    # vendor documents no way to read it again. A sentence, shown where the direction is chosen.
+    no_mirror: str | None = Field(default=None, min_length=20, max_length=500)
     # Other hosts the commands may reach beside the one of ``base_url`` (6.1): a service of the same vendor
     # on another name (internetdb.shodan.io), the registries a redirector sends to. Fixed names, written
     # in the file: never a template, never an address. A command reaches one by giving the full https
@@ -759,8 +823,11 @@ class ConnectorFile(_Strict):
             if self.fetch is not None and self.fetch.request is None:
                 raise ValueError('"fetch" has no "request"')
         else:
-            if self.base_url or self.headers or self.test is not None or self.mirror is not None:
-                raise ValueError('a native connector has no "base_url", "headers", "test" nor "mirror"')
+            if self.base_url or self.headers or self.test is not None:
+                raise ValueError('a native connector has no "base_url", "headers" nor "test"')
+            if self.mirror is not None and self.mirror.get is not None:
+                # Nik speaks for it: what comes in comes with its fetch, and nothing is asked again.
+                raise ValueError('the "mirror" of a native connector is fed by its fetch: "thread", and no "get"')
             known = NATIVE[self.native]
             for command in self.commands:
                 if command.request is not None or command.steps is not None:
@@ -771,6 +838,10 @@ class ConnectorFile(_Strict):
                     )
             if self.fetch is not None and (self.fetch.request is not None or self.fetch.pagination is not None):
                 raise ValueError('the "fetch" of a native connector has no request')
+        if self.no_mirror is not None and (self.mirror is not None or self.fetch is None):
+            raise ValueError('"no_mirror" says why a connector that fetches does not mirror: with "fetch", no "mirror"')
+        if self.mirror is not None and self.mirror.thread is not None and self.fetch is None:
+            raise ValueError('a mirror with "thread" is fed by the fetch: the connector has none')
         ext = [item.name for item in self.ext_fields]
         if len(set(ext)) != len(ext):
             raise ValueError("two ext fields have the same name")
@@ -784,13 +855,17 @@ class ConnectorFile(_Strict):
         """The commands mirroring runs, each with where it is named in the file."""
         if self.mirror is None:
             return []
-        calls = [("mirror.get", self.mirror.get)]
-        if self.mirror.update is not None:
-            calls.append(("mirror.update", self.mirror.update))
-        if self.mirror.comments is not None:
-            calls.append(("mirror.comments.list", self.mirror.comments.list))
-            if self.mirror.comments.add is not None:
-                calls.append(("mirror.comments.add", self.mirror.comments.add))
+        calls: list[tuple[str, MirrorCall]] = []
+        parts = [("mirror", self.mirror), *((f"mirror.kinds.{name}", kind) for name, kind in self.mirror.kinds.items())]
+        for where, part in parts:
+            if part.get is not None:
+                calls.append((f"{where}.get", part.get))
+            if part.update is not None:
+                calls.append((f"{where}.update", part.update))
+            if part.comments is not None:
+                calls.append((f"{where}.comments.list", part.comments.list))
+                if part.comments.add is not None:
+                    calls.append((f"{where}.comments.add", part.comments.add))
         return calls
 
     @property
@@ -1025,18 +1100,29 @@ def load(text: str | bytes) -> ConnectorFile:
         )
     mirror = raw.get("mirror")
     if isinstance(mirror, dict):
-        comments = mirror.get("comments") if isinstance(mirror.get("comments"), dict) else {}
-        for where, call in (
-            (("mirror", "get"), mirror.get("get")),
-            (("mirror", "update"), mirror.get("update")),
-            (("mirror", "comments", "list"), comments.get("list")),
-            (("mirror", "comments", "add"), comments.get("add")),
-        ):
-            if isinstance(call, dict):
-                _check_templates(call.get("args"), _MIRROR_ARGS, (*where, "args"), lines, problems)
-        for key in ("items", "id", "text", "author", "at"):
-            _check_templates(comments.get(key), _MIRROR_COMMENT, ("mirror", "comments", key), lines, problems)
-        _check_templates(mirror.get("item"), frozenset({"result"}), ("mirror", "item"), lines, problems)
+        kinds = mirror.get("kinds") if isinstance(mirror.get("kinds"), dict) else {}
+        parts = [(("mirror",), mirror), *((("mirror", "kinds", name), kind) for name, kind in kinds.items())]
+        for at, part in parts:
+            if not isinstance(part, dict):
+                continue
+            comments = part.get("comments") if isinstance(part.get("comments"), dict) else {}
+            for where, call in (
+                ((*at, "get"), part.get("get")),
+                ((*at, "update"), part.get("update")),
+                ((*at, "comments", "list"), comments.get("list")),
+                ((*at, "comments", "add"), comments.get("add")),
+            ):
+                if isinstance(call, dict):
+                    _check_templates(call.get("args"), _MIRROR_ARGS, (*where, "args"), lines, problems)
+            for key in ("items", "id", "text", "author", "at"):
+                _check_templates(comments.get(key), _MIRROR_COMMENT, (*at, "comments", key), lines, problems)
+            _check_templates(part.get("item"), frozenset({"result"}), (*at, "item"), lines, problems)
+        # What is read of a fetched item, as the fetch reads its id.
+        _check_templates(mirror.get("id"), _FETCH_ITEM, ("mirror", "id"), lines, problems)
+        thread = mirror.get("thread")
+        if isinstance(thread, dict):
+            for key in ("ids", "text", "author", "at"):
+                _check_templates(thread.get(key), _FETCH_ITEM, ("mirror", "thread", key), lines, problems)
 
     if connector is not None and not problems:
         # What a template names must exist: a configuration entry, an argument, an earlier step.
@@ -1168,13 +1254,14 @@ def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Probl
             problems.append(
                 Problem(_line_of(lines, loc), f'{where}: "{call.command}" takes no argument to be given the id', where)
             )
-    if connector.mirror is not None and connector.mirror.update is not None:
-        if not connector.command(connector.mirror.update.command or "").changes_outside:  # type: ignore[union-attr]
+    for where, call in connector.mirror_calls():
+        command = connector.command(call.command)
+        if command is not None and where.endswith(".update") and not command.changes_outside:
             problems.append(
                 Problem(
-                    _line_of(lines, ("mirror", "update")),
-                    "mirror.update changes the other side: its command says changes_outside: true",
-                    "mirror.update",
+                    _line_of(lines, tuple(where.split("."))),
+                    f"{where} changes the other side: its command says changes_outside: true",
+                    where,
                 )
             )
     return problems
@@ -1207,13 +1294,21 @@ def summary(connector: ConnectorFile) -> dict[str, Any]:
         "mirror": (
             {
                 "intervalSeconds": connector.mirror.interval_seconds,
-                "out": connector.mirror.update is not None,
-                "comments": connector.mirror.comments is not None,
+                "out": can_send(connector.mirror),
+                "comments": connector.mirror.comments is not None or connector.mirror.thread is not None,
                 "commentsOut": connector.mirror.comments is not None and connector.mirror.comments.add is not None,
+                # What a mirror with this connector does each way: what the choice of an instance says.
+                "fieldsIn": connector.mirror.get is not None,
+                "fieldsOut": connector.mirror.update is not None,
+                # Fed by the fetch (a conversation): nothing is read at an interval.
+                "fed": connector.mirror.get is None,
+                "kinds": sorted(connector.mirror.kinds),
             }
             if connector.mirror is not None
             else None
         ),
+        # Why it fetches and does not mirror, when its file says so.
+        "noMirror": connector.no_mirror,
         "schema": (
             {
                 "incoming": [item.model_dump() for item in connector.schema_.incoming],

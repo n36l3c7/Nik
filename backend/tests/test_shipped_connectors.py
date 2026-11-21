@@ -480,8 +480,145 @@ def test_the_products_that_raise_alerts_and_keep_tickets_are_fetched():
 
 def test_the_mirror_of_a_shipped_connector_names_commands_that_take_what_it_gives():
     mirrored = [connector for _text, connector in SHIPPED if connector.mirror is not None]
-    assert {connector.id for connector in mirrored} >= {"servicenow", "jira-cloud", "jira-datacenter"}
+    assert {connector.id for connector in mirrored} >= {"servicenow", "jira-cloud", "jira-datacenter", "sentinelone"}
     for connector in mirrored:
-        for _where, call in connector.mirror_calls():
-            assert connector.command(call.command) is not None
+        for where, call in connector.mirror_calls():
+            command = connector.command(call.command)
+            assert command is not None
+            if where.endswith(".update"):
+                # An update cut by a restart is sent again (mirror.run_push): it must be safe to repeat.
+                assert command.changes_outside and command.safe_to_repeat, f"{connector.id}: {where}"
+            if where.endswith(".comments.add"):
+                # A comment twice is two comments, and its command says so: it is never sent again.
+                assert command.changes_outside and not command.safe_to_repeat, f"{connector.id}: {where}"
         assert connector.fetch is not None, f"{connector.id}: mirrors what it does not fetch"
+
+
+# The connectors that fetch and do not mirror: each says why in its file (``no_mirror``).
+NOT_MIRRORED = {"sentinelone-sdl"}
+
+
+def test_every_shipped_connector_that_fetches_mirrors_or_says_why():
+    silent = {}
+    for _text, connector in vendor.connectors():
+        if connector.fetch is None:
+            assert connector.mirror is None and connector.no_mirror is None, connector.id
+        elif connector.mirror is None:
+            silent[connector.id] = connector.no_mirror
+    assert set(silent) == NOT_MIRRORED, "a connector that fetches has a mirror, or says why it has none"
+    assert all(why and len(why) > 40 for why in silent.values())
+    # The mailbox is mirrored by its fetch, and only in: Nik never sends a mail by itself.
+    mail = next(connector for _text, connector in vendor.connectors() if connector.id == "mail")
+    assert mail.mirror.thread is not None and mail.mirror.get is None and mail.mirror.update is None
+
+
+MIRROR_FIXTURES = [connector for _text, connector in SHIPPED if (DATA / connector.id / "mirror.json").exists()]
+
+
+def test_sentinelone_has_its_mirror_recorded():
+    assert "sentinelone" in {connector.id for connector in MIRROR_FIXTURES}
+
+
+@pytest.mark.parametrize("connector", MIRROR_FIXTURES, ids=[connector.id for connector in MIRROR_FIXTURES])
+def test_the_mirror_of_a_shipped_connector_sends_what_the_documentation_says(connector, client):
+    """``mirror.json`` beside the commands: for each call of the mirror, what mirroring gives it
+    (the id of the object, the fields of the outgoing mapper, a comment), the requests it must send,
+    and what is read in the answer: the item, what the shipped mapper makes of it, the comments."""
+    from app import fields as registry
+    from app import mapping, mirror
+    from app.automation import expressions as ex
+    from app.core.db import SessionLocal
+
+    fixture = json.loads((DATA / connector.id / "mirror.json").read_text(encoding="utf-8"))
+    connection = _connection(connector.id)
+    host = ca.host_of(connector, connection["config"]).split(":")[0]
+    calls = dict(connector.mirror_calls())
+    kind, mirror_id, spec = connector.mirror.of(fixture["id"])
+    assert {case["call"] for case in fixture["calls"]} == set(calls), "every call of the mirror is recorded"
+    for case in fixture["calls"]:
+        wire = Recorded(case["exchanges"], host)
+        rt.forget_tokens()
+        runtime = rt.Runtime(
+            connector,
+            connection["config"],
+            connection["secrets"],
+            egress.Policy(mode="listed", hosts=frozenset({host})),
+            send=wire,
+        )
+        call = calls[case["call"]]
+        values = {"mirror": {"id": mirror_id, "kind": kind}, "since": "", **case.get("values", {})}
+        answer = runtime.run(call.command, mirror._args(connector, call, values))
+        assert answer.done and wire.exchanges == [], f"{case['call']}: fewer requests than recorded"
+        if "item" in case:
+            item = ex.render_text(spec.item, ex.Scope(values={"result": answer.outputs})).data
+            assert item == case["item"]
+        if "mapped" in case:
+            shipped = vendor.mappers()[connector.id]
+            with SessionLocal() as db:
+                registry.seed(db)
+                db.commit()
+                made = mapping.apply_incoming(
+                    db, mapping.clean_rules(db, connector.id, "incoming", shipped["incoming"]), item, connector.id
+                )
+            assert made.problems == []
+            assert {name: made.fields[name] for name in case["mapped"]} == case["mapped"]
+        if "comments" in case:
+            said = spec.comments
+            listed = ex.render_text(said.items, ex.Scope(values={"result": answer.outputs})).data
+            read = [
+                {
+                    key: str(ex.render_text(getattr(said, key), ex.Scope(values={"item": one})).data)
+                    for key in ("id", "text", "author", "at")
+                }
+                for one in listed
+            ]
+            assert read == case["comments"]
+
+
+READ_BACK = [connector for _text, connector in SHIPPED if connector.mirror is not None]
+
+
+@pytest.mark.parametrize("connector", READ_BACK, ids=[connector.id for connector in READ_BACK])
+def test_what_a_shipped_mirror_reads_in_is_never_sent_back_out(connector, admin, monkeypatch):
+    """No loop: an incident mirrored both ways with a shipped connector and its shipped mappers reads
+    the other side, its fields change, and nothing is queued to go back. The other side is what the
+    recorded answers of the commands say (their ``outputs``); what leaves is checked elsewhere."""
+    from sqlalchemy import select
+
+    from app import mirror
+    from app.core.db import SessionLocal
+    from app.core.models import MirrorJob
+
+    text = next(text for text, found in SHIPPED if found.id == connector.id)
+    assert admin.post("/api/automation/connectors", json={"source": text}).status_code == 201
+    shipped = vendor.mappers()[connector.id]
+    for direction in ("incoming", "outgoing"):
+        body = {"connectorId": connector.id, "direction": direction, "rules": shipped[direction]}
+        assert admin.put("/api/mappers", json=body).status_code == 200, direction
+    held = _connection(connector.id)
+    made = admin.post(
+        "/api/automation/instances",
+        json={"name": "There", "connector": connector.id, "config": held["config"], "secrets": held["secrets"]},
+    )
+    assert made.status_code == 201, made.text
+
+    def recorded(_db, _connection, _connector, call, _values):
+        return json.loads((DATA / connector.id / f"{call.command}.json").read_text(encoding="utf-8"))["outputs"]
+
+    monkeypatch.setattr(mirror, "_run", recorded)
+    assert admin.post("/api/incidents", json={"id": "i1", "name": "x", "data": {}}).status_code == 201
+    started = admin.post(
+        "/api/incidents/i1/mirror", json={"instanceId": made.json()["id"], "mirrorId": "X-1", "direction": "both"}
+    )
+    assert started.status_code == 201, started.text
+    done = admin.post("/api/incidents/i1/mirror/sync")
+    assert done.status_code == 200, done.text
+    assert done.json()["changed"] and done.json()["problems"] == [], done.json()
+    # A second read finds what the first wrote: nothing changes.
+    assert admin.post("/api/incidents/i1/mirror/sync").json()["changed"] == []
+    with SessionLocal() as db:
+        assert db.scalars(select(MirrorJob)).all() == []
+    # And a change a person makes does go out: the mirror is not simply silent.
+    assert admin.patch("/api/incidents/i1", json={"name": "Renamed here", "status": "in_progress"}).status_code == 200
+    with SessionLocal() as db:
+        assert [job.kind for job in db.scalars(select(MirrorJob))] == ["update"]

@@ -29,6 +29,24 @@ rule dropped; one a rule linked to an incident there was becomes evidence of
 that incident. A message above the size limit of an upload is not kept, and
 the item says so.
 
+## Replies (mirroring, In)
+
+In the *Fetch* part of the instance, *Mirroring* can be set to **In** (it is
+*None* until someone chooses). A message that answers one an incident was made
+from then becomes a line of the War Room of that incident, with its sender,
+its time and its text, and is kept as evidence of it, instead of becoming an
+incident of its own.
+
+- What decides is what the message names in `In-Reply-To` and `References`,
+  never its subject: a forward that names nothing, or a new message whose
+  subject starts with "Re:", is an incident of its own.
+- A reply read before the message it answers is the incident; the message
+  joins it when it arrives. The same message delivered twice is said once.
+- A reply to an incident closed more than a day ago is a new incident.
+- Nothing is sent. *Out* and *In-out* are not offered for a mailbox, and a
+  note tagged `mirror` stays in Nik: the War Room says so. `reply` is the
+  command a person or a playbook answers with.
+
 ## Commands
 
 `send`, `reply`, `forward`, `search`, `get-message`, `get-attachments`, `move`,

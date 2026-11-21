@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, ListChecks, RotateCcw } from 'lucide-react'
+import { ArrowLeftRight, Download, ListChecks, RotateCcw } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import {
   OUTCOMES,
+  appliedText,
+  applyText,
+  choiceLabel,
   intervalText,
+  mirrorChoices,
+  sends,
   lastText,
   limitText,
   lookbackHint,
@@ -14,20 +19,24 @@ import {
   resetText,
   stateBadge,
 } from '../../../domain/fetch.js'
-import { Badge, Button, Modal } from '../../ui/index.js'
+import { Badge, Button, Modal, Wait } from '../../ui/index.js'
 import Switch from './Switch.jsx'
 
 /*
  * Fetching, in the form of an instance whose connector can bring alerts in.
  *
  * What is set: whether the instance fetches, how often, how far back the
- * first cycle reads, and the look-back. These belong to the form of the
+ * first cycle reads, the look-back, and the direction the incidents it makes
+ * are mirrored in (None, In, Out, In-out, with the classes of data a mirror
+ * that sends may carry). These belong to the form of the
  * instance (InstancePane.jsx), which holds them and saves them with
  * everything else: there is one "Save".
  *
  * What is done at once, and is not part of the save: fetching now, letting a
- * paused or failing instance go on, resetting the last run, and looking at
- * what it fetched lately with what became of each item.
+ * paused or failing instance go on, resetting the last run, looking at what
+ * it fetched lately with what became of each item, and giving the saved
+ * direction to the open incidents fetched before (the choice itself is for
+ * those fetched from then on).
  */
 
 const INPUT =
@@ -78,9 +87,7 @@ function Fetched({ instance }) {
         </select>
       </label>
       {items === null ? (
-        <p role="status" className="font-mono text-xs text-fg-muted">
-          Loading…
-        </p>
+        <Wait>Reading what it fetched…</Wait>
       ) : items.length === 0 ? (
         <p className="text-xs text-fg-muted">Nothing fetched{outcome ? ' with this outcome' : ' yet'}.</p>
       ) : (
@@ -145,7 +152,12 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
   const [said, setSaid] = useState('')
   const [resetting, setResetting] = useState(false)
   const [looking, setLooking] = useState(false)
+  // Giving the saved direction to what was fetched before: how many they are, asked when the dialog opens.
+  const [applying, setApplying] = useState(null)
   const theirs = connector.fetch ?? {}
+  const choices = mirrorChoices(connector)
+  const saved = status?.mirror?.direction ?? 'none'
+  const classes = status?.mirror?.classes ?? []
   const byTime = theirs.byTime !== false
   const minInterval = status?.minIntervalSeconds ?? 30
   const path = instance ? `/fetch/${encodeURIComponent(instance.id)}` : null
@@ -208,7 +220,27 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
       },
     )
 
+  const askApply = () =>
+    run(
+      'count',
+      () => api.get(`${path}/mirror`),
+      (count) => setApplying(count),
+    )
+  const apply = () =>
+    run(
+      'apply',
+      () => api.post(`${path}/mirror/apply`),
+      (done) => {
+        setApplying(null)
+        setSaid(appliedText(done))
+      },
+    )
+
   const set = (patch) => onForm({ ...form, ...patch })
+  const allow = (id, on) =>
+    set({
+      mirrorAllow: on ? [...new Set([...form.mirrorAllow, id])].sort() : form.mirrorAllow.filter((one) => one !== id),
+    })
   const badge = stateBadge(status)
   const on = Boolean(status?.enabled)
   const last = lastText(status)
@@ -282,6 +314,71 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
         <span className="text-xs">{lookbackHint(form, { byTime })}</span>
       </label>
 
+      <fieldset className="flex flex-col gap-1.5 border-t border-line-soft pt-3">
+        <legend className="float-left mb-1 w-full font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+          Mirroring
+        </legend>
+        <p className="text-xs text-fg-muted">
+          The direction the incidents this instance fetches are kept in step with what they were made from. It is for
+          the incidents fetched from now on, and can be changed on each incident. A mapper that names the object and the
+          direction itself is obeyed first.
+        </p>
+        {choices.map((choice) => (
+          <label
+            key={choice.id}
+            className={`flex items-start gap-2 text-sm ${choice.offered ? 'text-fg' : 'text-fg-subtle'}`}
+          >
+            <input
+              type="radio"
+              name="instance-mirror"
+              value={choice.id}
+              checked={(form.mirror ?? 'none') === choice.id}
+              disabled={!choice.offered}
+              onChange={() => set({ mirror: choice.id })}
+              className="mt-1 accent-accent"
+            />
+            <span>
+              {choice.label}
+              <span className="block text-xs text-fg-muted">
+                {choice.offered ? choice.text : `Not offered: ${choice.text}`}
+              </span>
+            </span>
+          </label>
+        ))}
+        {sends(form.mirror) && (
+          <div role="group" aria-label="What its mirrors may send" className="flex flex-col gap-1 pl-6">
+            <p className="text-xs text-fg-muted">
+              What is sent passes the data guard. Hashes, public indicators, verdicts and Nik&apos;s own ids always may;
+              a mirror this instance starts may also send the classes ticked here, and nothing else.
+            </p>
+            {classes.length === 0 ? (
+              <p className="text-xs text-fg-muted">The classes are chosen here once the instance is made.</p>
+            ) : (
+              classes.map((item) => (
+                <label key={item.id} className="flex items-start gap-2 text-sm text-fg">
+                  <input
+                    type="checkbox"
+                    checked={form.mirrorAllow.includes(item.id)}
+                    onChange={(event) => allow(item.id, event.target.checked)}
+                    className="mt-1 accent-accent"
+                  />
+                  <span>
+                    {item.label}
+                    <span className="block text-xs text-fg-muted">{item.warning}</span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+        )}
+        {instance && (form.mirror ?? 'none') !== saved && (
+          <p className="text-xs text-med-fg">
+            Mirroring is {choiceLabel(saved)} until the instance is saved. Saving changes nothing for the incidents
+            already fetched: that is asked for apart, below.
+          </p>
+        )}
+      </fieldset>
+
       {!instance ? (
         <p className="text-xs text-fg-muted">
           How it goes is shown here once the instance is made, with what it fetched.
@@ -351,6 +448,21 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
             <Button variant="secondary" size="sm" icon={ListChecks} onClick={() => setLooking(true)}>
               What it fetched…
             </Button>
+            {(connector.mirror || saved !== 'none') && (
+              <Button
+                waiting={busy === 'count'}
+                variant="secondary"
+                size="sm"
+                icon={ArrowLeftRight}
+                disabled={busy !== '' || (form.mirror ?? 'none') !== saved}
+                title={
+                  (form.mirror ?? 'none') !== saved ? 'Save the instance first: this applies what is saved' : undefined
+                }
+                onClick={askApply}
+              >
+                Apply mirroring to open incidents…
+              </Button>
+            )}
           </div>
           {(error || said) && (
             <p role={error ? 'alert' : 'status'} className={`text-xs ${error ? 'text-high-fg' : 'text-fg-muted'}`}>
@@ -379,6 +491,30 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
           <span className="font-semibold">{instance?.name}</span> forgets where its last run stopped.{' '}
           {resetText(status)}
         </p>
+      </Modal>
+
+      <Modal
+        open={applying !== null}
+        onClose={() => setApplying(null)}
+        title={`Mirror ${choiceLabel(saved)} what was already fetched?`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setApplying(null)}>
+              Cancel
+            </Button>
+            <Button waiting={busy === 'apply'} disabled={busy !== '' || !applying?.open} onClick={apply}>
+              {saved === 'none' ? 'Stop mirroring them' : `Mirror them ${choiceLabel(saved)}`}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg">{applyText(applying, saved)}</p>
+        {sends(saved) && Boolean(applying?.open) && (
+          <p className="mt-2 border border-med-line bg-med-soft px-3 py-2 text-xs text-med-fg">
+            From then on, what changes in those incidents and their notes tagged <strong>mirror</strong> are sent to{' '}
+            {instance?.name} without asking again. It is recorded.
+          </p>
+        )}
       </Modal>
 
       <Modal

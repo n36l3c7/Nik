@@ -6,7 +6,10 @@ after it was paused, and made to start again from its first fetch. The items
 it fetched are listed with what became of each, and the last one is kept as a
 sample for the mapper editor. How often it fetches, how far back the first
 time and its look-back are saved with the instance
-(``PUT /api/automation/instances/{id}``, ``fetch``).
+(``PUT /api/automation/instances/{id}``, ``fetch``), and so is the direction
+the incidents it fetches are mirrored in. That direction is for the incidents
+fetched from then on: giving it to the open ones fetched before is asked for
+apart (``/mirror/apply``), after seeing how many they are.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import fetch
+from .. import fetch, mirror
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Connection
@@ -127,7 +130,7 @@ def reset_last_run(
 @router.get("/{connection_id}/items")
 def fetched_items(
     connection_id: str,
-    outcome: str = Query("", pattern="^(|created|incomplete|dropped|linked|duplicate)$"),
+    outcome: str = Query("", pattern="^(|created|incomplete|dropped|linked|duplicate|mirrored)$"),
     limit: int = Query(100, ge=1, le=500),
     _caller: Principal = Depends(manager_principal),
     db: OrmSession = Depends(get_db),
@@ -144,3 +147,27 @@ def fetched_sample(
     """The last item the connection fetched, as it came: a sample for the mapper editor."""
     connection = _connection(db, connection_id)
     return {"item": fetch.status_of(connection).get("sample")}
+
+
+@router.get("/{connection_id}/mirror")
+def mirror_of_fetched(
+    connection_id: str, _caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """What giving the instance's direction to what it already fetched would go through:
+    ``{open, mirrored, direction, most}``, the open incidents it fetched and how many of them are
+    mirrored with it now."""
+    return mirror.open_count(db, _connection(db, connection_id))
+
+
+@router.post("/{connection_id}/mirror/apply")
+def apply_mirror_to_fetched(
+    connection_id: str, caller: Principal = Depends(manager_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Give the open incidents the instance fetched the direction it says now: those with no mirror
+    start one, the others change, and ``none`` stops them. One mirrored with another instance is left
+    alone. ``{started, changed, stopped, unchanged, skipped}``."""
+    connection = _connection(db, connection_id)
+    try:
+        return mirror.apply_choice(db, connection, caller.actor, time.time())
+    except mirror.MirrorError as error:
+        raise HTTPException(status_code=error.status, detail=error.message) from None

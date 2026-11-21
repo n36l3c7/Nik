@@ -220,7 +220,7 @@ def test_the_mail_connector_is_native_and_names_only_commands_nik_has():
     assert changing == {"send", "reply", "forward", "move", "mark-read", "mark-unread", "delete"}
     # A forward carries the attachments only when it is asked to.
     carried = next(a for a in MAIL.command("forward").arguments if a.name == "attachments")
-    assert carried.type == "bool" and carried.default is False and MAIL.version == 3
+    assert carried.type == "bool" and carried.default is False and MAIL.version == 4
     # It ships as a package, with its README, and without a logo: it belongs to no product.
     assert set(ca.shipped_extras()["mail"]) == {"readme"}
     assert ca.host_of(MAIL, CONFIG) == "imap.acme.example"

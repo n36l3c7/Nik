@@ -1759,8 +1759,13 @@
                 fetches, how often (30 to 86400 seconds), how far back the first time (<code>"3 days"</code>, a month at
                 most) and its <a href="automation.html#look-back">look-back</a> (0 to 1440 minutes). A value left out
                 stays as it is; one that is the connector's own is not kept, so the instance goes on following its
-                connector. An instance answers with <code>fetch</code>, what <code>GET /api/fetch</code> says of it
-                (<code>null</code> when its connector cannot fetch).
+                connector. Since 6.10 <code>fetch</code> also takes <code>mirror</code> (<code>none</code>,
+                <code>in</code>, <code>out</code>, <code>both</code>: the direction the incidents it fetches from then
+                on are mirrored in; <code>both</code> is In-out) and <code>mirrorAllow</code>, the classes of data the
+                mirrors it starts may send beside those that always may (adding one needs
+                <strong>automation.open</strong>; a direction that sends nothing holds none). A direction its connector
+                cannot do is refused (<code>400</code>, with why). An instance answers with <code>fetch</code>, what
+                <code>GET /api/fetch</code> says of it (<code>null</code> when its connector cannot fetch).
               </td>
             </tr>
             <tr>
@@ -1997,16 +2002,20 @@
                 <code
                   >{instances: [{instanceId, connection, connector, enabled, intervalSeconds, firstFetch,
                   lookbackMinutes, defaults, byTime, started, sinceAt, state, error, pausedWhy, lastAt, nextAt, last,
-                  madeLastHour, limitPerHour, fetchState, link}]}</code
-                >, <code>state</code> one of <code>off</code>, <code>ok</code>, <code>failing</code>,
-                <code>paused</code>; <code>defaults</code> is what the connector says, <code>byTime</code> whether the
-                look-back applies, <code>sinceAt</code> the moment the next cycle asks from. How it fetches is saved
-                with the instance (<code>PUT /api/automation/instances/{id}</code>, <code>fetch</code>) · tell one to
-                fetch or not, <code>{enabled}</code> · fetch once now (<code>409</code> when it does not fetch) · let a
-                paused or failing one go on · reset its last run: the next cycle starts from the first fetch, and what
-                was fetched before is still skipped by its id · what it fetched lately with what became of each item
+                  madeLastHour, limitPerHour, fetchState, link, mirror}]}</code
+                >, <code>mirror</code> being <code>{direction, allow, offered, can, fed, noMirror, classes}</code>: what
+                the instance says, the directions its connector lets it choose, what a mirror with it does each way, why
+                it does not mirror when it says so, and the classes of data that can be opened; <code>state</code> one
+                of <code>off</code>, <code>ok</code>, <code>failing</code>, <code>paused</code>;
+                <code>defaults</code> is what the connector says, <code>byTime</code> whether the look-back applies,
+                <code>sinceAt</code> the moment the next cycle asks from. How it fetches is saved with the instance
+                (<code>PUT /api/automation/instances/{id}</code>, <code>fetch</code>) · tell one to fetch or not,
+                <code>{enabled}</code> · fetch once now (<code>409</code> when it does not fetch) · let a paused or
+                failing one go on · reset its last run: the next cycle starts from the first fetch, and what was fetched
+                before is still skipped by its id · what it fetched lately with what became of each item
                 (<code>outcome</code>: <code>created</code>, <code>incomplete</code>, <code>dropped</code>,
-                <code>linked</code>, <code>duplicate</code>; <code>?outcome=</code> narrows) · the last item as it came.
+                <code>linked</code>, <code>duplicate</code>, and <code>mirrored</code> for an item that became a line of
+                an incident there was; <code>?outcome=</code> narrows) · the last item as it came.
               </td>
             </tr>
             <tr>
@@ -2027,20 +2036,44 @@
             </tr>
             <tr>
               <td>
-                <code>GET</code> · <code>POST</code> · <code>DELETE /api/incidents/{id}/mirror</code> ·
-                <code>POST /api/incidents/{id}/mirror/sync</code>
+                <code>GET</code> · <code>POST</code> · <code>PATCH</code> ·
+                <code>DELETE /api/incidents/{id}/mirror</code> · <code>POST /api/incidents/{id}/mirror/sync</code>
               </td>
               <td>
                 Whether the incident is mirrored:
                 <code
-                  >{mirrored, connection, id, direction, dataAllow, startedBy, lastSync, error, waiting,
-                  connections}</code
-                >, with the connections it can be mirrored with · start (<strong>write</strong>):
+                  >{mirrored, connection, id, direction, origin, dataAllow, startedBy, lastSync, lastPull, lastPush,
+                  error, gone, fed, can, waiting, instances}</code
+                >, with the instances it can be mirrored with. <code>origin</code> is where the direction came from
+                (<code>instance</code>, <code>mapper</code> or <code>here</code>); <code>gone</code> that the object is
+                not on the other side any more; <code>fed</code> that the mirror is fed by what its instance fetches;
+                <code>can</code> what it does each way (<code>{fieldsIn, commentsIn, fieldsOut, commentsOut}</code>) ·
+                start (<strong>write</strong>):
                 <code>{instanceId, mirrorId, direction: "in" | "out" | "both", dataAllow}</code>. <code>out</code> and
                 <code>both</code> also need <strong>automation.run</strong>, and a class of data in
-                <code>dataAllow</code> needs <strong>automation.open</strong> · stop · read the other side now:
+                <code>dataAllow</code> needs <strong>automation.open</strong> · change the direction of this incident
+                alone (6.10; <strong>write</strong>, and the same two permissions): <code>{direction, dataAllow}</code>,
+                after which its <code>origin</code> is <code>here</code> · stop · read the other side now:
                 <code>{changed, kept, comments, problems}</code>, where <code>kept</code> are the fields a person set
-                that were left as they are (<code>502</code> when the other side cannot be read).
+                that were left as they are, and <code>gone: true</code> when the object is not there any more (<code
+                  >502</code
+                >
+                when the other side cannot be read, <code>409</code> for a mirror fed by its fetch).
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/fetch/{instanceId}/mirror</code> ·
+                <code>POST /api/fetch/{instanceId}/mirror/apply</code>
+              </td>
+              <td>
+                (<strong>connectors.manage</strong>, 6.10) The direction an instance gives the incidents it fetches is
+                saved with the instance (<code>fetch.mirror</code>, below) and is for those fetched from then on. What
+                giving it to the ones already there would go through:
+                <code>{open, mirrored, direction, most}</code>, the open incidents it fetched and how many are mirrored
+                with it · give them the saved direction: <code>{started, changed, stopped, unchanged, skipped}</code>.
+                <code>none</code> stops them; one mirrored with another instance is skipped. Recorded in the audit log
+                (<code>mirror.apply</code>).
               </td>
             </tr>
             <tr>

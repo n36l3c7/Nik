@@ -23,7 +23,7 @@
 # which takes the token another way.
 name: SentinelOne SIEM
 id: sentinelone-sdl
-version: 4
+version: 5
 description: PowerQuery and event searches in the Singularity Data Lake, and the alerts of the Singularity Operations Center.
 api_version: "SDL long-running query API v2 (/sdl/v2/api/queries); unified alerts GraphQL (/web/api/v2.1/unifiedalerts/graphql)"
 verified: false
@@ -242,3 +242,8 @@ schema:
     - { name: node.detectedAt, type: date }
     - { name: node.storylineId, type: text }
     - { name: node.asset.name, type: text }
+
+# Why the alerts it fetches are not mirrored: said where an instance chooses its mirroring.
+no_mirror: >-
+  SentinelOne's reference of the API does not describe the alerts of the Singularity Operations Center:
+  how one is read again and changed is known from other sources only, and a mirror does not rest on that.

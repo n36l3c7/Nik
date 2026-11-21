@@ -33,7 +33,7 @@ from ..automation import connectors as files
 from ..core import audit, vault
 from ..core.db import get_db
 from ..core.models import Connection, Connector, Credential, Playbook, PlaybookVersion
-from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_RUN, CONNECTORS_MANAGE
+from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_OPEN, AUTOMATION_RUN, CONNECTORS_MANAGE
 from ..core.security import Principal, now_iso, reader_principal, require
 
 router = APIRouter(prefix="/automation", tags=["automation"])
@@ -266,7 +266,7 @@ def _merge_secrets(
 
 def _set_fetching(db: OrmSession, row: Connection, given: dict[str, Any]) -> list[str]:
     """Whether an instance fetches and how, as its form sends it with the rest. Gives what changed."""
-    known = {"enabled", "intervalSeconds", "firstFetch", "lookbackMinutes"}
+    known = {"enabled", "intervalSeconds", "firstFetch", "lookbackMinutes", "mirror", "mirrorAllow"}
     for name in given:
         if name not in known:
             raise fetching.FetchError(f'"{name}" is not something of how an instance fetches')
@@ -576,6 +576,15 @@ def update_connection(
         db.rollback()
         raise HTTPException(status_code=400, detail=error.message) from None
     if body.fetch is not None:
+        from .. import mirror as mirroring
+
+        # The classes of data the mirrors of its incidents may send: opening one is not a matter of
+        # connectors alone, here as on an incident.
+        asked = body.fetch.get("mirrorAllow")
+        named = [name for name in asked if isinstance(name, str)] if isinstance(asked, list) else []
+        opened = set(named) - set(mirroring.choice_of(row)[1])
+        if opened and not caller.has(AUTOMATION_OPEN):
+            raise HTTPException(status_code=403, detail="Opening a class of data needs the permission that opens them")
         try:
             changes += _set_fetching(db, row, body.fetch)
         except fetching.FetchError as error:

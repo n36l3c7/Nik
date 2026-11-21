@@ -13,10 +13,17 @@
 # listener): the messages with a uid above the last one read, oldest first.
 # The message itself is kept as an e-mail artifact of that incident.
 #
+# Mirroring goes in only, and is fed by the fetch: with an instance set to
+# "In", a message that answers one an incident was made from (it names it in
+# In-Reply-To or References, or is named there by a reply that came first)
+# becomes a line of the War Room of that incident, and is kept as evidence of
+# it, instead of an incident of its own. The subject is never what decides.
+# Nothing is ever sent by mirroring: "reply" is for a person or a playbook.
+#
 # Belongs to no product, so it has no logo.
 name: Mail listener / sender
 id: mail
-version: 3
+version: 4
 description: A mailbox read over IMAP and messages sent over SMTP. Each new message can become an incident.
 api_version: "IMAP4rev1 (RFC 3501), SMTP (RFC 5321)"
 verified: false
@@ -237,6 +244,13 @@ fetch:
   occurred: "{{ item.date }}"
   first_state: { uid: 0 }
   next_state: { uid: "{{ response.last_uid }}" }
+mirror:
+  id: "{{ item.message_id }}"
+  thread:
+    ids: "{{ item.in_reply_to }} {{ item.references }}"
+    text: "{{ item.text }}"
+    author: "{{ item.from }}"
+    at: "{{ item.date }}"
 schema:
   incoming:
     - { name: subject, type: text, description: The subject }

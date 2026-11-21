@@ -1668,10 +1668,16 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           pauses, starts and stops one by hand; a playbook can too.
         </li>
         <li id="mirror">
-          <strong>Mirror</strong>, in the same panel, keeps the incident in step with a ticket or an issue of another
-          product: <em>Mirror with…</em> asks for the instance, the id of the object there, and which way.
-          <em>Read now</em> reads the other side at once and says what changed and what was kept because you set it
-          here; a note tagged <code>mirror</code> is sent to the other side as a comment (<a
+          <strong>Mirror</strong>, in the same panel, keeps the incident in step with a ticket, an issue or a threat of
+          another product. An incident a connector fetched is mirrored by itself when its instance says so; otherwise
+          <em>Mirror with…</em> asks for the instance, the id of the object there, and which way. The panel shows the
+          direction (<em>In</em>, <em>Out</em>, <em>In-out</em>), which you can change for this incident, where it came
+          from (<em>from the instance</em>, <em>from the mapper</em>, <em>set here</em>), when the other side was last
+          read and last written to, and the last problem. <em>Read now</em> reads the other side at once and says what
+          changed and what was kept because you set it here; a note tagged <code>mirror</code> is sent to the other side
+          as a comment. An object deleted on the other side is said once, and read no more until you read it by hand. An
+          incident made from a message of a mailbox mirrored <em>In</em> receives the replies to that message as lines
+          of its War Room; nothing is sent back, and a note tagged <code>mirror</code> there says so (<a
             href="automation.html#mirroring"
             >Mirroring</a
           >).

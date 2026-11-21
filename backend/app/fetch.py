@@ -44,6 +44,13 @@ gives the message as it was received, which becomes an e-mail artifact with
 the analysis an uploaded ``.eml`` gets. Nothing is kept for an item a rule
 dropped; one a rule linked to an incident there was is evidence of that one.
 
+An incident a fetch makes starts mirrored in the direction its instance
+says (``mirror.start_fetched``; none, until someone chooses). For a connector
+whose mirror is fed by its fetch (a mailbox), an item that goes on with a
+conversation an incident mirrored in holds is not made into an incident: it
+becomes a line of that one, with what it was made of kept as its evidence
+(``mirror.absorb``; the outcome ``mirrored``). The rules are not asked about it.
+
 It reaches the host of its own connection and nothing else, and the data
 guard is not involved: data comes in. A connection that makes more than 500
 incidents in an hour is *paused* until someone looks; one whose request
@@ -170,7 +177,9 @@ def _whole_number(value: Any) -> int | None:
 def set_settings(db: OrmSession, connection: Connection, given: dict[str, Any], now: float) -> list[str]:
     """Change how an instance fetches (the caller commits): ``intervalSeconds``, ``firstFetch``,
     ``lookbackMinutes``, each kept when it is left out. A value that is its connector's is not kept,
-    so the instance goes on following its connector. Gives what changed, in words."""
+    so the instance goes on following its connector. ``mirror`` and ``mirrorAllow``, the direction
+    the incidents it fetches are mirrored in and what their mirrors may send, are kept beside them
+    (``mirror.set_choice``). Gives what changed, in words."""
     connector = connector_of(db, connection)
     if connector is None or connector.fetch is None:
         raise FetchError("The connector of this instance does not say how to fetch")
@@ -198,9 +207,18 @@ def set_settings(db: OrmSession, connection: Connection, given: dict[str, Any], 
         "lookbackMinutes": spec.lookback_minutes,
     }
     kept = {name: value for name, value in held.items() if name in theirs and value != theirs[name]}
+    # Beside how it fetches: the direction its incidents are mirrored in, which mirror.py owns.
+    kept.update({name: held[name] for name in ("mirror", "mirrorAllow") if name in held})
     connection.fetch_settings = kept or None
     after = settings_of(connection, spec)
     changes = []
+    if given.get("mirror") is not None or given.get("mirrorAllow") is not None:
+        from . import mirror
+
+        try:
+            changes += mirror.set_choice(connection, connector, given)
+        except mirror.MirrorError as error:
+            raise FetchError(error.message) from None
     if after.interval != before.interval:
         changes.append(f"every {after.interval} s")
         # A shorter interval is not made to wait for the turn the longer one had set.
@@ -421,15 +439,11 @@ def create_incident(
         {"text": f"Fetched from {connection.name} ({connector.name}), item {item_id}", "item": _cut(item)},
         source,
     )
-    # A mapper that says which object of the other side this is, and which way, starts the mirror.
-    held = incident.fields if isinstance(incident.fields, dict) else {}
-    if held.get("mirror_id") and held.get("mirror_direction"):
-        from . import mirror
+    # The mirror starts in the direction the instance says, with the object the connector says the
+    # item is; a mapper that says both which object and which way is obeyed first (mirror.py).
+    from . import mirror
 
-        try:
-            mirror.start(db, incident, connection, held["mirror_id"], str(held["mirror_direction"]), source, now)
-        except mirror.MirrorError as error:
-            problems.append(error.message)
+    problems += mirror.start_fetched(db, incident, connection, connector, item, item_id, source, now)
     timers.sync(db, incident, now)
     audit.record(db, source, "incident.create", f'Fetched the incident "{name}" from {connection.name}', incident)
     return incident, problems
@@ -466,8 +480,27 @@ def ingest(
 ) -> str:
     """What becomes of one new item (the caller commits): the outcome kept in ``fetched_items``.
     ``runtime`` is the one that fetched it, asked for what is kept as evidence."""
-    from . import preprocess
+    from . import mirror, preprocess
 
+    # An item that goes on with a conversation an incident mirrored in holds (a reply to a message)
+    # is a line of that incident, and what it was made of is evidence of it: it makes no incident.
+    taken = mirror.absorb(db, connection, connector, item, item_id, now)
+    if taken is not None:
+        note = "A line of the incident it goes on with" if taken["fresh"] else "It was there already"
+        if taken["fresh"]:
+            unkept = _evidence(db, runtime, connector, item, taken["incident_id"])
+            note = "; ".join(part for part in (note, unkept) if part)
+        db.add(
+            FetchedItem(
+                connection_id=connection.id,
+                item_id=item_id,
+                incident_id=taken["incident_id"],
+                outcome="mirrored",
+                note=note[:500],
+                fetched_at=now_iso(),
+            )
+        )
+        return "mirrored"
     made = candidate(db, connection, connector, item)
     decided = preprocess.decide(db, connection, connector, item, item_id, made, now)
     outcome, note, incident_id = decided["outcome"], decided.get("note", ""), decided.get("incident_id")
@@ -519,6 +552,8 @@ def cycle(db: OrmSession, connection: Connection, now: float | None = None) -> d
     settings = settings_of(connection, spec)
     counts = {"fetched": 0, "new": 0, "created": 0, "incomplete": 0, "dropped": 0, "linked": 0, "duplicate": 0}
     first = _moment(now - settings.first_seconds)
+    if connector.mirror is not None and connector.mirror.thread is not None:
+        counts["mirrored"] = 0  # what went on with a conversation an incident holds
     since = since_of(connection, settings, now)
     try:
         runtime = store.runtime_for(db, connector, connection)
@@ -763,7 +798,17 @@ def out(db: OrmSession, connection: Connection) -> dict[str, Any]:
         "hasSample": "sample" in status,
         "fetchState": connection.fetch_state if isinstance(connection.fetch_state, dict) else None,
         "link": instance_link(connection.id),
+        # The direction the incidents it fetches are mirrored in, and what its connector lets it choose.
+        "mirror": _mirror_out(connection, connector),
     }
+
+
+def _mirror_out(connection: Connection, connector: ConnectorFile | None) -> dict[str, Any] | None:
+    if connector is None or connector.fetch is None:
+        return None
+    from . import mirror
+
+    return mirror.choice_out(connection, connector)
 
 
 def recent(db: OrmSession, connection_id: str, limit: int = 100, outcome: str = "") -> list[dict[str, Any]]:

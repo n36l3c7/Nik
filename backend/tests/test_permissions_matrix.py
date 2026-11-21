@@ -274,6 +274,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("POST", "/api/fetch/{connection_id}/reset"): ("connectors.manage",),
     ("GET", "/api/fetch/{connection_id}/items"): ("connectors.manage",),
     ("GET", "/api/fetch/{connection_id}/sample"): ("connectors.manage",),
+    ("GET", "/api/fetch/{connection_id}/mirror"): ("connectors.manage",),
+    ("POST", "/api/fetch/{connection_id}/mirror/apply"): ("connectors.manage",),
     # Pre-processing rules: whoever configures incidents.
     ("GET", "/api/preprocess-rules"): ("incidents.configure",),
     ("POST", "/api/preprocess-rules"): ("incidents.configure",),
@@ -284,6 +286,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     # Mirroring. Starting one that sends also needs automation.run (checked in the route).
     ("GET", "/api/incidents/{incident_id}/mirror"): ("read",),
     ("POST", "/api/incidents/{incident_id}/mirror"): ("write",),
+    ("PATCH", "/api/incidents/{incident_id}/mirror"): ("write",),
     ("DELETE", "/api/incidents/{incident_id}/mirror"): ("write",),
     ("POST", "/api/incidents/{incident_id}/mirror/sync"): ("write",),
     ("GET", "/api/mirror/queue"): ("connectors.manage",),

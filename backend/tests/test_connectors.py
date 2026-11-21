@@ -339,7 +339,17 @@ def test_a_connector_says_how_it_brings_alerts_in_and_keeps_an_object_in_step():
     shown = cn.summary(connector)
     # What an instance starts with; this one goes on from what it kept, not from a time.
     assert shown["fetch"] == {"intervalSeconds": 120, "firstFetch": "3 days", "lookbackMinutes": 0, "byTime": False}
-    assert shown["mirror"] == {"intervalSeconds": 300, "out": True, "comments": True, "commentsOut": True}
+    assert shown["mirror"] == {
+        "intervalSeconds": 300,
+        "out": True,
+        "comments": True,
+        "commentsOut": True,
+        "fieldsIn": True,
+        "fieldsOut": True,
+        "fed": False,
+        "kinds": [],
+    }
+    assert shown["noMirror"] is None
     assert shown["schema"]["incoming"][1] == {
         "name": "sys_created_on",
         "type": "date",

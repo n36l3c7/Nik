@@ -30,6 +30,12 @@ router = APIRouter(tags=["mirroring"])
 manager_principal = require(CONNECTORS_MANAGE)
 
 
+class DirectionIn(BaseModel):
+    direction: str = Field(pattern="^(in|out|both)$")
+    # Left out, the classes the mirror may send stay as they are.
+    dataAllow: list[str] | None = Field(default=None, max_length=40)
+
+
 class StartIn(BaseModel):
     instanceId: str = Field(max_length=32)
     # The id of the object on the other side: a ticket's sys_id, an issue's key.
@@ -78,6 +84,30 @@ def start_mirror(
     return {**mirror.out(db, incident), "instances": mirror.mirroring_connections(db)}
 
 
+@router.patch("/incidents/{incident_id}/mirror")
+def change_mirror(
+    incident_id: str, body: DirectionIn, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
+) -> dict:
+    """Change the direction of the mirror of this incident, whatever started it: from then on it is
+    "set here", and what its instance says is for the incidents fetched later. The same permissions
+    as starting one."""
+    incident = _incident(db, incident_id, lock=True)
+    state = mirror.state_of(incident)
+    if state is None:
+        raise HTTPException(status_code=409, detail="This incident is not mirrored")
+    if body.direction != "in" and not caller.has(AUTOMATION_RUN):
+        raise HTTPException(status_code=403, detail="Sending to another system needs the permission to run playbooks")
+    opened = set(body.dataAllow or []) - set(state.get("allow") or [])
+    if opened and not caller.has(AUTOMATION_OPEN):
+        raise HTTPException(status_code=403, detail="Opening a class of data needs the permission that opens them")
+    try:
+        mirror.redirect(db, incident, body.direction, caller.actor, time.time(), body.dataAllow)
+    except mirror.MirrorError as error:
+        raise HTTPException(status_code=error.status, detail=error.message) from None
+    db.commit()
+    return {**mirror.out(db, incident), "instances": mirror.mirroring_connections(db)}
+
+
 @router.delete("/incidents/{incident_id}/mirror", status_code=status.HTTP_204_NO_CONTENT)
 def stop_mirror(
     incident_id: str, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
@@ -94,7 +124,8 @@ def sync_mirror(
     incident_id: str, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Read the other side now: ``{changed, kept, comments, problems}``, where ``kept`` are the
-    fields a person set in Nik that were left as they are."""
+    fields a person set in Nik that were left as they are. ``gone`` is there, and true, when the
+    object is not on the other side any more."""
     incident = _incident(db, incident_id, lock=True)
     try:
         done = mirror.pull(db, incident, time.time())

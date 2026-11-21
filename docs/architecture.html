@@ -1531,7 +1531,13 @@
           <strong>Mirroring</strong> (<code>mirror.py</code>, <code>mirror_queue</code>). What is read from the other
           side goes through the incoming mapper and <code>fields.update</code>, which records who set each field last
           (<code>registry.note_source</code>): a field a person set is kept unless the rule is authoritative. What is
-          sent is put in a queue in the transaction of the change and sent by the worker through the data guard.
+          sent is put in a queue in the transaction of the change and sent by the worker through the data guard. Since
+          6.10 the fetch starts the mirror of what it makes (<code>mirror.start_fetched</code>) in the direction its
+          instance holds in <code>connections.fetch_settings</code> (<code>mirror</code>, <code>mirrorAllow</code>; no
+          migration: the column is a document), a mapper that names both the object and the direction being obeyed
+          first. A connector whose mirror is fed by its fetch (<code>mirror.thread</code>, the mailbox) is never read at
+          an interval: <code>fetch.ingest</code> asks <code>mirror.absorb</code> first, and an item that goes on with a
+          conversation an incident holds becomes a line of it.
         </li>
       </ul>
       <p>

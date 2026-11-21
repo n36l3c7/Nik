@@ -3,9 +3,9 @@ name: SentinelOne SIEM
 vendor: SentinelOne
 category: SIEM
 tags: [siem]
-version: 1.1.0
+version: 1.1.1
 description: >-
   Alerts of the Singularity Operations Center as incidents, and PowerQuery and event searches in the Singularity
   Data Lake.
 author: Nik
-nik: ">=6.6"
+nik: ">=6.10"

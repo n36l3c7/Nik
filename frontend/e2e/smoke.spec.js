@@ -5593,10 +5593,43 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   await expect(fetched).toContainText('Nothing fetched yet.')
   await fetched.getByRole('button', { name: 'Close', exact: true }).last().click()
 
-  // Put back: it does not fetch, and follows its connector again.
+  // Mirroring: the direction of the incidents it fetches. Acme Desk is only read, so None and In are
+  // offered, and the two that send say why they are not.
+  const mirroring = fetching.getByRole('group', { name: 'Mirroring' })
+  await expect(mirroring.getByRole('radio', { name: /^None / })).toBeChecked()
+  await expect(mirroring.getByRole('radio', { name: /^Out / })).toBeDisabled()
+  await expect(mirroring.getByRole('radio', { name: /^In-out / })).toBeDisabled()
+  await expect(mirroring).toContainText('Not offered: Acme Desk has no command that writes to the other side.')
+  await mirroring.getByRole('radio', { name: /^In / }).check()
+  await expect(mirroring).toContainText('Its fields follow the object on the other side. Nothing is sent.')
+  await expect(mirroring).toContainText('Mirroring is None until the instance is saved.')
+  // What is applied to the incidents already fetched is what is saved: not before.
+  await expect(goes.getByRole('button', { name: 'Apply mirroring to open incidents…' })).toBeDisabled()
+
+  // Put back: it does not fetch, and follows its connector again. The direction is saved with the rest.
   await fetching.getByRole('switch', { name: 'Fetch incidents' }).click()
   await fetching.getByLabel('How often (seconds)').fill('3600')
   await fetching.getByLabel('Look-back (minutes)').fill('0')
+  await pane.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(pane).toHaveCount(0)
+  await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
+  const chosen = await page.evaluate(async () => {
+    const found = await (await fetch('/api/automation/instances', { credentials: 'include' })).json()
+    return found.instances.find((item) => item.name === 'Acme test').fetch.mirror
+  })
+  expect(chosen).toMatchObject({ direction: 'in', allow: [], offered: ['none', 'in'] })
+
+  // Saved, it can be given to what was fetched before: the dialog counts them first. Nothing was.
+  await row.getByRole('button', { name: 'Edit Acme test' }).click()
+  await tabs.getByRole('tab', { name: 'Fetch' }).click()
+  await expect(mirroring.getByRole('radio', { name: /^In / })).toBeChecked()
+  await goes.getByRole('button', { name: 'Apply mirroring to open incidents…' }).click()
+  const applying = page.getByRole('dialog', { name: 'Mirror In what was already fetched?' })
+  await expect(applying).toContainText('No open incident was fetched from this instance: there is nothing to change.')
+  await expect(applying.getByRole('button', { name: 'Mirror them In' })).toBeDisabled()
+  await applying.getByRole('button', { name: 'Cancel' }).click()
+  // And back to None, as it was.
+  await mirroring.getByRole('radio', { name: /^None / }).check()
   await pane.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(pane).toHaveCount(0)
   await expect(settings.getByRole('status').filter({ hasText: 'Acme test is saved.' })).toBeVisible()
@@ -5619,13 +5652,17 @@ test('an incident is mirrored with an object of another product, read now, and s
   await expect(dialog.getByRole('status')).toHaveText('Say which object of the other side this incident is')
   await dialog.getByLabel('The id of the object on the other side').fill('T-77')
   // Acme Desk is read, not written to: it cannot be mirrored out.
-  await dialog.getByRole('radio', { name: /^Both ways/ }).check()
+  await dialog.getByRole('radio', { name: /^In-out/ }).check()
   await expect(dialog.getByRole('status')).toHaveText('Acme Desk is read, not written to: mirror in')
   await expect(dialog.getByRole('button', { name: 'Start mirroring' })).toBeDisabled()
-  await dialog.getByRole('radio', { name: /^In/ }).check()
+  await dialog.getByRole('radio', { name: /^In(?!-)/ }).check()
   await dialog.getByRole('button', { name: 'Start mirroring' }).click()
   await expect(mirror).toContainText('Acme test')
-  await expect(mirror).toContainText('T-77 · read from there')
+  await expect(mirror).toContainText('T-77')
+  // Its direction, which can be changed here, and where it came from: a person set it on this incident.
+  await expect(mirror.getByLabel('Direction of the mirror')).toHaveValue('in')
+  await expect(mirror.getByLabel('Direction of the mirror').getByRole('option', { name: 'In-out' })).toBeDisabled()
+  await expect(mirror).toContainText('set here')
   await expect(mirror).toContainText('Not read yet')
 
   // There is no Acme Desk to answer: reading now says why it could not.

@@ -61,3 +61,10 @@ and the status of the alert, and the alert and the host in the context.
   the Cortex XSOAR integration, the only public source for it. These are the least certain parts of the two
   packs.
 - **The result of a query**, as said above.
+
+## Mirroring
+
+The alerts this connector fetches are **not mirrored** (1.1.1, for Nik 6.10, where every connector that fetches
+mirrors or says why): SentinelOne's reference of the API does not describe the alerts of the Singularity Operations
+Center, and how one is read again and changed is known from other sources only. The instance says so where its
+mirroring would be chosen. `get-alert` and `update-alert` remain as commands for a playbook.

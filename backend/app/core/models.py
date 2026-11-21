@@ -1338,7 +1338,9 @@ class Connection(Base):
     fetch_state: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     fetch_status: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # How this instance fetches where it differs from its connector (6.4): {intervalSeconds,
-    # firstFetch, lookbackMinutes}. A value left out is the connector's (fetch.settings_of).
+    # firstFetch, lookbackMinutes}. A value left out is the connector's (fetch.settings_of). Beside
+    # them (6.10), the direction the incidents it fetches are mirrored in and the classes of data
+    # their mirrors may send: {mirror, mirrorAllow}; left out, none (mirror.choice_of).
     fetch_settings: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # More keys than one (6.1): the credentials beside the first, encrypted like ``secrets``, and how
     # the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours, mainName}
@@ -1643,7 +1645,8 @@ class FetchedItem(Base):
     connection_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     item_id: Mapped[str] = mapped_column(String(300), primary_key=True)
     incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    # created | incomplete (created with fields missing) | dropped | linked | duplicate
+    # created | incomplete (created with fields missing) | dropped | linked | duplicate |
+    # mirrored (a line of an incident there was: a reply to a message, 6.10)
     outcome: Mapped[str] = mapped_column(String(12), nullable=False, default="created")
     note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     fetched_at: Mapped[str] = mapped_column(String, nullable=False)
