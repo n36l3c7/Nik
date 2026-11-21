@@ -446,3 +446,30 @@ def test_an_error_nobody_expected_does_not_restart_the_container_for_ever(monkey
     said = capsys.readouterr().err
     assert "NIK DID NOT START" in said and "ValueError: something nobody thought of" in said
     assert upgrade.stopped_body(served[0])["detail"].startswith("The upgrade of Nik stopped in a way it did not expect")
+
+
+def test_a_database_that_is_still_starting_is_waited_for_not_taken_for_a_failed_upgrade(at_head, monkeypatch):
+    """After a restart of the host PostgreSQL replays its log while the server starts: the upgrade
+    step waits for it. Before, the first refused connection stopped the server for good."""
+    calls, naps = [], []
+
+    def starting(url=None):
+        calls.append(url)
+        if len(calls) <= 3:
+            raise RuntimeError("connection failed: FATAL:  the database system is starting up")
+        return {"revision": HEAD}
+
+    monkeypatch.setattr(database, "about", starting)
+    monkeypatch.setattr(database, "is_postgres", lambda url: True)
+    assert upgrade.wait_for_database(database.live_url(), pause=0.5, sleep=naps.append) == 4
+    assert naps == [0.5, 0.5, 0.5]
+
+
+def test_a_database_file_that_cannot_be_read_is_not_waited_for(at_head, monkeypatch):
+    def broken(url=None):
+        raise RuntimeError("not a database")
+
+    monkeypatch.setattr(database, "about", broken)
+    monkeypatch.setattr(database, "is_postgres", lambda url: False)
+    with pytest.raises(RuntimeError):
+        upgrade.wait_for_database(database.live_url(), sleep=lambda seconds: None)
