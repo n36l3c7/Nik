@@ -40,6 +40,28 @@
       </p>
 
       <section class="release">
+        <h3>6.9.0 <span class="date">2026-11-21</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Recovery to a moment</strong>: the database's log is archived
+            and copied off the host, and <code>deploy/restore.sh --to</code> goes back to any moment of the last days.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>A standby host</strong> that takes the server's place by one
+            command; a server that was replaced refuses to serve.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Work in progress survives a restart</strong>: nothing is lost,
+            and a step that changes another system is never repeated by guessing.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> The stack stops politely, and the archive turns on by itself at the
+            upgrade (<a href="deployment.html#upgrading-to-69">Upgrading to 6.9</a>).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.8.0 <span class="date">2026-11-21</span></h3>
         <ul>
           <li>

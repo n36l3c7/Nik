@@ -1528,6 +1528,39 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-69">Upgrading to 6.9</h4>
+      <p>
+        <code>git pull</code>, then <code>docker compose up -d --build</code>. Migrations <code>0052_recovery</code> and
+        <code>0053_jobs</code> run after the snapshot and the rehearsal; every image is rebuilt, and PostgreSQL restarts
+        once with its new settings.
+      </p>
+      <ul>
+        <li>
+          <strong>the archive turns on by itself</strong>: a service <code>recovery</code> and the volumes
+          <code>wal-archive</code> and <code>db-socket</code> are new, a base backup is taken at once and then every
+          day, and the archive is proven every day. It uses disk on <code>wal-archive</code>;
+          <code>NIK_WAL_ARCHIVE=off</code> turns it off. Whoever starts a subset of the services adds
+          <code>recovery</code>;
+        </li>
+        <li>
+          work that was in flight: playbook steps that may be repeated are done again, and the others wait as
+          <em>interrupted</em> for a person: look at <em>Automations → Runs</em> afterwards. Analyses, scans and
+          mailboxes start again by themselves; a file that was being parsed after its upload ends in error and is
+          uploaded again;
+        </li>
+        <li>
+          the copies off the host need what the backups already have, a passphrase and a destination, and go under
+          <code>recovery/</code> there. A standby is set up by the steps of <em>A standby host</em>;
+        </li>
+        <li>
+          the stack now stops politely, in at most a minute. An install without containers changes its unit: gunicorn
+          runs with <code>-k app.serving.Worker</code>;
+        </li>
+        <li>
+          going back below 6.9, <code>deploy/rollback.sh</code> leaves the volumes <code>wal-archive</code> and
+          <code>db-socket</code> and says how to remove them; a standby is stopped first.
+        </li>
+      </ul>
       <h4 id="upgrading-to-68">Upgrading to 6.8</h4>
       <p>
         <code>git pull</code>, then <code>deploy/init-env.sh</code>, then <code>docker compose up -d --build</code>. The

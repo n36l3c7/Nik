@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.0] - 2026-11-21
+
+It starts again in minutes: the server can go back to a moment, a second
+host takes its place by one command, and a restart loses no work and does
+nothing twice.
+
+### Added
+
+- **Recovery to a moment.** PostgreSQL's log is archived continuously and
+  a base backup is taken every day; `deploy/restore.sh --to "<time>"`
+  brings the server back to any moment of the last days (two by default),
+  on the same host or on a new one, keeps the replaced database aside,
+  checks the audit chain and names any file that is missing. Going back
+  to a named moment turns automation off until an administrator has
+  looked.
+- **The archive is proven every day** by replaying it into a scratch
+  server; a failed proof, an archive that is stuck or a second host that
+  falls behind is told to the administrators.
+- **Copies off the host**: the log, the base backups and the files of the
+  store are sent sealed to the second host over SFTP, in order and read
+  back; *Settings → Backup → Recovery to a moment* shows the delay.
+- **A standby host**: `deploy/standby.sh init | status | promote |
+  rejoin`. The second host follows the first from the copies it receives,
+  with no port opened between the two, and takes its place by one
+  command. A server that was replaced refuses to serve, and the files the
+  two hosts leave for each other are signed: an unsigned one is never
+  obeyed. A standby, and a server that was replaced, run nothing.
+- **Deleted files are kept** for as long as a recovery could need them;
+  the Storage page shows what they take.
+- **Work in progress survives a restart** of the server, of a worker or
+  of the database. Playbook steps go on; analyses, scans, captures and
+  mailboxes start again by themselves and say so; a worker that restarts
+  under a job is handed the job again.
+- **A step that was changing something in another system when the server
+  stopped is not repeated by guessing**: the run waits as *interrupted*
+  and a person says *It happened, go on*, *It did not, do it again* or
+  *Stop the run*. The HTTP request node has a *Safe to repeat* switch.
+- Connectors: `idempotency_key: true` and `{{ idempotency.key }}` for
+  products that act once for a key.
+- Work that is interrupted three times is set aside with that reason
+  instead of taking its worker down for ever.
+- Health: groups *Recovery* and *Work in progress*, with metrics
+  (`nik_recovery_*`, `nik_server_*`, `nik_work_*`).
+- `.github/scripts/restart-chaos.sh` and `recovery-proof.sh` prove the
+  above on a stack of their own.
+
+### Changed
+
+- **The stack stops politely**: every container stops taking work,
+  finishes or hands back what it holds and exits, in at most a minute.
+  An upload cut by a restart stays in the transfers tray with *Try
+  again*.
+- A run cut during a call that may not be repeated used to fail with
+  "outcome unknown"; it now waits for a person. A step that had only been
+  claimed is done.
+- A schedule that passed while the server was down runs once and reads
+  `trigger.due`, `trigger.late_seconds` and `trigger.missed`; a late SLA
+  timer carries the moment it really ran out.
+- A mirrored comment cut by a restart fails and waits for a person
+  instead of risking a second comment.
+- A database-only restore, and a rollback, put back the files deleted
+  since.
+- The analysis workers answer 401, not 404, to a request without their
+  token.
+
+### Fixed
+
+- Taking a lease wrote an error to the PostgreSQL log every few seconds.
+- An event was lost when the database failed while it was handled.
+- Two steps using an instance key for the first time at once: the second
+  failed after its call was made.
+- Webhooks from background work were sent before the change was
+  committed.
+- Analyses, captures and mailboxes stayed "in progress" for ever after
+  the server was killed.
+
+### Upgrade notes
+
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migrations `0052_recovery` and `0053_jobs` run after the snapshot and
+  the rehearsal. All the images are rebuilt; PostgreSQL restarts once
+  with its new settings.
+- **The archive turns on by itself**: a new service `recovery`, volumes
+  `wal-archive` and `db-socket`, a base backup now and one a day, a
+  recovery test a day. It uses disk on `wal-archive`; `NIK_WAL_ARCHIVE=off`
+  turns it off. Whoever starts a subset of the services adds `recovery`.
+- Work in flight at the upgrade: steps that may be repeated are done
+  again; the others wait as *interrupted* — look at *Automations → Runs*
+  afterwards. Analyses and mailboxes start again; a background upload
+  ends in error and is uploaded again.
+- The copies off the host need only what the backups already have: a
+  passphrase and a destination; they go under `<path>/recovery/`.
+- A standby is set up by the steps of *A standby host* in the deployment
+  guide. After `deploy/secrets.sh rotate secret-key` on a pair, carry the
+  keys to the standby again.
+- A bare-metal install changes its unit: gunicorn runs with
+  `-k app.serving.Worker`.
+- Going back below 6.9 leaves the volumes `wal-archive` and `db-socket`;
+  a standby is stopped first.
+
 ## [6.8.0] - 2026-11-21
 
 Who takes the disk reads nothing: the files Nik holds are encrypted where
@@ -3680,7 +3780,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.8.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.9.0...HEAD
+[6.9.0]: https://github.com/n36l3c7/Nik/compare/v6.8.0...v6.9.0
 [6.8.0]: https://github.com/n36l3c7/Nik/compare/v6.7.1...v6.8.0
 [6.7.1]: https://github.com/n36l3c7/Nik/compare/v6.7.0...v6.7.1
 [6.7.0]: https://github.com/n36l3c7/Nik/compare/v6.6.1...v6.7.0
