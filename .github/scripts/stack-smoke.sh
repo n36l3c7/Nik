@@ -188,8 +188,8 @@ docker exec "$sandbox_container" sh -c 'test ! -e /run/secrets/secret_key && tes
   fail "the sandbox is given a key it has no use for"
 # The two processes that write entries of the audit log sign them with the same key, a key of its
 # own on a new install: with different keys each would say the entries of the other cannot be checked.
-signs_api=$(docker exec "$api_container" python -m app.auditlog key | head -n 1)
-signs_worker=$(docker exec "$worker_container" python -m app.auditlog key | head -n 1)
+signs_api=$(docker exec "$api_container" python -m app.auditlog key | sed -n 1p)
+signs_worker=$(docker exec "$worker_container" python -m app.auditlog key | sed -n 1p)
 grep -q "signed with the key set-" <<<"$signs_api" || fail "the audit log is not signed with the key init-env.sh made ($signs_api)"
 [ "$signs_api" = "$signs_worker" ] || fail "the backend and the automation worker do not sign the audit log with the same key"
 [ "$(docker exec "$api_container" python -m app.key_rotation audit-unchecked)" = 0 ] ||

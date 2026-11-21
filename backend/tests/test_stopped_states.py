@@ -89,13 +89,39 @@ def test_the_automation_worker_does_not_wait_for_a_backend_that_is_not_there(mon
     # Not told where the backend is (a development server runs the playbooks itself): nothing to ask.
     monkeypatch.setattr(settings, "STORE_API_URL", "")
     assert worker.backend_health() == ""
-    # Told, and nothing answers: the worker runs without it, as it always did.
-    monkeypatch.setattr(settings, "STORE_API_URL", "http://127.0.0.1:9")
-    assert worker.backend_health() == ""
     waits: list[float] = []
     monkeypatch.setattr(worker._stopping, "wait", lambda seconds: waits.append(seconds))
     worker._wait_for_the_backend()
     assert waits == []
+    # Told, and nothing answers: it is given a moment (after a restart of the host every container
+    # starts at once), then the worker runs without it, as it always did.
+    monkeypatch.setattr(settings, "STORE_API_URL", "http://127.0.0.1:9")
+    assert worker.backend_health() == ""
+    worker._wait_for_the_backend()
+    assert waits == [worker.BACKEND_PAUSE] * (worker.BACKEND_WAIT // worker.BACKEND_PAUSE - 1)
+
+
+def test_a_backend_that_is_still_starting_is_waited_for_and_then_believed(monkeypatch):
+    """After the host restarts the backend waits for the database before it listens: it does not
+    answer, then says whether it runs. The worker does not take the silence for a server that runs."""
+    monkeypatch.setattr(settings, "STORE_API_URL", "http://api:8000")
+    answers = iter(["", "", "", "stopped", "stopped", "", "ok"])
+    waits: list[float] = []
+    monkeypatch.setattr(worker, "backend_health", lambda: next(answers))
+    monkeypatch.setattr(worker._stopping, "wait", lambda seconds: waits.append(seconds))
+    worker._wait_for_the_backend()
+    assert len(waits) == 6 and next(answers, None) is None
+
+
+def test_the_snapshot_of_an_upgrade_names_the_version_it_comes_from(monkeypatch):
+    """The row the server writes at each start says it; without the row, the last release that ended
+    at that revision does, for the two revisions an upgrade to 6.8 can start from."""
+    monkeypatch.setattr(upgrade, "recorded_version", lambda: "6.7.0")
+    assert upgrade._version_before("0049_two_factor") == "6.7.0"
+    monkeypatch.setattr(upgrade, "recorded_version", lambda: "")
+    assert upgrade._version_before("0049_two_factor") == "6.7.1"
+    assert upgrade._version_before("0047_playbook_files") == "6.6.1"
+    assert upgrade._version_before("0012_something_old") == ""
 
 
 def test_a_running_server_says_ok_and_gives_its_metrics_to_the_token_only(admin):

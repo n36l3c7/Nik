@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.0] - 2026-11-21
+
+Who takes the disk reads nothing: the files Nik holds are encrypted where
+they lie, the keys leave `.env`, the audit log cannot be altered unseen
+and is sent to syslog, and one page says whether the server is well.
+
+### Added
+
+- **The store is encrypted on the disk.** Every file Nik holds (samples,
+  e-mails, captures) is encrypted and authenticated under a new key,
+  `STORE_KEY`, that is in no database and in no backup. A store from
+  before is sealed in the background, file by file, with its progress
+  and a pause in *Settings → Storage*; the server is used meanwhile.
+- **A damaged or replaced file is never served**: the request fails
+  naming it, and the audit log and the administrators are told.
+- **Secrets can live in files**, one for each container that uses it,
+  instead of `.env`. A new install starts that way; `deploy/secrets.sh
+  move` moves an existing one, and the keys are then in no container's
+  environment.
+- ***Settings → Keys*** lists every secret by a fingerprint, never its
+  value: where it comes from, which containers hold it, when it was
+  changed. `SECRET_KEY`, `STORE_KEY` and the key of the audit log are
+  changed by a guided procedure (asked for on the screen by a signed-in
+  administrator, carried out by `deploy/secrets.sh rotate`), which keeps
+  the earlier key until everything is proven readable under the new one;
+  the backup passphrase is changed from the same page.
+- **The audit log is a chain.** Each entry carries the hash of the one
+  before it and a signature made with a key that is not in the database
+  (`AUDIT_KEY`, or one derived from `SECRET_KEY`). The server verifies it
+  every few minutes and on demand (*Settings → Audit log → Verify now*,
+  `python -m app.auditlog verify-audit`) and names what was changed,
+  removed, moved or forged; a file that needs nothing of Nik
+  (`backend/app/auditlog/verifier.py`) checks an export or a receiver's
+  copy on any machine.
+- **The audit log is sent to syslog as it is written**: RFC 5424 with the
+  entry as JSON, over TLS, TCP or UDP, in order, with a checkpoint every
+  few minutes. A receiver that is down makes a backlog that drains when
+  it is back, and a change of the forwarding is the last thing the old
+  receiver hears. The automation worker sends; the backend still has no
+  way out.
+- ***Settings → System → Health***: the disks and when they will be full,
+  the queues and their oldest item, the workers, the backups, the
+  database, the certificate, the audit log, the keys and the encryption
+  of the store, the warnings about sign-in — each with its state, since
+  when and what to do. Thresholds are settings, and administrators are
+  told before things break: one notice for a problem, one when it is
+  solved.
+- **Metrics for Prometheus** at `/api/metrics`, through the web port,
+  answering to a scrape token made on the Health page and to nothing
+  else.
+- Entries of the audit log that came in a content file are marked
+  *imported*, and those the server did not write itself *written
+  outside*. Webhooks added and removed are audited.
+
+### Changed
+
+- **The analysis workers and the automation worker no longer mount the
+  store** or hold its key: the backend sends each the file its job
+  needs. The automation worker reads a file through the backend.
+- **A server without its store key, or with the wrong one, stays up and
+  says so** on the page and to every request, instead of starting and
+  writing files nobody could read later.
+- **Backups do not depend on the store key**: a backup holds the files
+  under its passphrase, and a restore seals them under the key of the
+  server that restores. Each backup also notes the head of the audit
+  log.
+- **Clearing the audit log** needs a signed-in administrator and leaves
+  an entry that says how many entries went and up to which hash; nothing
+  is trimmed by itself.
+- `/api/metrics` answered to anyone on the compose network when no token
+  was set; it now answers 401 without the scrape token. The `path` label
+  of the request metrics carries the `/api` prefix.
+
+### Fixed
+
+- Artifacts that expired were not deleted by the automation worker,
+  which could not write the store.
+
+### Upgrade notes
+
+- `git pull`, then **`deploy/init-env.sh`**, then `docker compose up -d
+  --build` (or `podman compose`). The script adds `STORE_KEY` to an
+  existing install and nothing else; without it the server stays up and
+  says the key is missing. Migration `0051_audit_chain` runs after the
+  snapshot and the rehearsal, and links and signs the entries the log
+  already holds (about a minute for a million).
+- **Keep a copy of `STORE_KEY` off the server, apart from the backups.**
+  Without it the files of the store cannot be read; the backups can.
+- The store is sealed in the background, about half a minute for each
+  gigabyte; files from before stay in clear until it ends.
+- Whoever scraped `/api/metrics` without a token makes one on the Health
+  page; dashboards that match the `path` label add `/api`.
+- Going back below 6.8: `deploy/rollback.sh` unseals the store and puts
+  the secrets back in `.env` first.
+- An existing install keeps signing its audit log with a key derived
+  from `SECRET_KEY`; `deploy/secrets.sh rotate audit-key` gives it one of
+  its own. Keep a copy of the audit keys where the copy of `SECRET_KEY`
+  is. A backup taken with *Include the key* carries them too.
+
 ## [6.7.1] - 2026-11-21
 
 ### Fixed
@@ -3581,7 +3680,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.7.1...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.8.0...HEAD
+[6.8.0]: https://github.com/n36l3c7/Nik/compare/v6.7.1...v6.8.0
 [6.7.1]: https://github.com/n36l3c7/Nik/compare/v6.7.0...v6.7.1
 [6.7.0]: https://github.com/n36l3c7/Nik/compare/v6.6.1...v6.7.0
 [6.6.1]: https://github.com/n36l3c7/Nik/compare/v6.6.0...v6.6.1

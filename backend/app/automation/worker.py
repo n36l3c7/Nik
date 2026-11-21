@@ -392,6 +392,10 @@ def _wait_for_the_schema() -> None:
         _stopping.wait(5)
 
 
+# How long a backend that does not answer is waited for at the start of this process, and how often it is asked.
+BACKEND_WAIT, BACKEND_PAUSE = 90, 5
+
+
 def backend_health() -> str:
     """What the backend answers to its health check: ``ok``, the word of a server that did not
     start (``stopped``: a key is missing or wrong, app/stopped.py; ``upgrade-stopped``:
@@ -407,13 +411,28 @@ def _wait_for_the_backend() -> None:
     """A backend that did not start says so and stays up (a key is missing, or is not the one the
     store is sealed under; an upgrade was stopped): its health check passes, so this container is
     started. Nothing must run beside a server that refused to: no playbook, no copy of a backup,
-    no entry sent to syslog as if all were well. This waits until the backend says it runs. A
-    backend that does not answer at all is not waited for: this worker runs without it, as before."""
-    said = False
+    no entry sent to syslog as if all were well. This waits until the backend says it runs.
+
+    A backend that does not answer yet is given a moment: after the host or the engine restarts every
+    container starts at once, and the backend is still waiting for the database, migrating, or
+    about to say that it will not start. One that still does not answer after that is not waited
+    for: this worker runs without it, as before. A process that was not told where the backend is
+    (a development server) asks nothing."""
+    if not settings.STORE_API_URL:
+        return
+    said, unanswered = False, 0
     while not _stopping.is_set():
         status = backend_health()
-        if status in ("", "ok"):
+        if status == "ok":
             return
+        if not status:
+            unanswered += 1
+            if unanswered * BACKEND_PAUSE >= BACKEND_WAIT:
+                logger.warning("The backend does not answer: this worker goes on without it")
+                return
+            _stopping.wait(BACKEND_PAUSE)
+            continue
+        unanswered = 0
         if not said:
             logger.warning("The backend says it did not start (%s): waiting. Its log and the page say why", status)
             said = True

@@ -787,6 +787,45 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           version is left as it is.
         </li>
       </ul>
+      <h4 id="upgrading-to-68">Upgrading to 6.8</h4>
+      <p>
+        <code>git pull</code>, then <code>deploy/init-env.sh</code>, then <code>docker compose up -d --build</code>. The
+        script adds the store key, <code>STORE_KEY</code>, to an existing install and changes nothing else; a server
+        started without it stays up and says the key is missing. Migration <code>0051_audit_chain</code> runs after the
+        snapshot and the rehearsal.
+      </p>
+      <ul>
+        <li>
+          <strong>Keep a copy of <code>STORE_KEY</code> off the server, apart from the backups.</strong> The files of
+          the store cannot be read without it. The backups can: they hold the files under the backup passphrase;
+        </li>
+        <li>
+          the store is sealed in the background, about half a minute for each gigabyte, shown in
+          <em>Settings → Storage</em>. The server is used meanwhile, and the files from before stay in clear until it
+          ends;
+        </li>
+        <li>
+          the entries the audit log already holds are linked and signed once, about a minute for a million. To send the
+          log to a syslog receiver, set it in <em>Settings → Audit log</em>;
+        </li>
+        <li>
+          to take the secrets out of <code>.env</code>, run <code>deploy/secrets.sh move</code> when it suits: the stack
+          is recreated, and the file it leaves beside <code>.env</code> holds every secret in clear until it is
+          destroyed;
+        </li>
+        <li>
+          the analysis workers and the automation worker no longer mount the store, and a volume
+          <code>pcap-work</code> is new;
+        </li>
+        <li>
+          <code>/api/metrics</code> answers 401 without a scrape token made in <em>Settings → System → Health</em>, and
+          the <code>path</code> label of the request metrics now begins with <code>/api</code>;
+        </li>
+        <li>
+          going back below 6.8, <code>deploy/rollback.sh</code> unseals the store and puts the secrets back in
+          <code>.env</code> first.
+        </li>
+      </ul>
       <h4 id="upgrading-to-67">Upgrading to 6.7</h4>
       <p>
         <code>git pull</code> and <code>docker compose up -d --build</code>. The compose file gained one volume,

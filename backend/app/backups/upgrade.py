@@ -55,8 +55,11 @@ SETTINGS_ID = 22  # which version of Nik last started on this database
 LOCK_WAIT = 30 * 60
 MIN_POSTGRES = 14
 DATABASE_WAIT_SAYS = 30  # seconds between two lines that say the database is still awaited
-# The revision a release ended at, for a database that never recorded its version (before 6.7).
-RELEASES = {"0047_playbook_files": "6.6.1"}
+# The revision a release ended at, for a database whose row of the version cannot be read: one
+# from before 6.7, which never wrote it, or one whose row was lost. From 6.7 on the row says it
+# (``recorded_version``), and this is only what is said without it: the last release that ended
+# at that revision, which is the code to come back to.
+RELEASES = {"0047_playbook_files": "6.6.1", "0049_two_factor": "6.7.1"}
 PORT = 8000
 
 
