@@ -922,7 +922,7 @@ def _perform(
         try:
             result = spec.run(call)
         except actions.ActionError as error:
-            unknown = error.unknown_outcome and spec.changes(args) and not spec.idempotent
+            unknown = error.unknown_outcome and spec.changes(args) and not safe_to_repeat(spec, config)
             message = f"{error.message} (outcome unknown: it is not tried again)" if unknown else error.message
             raise StepFailed(message, retry=error.retry and not unknown, request=error.request) from None
         if result.again_at is not None:
@@ -1280,10 +1280,19 @@ def _noted(step: RunStep, now: float, what: str, **more: Any) -> None:
     flag_modified(step, "restarts")
 
 
-def safe_to_repeat(spec: Any) -> bool:
+# The one action whose author is the person who drew the node: a request to an address, of
+# which Nik knows nothing but its method. The node itself may say that sending it twice is safe.
+HTTP_REQUEST = "http.request"
+
+
+def safe_to_repeat(spec: Any, config: dict | None = None) -> bool:
     """Whether making the call of this action a second time does no harm: it changes nothing
-    outside, or says it is idempotent (by its nature, or by the key it sends the vendor)."""
-    return spec is None or not spec.changes_outside or bool(spec.idempotent)
+    outside, or says it is idempotent (by its nature, or by the key it sends the vendor), or it
+    is an HTTP request whose node was ticked *Safe to repeat* (``safe_to_repeat`` in its
+    settings: off unless somebody turned it on)."""
+    if spec is None or not spec.changes_outside or bool(spec.idempotent):
+        return True
+    return spec.id == HTTP_REQUEST and (config or {}).get("safe_to_repeat") is True
 
 
 def take_back(db: OrmSession, step: RunStep, now: float, *, counted: bool = True) -> str:
@@ -1308,7 +1317,7 @@ def take_back(db: OrmSession, step: RunStep, now: float, *, counted: bool = True
             actions.lookup(db, str((node.get("config") or {}).get("action") or "")) if step.kind == "action" else None
         )
         _noted(step, now, "interrupted", **({} if counted else {"asked": True}))
-        if step.calling_at is not None and not safe_to_repeat(spec):
+        if step.calling_at is not None and not safe_to_repeat(spec, node.get("config")):
             _interrupt(db, run, node, step, now)
             return "interrupted"
         cut = sum(1 for line in step.restarts or [] if line.get("what") == "interrupted" and not line.get("asked"))

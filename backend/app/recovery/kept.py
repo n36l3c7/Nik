@@ -21,6 +21,13 @@ it is moved back to that path and nowhere else. The conversion of a store
 and the change of the store key reach the kept files as they reach the
 others (``store_seal._files``), so one that comes back opens.
 
+A database put back from a backup or from the snapshot of an upgrade, with
+the store left as it is (``deploy/rollback.sh``, ``deploy/restore.sh
+--database-only``), names again the files deleted since that backup was
+taken: they are all moved back to their places (``put_back_since``). Coming
+back to a version before 6.9, which knows nothing of ``.kept``, that is every
+kept file there is.
+
 Previews and what an interrupted transfer left are not kept: the first are
 made again when asked for, the second were never files of the store.
 """
@@ -152,3 +159,35 @@ def put_back(name: str, moment: float) -> bool:
     except OSError as error:
         logger.warning("The kept copy of %s could not be put back: %s", name, error)
         return False
+
+
+def put_back_since(moment: float) -> dict[str, int]:
+    """Move back to its place every file set aside after ``moment``, the earliest copy of each
+    first (the file as it was at that moment). A place that is taken is left alone, and the kept
+    copy stays where it is. Returns how many went back and how many stayed."""
+    back = stayed = 0
+    root = _root()
+    for stamp, folder in _stamps():
+        if stamp < moment - 1:
+            continue
+        for parent, _folders, names in os.walk(folder, onerror=lambda _error: None):
+            for name in sorted(names):
+                source = Path(parent, name)
+                target = root / source.relative_to(folder)
+                try:
+                    if target.exists():
+                        stayed += 1
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(source, target)
+                    back += 1
+                except OSError as error:
+                    logger.warning("The kept copy %s could not be put back: %s", source, error)
+                    stayed += 1
+        # The folders a deletion leaves empty go; one that still holds a file stays.
+        for parent, _folders, _names in os.walk(folder, topdown=False, onerror=lambda _error: None):
+            with contextlib.suppress(OSError):
+                os.rmdir(parent)
+    with contextlib.suppress(OSError):
+        os.rmdir(root / KEPT)
+    return {"back": back, "stayed": stayed}

@@ -1402,14 +1402,14 @@
               >. A file that is still in clear (a store from before 6.8 that is being sealed) is not sent;
             </li>
             <li>
-              <code>heartbeat.json</code>, <strong>in clear</strong>: when the first host last spoke, the name it gives
-              itself, its generation, its version of Nik, the name of the last segment sent and when it was closed, how
-              far behind the copies are, how many files of the store wait, and the archive timeout;
+              <code>heartbeat.json</code>, <strong>in clear and signed</strong>: when the first host last spoke, the
+              name it gives itself, its generation, its version of Nik, the name of the last segment sent and when it
+              was closed, how far behind the copies are, how many files of the store wait, and the archive timeout;
             </li>
             <li>
-              <code>superseded.json</code>, <strong>in clear</strong>, written when a standby is promoted or a server is
-              recovered from the copies: a generation number, the moment, the name of the server that took over, and a
-              random mark;
+              <code>superseded.json</code>, <strong>in clear and signed</strong>, written when a standby is promoted or
+              a server is recovered from the copies: a generation number, the moment, the name of the server that took
+              over, and a random mark;
             </li>
             <li>
               <code>store.have</code>, <strong>in clear</strong>, written by a standby: the sizes and names of the
@@ -1428,10 +1428,22 @@
         </li>
         <li>
           <strong>What the account of the second host can do.</strong> Delete or withhold what it received, as for the
-          backups. And one thing more: <code>superseded.json</code> is not signed, so whoever can write in that
-          directory can write one, and the first host, reading a generation later than its own, stops serving. That is a
-          way to stop the server, not to read or change anything. Give that account to nobody who should not be able to
-          do that.
+          backups. It cannot stop the first host by writing there: <code>superseded.json</code> and
+          <code>heartbeat.json</code> each carry a MAC (HMAC-SHA-256) under a key the two hosts hold and that account
+          does not, derived from <code>SECRET_KEY</code> with a label of its own (HKDF-SHA-256,
+          <code>nik pair files</code>); the standby holds <code>SECRET_KEY</code> because it was given the keys of the
+          first host. A <code>superseded.json</code> with no MAC, or with one no key of the server makes, is
+          <strong>never obeyed</strong>: the server goes on serving, writes down that it found one, tells its
+          administrators once (<em>it is not signed with a key of this server</em>), and the health page shows the row
+          <em>Role of this server</em> as a problem until the file is gone. A heartbeat that is not signed is not
+          believed either: <code>deploy/standby.sh status</code> then says it cannot tell how much a promotion would
+          lose. A key that was changed is followed: a file signed under an earlier <code>SECRET_KEY</code> counts for as
+          long as that key is in <code>SECRET_KEY_PREVIOUS</code>. After
+          <code>deploy/secrets.sh rotate secret-key</code> on the server, carry the keys to the standby again (<code
+            >secrets export</code
+          >, then <code>import</code>): until then the standby does not believe the heartbeat. What the MAC does not do:
+          it does not hide these files, and somebody who holds <code>SECRET_KEY</code> can write them, as they can read
+          everything else.
         </li>
         <li>
           <strong>The <code>recovery</code> service</strong> runs the tools of PostgreSQL for the backend
@@ -1485,6 +1497,25 @@
           starts: finding a later generation, it writes it down, stops, and from then on answers every request with one
           sentence. It fetches nothing and runs no playbook. The role itself is not a setting: a standby is a server
           whose database is replaying another's, and the database cannot be wrong about that.
+        </li>
+        <li>
+          <strong>Nothing works on a server that does not serve.</strong> Every loop of the server (playbooks,
+          schedules, fetching, mirroring, the copies of the backups and of the archive, the forwarding of the audit log,
+          the watches, the sweeper of the work in progress) takes a lease before it does anything, and no lease is given
+          on a standby or on a server that was replaced. A server that learns it was replaced while it runs takes no new
+          step from that moment; a call a step had already begun is the one thing that may still leave, and the worker
+          ends within 25 seconds.
+        </li>
+        <li>
+          <strong>What a promotion or a recovery cannot know.</strong> The server that takes over holds the database of
+          a moment before the other one stopped. A call a playbook made in another system after that moment (a host
+          isolated, a ticket opened) is not in it: the step is done again, or, when the database already says the call
+          had begun, waits for a person as after any restart. After a promotion that window is the few seconds or
+          minutes the command names as lost. After going back to a moment somebody named it may be hours, and the
+          recovery therefore turns the general switch of the automation off until an administrator has looked (<a
+            href="deployment.html#go-back-work"
+            >the deployment guide</a
+          >).
         </li>
         <li>
           <strong>The limit of that, said plainly.</strong> A server that cannot reach the second host cannot know it
@@ -1599,9 +1630,8 @@
         <li>
           The archive of the log and the base backups on the server are in clear, like the database. A standby holds
           every key of the first host. A server that cannot reach the second host cannot know that its standby was
-          promoted, and the file that tells it so is not signed (<a href="#recovery-security"
-            >Recovery to a moment, and the standby</a
-          >).
+          promoted; and a server that takes over does not know what the other did in other systems in its last moments
+          (<a href="#recovery-security">Recovery to a moment, and the standby</a>).
         </li>
         <li>
           A file of the store that is rewritten in place exists in one version: a recovery to a moment brings back the

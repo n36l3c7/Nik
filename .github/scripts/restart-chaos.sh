@@ -18,8 +18,9 @@
 # address and an upload parsed in the background; a fetch runs all along. While that is in
 # flight it does one of: kill the API, kill the automation worker, kill an analysis worker (the
 # analyzer, capa, the capture worker, the document worker, the isolated browser, the script
-# sandbox), kill the database, restart the whole stack at once, or bring the stack up again on
-# rebuilt images, as an upgrade does.
+# sandbox), kill the database, kill the recovery service (which may be taking a base backup or
+# proving the archive), restart the whole stack at once, or bring the stack up again on rebuilt
+# images, as an upgrade does. The log of the database is archived all along, as on a server.
 #
 # What must be true at the end (restart_chaos.py verify, and the database itself):
 #  - every run and every job reached an end, or waited for a person who was then answered;
@@ -29,7 +30,9 @@
 #    was fetched once;
 #  - no step is running with nobody holding it, no job is held or waits, nothing is half sent;
 #  - the chain of the audit log verifies;
-#  - the log of the database holds no error for a lease that was merely taken.
+#  - the log of the database holds no error for a lease that was merely taken;
+#  - the archive of the log has no gap: every segment between its first and its last is there,
+#    PostgreSQL has none left to hand over that it could not, and a base backup was taken.
 #
 # It uses its own project name and publishes no port, so it never touches a stack that is
 # already running on the machine. It needs about 8 GB of memory and Docker (or a Compose that
@@ -41,8 +44,8 @@ PROJECT=${CHAOS_PROJECT:-restartchaos}
 ROUNDS=${CHAOS_ROUNDS:-11}
 SEED=${CHAOS_SEED:-$(date +%s)}
 RANDOM=$SEED
-SERVICES=(db api automation sandbox analyzer capa docview pcap browser)
-ACTIONS=(api automation analyzer capa pcap docview browser sandbox db restart-all upgrade)
+SERVICES=(db recovery api automation sandbox analyzer capa docview pcap browser)
+ACTIONS=(api automation analyzer capa pcap docview browser sandbox db recovery restart-all upgrade)
 
 # Git Bash on Windows rewrites what looks like a path: the names inside containers are not paths
 # of this machine, and the two files Compose reads are given in the form it understands.
@@ -118,6 +121,9 @@ SECRETS_NATIVE=$(native "$ENV_FILE.secrets")
 grep -v '^NIK_SECRETS_DIR=' "$ENV_FILE" >"$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
 {
   echo "NIK_SECRETS_DIR=$SECRETS_NATIVE"
+  # A segment of the log is closed every 20 seconds: the archive works all along the test.
+  echo "NIK_ARCHIVE_TIMEOUT=20"
+  echo "RECOVERY_MEMORY=512m"
   echo "API_MEMORY=1500m"
   echo "AUTOMATION_MEMORY=512m"
   echo "SANDBOX_MEMORY=256m"
@@ -242,6 +248,28 @@ echo "== the log of the database"
 # Read whole, then searched (a grep that stops at its first match cuts the pipe of a long log).
 db_log=$("${COMPOSE[@]}" logs --no-color db 2>&1 || true)
 if grep -q 'leases_pkey' <<<"$db_log"; then fail "taking a lease is an error in the log of the database"; fi
+
+echo "== the archive of the log"
+# The segment being written is closed, and PostgreSQL is given a moment to hand over what it has.
+sql "SELECT pg_switch_wal()" >/dev/null
+waiting=""
+for _ in $(seq 1 30); do
+  waiting=$("${COMPOSE[@]}" exec -T db sh -c 'ls /var/lib/postgresql/18/docker/pg_wal/archive_status | grep -c "[.]ready$" || true' | tr -d '\r')
+  [ "$waiting" = 0 ] && break
+  sleep 2
+done
+[ "$waiting" = 0 ] || fail "PostgreSQL still holds $waiting finished segment(s) it could not hand to the archive"
+[ "$(sql "SELECT (last_failed_time IS NULL OR last_archived_time > last_failed_time) FROM pg_stat_archiver")" = t ] ||
+  fail "the last thing the archiver of PostgreSQL did was fail"
+"${COMPOSE[@]}" exec -T db sh -c 'ls /wal-archive/wal' | tr -d '\r' | docker exec -i "$CHAOS" python /chaos/restart_chaos.py archive ||
+  fail "the archive of the log has a gap"
+based=""
+for _ in $(seq 1 60); do
+  based=$(sql "SELECT count(*) FROM recovery_bases WHERE state = 'done'")
+  [ "${based:-0}" -gt 0 ] && break
+  sleep 3
+done
+[ "${based:-0}" -gt 0 ] || fail "no base backup was taken ($(sql "SELECT id || ' ' || state || ' ' || coalesce(error, '') FROM recovery_bases"))"
 
 echo "== what the other system saw, and what Nik holds"
 driver verify

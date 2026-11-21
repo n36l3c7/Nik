@@ -974,8 +974,10 @@ def test_a_passphrase_that_changes_is_followed_without_locking_the_standby_out(p
 # Which server this is                                                        #
 # --------------------------------------------------------------------------- #
 def test_a_marker_of_a_later_generation_means_this_server_was_replaced(admin):
-    marker = role.new_marker(2, "nik-b", T0)
-    assert role.read_marker(json.dumps(marker).encode()) == marker
+    written = role.new_marker(2, "nik-b", T0)
+    # What is read from the file: its fields, and whether a key of this server signed it.
+    marker = role.read_marker(json.dumps(written).encode())
+    assert marker == {**{key: written[key] for key in ("generation", "at", "by", "id")}, "signed": True}
     assert role.read_marker(b"not json") is None and role.read_marker(None) is None
     assert role.read_marker(b'{"generation": "2"}') is None
     assert role.judge({}, None) == "none"
@@ -1144,7 +1146,7 @@ def test_the_server_waits_a_moment_for_the_answer_of_the_second_host(admin):
         db.commit()
     assert gate.wait_for_the_answer(started, wait=5, sleep=lambda _s: None) == "asked"
     with SessionLocal() as db:
-        role.note_marker(db, role.new_marker(2, "nik-b", started), started + 2)
+        role.note_marker(db, role.read_marker(json.dumps(role.new_marker(2, "nik-b", started)).encode()), started + 2)
         db.commit()
     assert gate.wait_for_the_answer(started, wait=5, sleep=lambda _s: None) == "superseded"
     assert gate._role()[0] == role.SUPERSEDED

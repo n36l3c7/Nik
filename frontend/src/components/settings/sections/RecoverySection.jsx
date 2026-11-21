@@ -467,7 +467,7 @@ export default function RecoverySection() {
             </div>
             <div>
               <dt className={TERM}>Last segment sent</dt>
-              <dd className="break-all text-xs text-fg">{shippedText(copies, when)}</dd>
+              <dd className="break-words text-xs text-fg">{shippedText(copies, when)}</dd>
             </div>
             <div>
               <dt className={TERM}>Files of the store</dt>
@@ -549,7 +549,7 @@ export default function RecoverySection() {
                         )}
                       </td>
                       <td className={CELL}>{checkedText(base)}</td>
-                      <td className={`${CELL} break-all`}>{baseCopyText(base, when)}</td>
+                      <td className={`${CELL} break-words`}>{baseCopyText(base, when)}</td>
                     </tr>
                   )
                 })}

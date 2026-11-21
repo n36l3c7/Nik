@@ -172,7 +172,9 @@ case "$answer" in
     log "  - sign in, open the incident you came back for, and one file of the store;"
     log "  - Settings → System → Audit log: the chain verifies and its last entries are those of the moment;"
     log "  - Settings → Backup: a new base backup is being taken (the database writes a new timeline);"
-    log "  - connectors that fetch start again from where they were at that moment: what they fetched since comes again."
+    log "  - Automations: after going back to a moment you named, the general switch is off (see above). Turn it"
+    log "    on once you have looked at what the other systems hold since that moment: connectors that fetch then"
+    log "    start again from where they were, and what they fetched since comes in again."
     ;;
   upgrade-stopped) die "the server started but stopped its upgrade of the recovered database: $COMPOSE logs api" ;;
   stopped) die "the server did not start: a key is missing or is not the right one. $COMPOSE logs api says which" ;;

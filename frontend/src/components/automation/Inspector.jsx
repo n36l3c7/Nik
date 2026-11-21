@@ -26,6 +26,7 @@ import {
   updateNode,
 } from '../../domain/automation/graph.js'
 import { ROLES } from '../../domain/permissions.js'
+import { safeToRepeatHelp } from '../../domain/restarts.js'
 import { useFields } from '../../context/FieldsContext.jsx'
 import ExpressionInput from './ExpressionInput.jsx'
 import ResizeHandle, { useResizablePane } from '../ui/ResizeHandle.jsx'
@@ -1145,6 +1146,23 @@ function KindSettings({
             />
           ))}
           <OnError config={config} onConfig={onConfig} disabled={disabled} />
+          {node.kind === 'action' && config.action === 'http.request' && (
+            <>
+              <SectionTitle>After a restart</SectionTitle>
+              <div className="flex items-start gap-2">
+                <Switch
+                  label="Safe to repeat"
+                  checked={config.safe_to_repeat === true}
+                  disabled={disabled}
+                  onChange={(safe) => onConfig({ safe_to_repeat: safe || undefined })}
+                />
+                <span className="text-xs text-fg-muted">
+                  {safeToRepeatHelp(config.safe_to_repeat === true)}
+                  {problemAt('safe_to_repeat') ? ` ${problemAt('safe_to_repeat')}` : ''}
+                </span>
+              </div>
+            </>
+          )}
           {node.kind === 'action' && (
             <>
               <SectionTitle>Approval before this node</SectionTitle>

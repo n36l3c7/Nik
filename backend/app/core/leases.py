@@ -19,8 +19,19 @@ renewal, and the next process takes it. Nothing about a lease lives outside
 its row, so the process that takes over may be on another host.
 
 **At a clean stop** every lease this process took is given back at once
-(``release_all``, called when the process exits and by the loops that are
-told to stop): the process that starts next does not wait for them to run out.
+(``release_all``, called by the loops that are told to stop): the process that
+starts next does not wait for them to run out. When the process itself ends
+(``close``: the automation worker at the end of its loop, any process as it
+exits) it is given none from then on: a loop that is still in the middle of a
+pass (a file half sent to the second host) cannot take back, for a process
+that is about to end, what was just given back.
+
+**On a server that does not serve** no lease is given at all: a standby,
+whose database cannot be written, and a server that was replaced by its
+standby (``recovery/role.py``). Every loop takes a lease before it does
+anything, so this one place is what keeps all of them still there: nothing
+runs, and nothing fills the log with the refusals of a read-only database.
+The loops go on by themselves once the server may serve.
 """
 
 from __future__ import annotations
@@ -42,6 +53,8 @@ logger = logging.getLogger("nik.leases")
 _held: set[tuple[str, str]] = set()
 _lock = threading.Lock()
 _registered = False
+# Set when this process has given its leases back because it ends: it takes none after that.
+_closed = False
 
 
 def _upsert(db: OrmSession, name: str, holder: str, now: float, seconds: float) -> int | None:
@@ -68,6 +81,12 @@ def _upsert(db: OrmSession, name: str, holder: str, now: float, seconds: float) 
 def take(db: OrmSession, name: str, holder: str, seconds: float, now: float | None = None) -> bool:
     """Take or renew the lease ``name`` for ``seconds``, and commit; False while another holds it."""
     global _registered
+    if _closed:
+        return False
+    from ..recovery import role
+
+    if not role.may_work(db):
+        return False
     now = time.time() if now is None else now
     taken = _upsert(db, name, holder, now, seconds)
     if taken is None:
@@ -92,16 +111,21 @@ def take(db: OrmSession, name: str, holder: str, seconds: float, now: float | No
         _held.add((name, holder))
         if not _registered:
             _registered = True
-            atexit.register(release_all)
+            atexit.register(close)
     return True
 
 
 def release(db: OrmSession, name: str, holder: str) -> None:
     """Give the lease back when it is ours, and commit."""
+    with _lock:
+        mine = (name, holder) in _held
+        _held.discard((name, holder))
+    from ..recovery import role
+
+    if not mine and role.in_recovery(db):
+        return  # a standby holds none, and its database takes no change
     db.execute(delete(Lease).where(Lease.name == name, Lease.holder == holder))
     db.commit()
-    with _lock:
-        _held.discard((name, holder))
 
 
 def holder_of(db: OrmSession, name: str, now: float | None = None) -> str:
@@ -115,6 +139,21 @@ def held() -> list[tuple[str, str]]:
     """The leases this process took and has not given back."""
     with _lock:
         return sorted(_held)
+
+
+def starting() -> None:
+    """The process starts (or starts again, in a test): it holds nothing and may take leases."""
+    global _closed
+    _closed = False
+    with _lock:
+        _held.clear()
+
+
+def close() -> int:
+    """The process ends: every lease it took is given back, and it is given none from here on."""
+    global _closed
+    _closed = True
+    return release_all()
 
 
 def release_all() -> int:

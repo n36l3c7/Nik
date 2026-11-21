@@ -20,7 +20,9 @@ The problems:
 - ``behind``     what is on the second host is older than the threshold;
 - ``copies``     this server was promoted and still sends its copies to itself;
 - ``asked``      this server started without being able to ask the second
-                 host whether it was replaced.
+                 host whether it was replaced;
+- ``marker``     the second host holds a file that says this server was
+                 replaced, and no key of this server signed it: it is not obeyed.
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ SOLVED = {
     "behind": "The second host has caught up.",
     "copies": "The copies go to another host again.",
     "asked": "The second host was asked: this server was not replaced.",
+    "marker": "The file on the second host that this server did not believe is gone.",
 }
 
 
@@ -142,6 +145,14 @@ def problems(db: OrmSession, now: float | None = None) -> dict[str, str]:
             found["behind"] = (
                 f"What the second host holds is {int(behind // 60)} minutes old (the limit set is "
                 f"{doc['lagMinutes']} minutes): if this host died now, that much would be lost."
+            )
+        if asked.get("verdict") == role.UNSIGNED:
+            found["marker"] = (
+                "The second host holds a file that says this server was replaced (recovery/superseded.json), and it "
+                "is not signed with a key of this server: it is not obeyed, and this server goes on serving. Either "
+                "somebody who can write in that directory left it, or the standby was promoted with other keys than "
+                "this server's: look at the other host before anything else. If its standby really was promoted, stop "
+                "this server (deploy/standby.sh rejoin makes it the standby)."
             )
         if asked.get("reachable") is False and "link" not in found and now - float(asked.get("at") or now) < 3600:
             found["asked"] = (

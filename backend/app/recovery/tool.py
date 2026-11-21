@@ -253,7 +253,7 @@ def fetch(args) -> int:
 # --------------------------------------------------------------------------- #
 # Once the database is back                                                   #
 # --------------------------------------------------------------------------- #
-def _note_recovery(db, label: str, moment: float | None, newest: float) -> None:
+def _note_recovery(db, label: str, moment: float | None, newest: float, paused: bool = False) -> None:
     """The entry a recovery leaves in the audit log: written with plain SQL, linked by the server
     after the entries that came back (``auditlog/restored.py`` says why it is written this way)."""
     import sqlalchemy as sa
@@ -274,18 +274,55 @@ def _note_recovery(db, label: str, moment: float | None, newest: float) -> None:
                 f"The database was brought back {to} from the base backup {label} and the archive of its log: "
                 "the audit log goes on from the head it had at that moment. What was written between that moment "
                 "and this recovery is not in this log"
+                + (
+                    ". The general switch of the automation was turned off by the recovery: this server no longer "
+                    "knows what its playbooks did in other systems after that moment"
+                    if paused
+                    else ""
+                )
             ),
         )
     )
 
 
+def _after_work(moment: float | None, paused: bool) -> list[str]:
+    """What the operator is told of the work that was in progress at the moment the database came
+    back to, and of what the server does about the other systems."""
+    lines = ["The work that was in progress at that moment:"]
+    lines += [
+        "  analyses, scans, captures and mailboxes that were running start again by themselves;",
+        "  a step of a playbook that was running is done again, or, when it was calling another system in a way",
+        "  that may not be repeated, waits as interrupted for a person to say what happened (Automations, Runs);",
+        "  a schedule whose time passed since runs once, however many times it was missed; a fetch goes on from",
+        "  where it was then, so what was fetched since comes in again.",
+    ]
+    if moment is None:
+        return lines
+    lines += [
+        "This server no longer knows what it did in the other systems after that moment: a call a playbook made",
+        "since (a host isolated, a ticket opened, a mail sent) is not in its database, and a playbook started",
+        "again by the same alert makes it again.",
+    ]
+    if paused:
+        lines += [
+            "So the general switch of the automation was turned OFF: no playbook runs, no schedule fires and nothing",
+            "is fetched until an administrator turns it on (Automations, the switch at the top). Look first at",
+            "what the other systems hold since that moment.",
+        ]
+    else:
+        lines += ["The general switch of the automation was off at that moment and stays off."]
+    return lines
+
+
 def after(args) -> int:
     from sqlalchemy import delete, select
 
+    from .. import work
     from ..auditlog import chain
+    from ..automation import state as automation_state
     from ..backups import database
     from ..core.db import SessionLocal
-    from ..core.models import AuditEntry, Lease
+    from ..core.models import AuditEntry, Lease, Setting
     from . import config, files, role
 
     problem = None
@@ -312,9 +349,24 @@ def after(args) -> int:
             .order_by(AuditEntry.seq.desc())
             .limit(1)
         ).first()
-        _note_recovery(db, args.label, moment, newest)
-        # Whoever held a lease is gone: the loops of the server that starts take them at once.
+        # Whoever held a lease is gone: the loops of the server that starts take them at once. So
+        # is whoever held a piece of work: the sweeper takes each back at its first pass (work.py).
+        # The steps of playbooks that were running are taken back by the worker that starts, which
+        # is not the one that claimed them (automation/worker.py).
         db.execute(delete(Lease))
+        if about["revision"] == head:
+            work.orphan_all(db)
+        # Brought back to a moment somebody named, the database is older than what the other
+        # systems hold: what Nik did there after that moment, it no longer knows. Nothing acts on
+        # that by itself. The general switch of the automation goes off, and an administrator
+        # turns it on again after a look (``_after_work`` says what happens then). Brought back
+        # to the end of its archive, the server lost seconds: it goes on.
+        switch = db.get(Setting, automation_state.SETTINGS_ID)
+        was_on = bool(((switch.doc if switch else None) or {}).get("enabled", True))
+        paused = moment is not None and was_on
+        if paused:
+            automation_state.write(db, enabled=False)
+        _note_recovery(db, args.label, moment, newest, paused)
         if args.replaced:
             # Recovered from the copies of another host: this server takes the place of that one. A
             # generation later, and the file that tells the old server so if it ever comes back.
@@ -371,6 +423,9 @@ def after(args) -> int:
             "reached it."
         )
     _say("A new base backup is taken as soon as the server is up: the database writes a new timeline from here.")
+    _say("")
+    for line in _after_work(moment, paused):
+        _say(line)
     print(f"missing={len(outcome['missing'])}")
     print("audit=" + ("later" if about["revision"] != head else "bad" if problem else "ok"))
     return 0
@@ -532,6 +587,7 @@ def promoted(args) -> int:
     """A standby that PostgreSQL has just promoted becomes the server."""
     from sqlalchemy import delete, select
 
+    from .. import work
     from ..core import audit
     from ..core.db import SessionLocal
     from ..core.models import AuditEntry, Lease
@@ -542,7 +598,10 @@ def promoted(args) -> int:
             raise BackupError("The database is still a standby: PostgreSQL was not promoted")
         name = args.name or role.name(db)
         marker = role.promote(db, name)
+        # The processes of the first host are gone for this database: their leases, and the work
+        # they held, which the sweeper of this server takes back at its first pass (work.py).
         db.execute(delete(Lease))
+        work.orphan_all(db)
         # The copies went to this host; from now on they go where an administrator says.
         files.send_again(db)
         # What the first host had deleted and still kept for a recovery is kept here the same way.

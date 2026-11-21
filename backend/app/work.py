@@ -437,6 +437,15 @@ def release_all(now: float | None = None) -> int:
         return 0
 
 
+def orphan_all(db: OrmSession) -> int:
+    """Every process of the server this database comes from is gone: the database was brought
+    back to a moment, or is the one a standby replayed and now serves from (the caller commits).
+    What they held is silent from now on, whatever the clock of that other host said: the sweeper
+    of the server that starts takes each piece back at its first pass, by the rule of its kind,
+    instead of waiting for a heartbeat written by another clock to look old. Returns how many."""
+    return db.execute(update(WorkClaim).where(WorkClaim.state == "held").values(beat_at=0)).rowcount
+
+
 # --------------------------------------------------------------------------- #
 # The sweeper                                                                 #
 # --------------------------------------------------------------------------- #

@@ -730,8 +730,11 @@ deploy/restore.sh --to latest --replace                     # everything the arc
           one file of the store; <em>Settings → System → Audit log</em>, where the chain verifies and the first new
           entry, <code>audit.restore</code>, says to which moment the database was brought back;
           <em>Settings → Backup</em>, where a new base backup is being taken (the database writes a new timeline from
-          here). Connectors that fetch start again from where they were at that moment: what they fetched since comes
-          again.
+          here).
+        </li>
+        <li>
+          Turn the automation on again when you have looked (<a href="#go-back-work">below</a>): going back to a moment
+          you named turns its general switch off.
         </li>
         <li>
           Once all is well, remove the database kept aside (step 2 of the list below). It takes the room of a whole
@@ -743,6 +746,43 @@ deploy/restore.sh --to latest --replace                     # everything the arc
         again. So a moment that turns out to be too early or too late is corrected by running the command with another
         one. <code>--no-start</code> leaves the stack stopped at the end; <code>--yes</code> does not ask.
         <code>NIK_RECOVERY_WAIT</code> (3600) is how many seconds the script waits for a replay before it gives up.
+      </p>
+      <p id="go-back-work">
+        <strong>The work that was in progress, and the other systems.</strong> The database that comes back is the one
+        of that moment, with everything that was in progress then. The server that starts treats it as after a kill (<a
+          href="#stopping-and-restarting"
+          >what a restart costs</a
+        >), whatever the clock of the host it ran on said:
+      </p>
+      <ul>
+        <li>
+          analyses, scans, captures and mailboxes that were running start again by themselves, within seconds of the
+          start;
+        </li>
+        <li>
+          a step of a playbook that was running is done again, or, when it was calling another system in a way that may
+          not be repeated, waits as <em>interrupted</em> for a person to say what happened; a change that was being sent
+          to a mirrored system is sent again, a comment is not, and fails with a sentence;
+        </li>
+        <li>
+          a schedule whose time passed between the moment and now runs <strong>once</strong>, however many times it was
+          missed (the run reads how many in <code>trigger.missed</code>); a timer of an SLA that ran out meanwhile fires
+          with the moment it really ran out;
+        </li>
+        <li>
+          a connector that fetches goes on from where it was at that moment: the alerts fetched since come in again, as
+          new incidents, and start their playbooks again.
+        </li>
+      </ul>
+      <p>
+        <strong>What the server did in other systems after the moment, it no longer knows.</strong> A host a playbook
+        isolated since, a ticket it opened, a mail it sent, a comment it mirrored: none of it is in the database that
+        came back, and a playbook started again by the same alert does it again. So going back to a moment you
+        <em>named</em> turns the general switch of the automation <strong>off</strong>: no playbook runs, no schedule
+        fires and nothing is fetched until an administrator turns it on (<strong>Automations</strong>, the switch at the
+        top). The command says so when it ends, and the entry <code>audit.restore</code> too. Look first at what the
+        other systems hold since the moment; then turn it on. <code>--to latest</code>, which is what one runs when the
+        host died, loses the last seconds only and leaves the switch as it was: the server goes on by itself.
       </p>
       <p id="go-back-asides"><strong>The databases kept aside.</strong></p>
       <ol>
@@ -924,7 +964,8 @@ deploy/standby.sh promote
           arrived), and asks for the word <code>promote</code>. It then takes in and replays everything that arrived,
           has PostgreSQL leave recovery, makes this server the server (one generation later than the first host), leaves
           <code>recovery/superseded.json</code> in the directory of the copies, starts the whole stack and waits until
-          it answers. It ends with what to do next, which is steps 3 to 5.
+          it answers. It ends with what to do next, which is steps 3 to 5. The file is signed with a key both hosts hold
+          (one derived from <code>SECRET_KEY</code>, which the standby was given): a server obeys no other.
         </li>
         <li>
           Point the users at this host: the name they type must reach it (DNS, or the address of the proxy in front).
@@ -937,11 +978,18 @@ deploy/standby.sh promote
         </li>
         <li>
           Sign in and check the last incidents: what the old host wrote after the moment the command named is not here.
-          The audit log has an entry <code>standby.promote</code> that says on which entry the log of this server ends;
-          entries a syslog receiver holds after that one were written on the old host. In
-          <strong>Settings → Backup</strong> the destination is still this host itself, so nothing is sent (the screen
-          says <em>the copies point at this server itself</em>, and the administrators are told): until another host is
-          set there, there is no standby and no copy off the host.
+          <strong>Neither is what it did in other systems after that moment.</strong> The work that was in progress in
+          the database this server holds is taken back at once, by the rules of a restart (<a
+            href="#stopping-and-restarting"
+            >what a restart costs</a
+          >), and a step the old host finished in its last seconds, after the last segment that arrived, is done again
+          here. For a call that may not be repeated that is one call made twice at the worst, within the time the
+          command said was lost: look at <strong>Automations → Runs</strong> for what ran around that moment. The audit
+          log has an entry <code>standby.promote</code> that says on which entry the log of this server ends; entries a
+          syslog receiver holds after that one were written on the old host. In <strong>Settings → Backup</strong> the
+          destination is still this host itself, so nothing is sent (the screen says
+          <em>the copies point at this server itself</em>, and the administrators are told): until another host is set
+          there, there is no standby and no copy off the host.
         </li>
       </ol>
       <p>
@@ -953,6 +1001,16 @@ deploy/standby.sh promote
         server cannot be written, the command prints its one line and where to write it. <code>--name</code> sets what
         this server calls itself in that file (by default the name set on the screen, then <code>NIK_SERVER_NAME</code>,
         then the name of the machine).
+      </p>
+      <p id="standby-does-nothing">
+        <strong>What runs on a standby: nothing.</strong> Its database is read-only, and no process of Nik works on it:
+        the backend answers every request with what it is and takes in what arrives, and the automation worker and the
+        analysis workers are not started by <code>init</code>. Started by hand (<code>compose up -d</code> on the
+        standby), the automation worker waits: no playbook, no schedule, no fetch, no copy of a backup, nothing sent to
+        syslog, and one line in its log that says it waits. The same holds on a server that was replaced. Every loop of
+        the server takes a lease before it does anything, and no lease is given on a server that does not serve. When
+        the standby is promoted the backend starts in the container it was in, and <code>promote</code> starts the
+        others.
       </p>
       <p id="first-host-gone-copies">
         <strong>2. No standby, but the copies were sent: bring Nik up on a new host from them.</strong> The same loss as
@@ -1419,7 +1477,19 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           <code>.env</code>, it does two things more, with the code that is still there: it unseals every file of the
           store (one at a time, each compared before it takes the place of the sealed one; if one cannot be opened it
           stops before the database is touched and says which), and it puts the secrets back into <code>.env</code> if
-          they had been moved to files.
+          they had been moved to files. <strong>Back to a version before 6.9</strong>, which has no archive of the log,
+          no recovery service and no standby: the <code>recovery</code> container is removed and PostgreSQL starts
+          without archiving on the older version. The volumes <code>wal-archive</code> and <code>db-socket</code> are
+          left as they are, and nothing reads them any more: the command says how to remove them once you are sure not
+          to need that archive. A standby of this server follows nothing from then on: stop its stack, and make it again
+          after the next upgrade.
+        </li>
+        <li>
+          <strong>Files deleted since the snapshot was taken</strong> are named again by the database that comes back. A
+          server that archives its log keeps deleted files for a while (under <code>.kept</code> of the store): the
+          rollback moves every one deleted since the snapshot back to its place and says how many. Nothing of 6.9 is
+          left in the database, which is the one of before the upgrade: a step of a playbook that was running when the
+          snapshot was taken is handled as the older version does.
         </li>
         <li>
           Sign in and look at the latest incidents.
@@ -2099,6 +2169,21 @@ podman compose up -d --build
           6.9 the workers ignored SIGTERM and were killed after ten seconds.
         </li>
         <li>
+          <strong>The database and the recovery service stop politely too.</strong> PostgreSQL ends its connections,
+          writes a checkpoint and hands every finished segment of its log to the archive before it exits; it is given 60
+          seconds. The segment it was writing is not finished and is not archived: it is in the data directory, and goes
+          on when the database starts. The recovery service, asked to stop while it takes a base backup or proves the
+          archive, ends the tool, stops its scratch server, removes what was half written and exits (30 seconds); the
+          request stays, and is done again from the start when the service is back. Killed, it leaves the half-written
+          base backup and the files of the scratch server, and removes them when it starts. A base backup or a test that
+          nobody answers is counted as failed after a while (six hours for a base backup whose request is still there, a
+          minute when the request was lost; fifteen minutes for a test), and the administrators are told: neither stays
+          "being taken" for ever. The copies to the second host stop between two files; a file cut half-way by a kill is
+          a <code>.partial</code> there, which nothing reads, and is resumed or sent again. A standby stops at once. The
+          whole stack, each container using all of its time one after the other, stops in under three minutes: the unit
+          <code>deploy/install-systemd.sh</code> installs waits five (<code>TimeoutStopSec=300</code>).
+        </li>
+        <li>
           <strong>A kill, a crash, the power.</strong> Nothing is handed back, and it is as safe, only slower: work
           whose holder has not said it is alive for 45 seconds is taken back, a lease runs out 30 to 300 seconds after
           its last renewal (the automation worker's after 30), and the worker that then starts takes back at once the
@@ -2127,8 +2212,10 @@ podman compose up -d --build
         <li>
           <strong>The health page</strong> has three rows for all this, under <em>Work in progress</em>: the steps a
           restart interrupted that wait for a person, the work set aside after it was interrupted, and the oldest work
-          held without a sign of life (more than two minutes means that what should take it back is not running). Each
-          tells the administrators once when it stops being fine and once when it is fine again.
+          held without a sign of life (more than two minutes means that what should take it back is not running). The
+          last two tell the administrators once when they stop being fine and once when they are fine again; a step that
+          waits for a person told the people who can answer it when it was interrupted, and the row does not tell them a
+          second time.
         </li>
         <li>
           <strong>Proving it on a stack of your own.</strong> <code>.github/scripts/restart-chaos.sh</code> starts a
@@ -2245,7 +2332,8 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
           end (7), an audit entry that has waited 5 minutes to be forwarded (30), a broken chain, the database at 80% of
           its connections (95%) or a pool with none left, a transaction open for 15 minutes (the one a backup reads the
           database in is not counted), clocks 5 seconds apart (60). A value has to be found twice in a row before
-          anybody is told. Workers and backups keep their own notices; this page does not repeat them.
+          anybody is told. Workers, backups and the recovery to a moment keep their own notices; this page does not
+          repeat them.
         </li>
         <li>
           <strong>Work in progress.</strong> Three rows say what restarts left behind (<a

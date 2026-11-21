@@ -15,8 +15,9 @@ there, a certificate nobody could read): it is said, never guessed.
 
 The pages of Workers, Storage, Backup and the audit log are not repeated
 here: a row sums one up and links to it. Rows whose trouble another watch
-already tells the administrators about (a worker down, a backup that failed)
-have ``notify`` off: nobody is told twice.
+already tells the administrators about (a worker down, a backup that failed,
+an archive that is stuck, a step a restart interrupted) have ``notify`` off:
+nobody is told twice.
 
 ``gather`` computes every row from the database and the disks at the moment
 it is called. What needs a memory (how fast a disk fills, since when a row is
@@ -774,7 +775,8 @@ def _work(db: OrmSession, now: float) -> list[dict[str, Any]]:
             if waiting
             else "",
             link="/automation/runs?status=interrupted",
-            notify=True,
+            # Each of these steps told the people who can answer it when it was interrupted
+            # (tasks.notify_interrupted): the row shows them, and tells nobody a second time.
             metrics=[
                 ("nik_work_interrupted", {}, len(waiting)),
                 ("nik_work_interrupted_oldest_seconds", {}, oldest),

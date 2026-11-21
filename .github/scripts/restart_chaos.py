@@ -5,6 +5,7 @@
     python restart_chaos.py start <round>    start one of every kind of work
     python restart_chaos.py settle           wait until nothing moves any more, answering what waits
     python restart_chaos.py verify           every assertion of the test; exit 1 with what is wrong
+    python restart_chaos.py archive          the names of the archive of the log, on the standard input: no gap
 
 Standard library only. Nothing here is a sample: the "malware" is a PE of a few hundred bytes
 that does nothing, the capture is the fixture of the pcap worker's tests, the mailbox two lines.
@@ -535,6 +536,36 @@ def verify() -> None:
     print("verified")
 
 
+def archive_gaps(names: list[str]) -> tuple[int, list[str]]:
+    """The segments an archive holds, and those it lacks between its first and its last, timeline
+    by timeline. A segment is named by its timeline, then two numbers of eight hexadecimal digits:
+    256 segments of 16 MB to each of the first."""
+    held: dict[str, set[int]] = {}
+    for name in names:
+        stem = name.strip().removesuffix(".gz")
+        if len(stem) == 24 and all(letter in "0123456789ABCDEF" for letter in stem):
+            held.setdefault(stem[:8], set()).add(int(stem[8:16], 16) * 256 + int(stem[16:], 16))
+    missing = []
+    for timeline, numbers in sorted(held.items()):
+        for number in range(min(numbers), max(numbers) + 1):
+            if number not in numbers:
+                missing.append(f"{timeline}{number // 256:08X}{number % 256:08X}")
+    return sum(len(numbers) for numbers in held.values()), missing
+
+
+def archive() -> None:
+    count, missing = archive_gaps(sys.stdin.read().split())
+    if not count:
+        print("WRONG: the archive of the log holds no segment")
+        raise SystemExit(1)
+    if missing:
+        print(f"WRONG: the archive of the log lacks {len(missing)} segment(s) between its first and its last:")
+        for name in missing[:40]:
+            print(f"  {name}")
+        raise SystemExit(1)
+    print(f"the archive of the log holds {count} segments, with no gap")
+
+
 if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command == "stub":
@@ -547,5 +578,7 @@ if __name__ == "__main__":
         settle()
     elif command == "verify":
         verify()
+    elif command == "archive":
+        archive()
     else:
         raise SystemExit(__doc__)

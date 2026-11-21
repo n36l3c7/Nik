@@ -148,17 +148,18 @@ def held_by_another(db: OrmSession, holder: str = HOLDER, now: float | None = No
 class Renewing:
     """Keeps the lease while a long piece of work runs in this thread."""
 
-    def __init__(self, holder: str, name: str = LEASE) -> None:
-        self._holder, self._name, self._stop = holder, name, threading.Event()
+    def __init__(self, holder: str, name: str = LEASE, seconds: float = LEASE_SECONDS) -> None:
+        self._holder, self._name, self._seconds, self._stop = holder, name, seconds, threading.Event()
         self._thread = threading.Thread(target=self._run, name="nik-backup-lease", daemon=True)
 
     def _run(self) -> None:
+        from ..core import leases
         from ..core.db import SessionLocal
 
-        while not self._stop.wait(LEASE_SECONDS / 4):
+        while not self._stop.wait(self._seconds / 4):
             try:
                 with SessionLocal() as db:
-                    acquire(db, self._holder, name=self._name)
+                    leases.take(db, self._name, self._holder, self._seconds)
             except Exception:  # noqa: BLE001 - the work goes on; the next renewal tries again
                 logger.exception("The lease of the backups could not be renewed")
 

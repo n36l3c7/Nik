@@ -2,7 +2,9 @@
 
 ``overview`` is what *Settings → Backup* shows under "Recovery to a moment"
 and what ``deploy/standby.sh status`` prints. ``rows`` are the rows of the
-health page (group "Recovery"), each with its metrics. ``loss`` is the
+health page (group "Recovery"), each with its metrics. None of them has
+``notify`` on: every trouble they show is one the watch of the recovery
+(``watch.py``) tells the administrators about itself, once. ``loss`` is the
 sentence that matters before a promotion: what this standby does not hold.
 """
 
@@ -174,6 +176,13 @@ def loss(found: dict[str, Any], now: float | None = None) -> dict[str, Any]:
                 f"{_ago(gap)} before it last spoke, and whatever it wrote after that. With the first host "
                 f"sending normally this is at most about {_ago(timeout + 30)}."
             )
+    elif found.get("heartbeatRefused"):
+        lines.append(
+            "A heartbeat is here, but it is not signed with a key this host holds, so it is not believed: what the "
+            "first host wrote after the last change above is lost by a promotion, and this standby cannot say how "
+            "much that is. If SECRET_KEY was changed on the first host, carry its keys here again "
+            "(deploy/standby.sh secrets export, then import)."
+        )
     else:
         lines.append(
             "The first host has left no heartbeat here: what it wrote after the last change above is lost by a "
@@ -245,8 +254,12 @@ def rows(db: OrmSession, now: float) -> list[dict[str, Any]]:
                 if pair["promotedAt"]
                 else ""
             ),
-            PROBLEM if seen["role"] == role.SUPERSEDED else ATTENTION if "asked" in problems else FINE,
-            problems.get("asked", ""),
+            PROBLEM
+            if seen["role"] == role.SUPERSEDED or "marker" in problems
+            else ATTENTION
+            if "asked" in problems
+            else FINE,
+            problems.get("marker") or problems.get("asked", ""),
             link=link,
             metrics=[
                 ("nik_server_role", {"role": seen["role"]}, 1),
@@ -282,7 +295,6 @@ def rows(db: OrmSession, now: float) -> list[dict[str, Any]]:
             PROBLEM if wrong else ATTENTION if log["stuck"] else FINE if log["on"] else PROBLEM,
             wrong,
             link=link,
-            notify=bool(wrong),
             metrics=[
                 ("nik_recovery_archive_ok", {}, int(log["on"] and not log["stuck"])),
                 ("nik_recovery_wal_waiting_bytes", {}, log["waitingBytes"]),
@@ -341,7 +353,6 @@ def rows(db: OrmSession, now: float) -> list[dict[str, Any]]:
             PROBLEM if "test" in problems else FINE if proven else UNKNOWN,
             problems.get("test", ""),
             link=link,
-            notify="test" in problems,
             metrics=[
                 *([("nik_recovery_test_ok", {}, int(tried["state"] == "passed"))] if tried else []),
                 *([("nik_recovery_test_timestamp_seconds", {}, runner.stamp(proven["at"]))] if proven else []),
@@ -384,7 +395,6 @@ def rows(db: OrmSession, now: float) -> list[dict[str, Any]]:
                 PROBLEM if wrong else FINE,
                 wrong,
                 link=link,
-                notify=bool(wrong),
                 metrics=[
                     ("nik_recovery_copy_link_ok", {}, int(link_state.get("ok") is not False)),
                     *(

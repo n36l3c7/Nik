@@ -283,8 +283,10 @@ def on_startup() -> None:
     # the analyses, the scans, the mailboxes, what playbooks ask about files.
     from . import work
     from .automation import worker as automation_loop
+    from .core import leases
 
     work.starting()
+    leases.starting()
     automation_loop._stopping.clear()
     if app_settings.API_BACKGROUND:
         work.start()

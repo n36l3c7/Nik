@@ -77,6 +77,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    # Asked to stop, PostgreSQL ends its connections, writes a checkpoint and hands the last
+    # segment of its log to the archive before it exits (a fast shutdown: the image stops it
+    # with SIGINT). On a busy database the checkpoint takes more than the ten seconds an engine
+    # waits by default; killed before the end, nothing is lost, but the next start replays the
+    # log and the last segment reaches the archive only then.
+    stop_grace_period: 60s
     pids_limit: 512
     logging: *logging
     restart: unless-stopped
@@ -109,6 +115,10 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${RECOVERY_MEMORY:-1g}
+    # Asked to stop in the middle of a base backup or of a recovery test, it ends the tool, stops
+    # its scratch server, removes what was half written and exits; the request is done again
+    # when it is back.
+    stop_grace_period: 30s
     cpus: ${RECOVERY_CPUS:-2}
     pids_limit: 256
     logging: *logging

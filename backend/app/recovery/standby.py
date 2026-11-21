@@ -259,7 +259,7 @@ def done_promoting() -> None:
         (layout.folder("incoming") / PROMOTING).unlink()
 
 
-def read_heartbeat(box: Path | None) -> dict[str, Any] | None:
+def _heartbeat_file(box: Path | None) -> dict[str, Any] | None:
     if box is None:
         return None
     try:
@@ -267,6 +267,24 @@ def read_heartbeat(box: Path | None) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return found if isinstance(found, dict) else None
+
+
+def read_heartbeat(box: Path | None) -> dict[str, Any] | None:
+    """What the first host last said of itself, when it signed it (``role.py``): a heartbeat that
+    is not signed with a key this host holds could have been written by anybody who can write in
+    the directory, and what a promotion would lose is not read from it."""
+    from . import role
+
+    found = _heartbeat_file(box)
+    return found if found is not None and role.signed("heartbeat", found) else None
+
+
+def heartbeat_refused(box: Path | None) -> bool:
+    """Whether a heartbeat is there and is not believed."""
+    from . import role
+
+    found = _heartbeat_file(box)
+    return found is not None and not role.signed("heartbeat", found)
 
 
 def notes() -> dict[str, Any]:
@@ -347,6 +365,7 @@ def status(db: OrmSession, now: float | None = None) -> dict[str, Any]:
         "inbox": box is not None,
         "replay": found,
         "heartbeat": beat,
+        "heartbeatRefused": beat is None and heartbeat_refused(box),
         "arrived": arrived,
         "waiting": waiting,
         "intake": {key: noted.get(key) for key in ("at", "error", "lastOpened", "lastOpenedAt")},

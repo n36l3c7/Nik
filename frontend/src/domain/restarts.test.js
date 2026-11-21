@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ANSWERS, interruptedSteps, restartLine, restartLines, runStatus, workLine, workProgress } from './restarts.js'
+import {
+  ANSWERS,
+  interruptedSteps,
+  restartLine,
+  restartLines,
+  runStatus,
+  safeToRepeatHelp,
+  workLine,
+  workProgress,
+} from './restarts.js'
 
 const at = (ms) => new Date(ms).toISOString().slice(11, 16)
 
@@ -90,4 +99,10 @@ test('how far a job is shows only while it is held', () => {
   )
   assert.equal(workProgress({ state: 'done', progress: 'left over' }), '')
   assert.equal(workProgress(null), '')
+})
+
+test('the help of "Safe to repeat" says what a restart does with the tick on and off', () => {
+  assert.match(safeToRepeatHelp(true), /is sent again, whatever its method/)
+  assert.match(safeToRepeatHelp(false), /is not sent again: the run waits for a person/)
+  assert.notEqual(safeToRepeatHelp(true), safeToRepeatHelp(false))
 })

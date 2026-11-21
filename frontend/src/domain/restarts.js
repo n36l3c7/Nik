@@ -84,3 +84,12 @@ export function workLine(work, format = plain, max = 3) {
 
 /** How far a job is, as its worker says it ('' when it says nothing, or the job is not running). */
 export const workProgress = (work) => (work?.state === 'held' ? String(work.progress ?? '') : '')
+
+/**
+ * What the inspector says beside "Safe to repeat" on an HTTP request node: what a restart does
+ * to a request that was being sent, with the tick on and off. A GET is repeated either way.
+ */
+export const safeToRepeatHelp = (on) =>
+  on
+    ? 'A request cut by a restart is sent again, whatever its method: turn this on only when sending it twice does no harm.'
+    : 'A request that is not a GET and was cut by a restart is not sent again: the run waits for a person to say whether it happened.'

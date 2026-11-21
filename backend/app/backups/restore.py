@@ -224,6 +224,23 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
         loader.close()
         sealed_store.clear_allowed = asked_before
     ended = database.after_restore(url)
+    if not with_store:
+        # The store was left as it is, and the database that came back names the files that were
+        # deleted since it was taken: those a recovery keeps are moved back to their places
+        # (app/recovery/kept.py). Nothing on a server that keeps none.
+        from ..recovery import kept
+
+        returned = kept.put_back_since(runner.stamp(str(manifest.get("createdAt") or "")) or time.time())
+        if returned["back"] or returned["stayed"]:
+            checks.append(
+                f"{returned['back']} file(s) of the store deleted since the backup was taken were put back in "
+                "their places"
+                + (
+                    f"; {returned['stayed']} stay under .kept of the store, their place being taken by a newer file"
+                    if returned["stayed"]
+                    else ""
+                )
+            )
     if with_store:
         # The row that came with the database speaks of the store it was taken from: this one was
         # just written, sealed under the store key of this server.

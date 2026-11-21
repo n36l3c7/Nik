@@ -33,6 +33,17 @@ host after a promotion.
   (``mirror.take_back``).
 - A step this worker claimed and no longer runs (its thread died) is found by
   its age, as before.
+
+**On a server that does not serve** (a standby, a server its standby
+replaced: ``recovery/role.py``) the worker does nothing at all: the lease is
+not given there (``core/leases.py``), so no event is taken, no schedule
+fires, no step is claimed, no cycle fetches, and the loop does not even say
+it is alive. It goes on by itself when the standby is promoted. After a
+promotion, or a recovery to a moment, the database is that of a moment
+before the other server stopped: every step in it that is ``running`` is
+under the name of a worker that no longer exists (a name is a random number
+made when a process starts, so two hosts never share one), and is taken back
+at the first pass by the same rule as after a kill.
 """
 
 from __future__ import annotations
@@ -348,8 +359,27 @@ def drain(now: float | None = None, limit: int = 200) -> int:
 # --------------------------------------------------------------------------- #
 # The loop                                                                    #
 # --------------------------------------------------------------------------- #
+def may_work() -> bool:
+    """Whether this server serves (``recovery/role.py``): asked before anything is written."""
+    from ..recovery import role
+
+    try:
+        with SessionLocal() as db:
+            return role.may_work(db)
+    except Exception:  # noqa: BLE001 - the database is away: the pass that follows says so
+        return True
+
+
 def loop() -> None:
     last_beat = last_prune = 0.0
+    said = False
+    while not _stopping.is_set() and not may_work():
+        if not said:
+            logger.warning("This server does not serve (a standby, or a server that was replaced): the worker waits")
+            said = True
+        _stopping.wait(5)
+    if _stopping.is_set():
+        return
     with SessionLocal() as db:
         from .nik_actions import system_user
 
@@ -360,6 +390,11 @@ def loop() -> None:
         while not _stopping.is_set():
             started = time.time()
             try:
+                if not may_work():
+                    # Replaced while it ran (or a standby again): nothing is written, not even the
+                    # sign of life. What is in flight ends by itself; nothing new starts.
+                    _stopping.wait(5)
+                    continue
                 tick(pool=pool)
                 if started - last_beat >= state.HEARTBEAT_EVERY:
                     with SessionLocal() as db:
@@ -508,8 +543,10 @@ def main() -> None:
     health_watch.start()
     loop()
     # Every lease this process took (its own, the copies of the backups, the forwarding of the
-    # audit log, the watch of the health) is given back: the worker that starts next waits for none.
-    leases.release_all()
+    # audit log, the copies of the archive, the watch of the health) is given back, and none is
+    # taken from here on (a copy that is being sent ends with its file): the worker that starts
+    # next waits for none.
+    leases.close()
     logger.info("Automation worker stopped")
     if _in_flight or _fetching:
         # Threads that did not finish in the grace would hold the process until they do: it exits

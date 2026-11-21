@@ -46,6 +46,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -253,8 +254,14 @@ def _keep(db: OrmSession, state: dict[str, Any]) -> None:
     db.commit()
 
 
-def ship(now: float | None = None, holder: str = runner.HOLDER, budget: float = BUDGET) -> list[str]:
-    """One pass of the process that has a way out. Returns what it did."""
+def ship(
+    now: float | None = None,
+    holder: str = runner.HOLDER,
+    budget: float = BUDGET,
+    stopping: Callable[[], bool] = lambda: False,
+) -> list[str]:
+    """One pass of the process that has a way out. Returns what it did. ``stopping`` says that
+    the process was asked to stop: the file being sent is finished, and no other is started."""
     from ..core.db import SessionLocal
 
     clock = time.time() if now is None else now
@@ -297,8 +304,8 @@ def ship(now: float | None = None, holder: str = runner.HOLDER, budget: float = 
     if not waits:
         return did
     try:
-        with runner.Renewing(holder, LEASE), remote.session() as session:
-            did += _pass(session, remote, phrase, earlier, clock, budget)
+        with runner.Renewing(holder, LEASE, config.LEASE_SECONDS), remote.session() as session:
+            did += _pass(session, remote, phrase, earlier, clock, budget, stopping)
     except (OffsiteError, OSError, EOFError) as error:
         with SessionLocal() as db:
             state = config.held(db, config.SHIP_SETTINGS_ID)
@@ -363,7 +370,15 @@ def _start_over(db: OrmSession, state: dict[str, Any], where: str) -> None:
     files.send_again(db)
 
 
-def _pass(session: Session, remote: Remote, phrase: str, earlier: str | None, clock: float, budget: float) -> list[str]:
+def _pass(
+    session: Session,
+    remote: Remote,
+    phrase: str,
+    earlier: str | None,
+    clock: float,
+    budget: float,
+    stopping: Callable[[], bool] = lambda: False,
+) -> list[str]:
     from ..core.db import SessionLocal
 
     did: list[str] = []
@@ -400,7 +415,7 @@ def _pass(session: Session, remote: Remote, phrase: str, earlier: str | None, cl
     # 2. The log, in order.
     seal = state.get("seal") or {}
     for name, path in _waiting_segments(state):
-        if time.monotonic() - started > budget:
+        if time.monotonic() - started > budget or stopping():
             break
         try:
             closed = path.stat().st_mtime
@@ -433,6 +448,8 @@ def _pass(session: Session, remote: Remote, phrase: str, earlier: str | None, cl
         ]
         going = list(db.scalars(select(RecoveryBase.id).where(RecoveryBase.offsite_state == "delete")))
     for label in waiting:
+        if stopping():
+            break
         try:
             sent = _send_base(session, label, phrase, clock)
         except FileNotFoundError:
@@ -474,8 +491,15 @@ def _pass(session: Session, remote: Remote, phrase: str, earlier: str | None, cl
                 db.commit()
         did.append(f"base-removed:{label}")
 
+    if stopping():
+        # Asked to stop: what was sent is counted, the rest waits for the process that starts next.
+        # A file that was cut half-way is a ``.partial`` on the other host, which nothing reads.
+        return did
+
     # 4. Files of the store.
-    did += _send_store(session, clock, started, budget)
+    did += _send_store(session, clock, started, budget, stopping)
+    if stopping():
+        return did
 
     # 5. What is no longer kept.
     did += _prune(session, clock)
@@ -484,7 +508,9 @@ def _pass(session: Session, remote: Remote, phrase: str, earlier: str | None, cl
     with SessionLocal() as db:
         state = config.held(db, config.SHIP_SETTINGS_ID)
         if clock - float(state.get("heartbeatAt") or 0) >= HEARTBEAT_EVERY - 5 or did:
-            session.put_bytes(HEARTBEAT, json.dumps(heartbeat(db, state, clock), sort_keys=True).encode("utf-8"))
+            # Signed, as the marker is (role.py): the standby believes no heartbeat that is not.
+            said = role.sign("heartbeat", heartbeat(db, state, clock))
+            session.put_bytes(HEARTBEAT, json.dumps(said, sort_keys=True).encode("utf-8"))
             state["heartbeatAt"] = clock
             _keep(db, state)
     return did
@@ -507,7 +533,9 @@ def heartbeat(db: OrmSession, state: dict[str, Any], now: float) -> dict[str, An
     }
 
 
-def _send_store(session: Session, clock: float, started: float, budget: float) -> list[str]:
+def _send_store(
+    session: Session, clock: float, started: float, budget: float, stopping: Callable[[], bool] = lambda: False
+) -> list[str]:
     from ..core.db import SessionLocal
 
     did: list[str] = []
@@ -538,7 +566,7 @@ def _send_store(session: Session, clock: float, started: float, budget: float) -
             if row.state == "pending" or clock - float(row.copied_at or row.seen_at or 0) >= RETRY_AFTER
         ][:STORE_BATCH]
     for name in rows:
-        if time.monotonic() - started > budget:
+        if time.monotonic() - started > budget or stopping():
             break
         try:
             _send_store_file(session, name)

@@ -18,6 +18,26 @@ server was replaced. From then on the server does not serve: it answers every
 request with that sentence (``gate.py``), and its automation worker runs
 nothing.
 
+**The file is signed.** Whoever can write in the directory of the copies could
+otherwise stop the first host with one small file. The marker carries a MAC
+under a key both hosts hold: one derived from ``SECRET_KEY`` with a label of
+its own (the standby is given ``SECRET_KEY`` by ``deploy/standby.sh secrets
+import``). A marker with no MAC, or with one this server cannot make with the
+key it has or one it had (``SECRET_KEY_PREVIOUS``), is never obeyed: it is
+written down as such, the administrators are told once, and the health page
+shows it. The heartbeat the first host leaves for the standby is signed the
+same way, so that what a standby says a promotion would lose cannot be
+written by somebody else.
+
+**Nothing works on a server that does not serve.** ``may_work`` is what
+every loop of the server asks before it does anything, through the lease it
+must take (``core/leases.py``): no lease is given on a standby (its database
+cannot be written), nor on a server that was replaced. So no step of a
+playbook is taken, no schedule fires, no cycle fetches, no copy leaves and no
+work is taken back there, and none of them fills the log trying. They go on
+by themselves when the server may serve again (a standby that is promoted:
+its processes need no restart for it).
+
 **What this cannot do.** A server that comes back and cannot reach the other
 host cannot know it was replaced: it serves. Nothing inside it can tell an
 empty network from a dead peer, and a server that stopped whenever the second
@@ -29,12 +49,17 @@ the standby (``deploy/standby.sh rejoin``).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import socket
+import threading
 import time
 import uuid
 from typing import Any
 
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import text
 from sqlalchemy.orm import Session as OrmSession
 
@@ -83,24 +108,97 @@ def of(db: OrmSession) -> str:
 
 
 def serving(db: OrmSession) -> bool:
-    """Whether this server is the one that serves: the loops that fetch, run playbooks and send
-    copies ask before each pass."""
+    """Whether this server is the one that serves, asked of the database now."""
     return of(db) == PRIMARY
+
+
+# How long an answer of ``may_work`` is believed: the loops ask every second or so, and the role
+# of a server changes a few times in its life.
+MAY_WORK_KEPT = 3.0
+_may_work: tuple[float, bool] = (0.0, True)
+_may_work_lock = threading.Lock()
+
+
+def may_work(db: OrmSession, now: float | None = None) -> bool:
+    """Whether the loops of this process may do anything: False on a standby and on a server that
+    was replaced. Asked through ``core/leases.py`` by every loop, so the answer is kept for a few
+    seconds. Never raises, and never leaves the session in a failed transaction: a database that
+    cannot say (it has no table of settings yet: a new install) is the server."""
+    global _may_work
+    if db.get_bind().dialect.name != "postgresql":
+        return True
+    clock = time.monotonic() if now is None else now
+    with _may_work_lock:
+        at, answer = _may_work
+        if at and 0 <= clock - at < MAY_WORK_KEPT:
+            return answer
+    try:
+        with db.begin_nested():
+            answer = of(db) == PRIMARY
+    except Exception:  # noqa: BLE001 - asked again at the next pass
+        answer, clock = True, 0.0
+    with _may_work_lock:
+        _may_work = (clock, answer)
+    return answer
+
+
+def forget_may_work() -> None:
+    """Ask the database again at the next ``may_work`` (the role was just changed; the tests)."""
+    global _may_work
+    with _may_work_lock:
+        _may_work = (0.0, True)
 
 
 # --------------------------------------------------------------------------- #
 # The file a promotion leaves                                                 #
 # --------------------------------------------------------------------------- #
+MAC_LABEL = b"nik pair files"
+UNSIGNED = "unsigned"
+
+
+def _mac_key(secret: str) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=MAC_LABEL).derive(secret.encode("utf-8"))
+
+
+def _mac(secret: str, what: str, doc: dict[str, Any]) -> str:
+    """The MAC of a small file the two hosts leave for each other: over what the file is (a marker
+    is not a heartbeat) and every field but the MAC itself, written one way."""
+    body = json.dumps({key: value for key, value in doc.items() if key != "mac"}, sort_keys=True, separators=(",", ":"))
+    return hmac.new(_mac_key(secret), f"{what}\n{body}".encode(), hashlib.sha256).hexdigest()
+
+
+def sign(what: str, doc: dict[str, Any]) -> dict[str, Any]:
+    """``doc`` with the MAC this server gives it."""
+    return {**doc, "mac": _mac(settings.SECRET_KEY, what, doc)}
+
+
+def signed(what: str, doc: dict[str, Any]) -> bool:
+    """Whether ``doc`` carries a MAC made with the key of this server, or with one it had before."""
+    mac = doc.get("mac")
+    if not isinstance(mac, str) or not mac:
+        return False
+    return any(
+        hmac.compare_digest(_mac(secret, what, doc), mac)
+        for secret in (settings.SECRET_KEY, *settings.SECRET_KEY_PREVIOUS)
+        if secret
+    )
+
+
 def new_marker(generation_now: int, by: str, now: float | None = None) -> dict[str, Any]:
-    return {
-        "generation": int(generation_now),
-        "at": time.time() if now is None else now,
-        "by": by,
-        "id": uuid.uuid4().hex,
-    }
+    return sign(
+        "marker",
+        {
+            "generation": int(generation_now),
+            "at": time.time() if now is None else now,
+            "by": by,
+            "id": uuid.uuid4().hex,
+        },
+    )
 
 
 def read_marker(raw: bytes | None) -> dict[str, Any] | None:
+    """The marker a file holds, or None when it holds none. ``signed`` says whether its MAC is one
+    this server can make: a marker that is not signed is never obeyed (``judge``)."""
     if not raw:
         return None
     try:
@@ -114,18 +212,22 @@ def read_marker(raw: bytes | None) -> dict[str, Any] | None:
         "at": float(found.get("at") or 0),
         "by": str(found.get("by") or "")[:120],
         "id": str(found.get("id") or "")[:64],
+        "signed": signed("marker", found),
     }
 
 
 def judge(doc: dict[str, Any], marker: dict[str, Any] | None) -> str:
     """What a marker found on the other host means for the server that keeps ``doc``:
     ``none`` (no marker, or an old one), ``own`` (this server wrote it when it was promoted: the
-    copies still point at this host itself) or ``superseded``."""
+    copies still point at this host itself), ``superseded``, or ``unsigned``: a marker that would
+    replace this server and that no key of this server signed. That one is not obeyed."""
     if marker is None:
         return "none"
     if marker["id"] and marker["id"] == doc.get("markerId"):
         return "own"
-    return "superseded" if marker["generation"] > int(doc.get("generation") or 1) else "none"
+    if marker["generation"] <= int(doc.get("generation") or 1):
+        return "none"
+    return "superseded" if marker.get("signed") else UNSIGNED
 
 
 def note_marker(db: OrmSession, marker: dict[str, Any] | None, now: float | None = None) -> str:
@@ -142,6 +244,8 @@ def note_marker(db: OrmSession, marker: dict[str, Any] | None, now: float | None
             "learnedAt": now,
         }
     config.keep(db, config.ROLE_SETTINGS_ID, doc)
+    if verdict == "superseded":
+        forget_may_work()
     return verdict
 
 
@@ -173,6 +277,7 @@ def promote(db: OrmSession, by: str, now: float | None = None, hold: bool = True
     doc.pop("superseded", None)
     doc.pop("asked", None)
     config.keep(db, config.ROLE_SETTINGS_ID, doc)
+    forget_may_work()
     return marker
 
 

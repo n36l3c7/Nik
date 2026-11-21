@@ -1283,6 +1283,8 @@ Content-Type: application/json
         <code>status</code>, <code>ok</code>, <code>json</code> (when the answer is JSON) and <code>text</code>. An
         answer larger than 5 MB is refused; three redirects are followed, each checked like the first address. Anything
         but a GET changes something on the other side, and <a href="#approvals">asks first</a> by default.
+        <strong>Safe to repeat</strong>, off by default, says that sending the request twice does no harm: see
+        <a href="#interrupted">what a restart does to it</a>.
       </p>
 
       <h3 id="email-node">E-mail</h3>
@@ -1703,9 +1705,9 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       </p>
       <p>
         One case is not tried again by itself: an HTTP request that changes something and whose answer never came. Nik
-        cannot know whether the other side did it, so the step fails and says so, rather than doing it twice. A step
-        that was cut by a restart of the server is another matter, and has a section of its own:
-        <a href="#restarts">Across a restart</a>.
+        cannot know whether the other side did it, so the step fails and says so, rather than doing it twice (unless the
+        node says it is <a href="#interrupted">safe to repeat</a>). A step that was cut by a restart of the server is
+        another matter, and has a section of its own: <a href="#restarts">Across a restart</a>.
       </p>
 
       <h2 id="restarts">Across a restart</h2>
@@ -1794,6 +1796,16 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         <li>
           A step that had only been <em>taken</em> by the worker and had not begun its call is simply done: nothing had
           left.
+        </li>
+        <li>
+          <strong>An HTTP request node</strong> is a call Nik knows nothing of but its method: a GET is sent again, and
+          any other method is taken as one that may not be repeated. When sending the request twice does no harm (a PUT
+          that sets a state, a POST to a system that ignores what it already has), turn on
+          <strong>Safe to repeat</strong> in the node, under <em>After a restart</em>: a request of that node cut by a
+          restart is then sent again instead of waiting for a person, and one whose answer was lost on the way is tried
+          again as the node allows. It is off unless somebody turns it on, and it travels with the playbook when it is
+          exported. Only this node has it: a command of a connector says the same thing in the connector
+          (<code>idempotent</code>).
         </li>
         <li>
           A step that was cut three times while it ran is not started a fourth time: it fails with that reason, as a
@@ -4418,7 +4430,8 @@ commands:
                 <code>email.send</code>…), <code>args</code>, <code>on_error</code> (<code>{"mode": "stop"}</code> or
                 <code>{"mode": "retry", "times": 3}</code>), <code>approval</code> (<code
                   >{"ask": true, "wait_seconds": 3600, "on_expire": "skip" | "stop"}</code
-                >).
+                >), and for <code>http.request</code> alone <code>safe_to_repeat</code> (<code>true</code> or
+                <code>false</code>).
               </td>
             </tr>
             <tr>

@@ -15,17 +15,22 @@ PROJECT=${SMOKE_PROJECT:-nik-smoke}
 HTTP_PORT=${SMOKE_HTTP_PORT:-18080}
 TLS_PORT=${SMOKE_TLS_PORT:-18443}
 ENV_FILE=$(mktemp)
-COMPOSE=(docker compose -p "$PROJECT" --env-file "$ENV_FILE")
+# The database of the test gets a limit of memory (the stack sets none for it). Git Bash on
+# Windows needs the two files Compose reads in the form Compose understands there.
+native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+LIMITS="$ENV_FILE.limits.yml"
+printf '%s\n' 'services:' '  db:' '    mem_limit: 1g' >"$LIMITS"
+COMPOSE=(docker compose -p "$PROJECT" --env-file "$(native "$ENV_FILE")" -f docker-compose.yml -f "$(native "$LIMITS")")
 
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
     "${COMPOSE[@]}" ps || true
-    "${COMPOSE[@]}" logs --tail 60 db api web automation sandbox || true
+    "${COMPOSE[@]}" logs --tail 60 db recovery api web automation sandbox || true
   fi
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
   docker rm -f "$PROJECT-stopped" >/dev/null 2>&1 || true
-  rm -rf "$ENV_FILE" "$ENV_FILE.secrets"
+  rm -rf "$ENV_FILE" "$ENV_FILE.secrets" "$LIMITS"
   exit "$status"
 }
 trap cleanup EXIT
@@ -45,6 +50,11 @@ SECRETS_DIR="$ENV_FILE.secrets"
 for name in db_password secret_key store_key audit_key analyzer_token capa_token docview_token browser_token pcap_token sandbox_token; do
   [ "$(wc -c <"$SECRETS_DIR/$name")" -eq 65 ] || fail "init-env.sh did not write the secret $name as a 64-character value"
 done
+if command -v cygpath >/dev/null 2>&1; then
+  # Git Bash on Windows: the engine mounts the secrets by the path Windows knows them under.
+  grep -v '^NIK_SECRETS_DIR=' "$ENV_FILE" >"$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
+  echo "NIK_SECRETS_DIR=$(native "$SECRETS_DIR")" >>"$ENV_FILE"
+fi
 {
   echo "WEB_PORT=$HTTP_PORT"
   echo "WEB_TLS_PORT=$TLS_PORT"
@@ -55,7 +65,8 @@ if docker compose -p "$PROJECT-none" --env-file /dev/null config >/dev/null 2>&1
   fail "compose accepts a configuration with no secrets"
 fi
 
-"${COMPOSE[@]}" up -d --build --wait db api web automation sandbox
+# The recovery service is part of the server as it is shipped: without it no base backup is taken.
+"${COMPOSE[@]}" up -d --build --wait db recovery api web automation sandbox
 
 base="https://127.0.0.1:$TLS_PORT"
 get() { curl -sk --max-time 20 "$@"; }
@@ -141,6 +152,37 @@ docker exec "$backup_api" sh -c 'grep -c SmokeTest /app/backups/nik-*.nikbak || 
 # The copies off the server leave from the automation worker: it reads the backups, and cannot write one.
 docker exec "$("${COMPOSE[@]}" ps -q automation)" sh -c 'ls /app/backups/*.nikbak >/dev/null && ! touch /app/backups/probe 2>/dev/null' ||
   fail "the automation worker does not see the backup directory read-only"
+
+echo "== the log of the database is archived, and the recovery service takes a base backup"
+dbsql() { "${COMPOSE[@]}" exec -T db psql -U nik -d nik -Atc "$1" | tr -d '\r'; }
+[ "$(dbsql "SHOW archive_mode")" = on ] || fail "PostgreSQL does not archive its log"
+dbsql "SELECT pg_switch_wal()" >/dev/null
+archived=0
+for _ in $(seq 1 30); do
+  archived=$(dbsql "SELECT archived_count FROM pg_stat_archiver")
+  [ "${archived:-0}" -gt 0 ] && break
+  sleep 1
+done
+[ "${archived:-0}" -gt 0 ] || fail "no segment of the log reached the archive ($(dbsql "SELECT last_failed_wal FROM pg_stat_archiver"))"
+[ "$(dbsql "SELECT failed_count FROM pg_stat_archiver")" = 0 ] || fail "PostgreSQL failed to archive a segment"
+recovery_container=$("${COMPOSE[@]}" ps -q recovery)
+docker exec "$recovery_container" sh -c 'ls /wal-archive/wal/*.gz >/dev/null' || fail "the archive volume holds no segment"
+# The first base backup is asked for by the server itself, as soon as the recovery service answers.
+recovery=""
+for _ in $(seq 1 60); do
+  recovery=$(get -b "$jar" "$base/api/recovery")
+  grep -Eq '"state":"(done|failed)"' <<<"$recovery" && break
+  sleep 3
+done
+grep -q '"state":"done"' <<<"$recovery" || fail "no base backup was taken ($recovery)"
+grep -q '"verified":true' <<<"$recovery" || fail "the base backup was not checked against its manifest"
+docker exec "$recovery_container" sh -c 'ls /wal-archive/base/base-*/base.tar.gz >/dev/null' || fail "no base backup in the archive volume"
+# The service that runs the tools of PostgreSQL has no network, no capability and no password.
+recovery_status=$(docker exec "$recovery_container" cat /proc/1/status)
+grep -q '^CapEff:[[:space:]]*0000000000000000' <<<"$recovery_status" || fail "the recovery service holds capabilities"
+[ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$recovery_container")" = none ] || fail "the recovery service has a network"
+docker exec "$recovery_container" sh -c 'test -e /run/secrets/db_password' && fail "the recovery service is given the password of the database"
+docker exec "$recovery_container" sh -c 'touch /probe 2>/dev/null' && fail "the filesystem of the recovery service is writable"
 rm -f "$jar"
 sandbox_container=$("${COMPOSE[@]}" ps -q sandbox)
 sandbox_status=$(docker exec "$sandbox_container" cat /proc/1/status)
@@ -228,5 +270,29 @@ done
 grep -q "^503 .*Nik did not start: STORE_KEY is not set" <<<"$said" ||
   fail "a server without its store key does not say so ($said)"
 docker rm -f "$PROJECT-stopped" >/dev/null
+
+echo "== the stack stops politely: every container within its time, the log handed to the archive"
+dbsql "SELECT pg_switch_wal()" >/dev/null
+stopped=()
+for service in db recovery api web automation sandbox; do
+  stopped+=("$service=$("${COMPOSE[@]}" ps -q "$service")")
+done
+before=$(date +%s)
+"${COMPOSE[@]}" stop >/dev/null 2>&1
+took=$(($(date +%s) - before))
+# The times add up to under three minutes when each container uses all of its own; a stack that
+# does nothing in particular stops in seconds.
+[ "$took" -le 150 ] || fail "the stack took $took seconds to stop"
+for entry in "${stopped[@]}"; do
+  code=$(docker inspect -f '{{.State.ExitCode}}' "${entry#*=}")
+  # 137 is a container the engine had to kill at the end of its time.
+  [ "$code" != 137 ] || fail "the container of ${entry%%=*} did not stop in its time and was killed"
+done
+db_container=""
+for entry in "${stopped[@]}"; do [ "${entry%%=*}" = db ] && db_container=${entry#*=}; done
+left=$(docker run --rm --volumes-from "$db_container" --entrypoint sh docker.io/library/postgres:18-alpine -c \
+  'ls /var/lib/postgresql/18/docker/pg_wal/archive_status 2>/dev/null | grep -c "\.ready$" || true')
+[ "$left" = 0 ] || fail "PostgreSQL stopped with $left finished segment(s) it had not handed to the archive"
+echo "   stopped in $took seconds"
 
 echo "stack smoke test passed"

@@ -22,6 +22,17 @@
 # volume and listens on a socket in /tmp of this container only. It never
 # archives anything and never sees the data directory of the database, which
 # this container does not mount.
+#
+# Stopping. Asked to stop (docker compose stop, restart, up -d --build, the
+# host shutting down) while a base backup is being taken or a test runs, it
+# ends the tool that runs, stops the scratch server, removes what was half
+# written and exits, within the stop_grace_period of the service. The request
+# stays where it was: it is done again, from the start, when the service is
+# back. A kill skips all of that; the same things are then removed when the
+# service starts (below, "What a run that was killed left behind"), and the
+# request is done again the same way. The backend counts a request nobody
+# answered as failed after a while (app/recovery/archive.py), so a row never
+# says "being taken" for ever.
 set -u
 
 archive=${NIK_ARCHIVE:-/wal-archive}
@@ -34,6 +45,18 @@ scratch=$archive/scratch
 scratch_socket=/tmp/nik-scratch
 
 say() { printf 'nik-recovery: %s\n' "$*" >&2; }
+
+# A tool that may run for minutes is run beside the shell, which waits for it: a shell that
+# waits for a command in the foreground hears a signal only when that command has ended.
+child=""
+run() {
+  "$@" &
+  child=$!
+  wait "$child"
+  status=$?
+  child=""
+  return "$status"
+}
 
 # One line of at most 600 characters out of whatever a tool printed.
 one_line() { tr '\n\r' '  ' | cut -c1-600; }
@@ -71,8 +94,8 @@ take_base() {
   say "taking the base backup $label"
   # Two tar files (the data, and the log written while it was copied) and the manifest that
   # lists every file with its checksum; a checkpoint is asked for at once instead of waited for.
-  if pg_basebackup -h "$socket" -U "$user" -D "$part" -Ft -z -Z 1 -X stream -c fast -l "$label" >"$log" 2>&1 &&
-    pg_verifybackup -n -q "$part" >>"$log" 2>&1; then
+  if run pg_basebackup -h "$socket" -U "$user" -D "$part" -Ft -z -Z 1 -X stream -c fast -l "$label" >"$log" 2>&1 &&
+    run pg_verifybackup -n -q "$part" >>"$log" 2>&1; then
     chmod 755 "$part"
     chmod 644 "$part"/*
     bytes=$(du -sk "$part" | awk '{ print $1 * 1024 }')
@@ -131,7 +154,7 @@ test_recovery() {
   say "recovery test $id: $base replayed to $target"
   mkdir -p "$scratch/data" "$scratch_socket"
   chmod 700 "$scratch/data"
-  if ! { tar -xzf "$source/base.tar.gz" -C "$scratch/data" && tar -xzf "$source/pg_wal.tar.gz" -C "$scratch/data/pg_wal"; } 2>"$scratch/expand.log"; then
+  if ! { run tar -xzf "$source/base.tar.gz" -C "$scratch/data" && run tar -xzf "$source/pg_wal.tar.gz" -C "$scratch/data/pg_wal"; } 2>"$scratch/expand.log"; then
     error=$(one_line <"$scratch/expand.log")
     stop_scratch
     result "test-$id" "state=failed" "error=the base backup $base does not expand: $error"
@@ -152,7 +175,7 @@ port = 5499
 shared_buffers = 32MB
 logging_collector = off
 EOF
-  if ! pg_ctl -D "$scratch/data" -l "$scratch/log" -w -t "$wait" start >/dev/null 2>&1; then
+  if ! run pg_ctl -D "$scratch/data" -l "$scratch/log" -w -t "$wait" start >/dev/null 2>&1; then
     error=$(tail -c 800 "$scratch/log" 2>/dev/null | one_line)
     stop_scratch
     result "test-$id" "state=failed" "error=the scratch server did not start: $error"
@@ -246,7 +269,19 @@ prune() {
   done
 ) &
 beat=$!
-trap 'kill "$beat" 2>/dev/null; stop_scratch; exit 0' TERM INT
+
+stop() {
+  say "asked to stop"
+  kill "$beat" 2>/dev/null
+  if [ -n "$child" ]; then
+    kill "$child" 2>/dev/null
+    wait "$child" 2>/dev/null
+  fi
+  stop_scratch
+  rm -rf "$archive"/base/*.partial 2>/dev/null
+  exit 0
+}
+trap stop TERM INT
 
 if [ ! -d "$archive/requests" ] || [ ! -d "$archive/results" ]; then
   say "the archive volume is not prepared (the database container does that when it starts): waiting"

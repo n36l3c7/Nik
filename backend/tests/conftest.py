@@ -82,8 +82,12 @@ def a_process_that_runs():
     its loops take no more work (main.on_shutdown). The next test is another process."""
     from app import work
     from app.automation import worker
+    from app.core import leases
+    from app.recovery import role
 
     work.starting()
+    leases.starting()
+    role.forget_may_work()
     worker._stopping.clear()
     worker._in_flight.clear()
     worker._fetching.clear()

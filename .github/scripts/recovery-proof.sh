@@ -34,7 +34,8 @@ cleanup() {
     "$ENGINE" logs --tail 30 "$NAME-db" 2>&1 || true
     "$ENGINE" logs --tail 30 "$NAME-agent" 2>&1 || true
   fi
-  "$ENGINE" rm -f "$NAME-db" "$NAME-agent" >/dev/null 2>&1 || true
+  # With the volume the image declares for each container: nothing of the proof is left behind.
+  "$ENGINE" rm -f -v "$NAME-db" "$NAME-agent" >/dev/null 2>&1 || true
   "$ENGINE" volume rm "$NAME-data" "$NAME-archive" "$NAME-socket" >/dev/null 2>&1 || true
   exit "$status"
 }

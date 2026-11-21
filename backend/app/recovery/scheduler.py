@@ -11,11 +11,20 @@ entrypoint then answers with why it does not serve (``gate.py``).
 ``ship.ship``, and the watch. ``ask_at_start`` is what that process does
 before anything else when it starts: ask the second host whether this server
 was replaced, and hold everything if it was.
+
+**Stopping.** Both loops end when their process is asked to stop (the flag
+the automation worker sets at SIGTERM, and the API process when it shuts
+down): the pass that runs is finished, the shipper finishes the file it is
+sending and starts no other, and the leases are given back with all the
+others of the process (``core/leases.py``). A file cut half-way by a kill is
+a ``.partial`` on the other host, resumed or sent again at the next pass. A
+base backup or a recovery test the recovery service was doing is its own
+(``deploy/db/recovery-agent.sh``): it is done again when that service
+starts, and the row that waits for it says "failed" when no answer comes.
 """
 
 from __future__ import annotations
 
-import atexit
 import logging
 import os
 import signal
@@ -76,13 +85,21 @@ def stop_if_superseded() -> bool:
     return True
 
 
+def _stop_flag() -> threading.Event:
+    """What says that this process was asked to stop: one flag for every loop of the process."""
+    from ..automation import worker
+
+    return worker._stopping
+
+
 def _loop() -> None:
     global _last_scan
-    time.sleep(12)  # let the server start
-    while True:
+    stopping = _stop_flag()
+    stopping.wait(12)  # let the server start
+    while not stopping.is_set():
         try:
             if stop_if_superseded():
-                time.sleep(30)
+                stopping.wait(30)
                 continue
             if archive.tick():
                 watch.check()
@@ -92,14 +109,15 @@ def _loop() -> None:
             _watch()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("A pass of the recovery failed")
-        time.sleep(TICK_EVERY)
+        stopping.wait(TICK_EVERY)
 
 
 def _ship_loop() -> None:
-    time.sleep(20)
-    while True:
+    stopping = _stop_flag()
+    stopping.wait(20)
+    while not stopping.is_set():
         try:
-            did = ship.ship()
+            did = ship.ship(stopping=stopping.is_set)
             if "superseded" in did:
                 # Nothing more must run here: the worker ends as on a stop, starts again, and
                 # then waits for a backend that says it serves.
@@ -111,18 +129,7 @@ def _ship_loop() -> None:
             _watch()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("A pass of the copies of the archive failed")
-        time.sleep(SHIP_EVERY)
-
-
-def _let_go() -> None:
-    from ..core.db import SessionLocal
-
-    try:
-        with SessionLocal() as db:
-            for name in (archive.LEASE, ship.LEASE, watch.LEASE):
-                runner.release(db, name=name)
-    except Exception:  # noqa: BLE001 - stopping anyway; the leases run out by themselves
-        pass
+        stopping.wait(SHIP_EVERY)
 
 
 def start() -> None:
@@ -131,7 +138,6 @@ def start() -> None:
     if _started or not layout.root():
         return
     _started = True
-    atexit.register(_let_go)
     threading.Thread(target=_loop, name="nik-recovery", daemon=True).start()
 
 
@@ -141,7 +147,6 @@ def start_shipper() -> None:
     if _shipping or not layout.root():
         return
     _shipping = True
-    atexit.register(_let_go)
     # A connection is opened every minute at least: the three lines the SSH library says of each
     # one at INFO would be most of the log of this container.
     logging.getLogger("paramiko").setLevel(logging.WARNING)

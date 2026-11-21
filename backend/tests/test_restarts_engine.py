@@ -575,3 +575,97 @@ def test_the_database_going_away_under_an_event_leaves_the_event_for_the_next_pa
         assert [event.done for event in db.scalars(select(AutomationEvent))] == [False]
         assert worker.take_events(db, T0 + 1) == 1
         assert len(db.scalars(select(Run).where(Run.playbook_id == pb)).all()) == 1
+
+
+# --------------------------------------------------------------------------- #
+# An HTTP request node that says it is safe to repeat                         #
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def http_out(monkeypatch):
+    """The HTTP request action, with what it sends counted in the place of the network."""
+    import dataclasses
+
+    spec = actions.lookup(None, "http.request")
+
+    def send(call: actions.Call) -> actions.Result:
+        name = str(call.args.get("method") or "GET").upper()
+        SENT.append(name)
+        if KILL and KILL[0] == name:
+            KILL.pop(0)
+            raise Killed
+        return actions.Result(output={"status": 200}, request={"method": name, "host": "edr.corp"})
+
+    monkeypatch.setitem(actions._REGISTRY, "http.request", dataclasses.replace(spec, run=send))
+
+
+def request_node(admin: TestClient, method: str, name: str, **config) -> str:
+    call = node(
+        "call",
+        "action",
+        action="http.request",
+        args={"method": method, "url": "https://edr.corp/tickets"},
+        approval={"ask": False},
+        **config,
+    )
+    return playbook(admin, name, [call, echo("after", "after")], [edge("start", "call"), edge("call", "after")])
+
+
+def test_a_request_that_is_not_a_get_is_not_sent_again_unless_its_node_says_it_is_safe(admin: TestClient, http_out):
+    # As built: a POST cut by a restart waits for a person.
+    run_id, _step = die_in(admin, request_node(admin, "POST", "Plain"), "POST")
+    passes(LATER)
+    assert SENT == ["POST"] and steps(run_of(admin, run_id))["call"]["status"] == "interrupted"
+
+
+def test_safe_to_repeat_turned_off_is_as_if_it_was_never_said(admin: TestClient, http_out):
+    run_id, _step = die_in(admin, request_node(admin, "POST", "Off", safe_to_repeat=False), "POST")
+    passes(LATER)
+    assert SENT == ["POST"] and steps(run_of(admin, run_id))["call"]["status"] == "interrupted"
+
+
+def test_a_request_whose_node_says_safe_to_repeat_is_sent_again_after_a_restart(admin: TestClient, http_out):
+    run_id, step_id = die_in(admin, request_node(admin, "POST", "Safe", safe_to_repeat=True), "POST")
+    with SessionLocal() as db:
+        assert db.get(RunStep, step_id).calling_at == T0  # it changes something outside: marked all the same
+    passes(LATER)
+    run = run_of(admin, run_id)
+    assert run["status"] == "done" and SENT == ["POST", "POST"]
+    assert [line["what"] for line in steps(run)["call"]["restarts"]] == ["interrupted", "again"]
+    assert steps(run)["call"]["attempt"] == 1 and [call["text"] for call in CALLS] == ["after"]
+
+
+def test_a_get_never_needed_the_tick(admin: TestClient, http_out):
+    run_id, _step = die_in(admin, request_node(admin, "GET", "Read"), "GET")
+    passes(LATER)
+    assert run_of(admin, run_id)["status"] == "done" and SENT == ["GET", "GET"]
+
+
+def test_safe_to_repeat_is_a_setting_of_the_http_request_node_alone(admin: TestClient):
+    from app.automation import engine
+
+    ticket = actions.lookup(None, "test.ticket")
+    assert engine.safe_to_repeat(ticket, {"safe_to_repeat": True}) is False, "a connector says it in the connector"
+    request = actions.lookup(None, "http.request")
+    assert (
+        engine.safe_to_repeat(request, {}) is False and engine.safe_to_repeat(request, {"safe_to_repeat": 1}) is False
+    )
+    assert engine.safe_to_repeat(request, {"safe_to_repeat": True}) is True
+    made = admin.post("/api/automation/playbooks", json={"name": "Elsewhere"}).json()
+    shape = {
+        "nodes": [
+            node("start", "trigger", manual=True),
+            node("call", "action", action="test.ticket", args={}, safe_to_repeat=True),
+            node(
+                "other",
+                "action",
+                action="http.request",
+                args={"method": "POST", "url": "https://edr.corp/x"},
+                safe_to_repeat="yes",
+            ),
+        ],
+        "edges": [edge("start", "call"), edge("call", "other")],
+    }
+    refused = admin.post(f"/api/automation/playbooks/{made['id']}/versions", json={"graph": shape})
+    assert refused.status_code == 422, refused.text
+    said = {problem["node"]: problem["message"] for problem in refused.json()["problems"]}
+    assert said == {"call": 'Only an HTTP request has "Safe to repeat"', "other": '"Safe to repeat" is on or off'}

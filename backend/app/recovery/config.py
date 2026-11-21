@@ -51,20 +51,12 @@ LEASE_SECONDS = 30
 
 
 def acquire(db: OrmSession, holder: str, now: float | None, name: str) -> bool:
-    """Take or renew a lease of the recovery (as ``backups.runner.acquire`` does), for a shorter time."""
-    import time
+    """Take or renew a lease of the recovery (``core/leases.py``, as every loop of the server
+    does): given back with the others when the process stops, and never given on a standby or on
+    a server that was replaced."""
+    from ..core import leases
 
-    from sqlalchemy import update
-
-    from ..backups import runner
-    from ..core.models import Lease
-
-    if not runner.acquire(db, holder, now, name):
-        return False
-    clock = time.time() if now is None else now
-    db.execute(update(Lease).where(Lease.name == name, Lease.holder == holder).values(expires_at=clock + LEASE_SECONDS))
-    db.commit()
-    return True
+    return leases.take(db, name, holder, LEASE_SECONDS, now)
 
 
 def held(db: OrmSession, row_id: int) -> dict[str, Any]:

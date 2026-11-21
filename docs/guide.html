@@ -2018,12 +2018,11 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         <em>Settings → System → Health</em> (admins). One row for each thing an operator would otherwise go and look at,
         in groups: the disks, the database, the queues, the work in progress (what restarts left behind: steps that wait
         for a person, work that was set aside, work nobody holds), the workers, the backups, the recovery, the
-        certificate, the audit log, the sign-in, the keys and the encryption of the store, the server. A row has a value (<em
-          >62% used, 118 GB free of 320 GB</em
-        >), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or <em>not known</em> when it could not be
-        measured), since when it is in that state, what to do when it is not fine, and a link to the page that has the
-        whole story: Storage, Workers, Backup and the audit log are summed up here, not repeated. What is not fine is
-        listed again at the top, the problems first.
+        certificate, the audit log, the sign-in, the keys and the encryption of the store, the server. A row has a value
+        (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or
+        <em>not known</em> when it could not be measured), since when it is in that state, what to do when it is not
+        fine, and a link to the page that has the whole story: Storage, Workers, Backup and the audit log are summed up
+        here, not repeated. What is not fine is listed again at the top, the problems first.
       </p>
       <ul>
         <li>
@@ -2072,8 +2071,9 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
                 <em>Replaced</em>.
               </td>
               <td>
-                A problem when the server was replaced. Attention when it started without being able to ask the second
-                host whether it was replaced.
+                A problem when the server was replaced, and when the second host holds a file that says so and that no
+                key of this server signed (it is not obeyed). Attention when it started without being able to ask the
+                second host whether it was replaced.
               </td>
             </tr>
             <tr>

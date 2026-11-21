@@ -26,6 +26,20 @@
 # (deploy/secrets.sh back). Neither loses anything; if a file cannot be
 # unsealed this stops before the database is touched, and says which.
 #
+# Files deleted since the snapshot was taken, which a server that archives its
+# log keeps for a while (6.9), are moved back to their places: the database
+# that comes back names them again.
+#
+# Coming back to a version before 6.9, which has no archive of the log of the
+# database, no recovery service and no standby: the `recovery` container is
+# removed, and PostgreSQL starts without archiving on the older version. The
+# archive volume is left as it is (nothing reads it any more: the last lines
+# say how to remove it). Nothing of 6.9 is left in the database, which is the
+# one of before the upgrade: a step of a playbook that was running when the
+# snapshot was taken is handled as that version does. A standby of this
+# server follows nothing from then on: stop its stack, and make it again
+# after the next upgrade.
+#
 # Running it twice does no harm: the same snapshot gives the same database.
 #
 # Options:
@@ -70,7 +84,7 @@ while [ $# -gt 0 ]; do
     --no-start) START=0 ;;
     --yes) YES=1 ;;
     -h | --help)
-      sed -n '2,38p' "$0"
+      sed -n '2,52p' "$0"
       exit 0
       ;;
     -*) die "unknown option: $1 (see --help)" ;;
@@ -150,6 +164,11 @@ before_68=0
 case "${tag#v}" in
   [0-5].* | 6.[0-7] | 6.[0-7].*) before_68=1 ;;
 esac
+# Before 6.9: no archive of the log, no recovery service.
+before_69=0
+case "${tag#v}" in
+  [0-5].* | 6.[0-8] | 6.[0-8].*) before_69=1 ;;
+esac
 
 log "stopping the stack; the database alone is started"
 # shellcheck disable=SC2086
@@ -183,6 +202,15 @@ if [ "$before_68" -eq 1 ] && grep -q '^NIK_SECRETS_DIR=.' .env; then
   log "$tag reads its secrets in .env: putting them back there (deploy/secrets.sh back)"
   export NIK_DIR ENGINE COMPOSE
   deploy/secrets.sh back --no-start --yes
+fi
+
+if [ "$before_69" -eq 1 ]; then
+  log "$tag has no recovery service and keeps no archive of the log of the database: that container is removed"
+  # shellcheck disable=SC2086
+  $COMPOSE rm -sf recovery >/dev/null 2>&1 || true
+  log "the volumes wal-archive and db-socket of this stack are left as they are; $tag does not use them."
+  log "Once you are sure not to come back to 6.9 with this archive: $ENGINE volume ls, then $ENGINE volume rm <project>_wal-archive <project>_db-socket"
+  log "if this server had a standby: stop the stack of the standby, it follows nothing any more."
 fi
 
 # The code. A tag is checked out only into a clean clone: nothing of the operator's is ever overwritten.

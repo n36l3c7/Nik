@@ -660,10 +660,9 @@ def test_the_health_page_says_what_restarts_left_behind(things, monkeypatch):
     found = rows(NOW)
     assert [found[name]["state"] for name in ("work.interrupted", "work.aside", "work.silent")] == ["fine"] * 3
     assert found["work.interrupted"]["value"] == "None" and found["work.silent"]["value"] == "0 held, all alive"
-    assert all(
-        found[name]["notify"] and found[name]["group"] == "Work in progress"
-        for name in ("work.interrupted", "work.aside", "work.silent")
-    )
+    assert all(found[name]["group"] == "Work in progress" for name in ("work.interrupted", "work.aside", "work.silent"))
+    # A step that waits for a person told that person when it was interrupted: the row does not tell again.
+    assert [found[name]["notify"] for name in ("work.interrupted", "work.aside", "work.silent")] == [False, True, True]
     with SessionLocal() as db:
         work.want(db, "thing", "a", now=NOW)
         db.commit()
