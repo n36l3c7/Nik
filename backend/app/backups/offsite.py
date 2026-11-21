@@ -238,6 +238,8 @@ class Sftp:
 
     def put(self, source: Path, name: str) -> dict[str, Any]:
         """Send the backup ``name`` and check what arrived. Returns ``{"remote", "bytes", "sha256", "seconds"}``."""
+        import paramiko
+
         clock = time.monotonic()
         size = source.stat().st_size
         digest = hashlib.sha256()
@@ -270,7 +272,8 @@ class Sftp:
                 return {"remote": final, "bytes": size, "sha256": wanted, "seconds": round(time.monotonic() - clock, 1)}
             except OffsiteError:
                 raise
-            except (OSError, EOFError) as error:
+            except (OSError, EOFError, paramiko.SSHException) as error:
+                # A connection that drops shows as any of the three, by where the code was when it went.
                 last = error
                 time.sleep(min(30, 2**attempt))
             finally:

@@ -88,6 +88,8 @@ nothing twice.
   committed.
 - Analyses, captures and mailboxes stayed "in progress" for ever after
   the server was killed.
+- A copy of a backup to the second host was given up, instead of resumed,
+  when the dropped connection showed as an SSH error.
 
 ### Upgrade notes
 
