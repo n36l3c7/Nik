@@ -20,13 +20,13 @@ from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import analysis_links, artifact_convert, artifact_expiry, artifact_transfer, artifacts, query, urlscan
+from ..core import audit
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.models import (
     Artifact,
     ArtifactLink,
     ArtifactRelation,
-    AuditEntry,
     Incident,
     Mail,
     Mailbox,
@@ -45,19 +45,7 @@ router = APIRouter(tags=["artifacts"])
 
 
 def _audit(db: OrmSession, caller: Principal, action: str, details: str, incident: Incident | None = None) -> None:
-    doc = (incident.doc if incident is not None else {}) or {}
-    db.add(
-        AuditEntry(
-            id=str(uuid.uuid4()),
-            at=now_iso(),
-            actor=caller.actor,
-            action=action,
-            target=doc.get("name"),
-            details=details,
-            incident_id=incident.id if incident is not None else None,
-            incident_name=doc.get("name"),
-        )
-    )
+    audit.record(db, caller.actor, action, details, incident)
 
 
 def _artifact_or_404(db: OrmSession, artifact_id: str) -> Artifact:
@@ -144,6 +132,25 @@ def _related(db: OrmSession, row: Artifact) -> dict[str, list[dict[str, Any]]]:
 # --------------------------------------------------------------------------- #
 # Reading                                                                     #
 # --------------------------------------------------------------------------- #
+def matching(
+    db: OrmSession, caller: Principal, q: str = "", tag: str = "", mine: bool = False, linked: bool | None = None
+) -> list:
+    """The conditions a filter keeps artifacts by, without their kind: what the list shows for it,
+    and what a bulk action on "all that match" works on (bulk_artifacts.py)."""
+    # `q` is the query language (app/query); the older parameters add their conditions.
+    conditions = query.sql("artifacts", q, caller) if q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
+    if tag.strip():
+        conditions.append(func.lower(cast(Artifact.tags, String)).like(f'%"{tag.strip().lower()}"%'))
+    if mine:
+        conditions.append(Artifact.created_by == caller.actor)
+    if linked is not None:
+        has_link = select(ArtifactLink.artifact_id).where(ArtifactLink.artifact_id == Artifact.id).exists()
+        conditions.append(has_link if linked else ~has_link)
+    return conditions
+
+
 @router.get("/artifacts")
 def list_artifacts(
     kind: Optional[Literal["file", "mail", "pcap", "url", "mailbox"]] = None,
@@ -162,17 +169,7 @@ def list_artifacts(
     db: OrmSession = Depends(get_db),
 ) -> dict:
     """The artifacts every analyst can see, newest first, with the incidents that reference each."""
-    # `q` is the query language (app/query); the older parameters add their conditions.
-    conditions = query.sql("artifacts", q, caller) if q.strip() else []
-    if conditions:
-        query.statement_timeout(db)
-    if tag.strip():
-        conditions.append(func.lower(cast(Artifact.tags, String)).like(f'%"{tag.strip().lower()}"%'))
-    if mine:
-        conditions.append(Artifact.created_by == caller.actor)
-    if linked is not None:
-        has_link = select(ArtifactLink.artifact_id).where(ArtifactLink.artifact_id == Artifact.id).exists()
-        conditions.append(has_link if linked else ~has_link)
+    conditions = matching(db, caller, q, tag, mine, linked)
     counts = dict(db.execute(select(Artifact.kind, func.count()).where(*conditions).group_by(Artifact.kind)).all())
     if kind:
         conditions.append(Artifact.kind == kind)
@@ -384,6 +381,14 @@ def link_artifact(
     indicators, timeline and report. A capture belongs to one incident at most."""
     row = _artifact_or_404(db, artifact_id)
     incident = _incident_or_404(db, body.incidentId)
+    link_to(db, row, incident, caller)
+    db.commit()
+    return _one(db, row)
+
+
+def link_to(db: OrmSession, row: Artifact, incident: Incident, caller: Principal) -> None:
+    """Link an artifact to an incident (the caller commits). What the route does, and what a bulk
+    action does for each artifact."""
     if row.kind == "file":
         sample_routes.attach_sample(db, incident, db.get(Sample, row.ref), row.name, caller.actor)
     elif row.kind == "mail":
@@ -400,8 +405,6 @@ def link_artifact(
             raise HTTPException(status_code=409, detail="The browser session is still open: close it first.")
         captures.attach(db, capture, incident)
     _audit(db, caller, "artifact.link", f"Linked {row.kind} {row.name or row.ref[:12]} to the incident", incident)
-    db.commit()
-    return _one(db, row)
 
 
 @router.delete("/artifacts/{artifact_id}/links/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -414,6 +417,13 @@ def unlink_artifact(
     """Take the artifact out of the incident; the artifact and its analysis stay."""
     row = _artifact_or_404(db, artifact_id)
     incident = _incident_or_404(db, incident_id)
+    unlink_from(db, row, incident, caller)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def unlink_from(db: OrmSession, row: Artifact, incident: Incident, caller: Principal) -> None:
+    """Take an artifact out of an incident (the caller commits); ``404`` when it is not in it."""
     if row.kind == "file":
         found = sample_routes.detach_sample(db, incident, row.ref)
     elif row.kind == "mail":
@@ -428,8 +438,6 @@ def unlink_artifact(
     if not found:
         raise HTTPException(status_code=404, detail="The incident does not reference this artifact")
     _audit(db, caller, "artifact.unlink", f"Removed {row.kind} {row.name or row.ref[:12]} from the incident", incident)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class TagsIn(BaseModel):
@@ -445,10 +453,16 @@ def tag_artifact(
 ) -> dict:
     """Replace the artifact's tags (lower case; letters, digits and ``. _ : -``; 12 at most)."""
     row = _artifact_or_404(db, artifact_id)
-    tags = artifacts.set_tags(db, row, body.tags)
-    _audit(db, caller, "artifact.tags", f"Tagged {row.kind} {row.name or row.ref[:12]}: {', '.join(tags) or 'none'}")
+    tag(db, row, body.tags, caller)
     db.commit()
     return _one(db, row)
+
+
+def tag(db: OrmSession, row: Artifact, tags: list[str], caller: Principal) -> list[str]:
+    """Replace the tags of an artifact (the caller commits). Returns what it holds afterwards."""
+    tags = artifacts.set_tags(db, row, tags)
+    _audit(db, caller, "artifact.tags", f"Tagged {row.kind} {row.name or row.ref[:12]}: {', '.join(tags) or 'none'}")
+    return tags
 
 
 class ExpiryIn(BaseModel):
@@ -467,14 +481,20 @@ def set_artifact_expiry(
     has a date unless someone sets it. The worker deletes it once the day has come, unless an incident
     that is not closed still references it: then the date is put off by a week."""
     row = _artifact_or_404(db, artifact_id)
+    expire(db, row, body.expiresAt, caller)
+    db.commit()
+    return _one(db, row)
+
+
+def expire(db: OrmSession, row: Artifact, day: str | None, caller: Principal) -> str | None:
+    """Give an artifact its day, or take it away (the caller commits); ``400`` for a day that is not one."""
     try:
-        day = artifact_expiry.set_expiry(db, row, body.expiresAt)
+        day = artifact_expiry.set_expiry(db, row, day)
     except artifact_expiry.ExpiryError as error:
         raise HTTPException(status_code=400, detail=error.message) from None
     what = f"expires on {day}" if day else "has no expiry any more"
     _audit(db, caller, "artifact.expiry", f"{row.kind} {row.name or row.ref[:12]} {what}")
-    db.commit()
-    return _one(db, row)
+    return day
 
 
 def delete_artifact_data(db: OrmSession, row: Artifact) -> None:
@@ -501,10 +521,15 @@ def delete_artifact(
 ) -> Response:
     """Delete the artifact: its file and analyses, and its reference in every incident."""
     row = _artifact_or_404(db, artifact_id)
-    _audit(db, caller, "artifact.delete", f"Deleted {row.kind} {row.name or row.ref[:12]} ({row.ref[:12]}…)")
-    delete_artifact_data(db, row)
+    remove(db, row, caller)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def remove(db: OrmSession, row: Artifact, caller: Principal) -> None:
+    """Delete an artifact everywhere, and say so in the audit log (the caller commits)."""
+    _audit(db, caller, "artifact.delete", f"Deleted {row.kind} {row.name or row.ref[:12]} ({row.ref[:12]}…)")
+    delete_artifact_data(db, row)
 
 
 def remove_incident_artifacts(db: OrmSession, incident_id: str) -> None:
@@ -592,7 +617,6 @@ async def import_artifacts(
     """Add the artifacts of an export that this server does not have
     (**admin**). A file is stored only when its SHA-256 is the one its
     artifact is named by; nothing is run and no analysis is started."""
-    import uuid
     from pathlib import Path
 
     from ..core import store

@@ -988,8 +988,9 @@
         look-ups; hosts a playbook is let reach; playbooks created, saved as a version, enabled, run by a person,
         stopped, deleted, imported; approvals answered; connectors, instances and credentials; packs; evidence uploaded,
         deleted, downloaded (samples, attachments, captures and what is exported from them), incident exports and
-        reports; webhooks added and removed (from 6.8); the audit log itself (verified, old entries removed, forwarding
-        changed and tested, a restore) and the health page (thresholds, the scrape token).
+        reports; webhooks added and removed (from 6.8); the tags, the note, the TLP and the expiry of an indicator, and
+        bulk actions with each row they changed (from 6.10); the audit log itself (verified, old entries removed,
+        forwarding changed and tested, a restore) and the health page (thresholds, the scrape token).
       </p>
       <p>
         <strong>Not recorded</strong>, by design so far: what is only read (an incident opened, a list of accounts, the
@@ -997,10 +998,49 @@
         stand: the start of a second-factor enrolment (its confirmation is recorded); runs a playbook starts by
         schedule, trigger or inbound webhook (they are in the runs, not in the audit log); the draft of a playbook or a
         script saved without making a version; tests of an instance and of its keys; saved filters and dashboards
-        created; tags and notes of an indicator in the library; a task given to somebody else; the export of a playbook,
-        a script, a dashboard or a list as a file; reading the source of an e-mail or an attachment's bytes in the page.
-        Old values are not kept: an entry says what changed, not what it was before.
+        created; a task given to somebody else; the export of a playbook, a script, a dashboard or a list as a file;
+        reading the source of an e-mail or an attachment's bytes in the page. Old values are not kept: an entry says
+        what changed, not what it was before.
       </p>
+
+      <h3 id="bulk-security">Actions on many rows at once</h3>
+      <p>
+        A <a href="guide.html#bulk">bulk action</a> is not another way in. The route asks for the permission to change
+        things (or to run playbooks), each action asks for its own, and each row is then changed by the function that
+        changes one alone, with its checks: a field the registry refuses, a type that wants something filled to close, a
+        mirror that needs the permission to run playbooks are refused row by row, with the sentence a single change
+        would have answered. The permission is read again for every row, from the account as it is at that moment: a
+        person whose roles are taken away, or whose account is disabled, while their job runs does nothing more through
+        it, and a key that is revoked neither.
+      </p>
+      <ul>
+        <li>
+          <strong>Bounds.</strong> A job takes 5,000 rows at most (a setting of the administrators), one job of a person
+          runs at a time on each list, and a selection by filter is acted on only if it is still the number the person
+          was shown.
+        </li>
+        <li>
+          <strong>What cannot be undone is typed.</strong> Deleting incidents, artifacts or indicators in bulk, and
+          closing more than 100 incidents at once, wait for the words the dialog shows (<code>delete 12</code>); the
+          server asks for them too, so a request made by hand does not skip them.
+        </li>
+        <li>
+          <strong>The audit log</strong> has one entry for the job when it starts (who, what, how many, the filter when
+          there was one), one when it ends with its counts, and one for each row changed, ending with the first
+          characters of the job: the entries of a job are found by searching for them. They are part of the
+          <a href="#audit-chain">chain</a> like every other.
+        </li>
+        <li>
+          <strong>Files.</strong> Downloading many artifacts together is the export of the artifacts: one archive made
+          by the API, the files inside an AES-encrypted archive as a single sample is downloaded, never loose files, and
+          bounded in number and size.
+        </li>
+        <li>
+          <strong>Look-ups.</strong> A bulk check is one check in the queue the look-ups always had: the quota of each
+          source, what is never sent out and what the <a href="#held-look-ups">data guard</a> holds apply to it as to
+          any other.
+        </li>
+      </ul>
 
       <h3 id="health-and-metrics-security">The health page and the metrics</h3>
       <ul>

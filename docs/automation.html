@@ -367,7 +367,9 @@
                 <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
                 <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
                 <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
-                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
+                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed. An event of a
+                change made by a <a href="#bulk-events">bulk action</a> also carries <code>bulk</code>, the id of its
+                job.
               </td>
             </tr>
             <tr>
@@ -2045,6 +2047,49 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
       <p>
         A trigger refused by a limit starts nothing and is not queued: the next event that matches starts a run again.
         The variables are described in <a href="configuration.html">Configuration</a>.
+      </p>
+      <h3 id="bulk-events">Events from bulk actions</h3>
+      <p>
+        A <a href="guide.html#bulk">bulk action</a> changes each incident, artifact or indicator through what changes
+        one alone, so it writes the same events: closing 500 incidents writes 500 <code>incident.updated</code>, and a
+        playbook that waits for that event runs once for each incident, as it would have for 500 single changes. Two
+        things are different.
+      </p>
+      <ul>
+        <li>
+          <strong>The event says so.</strong> <code>{{ trigger.bulk }}</code> is the id of the job, and is empty for a
+          change made alone. A playbook that should not run for mass changes says it in its trigger's conditions (<code
+            >{{ trigger.bulk }}</code
+          >
+          <em>is empty</em>); one that should treat them apart branches on it. This holds for every event a job causes,
+          whatever its kind (an artifact analysed again, indicators found).
+        </li>
+        <li>
+          <strong>The job keeps to the pace of the engine.</strong> While a playbook that is on waits for an event,
+          before each row whose change writes events the job waits while 50 events are still to be read by the worker
+          (what it reads in one pass), or while those and the runs in progress together would pass
+          <code>AUTOMATION_MAX_ACTIVE_RUNS</code>: so a job never makes the server refuse a trigger for being at its
+          ceiling. A slow engine is waited for as long as it moves, so a bulk change that a playbook follows takes the
+          time the playbook's runs take. When the engine reads nothing at all for 60 seconds the job goes on, and its
+          result says <em>The automation engine did not keep up</em>. With automation stopped, or no worker running,
+          there is no pace to keep to and the job does not wait.
+        </li>
+      </ul>
+      <p>
+        The limits of each playbook hold as they are: one that starts 60 runs an hour starts 60 for a bulk change of
+        500, and the other events start nothing, as written above. Raise the limit of a playbook that must follow mass
+        changes, or have it leave them out.
+      </p>
+      <p>
+        <strong>Run a playbook on each</strong>, from the selection of the incidents, starts the runs as
+        <em>Run a playbook…</em> does on one, 20 unfinished at a time at most: the next ones wait for those to end. An
+        incident the playbook cannot run on now (its runs an hour are used up, a run of it is in progress on that
+        incident) is refused in the result with that sentence, and can be tried again from there.
+      </p>
+      <p>
+        No node starts a bulk action: a playbook that must change many incidents does it with
+        <a href="#for-each">For each</a>, within its own limits. So a playbook started by an event of a bulk job cannot
+        start another job on the same rows.
       </p>
 
       <h2 id="outside">What a playbook may reach and send</h2>

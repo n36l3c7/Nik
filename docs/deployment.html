@@ -2546,6 +2546,14 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
               <td>Pieces of work set aside after they were interrupted, not tried again by themselves.</td>
             </tr>
             <tr>
+              <td><code>nik_bulk_running</code>, <code>nik_bulk_failed</code></td>
+              <td></td>
+              <td>
+                Bulk actions that run now, and those given up in the last month after they were interrupted three times
+                (what they did stays; their result says what they did not do).
+              </td>
+            </tr>
+            <tr>
               <td><code>nik_work_held</code>, <code>nik_work_silent_seconds</code></td>
               <td></td>
               <td>

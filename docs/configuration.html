@@ -47,6 +47,7 @@
           <li><a href="#more-variables">Tuning and worker variables</a></li>
           <li><a href="#settings">In-app settings</a></li>
           <li><a href="#settings-indicators-found">Indicators found</a></li>
+          <li><a href="#settings-bulk">Bulk actions</a></li>
           <li><a href="#upgrades">Upgrades</a></li>
         </ol>
       </nav>
@@ -980,6 +981,16 @@
             whether the automatic look-ups ask about what was found (they do not, by default). An instance that fetches
             can be told apart from the setting, in the Fetch tab of its own form. See
             <a href="guide.html#found-indicators">Indicators found by themselves</a>.
+          </p>
+        </div>
+        <div class="card">
+          <h3 id="settings-bulk">Bulk actions</h3>
+          <p>
+            Admins set, under Settings → System → Bulk actions, how many rows one bulk action takes (5,000; 1 to
+            50,000), up to how many are done before the answer (50; 0 to 500: more goes on in the background and
+            survives a restart), and above how many a closing of incidents is confirmed by typing (100; deleting always
+            is). There is no variable for them: they are kept in the database, and changed without a restart. See
+            <a href="guide.html#bulk">Select many, and act on them at once</a>.
           </p>
         </div>
         <div class="card">

@@ -51,7 +51,7 @@ test('an address that is not a section still opens the page', () => {
 
 test('an account sees the sections its permissions open, and a group with none is not shown', () => {
   assert.deepEqual(ids(visibleSettings(() => true)), ids(SETTINGS_GROUPS))
-  assert.deepEqual(ids(visibleSettings(canOf('read'))), ['detection', 'hours', 'allowlist', 'account'])
+  assert.deepEqual(ids(visibleSettings(canOf('read'))), ['detection', 'hours', 'allowlist', 'account', 'bulk'])
   assert.deepEqual(ids(visibleSettings(canOf('audit.read'))), ['account', 'audit'])
   assert.deepEqual(
     visibleSettings(canOf('audit.read')).map((group) => group.id),

@@ -5,12 +5,15 @@ import { IocValue, useIocLookup } from '../../../context/IocLookupContext.jsx'
 import { useIocLibrary } from '../../../context/IocLibraryContext.jsx'
 import { useSettings } from '../../../context/SettingsContext.jsx'
 import { api, apiUrl } from '../../../services/api.js'
+import { indicatorRef } from '../../../domain/bulk.js'
 import { IOC_TYPES, sourceLabel } from '../../../domain/iocs.js'
 import { onlyFound, scanWords } from '../../../domain/indicatorsFound.js'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import { useBulk } from '../../../context/BulkContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { reputationRank, verdictMeta } from '../../../domain/enrichment.js'
 import { verdictRowClass } from '../../../domain/iocLibrary.js'
+import { copyText } from '../../../lib/download.js'
 import { formatDateTime } from '../../../lib/time.js'
 
 /*
@@ -26,6 +29,10 @@ import { formatDateTime } from '../../../lib/time.js'
  * for that alone can be removed, and is not found again; the line under the
  * table says what the last reading came to, reads the incident now, and
  * gives back what was removed.
+ *
+ * Rows are selected as in every list: "Check" and "Save as a list" act on the
+ * selection when there is one, on every indicator otherwise, and the bar that
+ * appears removes the found ones, tags, copies and exports what is selected.
  */
 
 const TYPE_OPTIONS = [
@@ -141,6 +148,8 @@ export default function IocsTab({ incident }) {
   const { iocAllowlist } = useSettings()
   const { can } = useAuth()
   const { showToast } = useToast()
+  const { askBulk } = useBulk()
+  const { openExport } = useIocLibrary()
   const canWrite = can('write')
   const [found, setFound] = useState(null)
   const [reading, setReading] = useState(false)
@@ -257,6 +266,70 @@ export default function IocsTab({ incident }) {
     return apiUrl(`/incidents/${encodeURIComponent(incident.id)}/iocs/export?${query}`)
   }
 
+  // What the bar offers for the rows that are selected. They are all on this page of the
+  // browser, so they are named one by one, whatever the search and the pickers keep.
+  const reload = () => load()
+  const bulkActions = (rows, picked) => {
+    const selection = { ids: rows.map(indicatorRef) }
+    const items = { items: rows.map((row) => ({ type: row.type, value: row.value })) }
+    const label = `${rows.length} selected`
+    const ask = (action, title, more = {}) =>
+      askBulk({
+        list: 'indicators',
+        action,
+        title,
+        selection,
+        onStarted: picked.reset,
+        onDone: reload,
+        ...more,
+      })
+    return [
+      ...(canWrite
+        ? [
+            { id: 'check', label: 'Check now…', onSelect: () => openCheck(items, label) },
+            {
+              id: 'tags',
+              label: 'Change the tags…',
+              onSelect: () => ask('tags', 'Change the tags', { form: { kind: 'tags' } }),
+            },
+            {
+              id: 'list-new',
+              label: 'Save as a list…',
+              onSelect: () => openListForm({ scope: items, count: rows.length, name: incident.name }),
+            },
+            {
+              id: 'allowlist',
+              label: 'Add to the allowlist…',
+              onSelect: () => ask('allowlist', 'Add to the allowlist'),
+            },
+            {
+              id: 'remove',
+              label: 'Remove from this incident…',
+              onSelect: () =>
+                ask('incident_remove', 'Remove from this incident', {
+                  params: { incident: incident.id },
+                  onDone: () => {
+                    api.get(foundUrl).then(setFound, () => {})
+                    reload()
+                  },
+                }),
+            },
+          ]
+        : []),
+      { id: 'export', label: 'Export…', onSelect: () => openExport(items, label, rows.length) },
+      {
+        id: 'copy',
+        label: 'Copy the values',
+        onSelect: async () =>
+          showToast({
+            message: (await copyText(rows.map((row) => row.value).join('\n')))
+              ? `${rows.length} ${rows.length === 1 ? 'value' : 'values'} copied.`
+              : 'The browser refused to copy.',
+          }),
+      },
+    ]
+  }
+
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2">
       <Select value={typeFilter} onChange={setTypeFilter} options={TYPE_OPTIONS} />
@@ -349,6 +422,13 @@ export default function IocsTab({ incident }) {
             defaultSort={{ key: 'reputation', dir: 'desc' }}
             rowClassName={(row) => verdictRowClass(row.reputation?.verdict)}
             toolbar={toolbar}
+            selectable={{
+              id: indicatorRef,
+              label: (row) => row.value,
+              noun: 'indicators',
+              filter: `${typeFilter}|${scope}|${showAllowlisted}`,
+              actions: bulkActions,
+            }}
             emptyMessage={state.loading ? 'Loading…' : 'No indicators match the current filters'}
           />
         )}

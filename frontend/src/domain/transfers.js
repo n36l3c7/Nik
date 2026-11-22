@@ -29,10 +29,14 @@ export function sizeText(bytes) {
 export const pickedSize = (bytes) =>
   bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 
-/** "4.2 MB of 13.0 MB" when the size is known, "4.2 MB" when only what passed is, '' when nothing is. */
+/**
+ * "4.2 MB of 13.0 MB" when the size is known, "4.2 MB" when only what passed is, '' when nothing is.
+ * What is counted in items and not in bytes (`items`: a bulk job) says "120 of 500".
+ */
 export function amountText(progress) {
   const done = Number(progress?.sent ?? progress?.received ?? 0)
   const total = Number(progress?.total ?? 0)
+  if (progress?.items) return total > 0 ? `${Math.min(done, total)} of ${total}` : ''
   if (total > 0) return `${sizeText(Math.min(done, total))} of ${sizeText(total)}`
   return done > 0 ? sizeText(done) : ''
 }

@@ -1,8 +1,11 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import BulkBar from './BulkBar.jsx'
 import SearchInput from './SearchInput.jsx'
 import Select from './Select.jsx'
+import SelectBox from './SelectBox.jsx'
 import Button from './Button.jsx'
+import { useSelection } from './useSelection.js'
 
 // One collator for every comparison: localeCompare with options rebuilds it
 // on each call, which is ten times slower on tables with hundreds of
@@ -36,8 +39,15 @@ function compareValues(a, b) {
  * Data pipeline (all memoized): filter (search) → sort → paginate.
  * `onRowContextMenu(event, row)` opens the app's right-click menu on a row (see
  * ContextMenuContext); `initialQuery` pre-fills the search box.
- * `onRowClick(row)` makes rows selectable (click or Enter); clicks on buttons
+ * `onRowClick(row)` makes rows open (click or Enter); clicks on buttons
  * and links inside a row keep their own behaviour.
+ *
+ * `selectable` gives the table a first column of checkboxes and the bar of the
+ * bulk actions over it (components/ui/useSelection.js, BulkBar.jsx):
+ * `{ id: (row) => string, label: (row) => string, noun, filter?,
+ *    actions: (rows, picked) => action[] }`. `actions` is given the rows that
+ * are selected (every row the search keeps, when "all that match" is); the
+ * selection is emptied when the search or `filter` changes.
  */
 export default function DataTable({
   columns = [],
@@ -54,6 +64,7 @@ export default function DataTable({
   onRowClick = null,
   onRowContextMenu = null,
   initialQuery = '',
+  selectable = null,
 }) {
   const [query, setQuery] = useState(initialQuery)
   // The input updates at once; filtering and sorting follow when React is
@@ -99,6 +110,17 @@ export default function DataTable({
     const start = (safePage - 1) * pageSize
     return sorted.slice(start, start + pageSize)
   }, [sorted, safePage, pageSize])
+
+  // The selection: inside what the search keeps, across its pages and whatever the order.
+  const idOf = selectable?.id
+  const pageIds = useMemo(() => (idOf ? paged.map(idOf) : []), [paged, idOf])
+  const picked = useSelection({
+    filter: `${deferredQuery.trim().toLowerCase()}\n${selectable?.filter ?? ''}`,
+    pageIds,
+    total,
+  })
+  const selectedRows = () => (picked.all ? sorted : sorted.filter((row) => picked.has(idOf(row))))
+  const columnCount = columns.length + (selectable ? 1 : 0)
 
   // Displayed range: "X–Y of Z results"
   const from = total === 0 ? 0 : (safePage - 1) * pageSize + 1
@@ -146,11 +168,28 @@ export default function DataTable({
         </div>
       )}
 
+      {selectable && (
+        <BulkBar
+          picked={picked}
+          noun={selectable.noun}
+          actions={picked.count > 0 ? selectable.actions(selectedRows(), picked) : []}
+        />
+      )}
+
       {/* Container with horizontal scroll for wide tables */}
       <div className="overflow-x-auto border border-line bg-panel">
         <table className="w-full min-w-max text-left text-[13px]">
           <thead className="bg-canvas">
             <tr className="border-b border-line">
+              {selectable && (
+                <th scope="col" className="w-px pl-2">
+                  <SelectBox
+                    label={`Select the ${selectable.noun} on this page`}
+                    state={picked.page}
+                    onPick={picked.pickPage}
+                  />
+                </th>
+              )}
               {columns.map((column) => (
                 <th
                   key={column.key}
@@ -183,7 +222,7 @@ export default function DataTable({
             {paged.length === 0 ? (
               // No rows: message centered across the full width
               <tr>
-                <td colSpan={columns.length || 1} className="px-4 py-12 text-center font-mono text-sm text-fg-muted">
+                <td colSpan={columnCount || 1} className="px-4 py-12 text-center font-mono text-sm text-fg-muted">
                   {emptyMessage}
                 </td>
               </tr>
@@ -191,21 +230,40 @@ export default function DataTable({
               paged.map((row, index) => (
                 <tr
                   key={rowKey(row, index)}
-                  className={`transition-colors hover:bg-raised ${onRowClick ? 'cursor-pointer' : ''} ${rowClassName(row)}`}
+                  data-row={selectable ? idOf(row) : undefined}
+                  aria-selected={selectable ? picked.has(idOf(row)) : undefined}
+                  className={`transition-colors hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${onRowClick ? 'cursor-pointer' : ''} ${rowClassName(row)} ${selectable && picked.has(idOf(row)) ? 'outline outline-1 -outline-offset-1 outline-accent/60' : ''}`}
                   onClick={
                     onRowClick ? (event) => !event.target.closest('button, a, input') && onRowClick(row) : undefined
                   }
                   onKeyDown={
-                    onRowClick
+                    onRowClick || selectable
                       ? (event) => {
-                          if (event.key === 'Enter' && event.target === event.currentTarget) onRowClick(row)
+                          if (event.target !== event.currentTarget) return
+                          // The keys of the selection first: Space, Shift and an arrow, Ctrl/⌘+A, Escape.
+                          const moved = selectable ? picked.key(event, idOf(row)) : undefined
+                          if (moved) {
+                            event.currentTarget.parentElement
+                              ?.querySelector(`tr[data-row="${CSS.escape(moved)}"]`)
+                              ?.focus()
+                          }
+                          if (moved === undefined && event.key === 'Enter') onRowClick?.(row)
                         }
                       : undefined
                   }
                   onContextMenu={onRowContextMenu ? (event) => onRowContextMenu(event, row) : undefined}
-                  // A row that can be opened or has a menu is a Tab stop: the keyboard reaches what the mouse does.
-                  tabIndex={onRowClick || onRowContextMenu ? 0 : undefined}
+                  // A row that can be opened, selected or has a menu is a Tab stop: the keyboard reaches what the mouse does.
+                  tabIndex={onRowClick || onRowContextMenu || selectable ? 0 : undefined}
                 >
+                  {selectable && (
+                    <td className="py-0 pl-2 align-middle">
+                      <SelectBox
+                        label={`Select ${selectable.label(row)}`}
+                        checked={picked.has(idOf(row))}
+                        onPick={(event) => picked.pick(idOf(row), event)}
+                      />
+                    </td>
+                  )}
                   {columns.map((column) => (
                     <td
                       key={column.key}

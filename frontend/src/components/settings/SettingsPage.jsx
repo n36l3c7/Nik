@@ -23,6 +23,7 @@ import {
   Timer,
   Radar,
   ScanSearch,
+  ListChecks,
   ScrollText,
   ServerCog,
   Search,
@@ -60,6 +61,7 @@ import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
 import MyAccountSection from './sections/MyAccountSection.jsx'
 import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
+import BulkJobsSection from './sections/BulkJobsSection.jsx'
 import HealthSection from './sections/HealthSection.jsx'
 import KeysSection from './sections/KeysSection.jsx'
 import StorageSection from './sections/StorageSection.jsx'
@@ -115,6 +117,7 @@ const SECTION_VIEWS = {
   storage: { icon: HardDrive, Component: StorageSection },
   keys: { icon: FileKey2, Component: KeysSection },
   workers: { icon: ServerCog, Component: WorkersSection },
+  bulk: { icon: ListChecks, Component: BulkJobsSection },
   backup: { icon: DatabaseBackup, Component: BackupSection },
   audit: { icon: ScrollText, Component: AuditLogSection },
 }

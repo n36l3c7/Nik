@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useBulk } from '../../context/BulkContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useFields } from '../../context/FieldsContext.jsx'
@@ -48,7 +49,7 @@ import { copyText } from '../../lib/download.js'
 import { hasModalLayer } from '../../lib/layers.js'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
-import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, BulkBar, Button, EmptyState, Modal, useSelection } from '../ui/index.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import ColumnsDialog from './ColumnsDialog.jsx'
 import { ManageFiltersDialog, SaveFilterDialog } from './FilterDialogs.jsx'
@@ -81,6 +82,182 @@ import SearchBar from '../layout/SearchBar.jsx'
  * was left. A reload starts again from the person's default filter.
  */
 
+const SEVERITIES = ['critical', 'high', 'medium', 'low']
+const TLPS = ['clear', 'green', 'amber', 'amber+strict', 'red']
+const DIRECTIONS = [
+  { value: 'in', label: 'In' },
+  { value: 'out', label: 'Out' },
+  { value: 'both', label: 'In-out' },
+  { value: 'none', label: 'None (stop mirroring)' },
+]
+// How many incidents one click exports, each to its own file.
+const EXPORT_MAX = 25
+
+/**
+ * What the bar offers for the selected incidents. An action the account may not do is not in
+ * the list at all. Every change goes through the dialog of the bulk actions, which says what it
+ * would do before it does it.
+ */
+function incidentActions({
+  picked,
+  rows,
+  query,
+  me,
+  assignees,
+  types,
+  canWrite,
+  canAutomate,
+  askBulk,
+  onDone,
+  exportIncident,
+  showToast,
+}) {
+  if (picked.count === 0) return []
+  const selected = picked.all ? rows : rows.filter((row) => picked.has(row.id))
+  const ask = (action, title, more = {}) =>
+    askBulk({
+      list: 'incidents',
+      action,
+      title,
+      selection: picked.body({ q: query }),
+      onStarted: picked.reset,
+      onDone,
+      ...more,
+    })
+  const set = (title, label, name, options) =>
+    ask('set', title, { form: { kind: 'choice', label, options, params: (value) => ({ changes: { [name]: value } }) } })
+  const write = [
+    { group: 'Triage' },
+    {
+      id: 'status',
+      label: 'Set the status…',
+      onSelect: () =>
+        set(
+          'Set the status',
+          'Status',
+          'status',
+          STATUSES.filter((status) => status.value !== 'closed').map(({ value, label }) => ({ value, label })),
+        ),
+    },
+    {
+      id: 'close',
+      label: 'Close…',
+      onSelect: () => ask('set', 'Close the incidents', { form: { kind: 'close', rows: selected } }),
+    },
+    {
+      id: 'severity',
+      label: 'Set the severity…',
+      onSelect: () =>
+        set(
+          'Set the severity',
+          'Severity',
+          'severity',
+          SEVERITIES.map((value) => ({ value, label: value })),
+        ),
+    },
+    {
+      id: 'owner',
+      label: 'Assign…',
+      onSelect: () =>
+        ask('set', 'Assign the incidents', {
+          form: {
+            kind: 'choice',
+            label: 'Owner',
+            options: [
+              ...(me ? [{ value: me, label: `Me (${me})` }] : []),
+              ...assignees.filter((name) => name !== me).map((name) => ({ value: name, label: name })),
+              { value: '\u0000', label: 'Nobody (remove the owner)' },
+            ],
+            params: (value) => ({ changes: { owner: value === '\u0000' ? null : value } }),
+          },
+        }),
+    },
+    {
+      id: 'type',
+      label: 'Set the type…',
+      onSelect: () =>
+        set(
+          'Set the type',
+          'Type',
+          'type',
+          types.map((type) => ({ value: type.id, label: type.name })),
+        ),
+    },
+    {
+      id: 'tlp',
+      label: 'Set the TLP…',
+      onSelect: () =>
+        set(
+          'Set the TLP',
+          'TLP',
+          'tlp',
+          TLPS.map((value) => ({ value, label: `TLP:${value.toUpperCase()}` })),
+        ),
+    },
+    {
+      id: 'tags',
+      label: 'Change the tags…',
+      onSelect: () => ask('tags', 'Change the tags', { form: { kind: 'tags' } }),
+    },
+    {
+      id: 'field',
+      label: 'Set another field…',
+      onSelect: () => ask('set', 'Set a field', { form: { kind: 'field' } }),
+    },
+    { group: 'Evidence and mirroring' },
+    {
+      id: 'find',
+      label: 'Find indicators now',
+      onSelect: () => ask('find_indicators', 'Find indicators now', { params: {} }),
+    },
+    {
+      id: 'mirror',
+      label: 'Change mirroring…',
+      onSelect: () =>
+        ask('mirror', 'Change mirroring', {
+          form: { kind: 'choice', label: 'Direction', options: DIRECTIONS, params: (value) => ({ direction: value }) },
+        }),
+    },
+  ]
+  const exportAll = async () => {
+    if (selected.length > EXPORT_MAX) {
+      showToast({
+        message: `An export is one file for each incident: ${EXPORT_MAX} at most at a time. Select fewer.`,
+      })
+      return
+    }
+    for (const row of selected) await exportIncident(row.id)
+  }
+  const copyLinks = async () => {
+    const links = selected.map((row) => `${window.location.origin}/incident/${encodeURIComponent(row.id)}`)
+    showToast({
+      message: (await copyText(links.join('\n')))
+        ? `${links.length} ${links.length === 1 ? 'link' : 'links'} copied.`
+        : 'The browser refused to copy.',
+    })
+  }
+  return [
+    ...(canWrite ? write : []),
+    ...(canAutomate
+      ? [
+          { group: 'Automation' },
+          {
+            id: 'playbook',
+            label: 'Run a playbook on each…',
+            onSelect: () =>
+              ask('playbook', 'Run a playbook on each', {
+                form: { kind: 'playbook', params: (value) => ({ playbook: value }) },
+              }),
+          },
+        ]
+      : []),
+    { group: 'Take out' },
+    { id: 'export', label: 'Export (JSON)', onSelect: exportAll },
+    { id: 'links', label: 'Copy the links', onSelect: copyLinks },
+    ...(canWrite ? [{ id: 'delete', label: 'Delete…', onSelect: () => ask('delete', 'Delete the incidents') }] : []),
+  ]
+}
+
 // What each account had on screen, for the life of the browser tab: { [username]: view }.
 const remembered = new Map()
 const EMPTY_VIEW = { query: '', filterId: null, sort: DEFAULT_SORT, columns: null }
@@ -102,9 +279,11 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     importIncidentFromFile,
     setIncidentTriage,
     askClose,
+    refreshIncidents,
     storageError,
     unsavedChanges,
   } = useIncidents()
+  const { askBulk } = useBulk()
   const { currentUser, can } = useAuth()
   const { fields, types } = useFields()
   const { openMenu } = useContextMenu()
@@ -216,6 +395,25 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   }, [incidents, match.ids, match.fields, view.sort, columns, types])
   const [limit, setLimit] = useState(PAGE_ROWS)
   const drawn = useMemo(() => rows.slice(0, limit), [rows, limit])
+
+  // ---- the selection, and what is done to it ----
+  const drawnIds = useMemo(() => drawn.map((row) => row.id), [drawn])
+  const query = view.query.trim()
+  const picked = useSelection({ filter: query, pageIds: drawnIds, total: rows.length })
+  const bulkActions = incidentActions({
+    picked,
+    rows,
+    query,
+    me,
+    assignees,
+    types,
+    canWrite,
+    canAutomate,
+    askBulk,
+    onDone: refreshIncidents,
+    exportIncident,
+    showToast,
+  })
 
   // ---- the quick view: the row that is shown ----
   const [shownId, setShownId] = useState(null)
@@ -465,6 +663,8 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
         </div>
       )}
 
+      <BulkBar picked={picked} noun="incidents" actions={bulkActions} className="mx-6 mt-2 shrink-0" />
+
       {/* ----- The table (its own scroll, in both directions) ----- */}
       <div className="min-h-0 flex-1 overflow-auto">
         {incidents.length === 0 ? (
@@ -509,6 +709,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
               exportingId={exportingId}
               onExport={exportRow}
               onDelete={setDeleteTarget}
+              picked={picked}
             />
             {rows.length === 0 && (
               <EmptyState

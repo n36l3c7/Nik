@@ -46,6 +46,7 @@ from .routers import (
     automation,
     backup,
     backups,
+    bulk,
     capa_rules,
     connectors,
     context,
@@ -419,6 +420,8 @@ def _query_forbidden(_request: Request, _error: QueryForbidden) -> JSONResponse:
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
+# Before the incidents: /incidents/bulk is not an incident.
+app.include_router(bulk.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
 app.include_router(indicators_found.router, prefix="/api")

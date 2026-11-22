@@ -1054,6 +1054,13 @@
               </td>
             </tr>
             <tr>
+              <td><code>bulk_jobs</code>, <code>bulk_items</code></td>
+              <td>
+                the actions asked of many incidents, artifacts or indicators at once: who asked for what, of how many,
+                how it went, and what became of each item (kept a month after the job ended)
+              </td>
+            </tr>
+            <tr>
               <td><code>users</code>, <code>sessions</code>, <code>api_keys</code></td>
               <td>accounts (bcrypt hash), server-side sessions, API keys (SHA-256 digest only)</td>
             </tr>
@@ -1420,6 +1427,18 @@
         request (<code>X-Nik-Job</code>) and asks the worker meanwhile whether it still has it
         (<code>workers/watching.py</code>, <code>jobs.py</code> in each worker): "unknown job" is a restart, and the job
         is handed out again with its file.
+      </p>
+      <p>
+        <strong>Bulk jobs (6.10).</strong> One action on many rows of a list is a job (<code>bulk.py</code>): a row of
+        <code>bulk_jobs</code> and one of <code>bulk_items</code> for each item, written with a claim of
+        <code>work_claims</code> in the transaction of the request. The job calls, for each item, the function the
+        single action calls (<code>bulk_incidents.py</code>, <code>bulk_artifacts.py</code>,
+        <code>bulk_indicators.py</code>), and commits each item with its state: after a restart the process that takes
+        the claim goes on from the first item still pending. While it works on an item it says so in a variable of the
+        thread (<code>core/origin.py</code>): the audit log ends the entry of each change with the job, and the outbox
+        marks each event with it. Before an item that writes events, and while a playbook waits for one, it waits for
+        the worker to have read the outbox (<code>bulk.Pace</code>). It holds a lease of its own and looks at the stop
+        flag between two items, like every loop.
       </p>
       <h3 id="incident-model">Fields, types, context and the War Room (4.3)</h3>
       <p>
