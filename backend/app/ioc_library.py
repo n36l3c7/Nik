@@ -630,10 +630,11 @@ def save_items(
 
 def add_to_list(db: OrmSession, target: IocList, pairs: Iterable[Pair], actor: str, now: str) -> int:
     wanted = list(dict.fromkeys(pairs))
-    have = {
-        (t, v)
-        for t, v in db.execute(select(IocListItem.type, IocListItem.value).where(IocListItem.list_id == target.id))
-    }
+    inside = select(IocListItem.type, IocListItem.value).where(IocListItem.list_id == target.id)
+    if len(wanted) <= 200:
+        # A few of them: only they are looked for, not the whole list (a bulk action adds one at a time).
+        inside = inside.where(IocListItem.value.in_([value for _, value in wanted]))
+    have = {(t, v) for t, v in db.execute(inside)}
     fresh = [pair for pair in wanted if pair not in have]
     db.add_all(IocListItem(list_id=target.id, type=t, value=v, added_at=now, added_by=actor) for t, v in fresh)
     if fresh:

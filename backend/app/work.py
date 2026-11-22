@@ -319,6 +319,31 @@ def hand_back(kind: str, ref: str, note: str, now: float | None = None) -> int:
     )
 
 
+def give_back(kind: str, ref: str, note: str, now: float | None = None) -> int:
+    """Give a piece this process holds back as wanted and due at once, without counting the try:
+    the work stops itself between two steps because the process was asked to stop, or may not
+    work here any more, and goes on from where it is in the process that takes it next."""
+    from .core.db import SessionLocal
+
+    with SessionLocal() as db:
+        handed = db.execute(
+            update(WorkClaim)
+            .where(WorkClaim.kind == kind, WorkClaim.ref == ref, WorkClaim.holder == HOLDER, WorkClaim.state == "held")
+            .values(
+                state="wanted",
+                holder="",
+                beat_at=0,
+                interrupted_at=time.time() if now is None else now,
+                resumed_at=None,
+                attempts=WorkClaim.attempts - 1,
+                progress="",
+                note=note[:500],
+            )
+        ).rowcount
+        db.commit()
+        return handed
+
+
 def describe(db: OrmSession, kind: str, ref: str) -> dict[str, Any] | None:
     """What the screens say of a piece of work beside its own state: how many times it was
     taken, when a restart cut it and when it went on, how far it is. None when nothing is known."""

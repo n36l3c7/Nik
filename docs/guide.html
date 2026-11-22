@@ -44,6 +44,7 @@
           <li><a href="#sign-in">Sign in</a></li>
           <li><a href="#incidents">Incidents</a></li>
           <li><a href="#incident-list">The list of incidents</a></li>
+          <li><a href="#bulk">Select many, and act on them at once</a></li>
           <li><a href="#saving">Saving, and working together</a></li>
           <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
@@ -218,6 +219,113 @@
           <strong>Back to the default columns</strong> undoes it.
         </li>
       </ul>
+      <h3 id="bulk">Select many, and act on them at once</h3>
+      <p>
+        The incidents, the artifacts and the indicators are selected the same way. Each row has a checkbox, in a cell of
+        its own: a click ticks the row, and the row still opens as it always did when you click anywhere else on it.
+        <kbd>Shift</kbd> and a click tick every row from the last one you ticked to this one. The checkbox of the
+        heading ticks the rows on screen; it is half ticked when only some of them are.
+      </p>
+      <p>
+        As soon as something is ticked a bar appears over the list: <em>12 selected</em>, a menu
+        <strong>Actions…</strong>, and <strong>Clear</strong>. When every row on screen is ticked and the filter keeps
+        more than that, the bar offers <strong>Select all 1,284 that match</strong>: the selection is then
+        <em>everything the filter keeps</em>, and it is the server that works out which they are from the filter, not
+        the browser from what it has loaded. The selection lives inside one filter: it survives another order of the
+        rows and the next page, it is emptied when the filter changes (the list says
+        <em>The filter changed: the selection was cleared</em>), it is emptied once an action on it has started, and it
+        is forgotten when you leave the page. Nothing selected in one list is ever acted on from another.
+      </p>
+      <p>
+        With the keyboard, on a row: <kbd>Space</kbd> ticks it or unticks it, <kbd>Shift</kbd> + <kbd>↓</kbd> or
+        <kbd>↑</kbd> ticks the next row too and goes there, <kbd>Ctrl</kbd> + <kbd>A</kbd> (<kbd>⌘</kbd> + <kbd>A</kbd>)
+        ticks the rows on screen, <kbd>Esc</kbd> unticks everything. (In the list of incidents <kbd>Space</kbd> used to
+        open the quick view: a click on the row still does.)
+      </p>
+      <p>
+        <strong>What the menu offers</strong> is what your roles let you do; an action you may not do is not in it. A
+        viewer can select, and take out what is selected (export, copy), nothing more.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>List</th>
+              <th>On what is selected</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Incidents</td>
+              <td>
+                Set the status; <strong>Close…</strong>, which asks the reason and the notes once (and, when the
+                incidents are all of one type, the reasons of that type and the fields it wants filled to close); set
+                the severity, the owner (you, somebody, nobody), the type, the TLP; add and remove tags; set any other
+                field that holds one plain value; find indicators now; change the direction of the mirror, or stop it,
+                where there is one; run a playbook on each; export each as JSON (25 at a time); copy their links;
+                delete.
+              </td>
+            </tr>
+            <tr>
+              <td>Artifacts</td>
+              <td>
+                Add and remove tags; analyse again (files and e-mails); link to an incident, or take out of one; set the
+                day they are deleted on, or take it away; <strong>Download together…</strong>, one archive made by the
+                server with the files inside an encrypted archive (the export of the artifacts: 500 artifacts at most,
+                and a limit on their size together that the dialog states); delete.
+              </td>
+            </tr>
+            <tr>
+              <td>Indicators</td>
+              <td>
+                Check now, which first says what it costs each source; have the isolated browser analyse the addresses;
+                add and remove tags; set the TLP; add to a list, save as a new list, take out of the list that is open;
+                add to the allowlist; export in the chosen format; copy the values; remove from the library. On the
+                Indicators tab of an incident also <strong>Remove from this incident…</strong>, for the ones found by
+                themselves: they are not found again there.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Not offered on many at once, because each incident needs its own answer: its name and its ticket, fields made of
+        parts (tags of hosts and users, tables, JSON), starting a mirror (each incident has its own ticket on the other
+        side), a script button and a command of the War Room (each asks its own arguments and confirmations), and its
+        report. A watch is of a <a href="#indicator-lists">list</a>, not of an indicator: indicators are watched by
+        adding them to a list that is.
+      </p>
+      <p>
+        <strong>Before anything is done</strong> a dialog asks what the action needs (the tags, the reason, the list…)
+        and then says what it will do: <em>Close: 1,284 incidents</em>, how many of them it applies to when not all (<em
+          >It applies to 9 of 12</em
+        >), and what it sets in motion (<em
+          >38 of these are mirrored Out: their tickets will be updated, one update for each</em
+        >; for a check, the requests it costs each source against what is left of today's quota). Deleting, and closing
+        more than 100 incidents at once, wait for a few words to be typed (<code>delete 12</code>). A job takes 5,000
+        rows at most: beyond that the dialog says to narrow the filter. When the selection is everything a filter keeps
+        and it changed while the dialog was open, nothing is done and the dialog shows the new count.
+      </p>
+      <p>
+        <strong>How it runs.</strong> Each row goes through exactly what changing it alone goes through: the same
+        checks, the same permission, its own line in the audit log (ending with the first characters of the job), the
+        same events for the playbooks, the same update to a mirrored ticket. Up to 50 rows are done before the dialog
+        closes. More than that goes on in the background: its progress is in the tray at the foot of the window, you can
+        go on working, and it goes on by itself after a restart of the server from the row it had reached, without doing
+        any row twice. One bulk action of yours runs at a time on each list.
+      </p>
+      <p>
+        <strong>What it did.</strong> When every row was done a notice says so. Otherwise the result opens: how many
+        were <em>done</em>, <em>skipped</em> (they were so already, or the action is not for them), <em>refused</em>
+        (a rule of a field, a type that wants something filled to close, a permission: with the sentence) and
+        <em>failed</em>, the rows that were not done with the reason for each, and
+        <strong>Download the result (CSV)</strong> for all of them. Nothing is undone when some rows fail: the others
+        stay changed. <strong>Try again on the N not done</strong> makes a new job of the rows that failed or were never
+        reached; a running job has <strong>Stop it</strong>, which ends it after the row it is on and leaves what was
+        done. Every job of the last month is under <em>Settings → System → <a href="#bulk-actions">Bulk actions</a></em
+        >.
+      </p>
+
       <h3 id="saving">Saving, and working on the same incident</h3>
       <p>
         There is no Save button: every change is saved as you make it. Several analysts can work on one incident at the
@@ -563,15 +671,16 @@
       </p>
       <h3 id="indicators-bulk">Bulk check and export</h3>
       <p>
-        Tick rows (or <em>select all</em> of a filter), or use the buttons of a list or of the whole view.
-        <strong>Check</strong> first shows what it costs: how many indicators are asked, how many answers are still
-        fresh, how many are never sent out, and per source how many requests against what is left of today's quota. The
-        check then runs in the background, with its progress at the top of the library. When a source's quota is used up
-        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it. Indicators the data guard holds (<a
-          href="#held-look-ups"
-          >below</a
-        >) are counted apart before the check starts and are not asked about; the check says how many when it ends, and
-        in the table their verdict reads <em>held</em>.
+        Tick rows (or <strong>Select all … that match</strong>, see <a href="#bulk">Select many</a>), or tick nothing:
+        <strong>Check</strong> and <strong>Export</strong> at the top act on the selection when there is one (<em
+          >Check 12 selected</em
+        >) and on everything the view keeps otherwise (<em>Check all 340</em>). <strong>Check</strong> first shows what
+        it costs: how many indicators are asked, how many answers are still fresh, how many are never sent out, and per
+        source how many requests against what is left of today's quota. The check then runs in the background, with its
+        progress at the top of the library. When a source's quota is used up Nik says so and goes on by itself when it
+        resets; <em>Stop</em> ends it. Indicators the data guard holds (<a href="#held-look-ups">below</a>) are counted
+        apart before the check starts and are not asked about; the check says how many when it ends, and in the table
+        their verdict reads <em>held</em>.
       </p>
       <p>
         <strong>Export</strong> asks for the format (CSV, JSON, STIX 2.1, MISP, or one value per line) and the fields.
@@ -580,9 +689,10 @@
         into Nik with its tags and lists.
       </p>
       <p>
-        <strong>Tag…</strong>, on a selection (or on everything a filter keeps, 5 000 indicators at most), adds tags to
-        all of them and takes tags off all of them in one go. An indicator keeps the tags that are not named; one seen
-        only in incidents gets a record to hold them, as when it is edited alone.
+        <strong>Change the tags…</strong>, in the menu of the selection, adds tags to all of them and takes tags off all
+        of them in one go. An indicator keeps the tags that are not named; one seen only in incidents gets a record to
+        hold them, as when it is edited alone. The other actions of the selection are listed under
+        <a href="#bulk">Select many, and act on them at once</a>.
       </p>
 
       <h2 id="tabs">The tabs of an incident</h2>
@@ -840,10 +950,11 @@
         asked again by itself. <strong>Open as a page</strong> gives the indicator a full page, and
         <strong>Copy link</strong> its address (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a
         colleague. <strong>Check all</strong> asks the sources about every indicator of the incident, and
-        <strong>Save as a list</strong> makes a list of them in the <a href="#ioc-library">Indicators</a>. A row is red
-        when the indicator is malicious and amber when it is suspicious; being seen in other incidents is a number, not
-        a colour. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
-        <strong>allowlist</strong> (right-click → Add to the allowlist).
+        <strong>Save as a list</strong> makes a list of them in the <a href="#ioc-library">Indicators</a>; tick rows to
+        do the same, and more, to those only (<a href="#bulk">Select many</a>). A row is red when the indicator is
+        malicious and amber when it is suspicious; being seen in other incidents is a number, not a colour. Export the
+        list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the <strong>allowlist</strong> (right-click
+        → Add to the allowlist).
       </p>
       <h4 id="found-indicators">Indicators found by themselves</h4>
       <p>
@@ -1324,6 +1435,15 @@
             <tr>
               <td><kbd>Ctrl</kbd> + <kbd>V</kbd></td>
               <td>Pastes a file, an address or an indicator to analyse it.</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Space</kbd> · <kbd>Shift</kbd> + <kbd>↓</kbd> / <kbd>↑</kbd> · <kbd>Ctrl</kbd> + <kbd>A</kbd>
+              </td>
+              <td>
+                On a row of the incidents, the artifacts or the indicators: ticks it, ticks the next one too, ticks the
+                rows on screen; <kbd>Esc</kbd> unticks everything (<a href="#bulk">Select many</a>).
+              </td>
             </tr>
             <tr>
               <td><kbd>?</kbd></td>
@@ -2089,12 +2209,13 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <p>
         <em>Settings → System → Health</em> (admins). One row for each thing an operator would otherwise go and look at,
         in groups: the disks, the database, the queues, the work in progress (what restarts left behind: steps that wait
-        for a person, work that was set aside, work nobody holds), the workers, the backups, the recovery, the
-        certificate, the audit log, the sign-in, the keys and the encryption of the store, the server. A row has a value
-        (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or
-        <em>not known</em> when it could not be measured), since when it is in that state, what to do when it is not
-        fine, and a link to the page that has the whole story: Storage, Workers, Backup and the audit log are summed up
-        here, not repeated. What is not fine is listed again at the top, the problems first.
+        for a person, work that was set aside, work nobody holds, and the bulk actions that run or were given up), the
+        workers, the backups, the recovery, the certificate, the audit log, the sign-in, the keys and the encryption of
+        the store, the server. A row has a value (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>,
+        <em>attention</em>, <em>problem</em>, or <em>not known</em> when it could not be measured), since when it is in
+        that state, what to do when it is not fine, and a link to the page that has the whole story: Storage, Workers,
+        Backup and the audit log are summed up here, not repeated. What is not fine is listed again at the top, the
+        problems first.
       </p>
       <ul>
         <li>
@@ -2200,6 +2321,22 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <p>
         A standby serves no page, so it has no health page: its state is read on its host, with
         <code>deploy/standby.sh status</code>.
+      </p>
+
+      <h3 id="bulk-actions">Bulk actions</h3>
+      <p>
+        <em>Settings → System → Bulk actions</em>. The actions asked of many incidents, artifacts or indicators at once
+        (<a href="#bulk">Select many</a>), the newest first: what was asked, of how many, by whom, and how it went. A
+        row opens <em>What it did</em>, with the CSV, <strong>Stop it</strong> while it runs and
+        <strong>Try again</strong> on what was not done. You see your own; an administrator, and who reads the audit
+        log, can tick <em>Everybody's</em>. A job is kept for a month. One that was interrupted three times by restarts
+        is <em>given up</em>: what it did stays, its result says what it did not do, and Health shows it until it is a
+        month old.
+      </p>
+      <p>
+        Administrators set three limits at the foot of the page: how many rows one action takes (5,000), up to how many
+        are done before the dialog closes (50; more goes on in the background), and above how many a closing is
+        confirmed by typing (100; deleting always is).
       </p>
 
       <h3 id="audit-log">Audit log</h3>

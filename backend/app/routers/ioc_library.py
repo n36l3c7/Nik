@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import base64
 import re
-import uuid
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
@@ -20,9 +19,9 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .. import ioc_history
 from .. import ioc_library as lib
-from ..core import signin_policy
+from ..core import audit, signin_policy
 from ..core.db import get_db
-from ..core.models import AuditEntry, Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
+from ..core.models import Incident, IocAlert, IocCheck, IocEntry, IocList, IocListItem, IocRecord
 from ..core.security import (
     Principal,
     check_admin_network,
@@ -44,11 +43,7 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _audit(db: OrmSession, caller: Principal, action: str, details: str, target: str | None = None) -> None:
-    db.add(
-        AuditEntry(
-            id=str(uuid.uuid4()), at=now_iso(), actor=caller.actor, action=action, target=target, details=details
-        )
-    )
+    audit.record(db, caller.actor, action, details, target=target)
 
 
 # --------------------------------------------------------------------------- #
@@ -390,6 +385,14 @@ def edit_indicator(
 ) -> dict:
     """Tags, note, TLP and expiry of an indicator. One seen only in incidents
     gets a record to hold them."""
+    value = edit(db, body, caller)
+    db.commit()
+    return lib.library(db, read_settings(db), only={(body.type, value)})[0]
+
+
+def edit(db: OrmSession, body: EditIn, caller: Principal) -> str:
+    """Write what an analyst says of an indicator (the caller commits). Returns its value as it
+    is kept. What the route does, and what a bulk action does for each indicator."""
     value = normalize(body.type, body.value)
     if value is None:
         raise HTTPException(status_code=422, detail=f"Not a valid {body.type}.")
@@ -412,8 +415,19 @@ def edit_indicator(
     elif body.expires is not None:
         (record.expires_at,) = _dates(body.expires)
     record.updated_at = now
-    db.commit()
-    return lib.library(db, read_settings(db), only={(body.type, value)})[0]
+    said = [
+        name
+        for name, sent in (
+            ("tags", body.tags is not None),
+            ("note", body.note is not None),
+            ("TLP", body.tlp is not None),
+            ("expiry", body.clearExpires or body.expires is not None),
+        )
+        if sent
+    ]
+    if said:
+        _audit(db, caller, "ioc.edit", f"Set the {', '.join(said)} of {body.type} {value[:200]}", target=value[:200])
+    return value
 
 
 class TagsIn(Scope):
@@ -464,6 +478,14 @@ def tag_indicators(
     return {"changed": changed, "unchanged": len(rows) - changed}
 
 
+def forget(db: OrmSession, row: dict[str, Any]) -> bool:
+    """Take one indicator out of the library: its record and its place in every list (the caller
+    commits). False when it stays to be seen, because an incident or an artifact holds it."""
+    db.execute(delete(IocRecord).where(IocRecord.type == row["type"], IocRecord.value == row["value"]))
+    db.execute(delete(IocListItem).where(IocListItem.type == row["type"], IocListItem.value == row["value"]))
+    return not (row["incidents"] or row.get("artifacts"))
+
+
 @router.post("/remove")
 def remove_indicators(
     scope: Scope, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)
@@ -473,12 +495,10 @@ def remove_indicators(
     rows, _ = _resolve(db, scope, read_settings(db))
     removed = kept = 0
     for row in rows:
-        db.execute(delete(IocRecord).where(IocRecord.type == row["type"], IocRecord.value == row["value"]))
-        db.execute(delete(IocListItem).where(IocListItem.type == row["type"], IocListItem.value == row["value"]))
-        if row["incidents"] or row.get("artifacts"):
-            kept += 1
-        else:
+        if forget(db, row):
             removed += 1
+        else:
+            kept += 1
     _audit(
         db,
         caller,

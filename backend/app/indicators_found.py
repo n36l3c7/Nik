@@ -59,7 +59,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -552,9 +552,19 @@ def remove(db: OrmSession, incident: Incident, kind: str, value: str, actor: str
         return False
     row.removed_at, row.removed_by = now_iso(), actor[:200]
     db.flush()
-    from .iocs import reindex_incident
+    from .iocs import MAX_PER_INCIDENT, reindex_incident
 
-    reindex_incident(db, incident, alerts=False)
+    # An indicator the incident holds for this alone leaves its index by itself: with hundreds of
+    # them on one incident, building the whole index again for each one removed is what would
+    # make removing many slow. One that something else gives too, or an index that is full (the
+    # place freed goes to one that was left out), is built again.
+    entry = db.get(IocEntry, (incident.id, kind, value))
+    indexed = db.scalar(select(func.count()).select_from(IocEntry).where(IocEntry.incident_id == incident.id)) or 0
+    alone = entry is not None and all(str(source).startswith(SOURCE) for source in entry.sources or [])
+    if alone and indexed < MAX_PER_INCIDENT:
+        db.delete(entry)
+    else:
+        reindex_incident(db, incident, alerts=False)
     audit.record(
         db,
         actor,

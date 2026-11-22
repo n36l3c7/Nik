@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Eye, Globe, Link2, Pencil, Plus, Rss, Square, Tag, Trash2 } from 'lucide-react'
+import { Download, Eye, Globe, Link2, Pencil, Plus, Rss, Square, Trash2 } from 'lucide-react'
 import { api } from '../../services/api.js'
 import { copyText } from '../../lib/download.js'
 import { formatRelative } from '../../lib/time.js'
@@ -7,13 +7,16 @@ import { useIocLibrary } from '../../context/IocLibraryContext.jsx'
 import { IocValue, useIocLookup } from '../../context/IocLookupContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useBulk } from '../../context/BulkContext.jsx'
 import { analysisColor, analysisLabel, verdictMeta } from '../../domain/enrichment.js'
 import { useArtifacts } from '../../context/ArtifactContext.jsx'
+import { indicatorRef } from '../../domain/bulk.js'
 import { IOC_TYPES } from '../../domain/iocs.js'
 import {
   EMPTY_FILTERS,
   ORIGIN_LABELS,
   QUICK_FILTERS,
+  TLP_OPTIONS,
   changeLine,
   changesByKey,
   libraryPath,
@@ -22,10 +25,20 @@ import {
   verdictRowClass,
 } from '../../domain/iocLibrary.js'
 import SortHeader from '../tabs/network/SortHeader.jsx'
-import { Badge, Button, EmptyState, Modal, Select, StatCard, Wait } from '../ui/index.js'
+import {
+  Badge,
+  BulkBar,
+  Button,
+  EmptyState,
+  Modal,
+  Select,
+  SelectBox,
+  StatCard,
+  Wait,
+  useSelection,
+} from '../ui/index.js'
 import EditIocDialog from './EditIocDialog.jsx'
 import ListHistory from './ListHistory.jsx'
-import TagDialog from './TagDialog.jsx'
 import QueryInput from '../ui/QueryInput.jsx'
 import { useQuerySchema } from '../../services/querySchema.js'
 import { conditionOn, withCondition } from '../../domain/query/builder.js'
@@ -33,13 +46,16 @@ import { conditionOn, withCondition } from '../../domain/query/builder.js'
 /*
  * The Indicators page in the main area: every indicator Nik knows (or one list),
  * filtered, sorted and paged by the server. Rows are tinted by verdict only.
- * A selection, a list or the whole filter can be checked, exported, put in a
- * list or removed.
+ * Rows are selected as in every list (components/ui/useSelection.js): what is
+ * selected, or everything the filter keeps, can be checked, exported, tagged,
+ * put in a list or removed from the bar that appears; "Check" and "Export" at
+ * the top act on the selection when there is one, and on everything otherwise.
  */
 
 const PAGE = 100
-const key = (row) => `${row.type}\n${row.value}`
-const pair = (row) => ({ type: row.type, value: row.value })
+// A row by the name a bulk request gives it, which is also its key here: `domain:evil.example`.
+const key = indicatorRef
+const pairOf = (ref) => ({ type: ref.slice(0, ref.indexOf(':')), value: ref.slice(ref.indexOf(':') + 1) })
 
 const COLUMNS = [
   { key: 'type', label: 'Type' },
@@ -186,19 +202,17 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const [queryError, setQueryError] = useState(null)
   const schema = useQuerySchema('indicators')
   // The type, verdict and origin pickers write their condition into the query, and show what it says.
-  const picked = (field, choices) => {
+  const chosenOf = (field, choices) => {
     const condition = conditionOn(filters.q, field, schema)
     return Object.keys(choices).find((key) => choices[key] === condition) ?? ''
   }
   const pick = (field, choices, key) =>
     setFilters({ ...filters, q: withCondition(filters.q, field, choices[key] ?? '', schema) })
-  const [selected, setSelected] = useState(() => new Map())
-  const [wholeFilter, setWholeFilter] = useState(false)
+  const { askBulk } = useBulk()
   const [editing, setEditing] = useState(null)
   const [confirm, setConfirm] = useState(null) // { title, message, action, run }
   const [listMenu, setListMenu] = useState(false)
   const [history, setHistory] = useState(null) // what the checks of the list found
-  const [tagging, setTagging] = useState(null) // { scope, count }
   const requestRef = useRef(0)
 
   // The quick filter of the panel sets the filters of the "all" view.
@@ -208,11 +222,9 @@ export default function IocLibraryPage({ onOpenIncident }) {
   )
   const effective = useMemo(() => ({ ...filters, ...quickFilters }), [filters, quickFilters])
 
-  // A different view starts from its first page with nothing selected.
+  // A different view starts from its first page (the selection is emptied by the filter itself).
   useEffect(() => {
     setOffset(0)
-    setSelected(new Map())
-    setWholeFilter(false)
   }, [listId, quick, filters, sort])
   useEffect(() => setFilters(EMPTY_FILTERS), [listId])
 
@@ -270,64 +282,35 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const total = data?.total ?? 0
   // Something typed or chosen narrows the table: an empty one then says so, in other words.
   const narrowed = Object.keys(EMPTY_FILTERS).some((key) => (filters[key] ?? null) !== (EMPTY_FILTERS[key] ?? null))
-  const allOnPage = rows.length > 0 && rows.every((row) => selected.has(key(row)))
-  const count = wholeFilter ? total : selected.size
-  const scope = useCallback(
+  // The selection lives inside one view and one filter, across its pages and whatever the order.
+  const filterKey = useMemo(() => JSON.stringify([listId, quick, effective]), [listId, quick, effective])
+  const pageIds = useMemo(() => rows.map(key), [rows])
+  const picked = useSelection({ filter: filterKey, pageIds, total })
+  const count = picked.count
+  const everything = useCallback(
     () =>
-      wholeFilter || selected.size === 0
-        ? listId && !Object.keys(scopeFilters(effective)).length
-          ? { list: listId }
-          : { filters: scopeFilters(effective, listId) }
-        : { items: [...selected.values()].map(pair) },
-    [wholeFilter, selected, listId, effective],
+      listId && !Object.keys(scopeFilters(effective)).length
+        ? { list: listId }
+        : { filters: scopeFilters(effective, listId) },
+    [listId, effective],
+  )
+  // What the dialogs of the check, the export and a new list are told the selection is.
+  const scope = useCallback(
+    () => (picked.all || picked.count === 0 ? everything() : { items: picked.ids().map(pairOf) }),
+    [picked, everything],
   )
   const title = list?.name ?? (QUICK_FILTERS.find((f) => f.id === quick)?.label || 'All indicators')
-  const scopeLabel = count && !wholeFilter ? `${count} selected` : title
-
-  const toggle = (row) =>
-    setSelected((current) => {
-      const next = new Map(current)
-      if (next.has(key(row))) next.delete(key(row))
-      else next.set(key(row), row)
-      return next
+  const scopeLabel = count && !picked.all ? `${count} selected` : title
+  const ask = (action, heading, more = {}) =>
+    askBulk({
+      list: 'indicators',
+      action,
+      title: heading,
+      selection: picked.body(scopeFilters(effective, listId)),
+      onStarted: picked.reset,
+      onDone: refresh,
+      ...more,
     })
-  const togglePage = () => {
-    setWholeFilter(false)
-    setSelected((current) => {
-      const next = new Map(current)
-      for (const row of rows) allOnPage ? next.delete(key(row)) : next.set(key(row), row)
-      return next
-    })
-  }
-  const clear = () => {
-    setSelected(new Map())
-    setWholeFilter(false)
-  }
-  const act = async (run, done) => {
-    try {
-      const result = await run()
-      showToast({ message: done(result) })
-      clear()
-      refresh()
-    } catch (err) {
-      showToast({ message: err.message })
-    }
-  }
-  const addToList = (target) =>
-    act(
-      () => api.post(`/iocs/lists/${target.id}/items`, scope()),
-      (res) => `${res.added} added to "${target.name}".`,
-    )
-  const removeFromList = () =>
-    act(
-      () => api.post(`/iocs/lists/${listId}/items/remove`, { items: [...selected.values()].map(pair) }),
-      (res) => `${res.removed} taken out of the list. They stay in the library.`,
-    )
-  const remove = () =>
-    act(
-      () => api.post('/iocs/remove', scope()),
-      (res) => `${res.removed} removed.${res.kept ? ` ${res.kept} stay: an incident holds them.` : ''}`,
-    )
   // Addresses are visited only after the analyst has seen what will be visited.
   const planAnalysis = async () => {
     try {
@@ -339,12 +322,97 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const startAnalysis = async () => {
     const plan = analysing
     setAnalysing(null)
-    await act(
-      () => api.post('/iocs/analyse', { scope: plan.scope }),
-      (res) => `The isolated browser is visiting ${res.started.length} address${res.started.length === 1 ? '' : 'es'}.`,
-    )
+    try {
+      const res = await api.post('/iocs/analyse', { scope: plan.scope })
+      showToast({
+        message: `The isolated browser is visiting ${res.started.length} address${res.started.length === 1 ? '' : 'es'}.`,
+      })
+      picked.reset()
+      refresh()
+    } catch (err) {
+      showToast({ message: err.message })
+    }
     refreshArtifacts()
   }
+  // The values of the selection, one a line: those ticked, or everything the filter keeps.
+  const copyValues = async () => {
+    try {
+      let values = picked.ids().map((ref) => pairOf(ref).value)
+      if (picked.all) {
+        values = []
+        // A thousand at a time, as many times as the filter holds thousands.
+        for (let from = 0; from < total; from += 1000) {
+          const page = await api.get(
+            `/iocs?${libraryQuery({ filters: effective, list: listId, sort, offset: from, limit: 1000 })}`,
+          )
+          values.push(...page.iocs.map((row) => row.value))
+        }
+      }
+      showToast({
+        message: (await copyText(values.join('\n')))
+          ? `${values.length} ${values.length === 1 ? 'value' : 'values'} copied.`
+          : 'The browser refused to copy.',
+      })
+    } catch (err) {
+      showToast({ message: err.message })
+    }
+  }
+  const canWrite = can('write')
+  const bulkActions = [
+    ...(canWrite
+      ? [
+          { group: 'Look up' },
+          { id: 'check', label: 'Check now…', onSelect: () => openCheck(scope(), scopeLabel) },
+          { id: 'analyse', label: 'Analyse the addresses…', onSelect: planAnalysis },
+          { group: 'Organise' },
+          {
+            id: 'tags',
+            label: 'Change the tags…',
+            onSelect: () => ask('tags', 'Change the tags', { form: { kind: 'tags' } }),
+          },
+          {
+            id: 'tlp',
+            label: 'Set the TLP…',
+            onSelect: () =>
+              ask('tlp', 'Set the TLP', {
+                form: { kind: 'choice', label: 'TLP', options: TLP_OPTIONS, params: (value) => ({ tlp: value }) },
+              }),
+          },
+          {
+            id: 'list-add',
+            label: 'Add to a list…',
+            onSelect: () =>
+              ask('list_add', 'Add to a list', {
+                form: {
+                  kind: 'choice',
+                  label: 'List',
+                  options: lists
+                    .filter((entry) => entry.id !== listId)
+                    .map((entry) => ({ value: entry.id, label: entry.watch ? `${entry.name} (watched)` : entry.name })),
+                  params: (value) => ({ list: value }),
+                },
+              }),
+          },
+          { id: 'list-new', label: 'Save as a new list…', onSelect: () => openListForm({ scope: scope(), count }) },
+          ...(listId
+            ? [
+                {
+                  id: 'list-remove',
+                  label: 'Take out of this list…',
+                  onSelect: () => ask('list_remove', 'Take out of the list', { params: { list: listId } }),
+                },
+              ]
+            : []),
+          { id: 'allowlist', label: 'Add to the allowlist…', onSelect: () => ask('allowlist', 'Add to the allowlist') },
+        ]
+      : []),
+    { group: 'Take out' },
+    { id: 'export', label: 'Export…', onSelect: () => openExport(scope(), scopeLabel, count) },
+    { id: 'copy', label: 'Copy the values', onSelect: copyValues },
+    ...(canWrite
+      ? [{ id: 'delete', label: 'Remove from the library…', onSelect: () => ask('delete', 'Remove from the library') }]
+      : []),
+  ]
   const stop = (check) => api.post(`/iocs/checks/${check.id}/stop`, {}).then(refresh)
   const feedUrl = list ? `${window.location.origin}/api/iocs/lists/${list.id}/feed` : ''
   const canDelete = list && (can('admin') || list.createdBy === currentUser?.username)
@@ -377,15 +445,12 @@ export default function IocLibraryPage({ onOpenIncident }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => openCheck(listId ? { list: listId } : { filters: scopeFilters(effective) }, title)}>
-            Check all {total}
+          {/* On the selection when there is one, on everything the filter keeps otherwise. */}
+          <Button onClick={() => openCheck(scope(), scopeLabel)}>
+            {count ? `Check ${count} selected` : `Check all ${total}`}
           </Button>
-          <Button
-            variant="secondary"
-            icon={Download}
-            onClick={() => openExport(listId ? { list: listId } : { filters: scopeFilters(effective) }, title, total)}
-          >
-            Export
+          <Button variant="secondary" icon={Download} onClick={() => openExport(scope(), scopeLabel, count || total)}>
+            {count ? `Export ${count} selected` : 'Export'}
           </Button>
           <Button variant="secondary" icon={Plus} onClick={() => openAdd(listId ? { list: listId } : {})}>
             Add
@@ -469,7 +534,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
       />
       <div className="flex flex-wrap items-center gap-2">
         <Select
-          value={picked('type', TYPE_CONDITIONS)}
+          value={chosenOf('type', TYPE_CONDITIONS)}
           onChange={(type) => pick('type', TYPE_CONDITIONS, type)}
           options={[
             { value: '', label: 'All types' },
@@ -478,7 +543,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
         />
         {!quickFilters.verdict && (
           <Select
-            value={picked('verdict', VERDICT_CONDITIONS)}
+            value={chosenOf('verdict', VERDICT_CONDITIONS)}
             onChange={(verdict) => pick('verdict', VERDICT_CONDITIONS, verdict)}
             options={[
               { value: '', label: 'Any verdict' },
@@ -492,7 +557,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
         )}
         {!quickFilters.origin && (
           <Select
-            value={picked('origin', ORIGIN_CONDITIONS)}
+            value={chosenOf('origin', ORIGIN_CONDITIONS)}
             onChange={(origin) => pick('origin', ORIGIN_CONDITIONS, origin)}
             options={[
               { value: '', label: 'Any origin' },
@@ -519,88 +584,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
         </span>
       </div>
 
-      {count > 0 && (
-        <section
-          aria-label="Selection"
-          className="flex flex-wrap items-center justify-between gap-2 border border-accent bg-accent-soft px-3 py-2 text-sm"
-        >
-          <span>
-            <b>{count}</b> selected
-            {!wholeFilter && allOnPage && total > rows.length && (
-              <>
-                {' · '}
-                <button type="button" className="text-link hover:underline" onClick={() => setWholeFilter(true)}>
-                  select all {total}
-                </button>
-              </>
-            )}
-            {' · '}
-            <button type="button" className="text-link hover:underline" onClick={clear}>
-              clear
-            </button>
-          </span>
-          <span className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => openCheck(scope(), scopeLabel)}>
-              Check {count}
-            </Button>
-            <Select
-              value=""
-              onChange={(target) => {
-                if (target === 'new') openListForm({ scope: scope(), count })
-                else if (target) addToList(lists.find((entry) => entry.id === target))
-              }}
-              options={[
-                { value: '', label: 'Add to a list…' },
-                { value: 'new', label: '+ New list' },
-                ...lists
-                  .filter((entry) => entry.id !== listId)
-                  .map((entry) => ({ value: entry.id, label: entry.name })),
-              ]}
-            />
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={Globe}
-              title="Have the isolated browser visit the addresses not analysed yet"
-              onClick={planAnalysis}
-            >
-              Analyse addresses
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={Download}
-              onClick={() => openExport(scope(), scopeLabel, count)}
-            >
-              Export
-            </Button>
-            <Button size="sm" variant="secondary" icon={Tag} onClick={() => setTagging({ scope: scope(), count })}>
-              Tag…
-            </Button>
-            {listId && !wholeFilter && (
-              <Button size="sm" variant="secondary" onClick={removeFromList}>
-                Take out of the list
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={Trash2}
-              onClick={() =>
-                setConfirm({
-                  title: `Remove ${count} indicator${count === 1 ? '' : 's'}?`,
-                  message:
-                    'They leave the library and every list. An indicator an incident still holds stays, as part of that incident.',
-                  action: 'Remove',
-                  run: remove,
-                })
-              }
-            >
-              Remove
-            </Button>
-          </span>
-        </section>
-      )}
+      <BulkBar picked={picked} noun="indicators" actions={bulkActions} />
 
       {error ? (
         <p role="alert" className="font-mono text-sm text-high">
@@ -633,8 +617,8 @@ export default function IocLibraryPage({ onOpenIncident }) {
           <table aria-label="Indicators" className="w-full min-w-[56rem] border-collapse font-mono text-xs">
             <thead className="bg-panel text-left text-fg-muted">
               <tr>
-                <th className="w-8 px-2 py-1.5">
-                  <input type="checkbox" aria-label="Select the page" checked={allOnPage} onChange={togglePage} />
+                <th className="w-8 px-1">
+                  <SelectBox label="Select the indicators on this page" state={picked.page} onPick={picked.pickPage} />
                 </th>
                 {COLUMNS.map((column) =>
                   column.key ? (
@@ -657,20 +641,28 @@ export default function IocLibraryPage({ onOpenIncident }) {
             <tbody>
               {rows.map((row) => {
                 const meta = row.verdict ? verdictMeta(row.verdict) : null
-                const picked = wholeFilter || selected.has(key(row))
+                const ticked = picked.has(key(row))
                 return (
                   <tr
                     key={key(row)}
-                    className={`border-t border-line-soft ${verdictRowClass(row.verdict)} ${picked ? 'outline outline-1 -outline-offset-1 outline-accent/60' : ''}`}
+                    data-row={key(row)}
+                    tabIndex={0}
+                    aria-selected={ticked}
+                    className={`border-t border-line-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${verdictRowClass(row.verdict)} ${ticked ? 'outline outline-1 -outline-offset-1 outline-accent/60' : ''}`}
                     onContextMenu={(event) => iocMenu(event, row.type, row.value)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return
+                      const moved = picked.key(event, key(row))
+                      if (moved) {
+                        event.currentTarget.parentElement?.querySelector(`tr[data-row="${CSS.escape(moved)}"]`)?.focus()
+                      }
+                    }}
                   >
-                    <td className="px-2 py-1.5">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${row.value}`}
-                        checked={picked}
-                        disabled={wholeFilter}
-                        onChange={() => toggle(row)}
+                    <td className="px-1 py-0">
+                      <SelectBox
+                        label={`Select ${row.value}`}
+                        checked={ticked}
+                        onPick={(event) => picked.pick(key(row), event)}
                       />
                     </td>
                     <td className="px-2 py-1.5 text-fg-muted">{row.type}</td>
@@ -784,22 +776,6 @@ export default function IocLibraryPage({ onOpenIncident }) {
         </div>
       )}
 
-      {tagging && (
-        <TagDialog
-          scope={tagging.scope}
-          count={tagging.count}
-          onClose={() => setTagging(null)}
-          onDone={(result) => {
-            setTagging(null)
-            showToast({
-              message: `Tags changed on ${result.changed} indicator${result.changed === 1 ? '' : 's'}${
-                result.unchanged ? `; ${result.unchanged} had them already` : ''
-              }.`,
-            })
-            refresh()
-          }}
-        />
-      )}
       <EditIocDialog
         row={editing}
         onClose={() => setEditing(null)}

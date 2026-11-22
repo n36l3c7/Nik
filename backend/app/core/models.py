@@ -2059,3 +2059,62 @@ from ..auditlog import chain as _audit_chain  # noqa: E402, F401
 
 # Created by migration 0054_indicators_found where missing.
 FOUND_TABLES = ("found_indicators", "found_scans")
+
+
+class BulkJob(Base):
+    """One action asked of many incidents, artifacts or indicators at once (``bulk.py``).
+
+    The row is written with its items in the transaction of the request, and is what a person
+    reads afterwards: who asked, what, of how many, and how it went. ``state`` is ``running``,
+    then ``done``, ``cancelled`` or ``failed`` (it was interrupted too many times: what was done
+    stays). The four counts are of its items, kept with them commit by commit.
+    """
+
+    __tablename__ = "bulk_jobs"
+    __table_args__ = (Index("ix_bulk_jobs_actor", "actor", "state"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # incidents | artifacts | indicators
+    list: Mapped[str] = mapped_column(String(12), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # What it says of itself: "Set the status to closed on 1284 incidents".
+    label: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    actor: Mapped[str] = mapped_column(String(200), nullable=False)
+    # The selection as it was asked: {"ids": n} or {"query": …}; the items are what it came to.
+    selection: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="running")
+    cancel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    refused: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # The job this one tries again, when it was made by "Try again on those that failed".
+    retry_of: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    finished_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+
+
+class BulkItem(Base):
+    """One item of a bulk job, and what was done to it: ``pending`` until its turn, then ``done``,
+    ``skipped`` (it was so already, or the action is not for it), ``refused`` (a permission, a
+    rule: ``note`` is the sentence) or ``failed``. Its state is written in the commit of its own
+    change, which is what makes a job that starts again after a restart do nothing twice."""
+
+    __tablename__ = "bulk_items"
+    __table_args__ = (Index("ix_bulk_items_state", "job_id", "state", "seq"),)
+
+    job_id: Mapped[str] = mapped_column(String(32), ForeignKey("bulk_jobs.id", ondelete="CASCADE"), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ref: Mapped[str] = mapped_column(String(1100), nullable=False)
+    # What a person calls it (the name of the incident, of the artifact), for the result.
+    name: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(8), nullable=False, default="pending")
+    note: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+
+
+# Created by migration 0055_bulk where missing, in this order.
+BULK_TABLES = ("bulk_jobs", "bulk_items")

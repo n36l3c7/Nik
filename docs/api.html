@@ -520,6 +520,37 @@
               </td>
             </tr>
             <tr>
+              <td>
+                <code>POST /api/incidents/bulk</code> · <code>POST /api/artifacts/bulk</code> ·
+                <code>POST /api/iocs/bulk</code>
+              </td>
+              <td>
+                One action on many incidents, artifacts or indicators (<code>write</code>, or
+                <code>automation.run</code> for the actions that need it): a <a href="#bulk">bulk job</a>. Body
+                <code>{action, params, ids | query, confirm}</code>. <code>200</code> with the job and its
+                <code>items</code> when it was small enough to be done before the answer; <code>202</code> with the job
+                when it goes on in the background. <code>POST …/bulk/plan</code>, with the same body, changes nothing
+                and says what it would do.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>GET /api/bulk</code> · <code>GET /api/bulk/{id}</code> · <code>…/items</code> ·
+                <code>…/result.csv</code>
+              </td>
+              <td>
+                The bulk jobs of the caller, the newest first (<code>?everybody=true</code> for an administrator and for
+                who reads the audit log), with <code>actions</code> (what each list offers) and <code>limits</code>; one
+                job; what became of its items (<code>?state=</code>pending, done, skipped, refused, failed;
+                <code>offset</code>, <code>limit</code>); the same as CSV (<code>item, name, result, note</code>).
+                <code>POST /api/bulk/{id}/cancel</code> stops a running job after the item it is on;
+                <code>POST /api/bulk/{id}/retry</code> makes a new job of the items that failed or were never reached.
+                <code>GET /api/bulk/fields</code> lists the fields of an incident a bulk action may set;
+                <code>GET</code> and <code>PUT /api/bulk/settings</code> (admin) are the limits:
+                <code>{maxItems, inlineItems, typedAbove}</code>.
+              </td>
+            </tr>
+            <tr>
               <td><code>GET /api/incidents/{id}/iocs</code></td>
               <td>
                 The incident's indicators of compromise (type, value, sources, count, first/last seen, number of other
@@ -601,11 +632,11 @@
                 the items and a summary), then add:
                 <code>{ items | text, tags, note, tlp, expires, list: { id | name, watch }, check, origin }</code>. Each
                 indicator is saved on its own; <code>list</code> also groups them; <code>check</code> starts a bulk
-                check. <code>PATCH /api/iocs/item</code> edits tags, note, TLP and expiry;
-                <code>POST /api/iocs/remove</code> takes a scope out of the library.
-                <code>POST /api/iocs/tags</code> takes a scope with <code>add</code> and <code>remove</code> (lists of
-                tags) and changes the tags of every indicator in it, 5 000 at most: <code>{changed, unchanged}</code>,
-                one line of the audit log.
+                check. <code>PATCH /api/iocs/item</code> edits tags, note, TLP and expiry (from 6.10 it leaves a line in
+                the audit log, <code>ioc.edit</code>); <code>POST /api/iocs/remove</code> takes a scope out of the
+                library. <code>POST /api/iocs/tags</code> takes a scope with <code>add</code> and
+                <code>remove</code> (lists of tags) and changes the tags of every indicator in it, 5 000 at most:
+                <code>{changed, unchanged}</code>, one line of the audit log.
               </td>
             </tr>
             <tr>
@@ -2668,6 +2699,118 @@ labels:vip due:&lt;today sender_domain:""</code></pre>
         For incidents the fields <code>type</code>, <code>closed</code>, <code>closeReason</code>,
         <code>occurred</code>, <code>source</code>, <code>slaBreached</code> and the seconds the SLA timers counted
         (<code>timeToAssign</code>, <code>timeToContain</code>, <code>timeToClose</code>) can be asked and measured too.
+      </p>
+
+      <h2 id="bulk">Bulk jobs</h2>
+      <p>
+        The three lists have the same two routes, at the address of the list: <code>POST /api/incidents/bulk</code>,
+        <code>POST /api/artifacts/bulk</code>, <code>POST /api/iocs/bulk</code>, and <code>…/bulk/plan</code> beside
+        each. The body is the same for all:
+      </p>
+      <pre><code>{
+  "action": "set",
+  "params": { "changes": { "status": "closed", "close_reason": "Duplicate" } },
+  "query": { "q": "status:open tag:campaign-q4" },
+  "confirm": { "count": 1284, "typed": "close 1284" }
+}</code></pre>
+      <ul>
+        <li>
+          <strong>The selection</strong> is <code>ids</code> (the items one by one: the id of an incident, the id of an
+          artifact, an indicator as <code>type:value</code>) or <code>query</code> (what the list is filtered by:
+          everything it keeps is selected), never both. For incidents <code>query</code> is <code>{q}</code>, the
+          <a href="#query">query</a> of <code>GET /api/incidents</code>; for artifacts
+          <code>{q, kind, tag, mine, linked}</code>, as <code>GET /api/artifacts</code> takes them; for indicators the
+          filter of <code>GET /api/iocs</code> (<code>{q, type, verdict, origin, analysis, list, expired}</code>), with
+          <code>incident</code> for the indicators of one incident. A query is resolved to items when the job is made:
+          what matches it later is not touched.
+        </li>
+        <li>
+          <strong>The plan</strong> (<code>POST …/bulk/plan</code>) answers
+          <code>{count, applies, notes, typed, limit, over, inline, label, refs}</code>: how many items are selected,
+          how many the action applies to, sentences about what it sets in motion (mirrored tickets that will be updated,
+          the requests a check costs each source), the words to type when the action wants them, the most a job takes
+          and whether this is over it, whether it would be done before the answer, what the job will be called, and the
+          items themselves.
+        </li>
+        <li>
+          <strong>The confirmation.</strong> With <code>query</code>, <code>confirm.count</code> must be the count the
+          plan gave: when the selection changed meanwhile the answer is <code>409</code> with the count it has now, and
+          nothing is done. <code>delete</code>, and a closing of more than <code>typedAbove</code> incidents, want
+          <code>confirm.typed</code>, the plan's <code>typed</code> (<code>delete 12</code>).
+        </li>
+        <li>
+          <strong>The job</strong> is
+          <code
+            >{id, list, action, params, label, actor, selection, state, cancelling, total, done, skipped, refused,
+            failed, pending, note, retryOf, createdAt, finishedAt, work}</code
+          >; <code>state</code> is <code>running</code>, <code>done</code>, <code>cancelled</code> or
+          <code>failed</code> (given up after three interruptions). Each item ends <code>done</code>,
+          <code>skipped</code> (it was so already, or the action is not for it), <code>refused</code> (a rule, a
+          permission: <code>note</code> is the sentence the single action would have answered) or <code>failed</code>.
+          Nothing is rolled back. A job of <code>inlineItems</code> items or fewer (50) is done before the answer; a
+          larger one is polled at <code>GET /api/bulk/{id}</code>, and goes on after a restart of the server from the
+          first item still pending: <code>work</code> says what restarts did to it, as for the other
+          <a href="#automation">work in progress</a>.
+        </li>
+        <li>
+          <strong>Refusals of the whole request</strong>: <code>403</code> when the caller lacks the permission of the
+          action, <code>404</code> for a playbook, a list or an incident named in <code>params</code> that does not
+          exist, <code>409</code> for a confirmation that does not hold or while another bulk job of the same caller
+          runs on the same list, <code>422</code> for an action or parameters that cannot be read, a query that cannot
+          be read, or more than <code>maxItems</code> items (5,000).
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>List</th>
+              <th>Actions and their <code>params</code></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>incidents</td>
+              <td>
+                <code>set</code> (<code>changes</code>: a value for each field, as
+                <code>PATCH /api/incidents/{id}/fields</code> takes them; closing is <code>status: closed</code> with
+                <code>close_reason</code>, <code>close_notes</code> and what the type wants; not <code>name</code>,
+                <code>ticket</code>, <code>labels</code>, nor fields of type tags, indicator, list, json or timer) ·
+                <code>tags</code> (<code>add</code>, <code>remove</code>) · <code>delete</code> ·
+                <code>playbook</code> (<code>playbook</code>: its id; <code>automation.run</code>) ·
+                <code>mirror</code> (<code>direction</code>: <code>in</code>, <code>out</code>, <code>both</code>,
+                <code>none</code> to stop) · <code>find_indicators</code>
+              </td>
+            </tr>
+            <tr>
+              <td>artifacts</td>
+              <td>
+                <code>tags</code> (<code>add</code>, <code>remove</code>) · <code>reanalyse</code> (files and e-mails) ·
+                <code>link</code>, <code>unlink</code> (<code>incident</code>: its id) ·
+                <code>expiry</code> (<code>expiresAt</code>: a day, or <code>null</code>) · <code>delete</code>.
+                Downloading many together is <code>POST /api/artifacts/export</code>.
+              </td>
+            </tr>
+            <tr>
+              <td>iocs</td>
+              <td>
+                <code>check</code> (<code>force</code>; one check in the queue of the look-ups, as
+                <code>POST /api/iocs/check</code>) · <code>tags</code> (<code>add</code>, <code>remove</code>) ·
+                <code>tlp</code> (<code>tlp</code>) · <code>list_add</code>,
+                <code>list_remove</code> (<code>list</code>: its id) · <code>allowlist</code> ·
+                <code>incident_remove</code> (<code>incident</code>: its id; the indicators found by themselves) ·
+                <code>delete</code>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The older routes that take a scope of indicators (<code>POST /api/iocs/tags</code>,
+        <code>/api/iocs/remove</code>, <code>…/lists/{id}/items</code>) still work as they did: one statement for the
+        whole scope and one line of the audit log. A bulk job leaves one line for each item it changed, ending with
+        <code>· bulk</code> and the first eight characters of the job, and one line when it starts and when it ends
+        (<code>bulk.start</code>, <code>bulk.end</code>, <code>bulk.cancel</code>).
       </p>
 
       <h2 id="uploads">Uploading files</h2>

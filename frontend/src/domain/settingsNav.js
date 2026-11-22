@@ -278,6 +278,13 @@ export const SETTINGS_GROUPS = [
         keywords: 'health status down answering analyzer capa browser sandbox pcap document containers notifications',
       },
       {
+        id: 'bulk',
+        slug: 'bulk',
+        label: 'Bulk actions',
+        permission: 'read',
+        keywords: 'multi selection many at once jobs result what it did refused failed retry limits maximum',
+      },
+      {
         id: 'backup',
         slug: 'backup',
         label: 'Backup',

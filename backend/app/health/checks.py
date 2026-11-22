@@ -830,6 +830,25 @@ def _work(db: OrmSession, now: float) -> list[dict[str, Any]]:
             metrics=[("nik_work_held", {}, facts["held"]), ("nik_work_silent_seconds", {}, silent)],
         )
     )
+    from .. import bulk
+
+    jobs = bulk.facts(db)
+    rows.append(
+        row(
+            "work.bulk",
+            group,
+            "Bulk actions",
+            f"{jobs['running']} running, {jobs['failed']} given up in the last month",
+            ATTENTION if jobs["failed"] else FINE,
+            "A bulk action that was interrupted too many times is given up: what it did stays, and its result "
+            "says what it did not do. The person who asked can try again on those from the result "
+            "(Settings → System → Bulk actions)."
+            if jobs["failed"]
+            else "",
+            link="/settings/system/bulk",
+            metrics=[("nik_bulk_running", {}, jobs["running"]), ("nik_bulk_failed", {}, jobs["failed"])],
+        )
+    )
     return rows
 
 

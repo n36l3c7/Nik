@@ -1228,8 +1228,11 @@ test('an indicator and the artifact that is its analysis lead to each other', as
   await page.keyboard.press('Escape')
 
   // Several at once: what would be visited is shown first, and nothing is visited until confirmed.
-  await page.getByLabel('Select the page').check()
-  await page.getByRole('region', { name: 'Selection' }).getByRole('button', { name: 'Analyse addresses' }).click()
+  await page.getByLabel('Select the indicators on this page').click()
+  await page
+    .getByRole('region', { name: 'Selection' })
+    .getByRole('combobox', { name: 'Actions on the selected indicators' })
+    .selectOption({ label: 'Analyse the addresses…' })
   const plan = page.getByRole('dialog', { name: 'Analyse addresses' })
   await expect(plan).toContainText('A visit is seen by the site')
   await expect(plan.getByRole('button', { name: /^Visit \d+ address/ })).toBeVisible()
@@ -1834,10 +1837,11 @@ test('Settings → Health: every row with its state, one made to need attention,
   }
   // What restarts left behind: nothing waits for a person, nothing was set aside, nothing is held by nobody.
   const work = settings.getByRole('list', { name: 'Work in progress', exact: true })
-  await expect(work.getByRole('listitem')).toHaveCount(3)
+  await expect(work.getByRole('listitem')).toHaveCount(4)
   await expect(
     work.getByRole('listitem').filter({ hasText: 'Steps a restart interrupted that wait for a person' }),
   ).toContainText('None')
+  await expect(work.getByRole('listitem').filter({ hasText: 'Bulk actions' })).toContainText('0 running')
   await expect(work.getByRole('listitem').filter({ hasText: 'Oldest work held without a sign of life' })).toContainText(
     'all alive',
   )
@@ -2252,7 +2256,8 @@ test('the incident list: a filter is saved, opens the list as the default, and t
   const rows = table.locator('tbody tr')
   const filter = list.getByRole('combobox', { name: 'Filter incidents' })
   const menu = page.getByRole('menu', { name: 'Saved filters' })
-  const headings = table.locator('thead th')
+  // The columns, without the first one: the checkbox that selects the rows.
+  const headings = table.locator('thead th:not(:first-child)')
   const usual = ['#', 'Title', 'Tags', 'Type', 'Severity', 'Status', 'Owner', 'Opened', 'Updated', 'Actions']
   const tagged = await page.request.patch('/api/incidents/e2e-list/fields', {
     data: { changes: { category: 'e2e-cat' } },
@@ -2389,7 +2394,7 @@ test('incidents have tags: put on from the incident, a column of the list, asked
   await openIncidentList()
   const row = incidentRow('WKS-FINANCE-01')
   const other = rows.filter({ hasText: 'E2E-TAGS' })
-  await expect(table.locator('thead th').nth(2)).toHaveText('Tags')
+  await expect(table.locator('thead th').nth(3)).toHaveText('Tags')
   await expect(row.getByRole('button', { name: 'Filter by the tag e2e-phish' })).toBeVisible()
   await expect(row.getByRole('button', { name: 'Filter by the tag e2e-vip' })).toBeVisible()
   await other.click({ button: 'right' })
@@ -2442,7 +2447,7 @@ test('incidents have tags: put on from the incident, a column of the list, asked
   await expect(rows.nth(1)).toBeVisible()
 
   // The quick view shows them, and takes one off; the row follows.
-  await row.locator('td').nth(3).click()
+  await row.locator('td').nth(4).click()
   const quick = page.getByRole('complementary', { name: /^Quick view of incident/ })
   const quickTags = quick.getByRole('group', { name: 'Tags' })
   await expect(quickTags).toContainText('#e2e-phish')
@@ -8217,6 +8222,311 @@ test('setting a second factor up asks for the password first, when the sign-in i
   await expect(setup).toHaveCount(0)
   expect((await (await page.request.get('/api/auth/me')).json()).user.secondFactor).toBe(false)
   await settings.getByRole('button', { name: 'Close settings' }).click()
+})
+
+/** The bar of the selection of a list, and its menu of actions. */
+function selectionBar(scope, noun) {
+  const bar = scope.getByRole('region', { name: 'Selection' })
+  return { bar, actions: bar.getByRole('combobox', { name: `Actions on the selected ${noun}` }) }
+}
+
+/** The dialog of a bulk action once the server has said what it would do. */
+async function bulkDialog(name, says) {
+  const dialog = page.getByRole('dialog', { name })
+  await expect(dialog).toBeVisible()
+  if (says) await expect(dialog.getByLabel('What this will do')).toContainText(says)
+  return dialog
+}
+
+test('incidents are selected with a click and a shift-click, tagged at once; all that match are closed with a reason, then deleted', async () => {
+  const before = page.url()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const rows = list.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
+  const filter = list.getByRole('combobox', { name: 'Filter incidents' })
+  const { bar, actions } = selectionBar(list, 'incidents')
+  const box = (row) => row.getByRole('checkbox')
+
+  // Four incidents of their own, and then more than the list draws at once (200 a time).
+  const make = async (prefix, count) => {
+    for (let from = 0; from < count; from += 25) {
+      const made = await Promise.all(
+        Array.from({ length: Math.min(25, count - from) }, (_, at) =>
+          page.request.post('/api/incidents', {
+            data: { id: `e2e-${prefix}-${from + at}`, host: `${prefix.toUpperCase()}-${from + at}`, data: {} },
+          }),
+        ),
+      )
+      for (const answer of made) expect(answer.status()).toBe(201)
+    }
+  }
+  await make('bulk', 4)
+  await make('mass', 205)
+  await page.goto('/incidents')
+  await filter.fill('host:bulk-*')
+  await expect(rows).toHaveCount(4)
+  await expect(bar).toHaveCount(0)
+
+  // A click ticks a row, a shift-click the range from it; the row still opens as before.
+  await box(rows.nth(0)).click()
+  await expect(bar).toContainText('1 selected')
+  await expect(rows.nth(0)).toHaveAttribute('aria-selected', 'true')
+  await box(rows.nth(2)).click({ modifiers: ['Shift'] })
+  await expect(bar).toContainText('3 selected')
+  await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true')
+  await expect(rows.nth(3)).toHaveAttribute('aria-selected', 'false')
+  await expect(list.getByRole('complementary')).toHaveCount(0) // ticking is not a click on the row
+
+  // The keyboard: Space unticks the focused row, Shift and an arrow tick the next one too.
+  await rows.nth(2).focus()
+  await page.keyboard.press(' ')
+  await expect(bar).toContainText('2 selected')
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(bar).toContainText('4 selected')
+  await expect(rows.nth(3)).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(bar).toHaveCount(0)
+  await page.keyboard.press('Control+a')
+  await expect(bar).toContainText('4 selected')
+  await box(rows.nth(3)).click()
+  await expect(bar).toContainText('3 selected')
+  await expect(list.getByRole('checkbox', { name: 'Select the incidents on screen' })).toHaveJSProperty(
+    'indeterminate',
+    true,
+  )
+
+  // One harmless action on the three: the dialog says what it will do, then the result.
+  await actions.selectOption({ label: 'Change the tags…' })
+  const tags = await bulkDialog('Change the tags')
+  await expect(tags.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+  await tags.getByLabel('Add these tags').fill('bulk-e2e')
+  await expect(tags.getByLabel('What this will do')).toContainText('Add the tags bulk-e2e: 3 incidents')
+  await expect(tags.getByLabel('What this will do')).toContainText('It is done at once.')
+  await tags.getByRole('button', { name: 'Confirm' }).click()
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Add the tags bulk-e2e: 3 incidents: 3 done.' }),
+  ).toBeVisible()
+  await expect(rows.filter({ hasText: '#bulk-e2e' })).toHaveCount(3)
+  // Again on all four: three had it already, and that is a result to read.
+  await list.getByRole('checkbox', { name: 'Select the incidents on screen' }).click()
+  await expect(bar).toContainText('4 selected')
+  await actions.selectOption({ label: 'Change the tags…' })
+  await page.getByRole('dialog', { name: 'Change the tags' }).getByLabel('Add these tags').fill('bulk-e2e')
+  await page.getByRole('dialog', { name: 'Change the tags' }).getByRole('button', { name: 'Confirm' }).click()
+  const result = page.getByRole('dialog', { name: 'What it did' })
+  await expect(result.getByRole('status', { name: 'Result of the bulk action' })).toHaveText('Done: 1 done · 3 skipped')
+  await expect(result.getByRole('table', { name: 'Items not done' }).locator('tbody tr')).toHaveCount(3)
+  await expect(result.getByRole('table', { name: 'Items not done' })).toContainText('It was so already')
+  await expect(result.getByRole('link', { name: 'Download the result (CSV)' })).toHaveAttribute(
+    'href',
+    /\/api\/bulk\/[0-9a-f]{32}\/result\.csv$/,
+  )
+  await result.getByRole('button', { name: 'Close' }).last().click()
+
+  // An action empties the selection. Another filter empties it too, and the screen says so.
+  await expect(bar).toHaveCount(0)
+  await box(rows.nth(0)).click()
+  await expect(bar).toContainText('1 selected')
+  // At the width of a phone the bar wraps inside the page: nothing is pushed out of the window.
+  const original = page.viewportSize()
+  await page.setViewportSize({ width: 390, height: original.height })
+  await expect(bar).toBeVisible()
+  const fits = await bar.boundingBox()
+  expect(fits.x).toBeGreaterThanOrEqual(0)
+  expect(fits.x + fits.width).toBeLessThanOrEqual(390)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  await expect(actions).toBeVisible()
+  await page.setViewportSize(original)
+  await filter.fill('host:mass-*')
+  await expect(list.getByText('The filter changed: the selection was cleared.')).toBeVisible()
+  await expect(rows).toHaveCount(200)
+  await expect(list.getByRole('status', { name: 'Incidents listed' })).toHaveText(/^205 of \d+$/)
+
+  // The page, then everything that matches: the server selects by the query.
+  await list.getByRole('checkbox', { name: 'Select the incidents on screen' }).click()
+  await expect(bar).toContainText('200 selected')
+  await bar.getByRole('button', { name: 'Select all 205 that match' }).click()
+  await expect(bar).toContainText('All 205 that match are selected')
+  await actions.selectOption({ label: 'Close…' })
+  const close = await bulkDialog('Close the incidents', 'Close: 205 incidents')
+  await close.locator('#bulk-close-reason').selectOption('Duplicate')
+  const will = close.getByLabel('What this will do')
+  await expect(will).toContainText('It goes on in the background')
+  // More than a hundred at once: the words are typed.
+  await expect(close.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+  await close.locator('#bulk-typed').fill('close 205')
+  await close.getByRole('button', { name: 'Confirm' }).click()
+  await expect(close).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'Close: 205 incidents: 205 done.' })).toBeVisible({
+    timeout: 120_000,
+  })
+  const closed = await (await page.request.get('/api/incidents?view=summary&q=host:mass-* status:closed')).json()
+  expect(closed.total).toBe(205)
+  const one = await (await page.request.get('/api/incidents/e2e-mass-7/fields')).json()
+  expect(one.fields.close_reason).toBe('Duplicate')
+
+  // It is in Settings → System → Bulk actions afterwards, with what it did.
+  await page.goto('/settings/system/bulk')
+  const jobs = page.getByRole('list', { name: 'Bulk actions' })
+  await expect(jobs.getByRole('listitem').first()).toContainText('Close: 205 incidents')
+  await expect(jobs.getByRole('listitem').first()).toContainText('Done: 205 done')
+  await jobs.getByRole('listitem').first().getByRole('button').click()
+  await expect(result.getByRole('status', { name: 'Result of the bulk action' })).toHaveText('Done: 205 done')
+  await expect(result).toContainText('Everything it was asked was done.')
+  await result.getByRole('button', { name: 'Close' }).last().click()
+
+  // Deleting them all waits for its words, whatever the number; the four go the same way.
+  await page.goto('/incidents')
+  for (const [query, count] of [
+    ['host:mass-*', 205],
+    ['host:bulk-*', 4],
+  ]) {
+    await filter.fill(query)
+    await expect(list.getByRole('status', { name: 'Incidents listed' })).toHaveText(new RegExp(`^${count} of \\d+$`))
+    await list.getByRole('checkbox', { name: 'Select the incidents on screen' }).click()
+    if (count > 200) await bar.getByRole('button', { name: `Select all ${count} that match` }).click()
+    await actions.selectOption({ label: 'Delete…' })
+    const gone = await bulkDialog('Delete the incidents', `Delete: ${count} incidents`)
+    await expect(gone.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await gone.locator('#bulk-typed').fill(`delete ${count}`)
+    await gone.getByRole('button', { name: 'Confirm' }).click()
+    await expect(
+      page.getByRole('status').filter({ hasText: `Delete: ${count} incidents: ${count} done.` }),
+    ).toBeVisible({
+      timeout: 120_000,
+    })
+    await expect(list).toContainText('No incident matches the filter.')
+  }
+  await filter.fill('')
+  await page.goto(before)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+})
+
+test('artifacts and indicators are selected the same way, and tagged at once', async () => {
+  // Two files and three indicators of this test's own.
+  for (const name of ['bulk-one.txt', 'bulk-two.txt']) {
+    const made = await page.request.post('/api/artifacts/files', {
+      multipart: { file: { name, mimeType: 'text/plain', buffer: Buffer.from(`harmless text of ${name}\n`) } },
+    })
+    expect(made.status()).toBe(201)
+  }
+  const added = await page.request.post('/api/iocs', {
+    data: { items: ['one', 'two', 'three'].map((word) => ({ type: 'domain', value: `bulk-${word}.e2e-nik.com` })) },
+  })
+  expect(added.status()).toBe(201)
+  const toast = (text) => page.getByRole('status').filter({ hasText: text })
+
+  // ---- The artifacts: the list of the panel ----
+  await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: 'Artifacts panel' })
+  const items = panel.getByRole('navigation', { name: 'Artifacts' }).getByRole('listitem')
+  const artifactFilter = panel.getByRole('combobox', { name: 'Filter artifacts' })
+  await artifactFilter.fill('bulk-')
+  await expect(items).toHaveCount(2)
+  const artifacts = selectionBar(panel, 'artifacts')
+  await items.nth(0).getByRole('checkbox').click()
+  await items
+    .nth(1)
+    .getByRole('checkbox')
+    .click({ modifiers: ['Shift'] })
+  await expect(artifacts.bar).toContainText('2 selected')
+  await expect(items.nth(0)).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/\/artifacts$/) // ticking opens nothing
+  await artifacts.actions.selectOption({ label: 'Change the tags…' })
+  const tags = await bulkDialog('Change the tags')
+  await tags.getByLabel('Add these tags').fill('bulk-e2e')
+  await expect(tags.getByLabel('What this will do')).toContainText('Add the tags bulk-e2e: 2 artifacts')
+  await tags.getByRole('button', { name: 'Confirm' }).click()
+  await expect(toast('Add the tags bulk-e2e: 2 artifacts: 2 done.')).toBeVisible()
+  await expect(items.filter({ hasText: '#bulk-e2e' })).toHaveCount(2)
+  // The selection was acted on: it is empty again. The tag is taken off through the filter that finds it.
+  await expect(artifacts.bar).toHaveCount(0)
+  await artifactFilter.fill('tag:bulk-e2e')
+  await expect(items).toHaveCount(2)
+  await panel.getByRole('checkbox', { name: 'Select the artifacts listed' }).click()
+  await expect(artifacts.bar).toContainText('2 selected')
+  await artifacts.actions.selectOption({ label: 'Change the tags…' })
+  const off = await bulkDialog('Change the tags')
+  await off.getByLabel('Take these tags off').fill('bulk-e2e')
+  await expect(off.getByLabel('What this will do')).toContainText('2 artifacts')
+  await off.getByRole('button', { name: 'Confirm' }).click()
+  await expect(toast('Remove the tags bulk-e2e: 2 artifacts: 2 done.')).toBeVisible()
+  await expect(panel).toContainText('No artifact matches these filters.')
+  await artifactFilter.fill('')
+  await expect(items.nth(1)).toBeVisible()
+
+  // ---- The indicators: the table of their page ----
+  await page.goto('/iocs')
+  const table = page.getByRole('table', { name: 'Indicators' })
+  const rows = table.locator('tbody tr')
+  const main = page.getByRole('main')
+  const indicatorFilter = main.getByRole('combobox', { name: 'Filter indicators' })
+  await indicatorFilter.fill('e2e-nik.com')
+  await expect(rows).toHaveCount(3)
+  const indicators = selectionBar(main, 'indicators')
+  await expect(page.getByRole('button', { name: 'Check all 3', exact: true })).toBeVisible()
+  await rows.nth(0).getByRole('checkbox').click()
+  await rows
+    .nth(2)
+    .getByRole('checkbox')
+    .click({ modifiers: ['Shift'] })
+  await expect(indicators.bar).toContainText('3 selected')
+  // "Check" and "Export" at the top act on the selection when there is one.
+  await expect(page.getByRole('button', { name: 'Check 3 selected' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Export 3 selected' })).toBeVisible()
+  await indicators.actions.selectOption({ label: 'Change the tags…' })
+  const more = await bulkDialog('Change the tags')
+  await more.getByLabel('Add these tags').fill('bulk-e2e')
+  await expect(more.getByLabel('What this will do')).toContainText('Add the tags bulk-e2e: 3 indicators')
+  await more.getByRole('button', { name: 'Confirm' }).click()
+  await expect(toast('Add the tags bulk-e2e: 3 indicators: 3 done.')).toBeVisible()
+  await expect(rows.filter({ hasText: '#bulk-e2e' })).toHaveCount(3)
+  await expect(page.getByRole('button', { name: 'Check all 3', exact: true })).toBeVisible()
+  // Removed from the library, all that the filter keeps: the words are typed.
+  await indicatorFilter.fill('tag:bulk-e2e')
+  await expect(rows).toHaveCount(3)
+  await main.getByRole('checkbox', { name: 'Select the indicators on this page' }).click()
+  await expect(indicators.bar).toContainText('3 selected')
+  await indicators.actions.selectOption({ label: 'Remove from the library…' })
+  const gone = await bulkDialog('Remove from the library', 'Remove from the library: 3 indicators')
+  await expect(gone.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+  await gone.locator('#bulk-typed').fill('remove 3')
+  await gone.getByRole('button', { name: 'Confirm' }).click()
+  await expect(toast('Remove from the library: 3 indicators: 3 done.')).toBeVisible()
+  await expect(page.getByText('No indicator matches')).toBeVisible()
+  await indicatorFilter.fill('')
+  await openIncidentFromList()
+})
+
+test('a viewer selects and takes out, and is offered nothing that changes', async ({ browser }) => {
+  const made = await page.request.post('/api/users', {
+    data: { username: 'vera', password: 'viewer-secret', roles: ['viewer'] },
+  })
+  expect(made.status()).toBe(201)
+  const other = await browser.newPage()
+  await other.goto('/')
+  await other.fill('#login-username', 'vera')
+  await other.fill('#login-password', 'viewer-secret')
+  await other.click('button[type=submit]')
+  await expect(other.getByRole('button', { name: 'Platform settings' })).toBeVisible()
+  await other.goto('/incidents')
+  const list = other.getByRole('region', { name: 'Incidents' })
+  const rows = list.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
+  await rows.nth(0).getByRole('checkbox').click()
+  const bar = list.getByRole('region', { name: 'Selection' })
+  await expect(bar).toContainText('1 selected')
+  const offered = await bar
+    .getByRole('combobox', { name: 'Actions on the selected incidents' })
+    .locator('option')
+    .allTextContents()
+  expect(offered).toEqual(['Actions…', 'Export (JSON)', 'Copy the links'])
+  // The server says the same to a request made by hand.
+  const refused = await other.request.post('/api/incidents/bulk', {
+    data: { action: 'tags', params: { add: ['x'] }, ids: ['e2e-list'] },
+  })
+  expect(refused.status()).toBe(403)
+  await bar.getByRole('button', { name: 'Clear' }).click()
+  await expect(bar).toHaveCount(0)
+  await other.close()
 })
 
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {

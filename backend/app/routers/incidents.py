@@ -205,6 +205,16 @@ def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: An
     db.commit()
 
 
+def matching(db: OrmSession, caller: Principal, q: str | None) -> list:
+    """The conditions a query keeps incidents by: what the list shows for it, and what a bulk
+    action on "all that match" works on (bulk_incidents.py). A query that cannot be read is
+    answered ``422`` with the position and the reason."""
+    conditions = query.sql("incidents", q, caller, db=db) if q and q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
+    return conditions
+
+
 @router.get("")
 def list_incidents(
     response: Response,
@@ -248,9 +258,7 @@ def list_incidents(
     """
     # `q` is the query language (app/query); the older parameters below are kept
     # for API clients and add their conditions to it.
-    conditions = query.sql("incidents", q, caller, db=db) if q and q.strip() else []
-    if conditions:
-        query.statement_timeout(db)
+    conditions = matching(db, caller, q)
     if host:
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
@@ -549,26 +557,34 @@ def delete_incident(
     """Delete an incident (idempotent-ish; 204 regardless if it existed)."""
     row = lock_incident(db, incident_id)
     if row is not None:
-        name = (row.doc or {}).get("name") or incident_id
-        _audit(db, caller, "incident.delete", f'Deleted incident "{name}"', row)
-        db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
-        from .artifacts import remove_incident_artifacts
-        from .network import remove_incident_captures
-
-        # What only this incident references goes with it; shared artifacts stay.
-        remove_incident_artifacts(db, incident_id)
-        remove_incident_captures(db, incident_id)
-        # Its context and its War Room go with it.
-        from .. import context as incident_context
-        from ..core.models import WarRoomEntry
-
-        incident_context.forget(db, incident_id)
-        indicators_found.forget(db, incident_id)
-        db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
-        db.delete(row)
+        name = remove_incident(db, row, caller.actor)
         db.commit()
         emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})
     # 204 No Content
+
+
+def remove_incident(db: OrmSession, row: Incident, actor: str) -> str:
+    """Delete an incident that is locked, with what only it holds (the caller commits). Returns
+    its name. What the route does, and what a bulk delete does to each one."""
+    incident_id = row.id
+    name = (row.doc or {}).get("name") or incident_id
+    audit.record(db, actor, "incident.delete", f'Deleted incident "{name}"', row)
+    db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
+    from .artifacts import remove_incident_artifacts
+    from .network import remove_incident_captures
+
+    # What only this incident references goes with it; shared artifacts stay.
+    remove_incident_artifacts(db, incident_id)
+    remove_incident_captures(db, incident_id)
+    # Its context and its War Room go with it.
+    from .. import context as incident_context
+    from ..core.models import WarRoomEntry
+
+    incident_context.forget(db, incident_id)
+    indicators_found.forget(db, incident_id)
+    db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
+    db.delete(row)
+    return name
 
 
 # ---------------------------------------------------------------------------

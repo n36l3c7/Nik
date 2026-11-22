@@ -35,6 +35,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from ..core import origin
 from ..core.config import settings
 from ..core.models import (
     Artifact,
@@ -70,6 +71,12 @@ def publish(db: OrmSession, kind: str, object_kind: str, object_id: str, data: d
     if settings.AUTOMATION_WORKER == "off":
         return
     cause = current_run.get()
+    # A change one of many made by a bulk job (bulk.py): the event says which, to the worker and,
+    # as ``trigger.bulk``, to the playbooks it starts.
+    job = origin.bulk.get()
+    if job:
+        data = {**data, "bulk": job}
+        classes = {**classes, "bulk": ["nik_id"]}
     db.add(
         AutomationEvent(
             id=uuid.uuid4().hex,
@@ -81,6 +88,7 @@ def publish(db: OrmSession, kind: str, object_kind: str, object_id: str, data: d
                 "classes": classes,
                 "caused_by_run": cause[0] if cause else None,
                 "depth": (cause[1] + 1) if cause else 0,
+                **({"bulk": job} if job else {}),
             },
             created_at=engine.iso(time.time()),
         )
