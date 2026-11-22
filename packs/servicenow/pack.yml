@@ -3,8 +3,8 @@ name: ServiceNow
 vendor: ServiceNow
 category: Ticketing
 tags: [ticketing, itsm]
-version: 1.0.1
+version: 1.1.0
 description: >-
   Incidents of ServiceNow kept in step both ways: the connector, its classifier and mappers, and the playbook that opens a ticket for a serious incident.
 author: Nik
-nik: ">=6.0"
+nik: ">=6.10"

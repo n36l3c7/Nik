@@ -1431,13 +1431,21 @@ podman restart nik_api_1
 podman compose up -d --build    # rebuild images, recreate containers, keep data
 </code></pre>
       <p>
+        <strong>The oldest version an update may start from is 6.0.0.</strong> An installation older than that is
+        updated to 6.9.0 first (<code>git checkout v6.9.0</code>, then the command above, following the sections below
+        for the versions it passes), started once so that it migrates, and then to this version. A server started on the
+        database of an older version changes nothing and says so: the page and the log of the API container name the
+        version to go through.
+      </p>
+      <p>
         Release notes say when an update needs more than this. When a release changes the database, the API container
         does this before it serves, and says each step in its log (<code>compose logs api</code>):
       </p>
       <ol>
         <li>
           it takes a lock, so that a second instance waits and no backup starts; it checks that the database is at a
-          revision it knows, that the server is a PostgreSQL it runs on, and that the backup directory has room;
+          revision it knows and not one from before 6.0.0, that the server is a PostgreSQL it runs on, and that the
+          backup directory has room;
         </li>
         <li>
           it takes a <strong>snapshot</strong> of the database into the backup directory
@@ -2875,6 +2883,12 @@ podman compose up -d
         short maintenance window: the app is down for the dump, the restore and the restart, a few minutes for a typical
         database.
       </p>
+      <p>
+        The script is part of the releases up to 6.9.0. An installation still on PostgreSQL 16 is older than 6.0.0, and
+        goes <a href="#upgrades">through 6.9.0</a>: these steps are done there, with the script of that release. A later
+        release started on such an installation does not create an empty database beside the old one: its
+        <code>db</code> container stops and says so.
+      </p>
       <ol>
         <li>
           Pull the new release, but <strong>do not</strong> run <code>compose up</code> yet; the running stack is still
@@ -2899,9 +2913,8 @@ podman compose up -d
       <p><code>podman exec nik_db_1 psql -U nik -d nik -Atc 'SHOW server_version'</code></p>
       <p>
         <strong>If <code>compose up</code> already ran</strong> on 2.12.2 before the script, the <code>db</code>
-        container restarts in a loop and its log says
-        <code>run deploy/upgrade-postgres.sh</code>: it refuses to create an empty database while the old data has not
-        been moved (<code>deploy/db-entrypoint.sh</code>). Run the script anyway: it dumps the old volume with a
+        container restarts in a loop and its log says so: it refuses to create an empty database while the old data has
+        not been moved (<code>deploy/db-entrypoint.sh</code>). Run the script anyway: it dumps the old volume with a
         temporary PostgreSQL 16 container instead.
       </p>
       <p>
@@ -2985,18 +2998,18 @@ host    nik      nik  ::1/128         scram-sha-256
       </p>
       <h4 id="step-3-deploy-the-fastapi-backend-systemd">Step 3 — Deploy the FastAPI backend (systemd)</h4>
       <p>
-        The backend needs <strong>Python 3.11 or later</strong>. The default <code>python3</code> of RHEL 8 and 9 is
-        older: install <code>python3.11</code> and call it by that name. Copy <code>backend/</code> to
-        <code>/opt/nik/backend</code> and build a virtualenv:
+        The backend needs <strong>Python 3.12</strong>, the version it is built and tested with. The default
+        <code>python3</code> of RHEL 8 and 9 is older: install <code>python3.12</code> and call it by that name. Copy
+        <code>backend/</code> to <code>/opt/nik/backend</code> and build a virtualenv:
       </p>
-      <pre><code class="language-bash">sudo dnf install -y python3.11 python3.11-pip pango
+      <pre><code class="language-bash">sudo dnf install -y python3.12 python3.12-pip pango
 sudo useradd --system --home /opt/nik --shell /sbin/nologin nik
 
 sudo mkdir -p /opt/nik
 sudo cp -r backend /opt/nik/backend
 cd /opt/nik/backend
 
-sudo python3.11 -m venv .venv
+sudo python3.12 -m venv .venv
 sudo .venv/bin/pip install --upgrade pip
 sudo .venv/bin/pip install -r requirements.txt
 sudo mkdir -p /var/lib/nik/samples      # the sample store: exclude it from the antivirus
@@ -3118,9 +3131,10 @@ server {
 
     # A mailbox (mbox, Maildir archive, Outlook PST) can be gigabytes: only
     # its upload is allowed that much, and it is not buffered to disk. The
-    # backend applies MAILBOX_MAX_MB and PST_MAX_MB to what passes.
+    # backend applies MAILBOX_MAX_MB and PST_MAX_MB to what passes: this
+    # number covers the larger of their defaults, and is raised with them.
     location = /api/artifacts/mailboxes {
-        client_max_body_size 2100m;
+        client_max_body_size 4200m;
         proxy_request_buffering off;
         proxy_read_timeout 900s;
         proxy_send_timeout 900s;

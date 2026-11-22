@@ -184,10 +184,10 @@ export default function IndicatorsFoundSection() {
         </label>
         {problems.cap && <p className="mt-1 text-sm text-high-fg">{problems.cap}</p>}
         <p className="mt-2 max-w-prose text-sm text-fg-muted">
-          Past it nothing more is kept, and the War Room says how many were not: the common schema of the context is
-          read first (File, URL, IP, Domain, Mail…), then the fields, then what the connector keeps under{' '}
-          <code className="font-mono">ext</code>. No more than {found.limits.strings.toLocaleString('en')} values of an
-          incident are read.
+          From 1 to {found.capMax ?? 1000}; 500 until it is set here. Past it nothing more is kept, and the War Room
+          says how many were not: the common schema of the context is read first (File, URL, IP, Domain, Mail…), then
+          the fields, then what the connector keeps under <code className="font-mono">ext</code>. No more than{' '}
+          {found.limits.strings.toLocaleString('en')} values of an incident are read.
         </p>
       </div>
 

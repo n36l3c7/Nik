@@ -22,7 +22,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from . import artifact_jobs, key_rotation, store_seal, urlscan_queue, worker_watch
-from .artifacts import backfill as backfill_artifacts
 
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
@@ -38,7 +37,6 @@ from .core.ratelimit import limiter
 from .core.security import Refused
 from .core.store import SealError
 from .enrichment import worker as enrichment_worker
-from .iocs import backfill as backfill_iocs
 from .query import QueryError, QueryForbidden
 from .routers import (
     annotations,
@@ -213,9 +211,8 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Create all tables when not using migrations, index what older releases left without an
-    index, add what Nik ships (fields, types, lists, dashboards, scripts, connectors, mappers,
-    playbooks, packs) and start the loops of the process.
+    """Create all tables when not using migrations, add what Nik ships (fields, types, lists,
+    dashboards, scripts, connectors, mappers, playbooks, packs) and start the loops of the process.
 
     In production run Alembic (``alembic upgrade head``, see backend/alembic).
     ``RUN_CREATE_ALL=false`` disables the first step so migrations own the schema.
@@ -228,10 +225,6 @@ def on_startup() -> None:
     # SECRET_KEY was changed: move what the old one encrypted to the new one (the key of the client
     # certificate the audit log is forwarded with is among it: core/vault.py lists every place).
     vault.reencrypt(SessionLocal)
-    # Incidents saved before 2.12.0 have no indicator index yet.
-    backfill_iocs(SessionLocal)
-    # Samples, e-mails and captures stored before 2.19.0 have no artifact entry yet.
-    backfill_artifacts(SessionLocal)
     # The system fields of the registry (a release may add some).
     from . import fields as field_registry
     from . import incident_types as type_registry
@@ -333,8 +326,7 @@ def on_startup() -> None:
     with one_process(SEEDING_LOCK):
         with SessionLocal() as db:
             try:
-                # What came inside Nik before 6.0 and is a vendor's becomes the pack it is from now on.
-                if content_packs.register_builtin(db) + content_packs.adopt_legacy(db):
+                if content_packs.register_builtin(db):
                     db.commit()
             except IntegrityError:
                 db.rollback()  # another process of the server wrote them at the same moment

@@ -155,7 +155,13 @@ export default function ConnectorsSection() {
     try {
       const source = await file.text()
       const found = await transfer(`Checking ${file.name}`, () => api.post('/automation/connectors/check', { source }))
-      setUpload({ fileName: file.name, source, problems: found.problems, connector: found.connector })
+      setUpload({
+        fileName: file.name,
+        source,
+        problems: found.problems,
+        warnings: found.warnings ?? [],
+        connector: found.connector,
+      })
     } catch (failure) {
       setError(`${file.name}: ${failure.message}`)
     }
@@ -590,6 +596,21 @@ export default function ConnectorsSection() {
               {upload.connector.version}: {upload.connector.commands.length} commands. An instance needs{' '}
               {authOf(upload.connector) || 'no credentials'}.
             </p>
+            {problemLines(upload.warnings).length > 0 && (
+              <ul
+                aria-label="Warnings of the file"
+                className="flex flex-col divide-y divide-line-soft border border-med-line bg-med-soft"
+              >
+                {problemLines(upload.warnings).map((line) => (
+                  <li key={line.key} className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 px-2 py-1.5">
+                    <span className="font-mono text-xs text-med-fg">
+                      {line.line ? `line ${line.line}` : 'the file'}
+                    </span>
+                    <span className="min-w-0 break-words text-fg">{line.text}. It can be installed as it is.</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <ul className="flex flex-wrap gap-1">
               {upload.connector.commands.map((command) => (
                 <li key={command.name}>

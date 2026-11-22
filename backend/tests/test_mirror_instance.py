@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import mirror
+from app import mirror, packs
 from app.automation import connectors as cn
 from app.core.db import SessionLocal
 from app.core.models import AuditEntry, Connection, Incident, MirrorJob, Notification
@@ -319,6 +319,29 @@ def test_the_format_says_which_object_an_item_is_what_kinds_there_are_and_why_no
     assert "at least 20 characters" in problems(cut + "no_mirror: too short\n")[0]
 
 
+def test_a_file_that_fetches_and_says_nothing_of_mirroring_loads_with_a_warning(admin: TestClient):
+    """The rule of the shipped connectors, for the files people write: a warning with its line, never
+    a refusal. Their connectors load and are installed as before."""
+    cut = HELPDESK[: HELPDESK.index("mirror:")]
+    (warning,) = cn.warnings(cut)
+    assert warning.message == cn.NO_MIRROR_SAID and warning.where == "fetch"
+    assert cut.splitlines()[warning.line - 1].startswith("fetch:")
+    why = "The product keeps no object for an alert: there is nothing to read again."
+    assert cn.warnings(HELPDESK) == [] and cn.warnings(cut + f'no_mirror: "{why}"\n') == []
+    # One that does not fetch has nothing to say of it; one that does not load has its problems.
+    assert cn.warnings(cut[: cut.index("fetch:")]) == [] and cn.warnings("name: x\n") == []
+
+    checked = admin.post(f"{BASE}/connectors/check", json={"source": cut}).json()
+    assert checked["problems"] == [] and checked["connector"]["mirror"] is None
+    assert checked["warnings"] == [{"line": warning.line, "message": cn.NO_MIRROR_SAID, "where": "fetch"}]
+    assert admin.post(f"{BASE}/connectors/check", json={"source": HELPDESK}).json()["warnings"] == []
+    broken = admin.post(f"{BASE}/connectors/check", json={"source": "name: x\n"}).json()
+    assert broken["problems"] and broken["warnings"] == []
+    made = admin.post(f"{BASE}/connectors", json={"source": cut})
+    assert made.status_code == 201 and made.json()["warnings"] == checked["warnings"]
+    assert admin.post(f"{BASE}/connectors", json={"source": HELPDESK}).json()["warnings"] == []
+
+
 def test_a_native_connector_mirrors_by_its_fetch_and_never_by_a_command():
     text, mail = next((text, connector) for text, connector in vendor.connectors() if connector.id == "mail")
     assert mail.native == "mail" and mail.mirror.get is None and mail.mirror.thread is not None
@@ -457,9 +480,13 @@ def test_a_mapper_that_names_the_object_and_the_direction_wins_over_the_instance
     assert shown(admin, fetched("105"))["mirrored"] is False
 
 
+# The two rules the incoming mappers of Jira and ServiceNow had until 6.10 (packs 1.0.1).
+FORCED_IN = [{"to": "mirror_id", "from": "{{ item.sys_id }}"}, {"to": "mirror_direction", "from": "in"}]
+
+
 def test_an_instance_as_6_9_left_it_goes_on_exactly_as_it_did(admin: TestClient, outside):
-    """ServiceNow as shipped, with its shipped mappers (the incoming one names the object and says
-    "in"), and an instance whose document is what 6.9 wrote: how it fetches, and nothing of mirroring."""
+    """ServiceNow with the mappers 6.9 shipped (the incoming one names the object and says "in"),
+    and an instance whose document is what 6.9 wrote: how it fetches, and nothing of mirroring."""
     text = next(text for text, connector in vendor.connectors() if connector.id == "servicenow")
     held = json.loads((DATA / "servicenow" / "connection.json").read_text(encoding="utf-8"))
     recorded = json.loads((DATA / "servicenow" / "fetch.json").read_text(encoding="utf-8"))
@@ -470,8 +497,10 @@ def test_an_instance_as_6_9_left_it_goes_on_exactly_as_it_did(admin: TestClient,
     )
     assert made.status_code == 201, made.text
     connection = made.json()
-    shipped = vendor.mappers()["servicenow"]
-    assert {"mirror_id", "mirror_direction"} <= {rule["to"] for rule in shipped["incoming"]}
+    shipped = dict(vendor.mappers()["servicenow"])
+    # The pack of 6.10 leaves the direction to the instance: these are the two rules it had until then.
+    assert not {"mirror_id", "mirror_direction"} & {rule["to"] for rule in shipped["incoming"]}
+    shipped["incoming"] = [*shipped["incoming"], *FORCED_IN]
     for direction in ("incoming", "outgoing"):
         body = {"connectorId": "servicenow", "direction": direction, "rules": shipped[direction]}
         assert admin.put("/api/mappers", json=body).status_code == 200
@@ -514,6 +543,140 @@ def test_an_instance_as_6_9_left_it_goes_on_exactly_as_it_did(admin: TestClient,
         assert incident_row.fields["mirror_direction"] == "in"
     said = held_by(admin, connection)["fetch"]
     assert (said["intervalSeconds"], said["lookbackMinutes"], said["mirror"]["direction"]) == (300, 5, "none")
+
+
+def servicenow_pack(*, before: bool) -> packs.PackFile:
+    """The ServiceNow pack of the repository; or, with ``before``, as it was at 1.0.1: its mapper
+    names the object and says "in", and its connector is a version older."""
+    pack = packs.read(packs.folder_bytes(vendor.REPO_PACKS / "servicenow"))
+    if not before:
+        return pack
+    items = []
+    for item in pack.items:
+        data = item.data
+        if item.kind == "mappers":
+            data = {**data, "incoming": [*data["incoming"], *FORCED_IN]}
+        elif item.kind == "connectors":
+            now = cn.load(data).version
+            data = data.replace(f"\nversion: {now}\n", f"\nversion: {now - 1}\n", 1)
+            assert cn.load(data).version == now - 1
+        items.append(packs.Item(item.kind, item.name, data, item.extras))
+    return packs.read(packs.write({**pack.manifest, "version": "1.0.1", "nik": ">=6.0"}, items, pack.logo))
+
+
+def servicenow_world(outside, held: dict) -> list[dict]:
+    """A ServiceNow that answers the fetch with the records it holds."""
+    host = urlsplit(held["config"]["url"]).hostname
+    outside.host(host)
+    records: list[dict] = []
+    outside.answers.append(
+        lambda method, to, target, _headers, _body: (
+            (200, JSON, json.dumps({"result": records if "sysparm_offset=0" in target else []}).encode())
+            if to == host and urlsplit(target).path == "/api/now/table/incident"
+            else None
+        )
+    )
+    return records
+
+
+def servicenow_held() -> tuple[dict, list[dict]]:
+    """The settings of an instance, and the records the recorded fetch brings."""
+    held = json.loads((DATA / "servicenow" / "connection.json").read_text(encoding="utf-8"))
+    recorded = json.loads((DATA / "servicenow" / "fetch.json").read_text(encoding="utf-8"))
+    return held, recorded["exchanges"][0]["response"]["json"]["result"]
+
+
+def test_a_pack_that_stops_naming_the_direction_leaves_every_instance_mirroring_as_it_did(admin: TestClient, outside):
+    """An install updated from the pack of before: its instances said None and mirrored In because the
+    mapper said so. The new mapper says nothing, so the update writes In in those instances, says so
+    in the audit log and in what it reports, and nobody has to touch anything. An instance a person
+    gave a direction is left alone."""
+    held, (first, *_rest) = servicenow_held()
+    with SessionLocal() as db:
+        done = packs.apply(db, servicenow_pack(before=True), {}, "admin")
+        db.commit()
+    assert done["added"] >= 2 and done["mirroring"] == []
+    made = {}
+    for name in ("SN prod", "SN test", "SN set by hand"):
+        body = {"name": name, "connector": "servicenow", "config": held["config"], "secrets": held["secrets"]}
+        made[name] = admin.post(f"{BASE}/instances", json=body).json()
+    assert choose(admin, made["SN set by hand"], enabled=False, mirror="both").status_code == 200
+    records = servicenow_world(outside, held)
+    records.append(first)
+    assert choose(admin, made["SN prod"]).status_code == 200
+    assert fetch_now(admin, made["SN prod"])["created"] == 1
+    old = fetched(first["sys_id"])
+    before = shown(admin, old)
+    assert (before["direction"], before["origin"], before["id"]) == ("in", "mapper", first["sys_id"])
+    assert held_by(admin, made["SN prod"])["fetch"]["mirror"]["direction"] == "none"
+
+    # The update, as the Packs page applies it: nothing is asked about mirroring.
+    with SessionLocal() as db:
+        plan = packs.plan(db, servicenow_pack(before=False))
+        assert {entry["kind"]: entry["action"] for entry in plan["items"]}["mappers"] == "update"
+        done = packs.apply(db, servicenow_pack(before=False), {}, "admin")
+        db.commit()
+    assert done["mirroring"] == [{"connector": "servicenow", "direction": "in", "instances": ["SN prod", "SN test"]}]
+    said = {name: held_by(admin, one)["fetch"]["mirror"]["direction"] for name, one in made.items()}
+    assert said == {"SN prod": "in", "SN test": "in", "SN set by hand": "both"}
+    with SessionLocal() as db:
+        (entry,) = audited(db, "mirror.kept")
+        assert entry.target == "servicenow"
+        assert "Mirroring was set to In in the instances that said None" in entry.details
+        assert entry.details.endswith("so that they mirror as before: SN prod, SN test")
+        # How it fetches is as it was: only the direction was written.
+        assert db.get(Connection, made["SN prod"]["id"]).fetch_settings["mirror"] == "in"
+    # The mirror that was there is untouched, and what is fetched from now on is mirrored In, by the instance.
+    assert shown(admin, old) == before
+    second = {**first, "sys_id": "0" * 31 + "7", "number": "INC0099999"}
+    records.append(second)
+    assert fetch_now(admin, made["SN prod"])["created"] == 1
+    after = shown(admin, fetched(second["sys_id"]))
+    assert (after["direction"], after["origin"], after["id"]) == ("in", "instance", second["sys_id"])
+    # The same pack again changes nothing more, and writes nothing more.
+    with SessionLocal() as db:
+        assert packs.apply(db, servicenow_pack(before=False), {}, "admin")["mirroring"] == []
+        db.commit()
+        assert len(audited(db, "mirror.kept")) == 1
+
+
+def test_a_mapper_someone_kept_goes_on_naming_the_direction_and_no_instance_is_changed(admin: TestClient, outside):
+    """The update with the mapper left out (it was changed here and the person keeps it): it still
+    names the object and the direction, it is still obeyed first, and no instance is written to."""
+    held, (first, *_rest) = servicenow_held()
+    with SessionLocal() as db:
+        packs.apply(db, servicenow_pack(before=True), {}, "admin")
+        db.commit()
+    body = {"name": "SN prod", "connector": "servicenow", "config": held["config"], "secrets": held["secrets"]}
+    connection = admin.post(f"{BASE}/instances", json=body).json()
+    with SessionLocal() as db:
+        done = packs.apply(db, servicenow_pack(before=False), {"mappers/servicenow": "skip"}, "admin")
+        db.commit()
+        assert done["mirroring"] == [] and done["skipped"] == 1 and audited(db, "mirror.kept") == []
+    assert held_by(admin, connection)["fetch"]["mirror"]["direction"] == "none"
+    records = servicenow_world(outside, held)
+    records.append(first)
+    assert choose(admin, connection).status_code == 200
+    fetch_now(admin, connection)
+    said = shown(admin, fetched(first["sys_id"]))
+    assert (said["direction"], said["origin"]) == ("in", "mapper")
+
+
+def test_a_new_install_of_the_pack_starts_at_none(admin: TestClient, outside):
+    held, found = servicenow_held()
+    with SessionLocal() as db:
+        assert packs.apply(db, servicenow_pack(before=False), {}, "admin")["mirroring"] == []
+        db.commit()
+    body = {"name": "SN new", "connector": "servicenow", "config": held["config"], "secrets": held["secrets"]}
+    connection = admin.post(f"{BASE}/instances", json=body).json()
+    records = servicenow_world(outside, held)
+    records.extend(found)
+    assert choose(admin, connection).status_code == 200
+    assert held_by(admin, connection)["fetch"]["mirror"]["direction"] == "none"
+    assert fetch_now(admin, connection)["created"] == len(found)
+    assert shown(admin, fetched(found[0]["sys_id"]))["mirrored"] is False
+    with SessionLocal() as db:
+        assert audited(db, "mirror.kept") == []
 
 
 def test_the_choice_is_given_to_what_was_fetched_before_only_when_asked(admin: TestClient, outside):
@@ -574,9 +737,27 @@ def test_what_an_instance_lets_its_mirrors_send(admin: TestClient, outside):
     connection, world = helpdesk(admin, outside)
     world.tickets.pop("T-102")
     world.tickets["T-101"]["title"] = "Phish from eve@evil.example"
-    # Who manages connectors chooses the direction; opening a class of data takes the permission that opens them.
+    # Who manages connectors chooses None or In. A direction that sends takes the permission to run
+    # playbooks as well, as starting such a mirror on an incident does; opening a class of data takes
+    # the permission that opens them.
     manager = person(admin, "carla", ["connectors"])
-    assert choose(manager, connection, mirror="both").status_code == 200
+    assert choose(manager, connection, mirror="in").status_code == 200
+    for sending in ("out", "both"):
+        refused = choose(manager, connection, mirror=sending)
+        assert (refused.status_code, refused.json()["detail"]) == (
+            403,
+            "Sending to another system needs the permission to run playbooks",
+        )
+    assert held_by(admin, connection)["fetch"]["mirror"]["direction"] == "in"
+    sender = person(admin, "dora", ["connectors", "analyst"])
+    assert choose(sender, connection, mirror="both").status_code == 200
+    # What is saved already is saved again with the rest of the form, and taken back, by who manages connectors.
+    assert choose(manager, connection, mirror="both", intervalSeconds=300).status_code == 200
+    apply = f"/api/fetch/{connection['id']}/mirror/apply"
+    assert manager.post(apply).status_code == 403 and sender.post(apply).status_code == 200
+    assert choose(manager, connection, mirror="none").status_code == 200
+    assert manager.post(apply).status_code == 200
+    assert choose(sender, connection, mirror="both").status_code == 200
     refused = choose(manager, connection, mirrorAllow=["email_address"])
     assert (refused.status_code, refused.json()["detail"]) == (
         403,

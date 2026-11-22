@@ -17,6 +17,10 @@
       "from": "{{ item.node.status | map(NEW='open', IN_PROGRESS='in_progress', RESOLVED='closed', FALSE_POSITIVE='closed', else='open') }}"
     },
     {
+      "to": "close_reason",
+      "from": "{{ item.node.status | map(FALSE_POSITIVE='False positive', else='') }}"
+    },
+    {
       "to": "source_id",
       "from": "{{ item.node.id }}"
     },
@@ -35,6 +39,12 @@
       "from": {
         "Name": "{{ item.node.asset.name }}"
       }
+    }
+  ],
+  "outgoing": [
+    {
+      "to": "status",
+      "from": "{{ if(incident.status == 'closed' and (incident.close_reason | default('') | lower) == 'false positive', 'FALSE_POSITIVE', incident.status | map(open='NEW', in_progress='IN_PROGRESS', closed='RESOLVED', else='')) }}"
     }
   ],
   "classifier": {

@@ -19,23 +19,16 @@ export function clampWidth(width, { min, max, viewport = Infinity }) {
   return Math.round(Math.min(Math.max(number, min), ceiling))
 }
 
-/**
- * The width remembered for a panel, or null. `legacyKey` is where a release
- * before 5.0 kept it (the list of incidents had its own key).
- */
-export function readWidth(storage, name, legacyKey = null) {
-  for (const key of [paneKey(name), legacyKey]) {
-    if (!key) continue
-    let stored
-    try {
-      stored = storage.getItem(key)
-    } catch {
-      return null
-    }
-    const number = Number(stored)
-    if (stored !== null && Number.isFinite(number) && number > 0) return number
+/** The width remembered for a panel, or null. */
+export function readWidth(storage, name) {
+  let stored
+  try {
+    stored = storage.getItem(paneKey(name))
+  } catch {
+    return null
   }
-  return null
+  const number = Number(stored)
+  return stored !== null && Number.isFinite(number) && number > 0 ? number : null
 }
 
 /**

@@ -462,6 +462,26 @@
               </td>
             </tr>
             <tr>
+              <td><code>indicators.found</code></td>
+              <td>
+                A reading of an incident kept indicators it did not hold (<a href="guide.html#found-indicators"
+                  >Indicators found by themselves</a
+                >): as it came in, at an update its mirror brought, or when someone asked. Said once for a reading,
+                never once for each indicator, and not at all for a reading that found nothing new. The run works on the
+                incident.
+              </td>
+              <td>
+                <code>found.count</code>, <code>found.door</code> (<code>fetch</code>, <code>api</code>,
+                <code>hand</code>, <code>playbook</code>, <code>mirror</code>, <code>asked</code>),
+                <code>found.by_type.ip</code> (and <code>.domain</code>, <code>.url</code>, <code>.email</code>,
+                <code>.md5</code>, <code>.sha1</code>, <code>.sha256</code>), <code>found.indicators</code> (the first
+                100, each with <code>type</code>, <code>value</code>, <code>path</code>),
+                <code>found.values</code> (their values alone), <code>found.cut</code> and
+                <code>found.more</code> (whether and by how many the list was cut), <code>found.kept</code>; the
+                <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
               <td><code>sla.breached</code></td>
               <td>A timer of an incident passed the time its type allows. Said once for each timer.</td>
               <td>
@@ -1282,6 +1302,41 @@ Content-Type: application/json
         <code>benign</code>, <code>own</code>, <code>allowlisted</code>); <code>leave_out_harmless=true</code> leaves
         them out, as the <a href="guide.html#found-indicators">finding of indicators in a new incident</a> does. A dry
         run makes nothing and shows what it would have made.
+      </p>
+      <h4 id="indicators-found-playbook">A playbook for what was found</h4>
+      <p>
+        The event <code>indicators.found</code> starts a playbook when a reading of an incident kept something new. This
+        one checks what was found and tags the incident when a source calls one of them malicious:
+      </p>
+      <ol>
+        <li>
+          <strong>Trigger</strong>: <em>On an event</em>, <em>Indicators are found in an incident</em>. To leave the
+          large readings to a person, add <em>Only when the event matches</em>:
+          <code>{{ trigger.found.count }}</code> at most <code>20</code>.
+        </li>
+        <li>
+          <strong>For each</strong> over <code>{{ trigger.found.indicators }}</code> (at most 100: the event lists no
+          more). Inside it, <em>Reputation of an indicator</em> (<code>nik.reputation</code>) with <code>kind</code>
+          <code>{{ item.type | map(md5='file', sha1='file', sha256='file') }}</code> (a hash is looked up as a file) and
+          <code>value</code> <code>{{ item.value }}</code>, then a <strong>condition</strong>:
+          <code>{{ check.verdict }}</code> equals <code>malicious</code>.
+        </li>
+        <li>
+          On its <em>yes</em> port, <em>Tag the incident</em> (<code>nik.add-incident-tags</code>) with
+          <code>malicious-indicator</code>, and <em>Add a note</em> that names <code>{{ item.value }}</code> and
+          <code>{{ item.path }}</code>.
+        </li>
+      </ol>
+      <p>
+        The look-ups are the same as <em>Check now</em>: an answer that still stands is not asked again, a source's
+        quota and the <a href="#data-guard">data guard</a> apply, and a private address the setting keeps is held as
+        one. <strong>It cannot start itself again.</strong> What a run writes to the context starts no reading. An
+        incident a run makes is read, and the event of that reading names the run: the playbook that made it does not
+        start on it, and no chain goes more than three runs deep. The same event never starts the same playbook twice.
+        And a reading that finds nothing new writes no event, which is every reading of the same values. One thing can
+        still go round: a playbook that makes the <em>other system</em> say something new each time (a comment with new
+        addresses, which the mirror reads). Each turn needs values the incident does not hold yet, and it ends for good
+        at the limit of <em>Settings → Indicators found</em>, besides the playbook's own runs per hour.
       </p>
       <p id="files-and-the-guard">
         <strong>The data guard.</strong> None of these nodes sends anything out, so none is held. What they give carries
@@ -2952,15 +3007,18 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         An incident can be kept in step with one object of another product (a ticket, an issue, a threat, a conversation
         by mail) through an instance whose connector has a
         <a href="#connector-fetch"><code>mirror</code></a
-        >. Every connector Nik ships that fetches also mirrors, or says in its file why it cannot.
+        >. Every connector Nik ships that fetches also mirrors.
       </p>
       <p>
         <strong>The direction is chosen in the instance.</strong> The <em>Fetch</em> part of the form of an instance has
         <em>Mirroring</em>: <em>None</em>, <em>In</em>, <em>Out</em> or <em>In-out</em>. An incident the instance
         fetches from then on starts mirrored that way by itself, with the object it was made from. Each choice says in a
-        sentence what it does with this connector, and one the connector cannot do is shown and not offered, with why: a
-        connector with no command that writes cannot go out, and a mailbox is only ever read. A new instance, and every
-        instance that was there before 6.10, says <em>None</em>: nothing changes until someone chooses.
+        sentence what it does with this connector, and one that cannot be chosen is shown and not offered, with why: a
+        connector with no command that writes cannot go out, a mailbox is only ever read, and <em>Out</em> and
+        <em>In-out</em> send to another system, so choosing one needs the permission to run playbooks as well as the one
+        to manage connectors, as starting such a mirror on an incident does (<em>None</em> and <em>In</em> need only the
+        second; a direction that is saved already can be saved again with the rest of the form). A new instance, and
+        every instance that was there before 6.10, says <em>None</em>: nothing changes until someone chooses.
       </p>
       <ul>
         <li>
@@ -2969,10 +3027,13 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         </li>
         <li>
           <strong>A mapper comes first.</strong> An incoming mapper that sets both <code>mirror_id</code> and
-          <code>mirror_direction</code> starts the mirror itself, as before 6.10, whatever the instance says: the
-          shipped mappers of ServiceNow and Jira do, with <code>in</code>. To let the instance decide, remove the rule
-          that sets <code>mirror_direction</code>. A mapper that sets <code>mirror_id</code> alone names the object, and
-          the instance gives the direction; with an instance that says <em>None</em> it starts nothing.
+          <code>mirror_direction</code> starts the mirror itself, as before 6.10, whatever the instance says. No shipped
+          mapper does any more: those of ServiceNow and Jira did, with <code>in</code>, until their packs 1.1.0 (<a
+            href="#mirror-packs"
+            >below</a
+          >). To let the instance decide where one of yours does, remove the rule that sets
+          <code>mirror_direction</code>. A mapper that sets <code>mirror_id</code> alone names the object, and the
+          instance gives the direction; with an instance that says <em>None</em> it starts nothing.
         </li>
         <li>
           <strong>What was fetched before.</strong> Saving the choice changes nothing for the incidents already there.
@@ -3071,14 +3132,34 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
             </tr>
             <tr>
               <td>SentinelOne SIEM</td>
-              <td colspan="2">
-                Not mirrored: SentinelOne's reference of the API does not describe the alerts of the Singularity
-                Operations Center, and a mirror does not rest on what is known from other sources only
+              <td>
+                The alert read again by its id (<code>get-alert</code>): its status becomes the status, and
+                <code>FALSE_POSITIVE</code> closes the incident with that reason. No notes: the pack has no command that
+                reads them
+              </td>
+              <td>
+                The status, set with <code>update-alert</code> (<code>NEW</code>, <code>IN_PROGRESS</code>,
+                <code>RESOLVED</code>; <code>FALSE_POSITIVE</code> for an incident closed as a false positive). No notes
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p>
+        The alerts of the SentinelOne SIEM are not in SentinelOne's reference of the API: its two commands are written
+        from other public sources (the pack's README says which), and the one that sets a status is the less certain of
+        the two. Try <em>Out</em> on a test alert before relying on it.
+      </p>
+      <p id="mirror-packs">
+        <strong>ServiceNow and Jira, from their packs 1.1.0.</strong> Until then their incoming mappers named the object
+        and said <code>in</code>, so every ticket fetched was mirrored <em>In</em> whatever the instance said. The
+        mappers no longer say it, and the instance decides like every other. Nothing changes by itself for an
+        installation that has them: when the update of the pack replaces such a mapper, every instance of that connector
+        whose <em>Mirroring</em> is <em>None</em> is set to <em>In</em> in the same step, which the update reports and
+        the audit log records (<code>mirror.kept</code>). An instance someone gave a direction is left as it is. A
+        mapper you changed and keep at the update (left out of it) still names the direction and is still obeyed first,
+        and no instance is touched. A new installation of the pack starts at <em>None</em>.
+      </p>
 
       <h3 id="mail-connector">Mail listener / sender</h3>
       <p>
@@ -3286,13 +3367,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         A connector that fetches comes with a <a href="#mappers">mapper</a>: the title, the details, the severity, the
         status and the id of what it brings in, and the ticket, the alert, the host or the file it is about in the
         <a href="#context">context</a>. Nik adds these mappers at startup, for every type of incident, and brings them
-        up to date with a release until someone saves one: from then on it is yours. The mappers of ServiceNow and Jira
-        set <code>mirror_id</code> and <code>mirror_direction: in</code>, so a ticket that came in by fetching is read
-        again when it changes there, whatever their instance says of <a href="#mirroring">mirroring</a>; to send what
-        changes in Nik, change the direction on the incident, or remove the rule that sets
-        <code>mirror_direction</code> and choose In-out in the instance. None says which type of incident an item
-        becomes: without a <a href="#mappers">classifier</a>, the default type is used. Things to know before turning a
-        fetch on:
+        up to date with a release until someone saves one: from then on it is yours. Whether a ticket or an alert that
+        came in by fetching is read again when it changes there, and whether what changes in Nik is sent, is what the
+        instance says of <a href="#mirroring">mirroring</a>. None says which type of incident an item becomes: without a
+        <a href="#mappers">classifier</a>, the default type is used. Things to know before turning a fetch on:
       </p>
       <ul>
         <li>
@@ -4291,7 +4369,10 @@ download_hosts_from: download_hosts</code></pre>
         <li>
           <strong><code>no_mirror</code></strong
           >, beside <code>fetch</code> and instead of <code>mirror</code>: a sentence that says why a connector that
-          fetches does not mirror. It is shown where an instance chooses its mirroring.
+          fetches does not mirror. It is shown where an instance chooses its mirroring. No connector Nik ships uses it.
+          A file of yours that has a <code>fetch</code> and neither <code>mirror</code> nor <code>no_mirror</code> is
+          installed and works as before; checking it gives a <strong>warning</strong> with the line of its
+          <code>fetch</code>, and its instances are offered <em>None</em> only.
         </li>
       </ul>
 

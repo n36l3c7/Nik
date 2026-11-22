@@ -1145,6 +1145,29 @@ def _paths(value: Any, root: str) -> set[str]:
     return ex.first_names(value, root)
 
 
+NO_MIRROR_SAID = (
+    'It fetches and says nothing of mirroring: add "mirror" (how an incident is kept in step with what it was '
+    'made from), or "no_mirror" with the reason there is none. Until then its instances are offered None only'
+)
+
+
+def warnings(text: str | bytes) -> list[Problem]:
+    """What a file that loads would better say, each with its line: nothing here stops a connector
+    from being installed or from working as it did. ``[]`` for a file that does not load: its
+    problems are what there is to say of it."""
+    try:
+        connector = load(text)
+    except ConnectorError:
+        return []
+    found: list[Problem] = []
+    if connector.fetch is not None and connector.mirror is None and connector.no_mirror is None:
+        if isinstance(text, bytes):
+            text = text.decode("utf-8")
+        lines = _lines(yaml.compose(text, Loader=yaml.SafeLoader))
+        found.append(Problem(_line_of(lines, ("fetch",)), NO_MIRROR_SAID, "fetch"))
+    return found
+
+
 def _check_names(connector: ConnectorFile, raw: dict, lines: dict) -> list[Problem]:
     problems: list[Problem] = []
     plain = {param.name for param in connector.configuration if not param.is_auth and param.type != "secret"}

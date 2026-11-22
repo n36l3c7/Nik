@@ -40,6 +40,18 @@ apart from the setting: on, off, or as the setting says.
 line in the War Room ("12 indicators found: 5 domains, 4 URLs, 3 hashes; 40
 left out as private or benign") and one entry in the audit log.
 
+**A playbook can wait for it.** A reading that kept something new writes one
+``indicators.found`` event, in its own transaction, with the incident, the
+door, how many of each type and the first hundred of them. It cannot feed
+itself: what a run writes to the context starts no reading; an incident a run
+makes is read, and its event names the run, which its own playbook never
+starts on; and a reading that finds nothing new, which is every reading of the
+same values, writes no event at all. What can still go round is a playbook
+that makes the *other system* say something new each time (a comment with new
+addresses, read by the mirror): each turn needs values the incident does not
+hold yet, and stops for good at the limit of the setting, besides the
+playbook's own runs per hour.
+
 **A person's no is remembered.** Removing a found indicator from its incident
 keeps the row, marked: the value is not found again at the next update.
 
@@ -71,8 +83,8 @@ from .iocs import TYPES
 
 SETTINGS_ID = 80
 SOURCE = "found:"
-CAP_DEFAULT = 50
-CAP_MAX = 500
+CAP_DEFAULT = 500
+CAP_MAX = 1000
 STRINGS_MAX = 5000  # strings of one incident that are read
 STRING_MAX = 20_000  # characters of one string
 BYTES_MAX = 2_000_000  # characters of one incident, all strings together
@@ -397,6 +409,7 @@ def scan(
     }
     stamp = now_iso()
     by_type: dict[str, int] = {}
+    fresh: list[dict[str, str]] = []
     new = over = removed = 0
     for item, path in result["found"]:
         key = (item.type, item.value)
@@ -417,6 +430,7 @@ def scan(
         kept += 1
         new += 1
         by_type[item.type] = by_type.get(item.type, 0) + 1
+        fresh.append({"type": item.type, "value": item.value, "path": path})
     summary = {
         "new": new,
         "kept": kept,
@@ -446,6 +460,11 @@ def scan(
         db.flush()
         reindex_incident(db, incident)
         audit.record(db, "nik", "ioc.found", f"Found {new} indicators in the incident ({door})", incident)
+        # One event for a reading that kept something new, written with it: the playbooks that wait
+        # for it start once (``automation/triggers.py``).
+        from .automation import triggers
+
+        triggers.indicators_found(db, incident, door, fresh, kept)
     db.flush()
     return summary
 

@@ -49,6 +49,19 @@
         "name": "WKS-FINANCE-01"
       }
     },
+    "edge": {
+      "node": {
+        "id": "0195-aaaa",
+        "name": "Suspicious PowerShell",
+        "severity": "HIGH",
+        "status": "NEW",
+        "analystVerdict": "UNDEFINED",
+        "asset": {
+          "id": "a-1",
+          "name": "WKS-FINANCE-01"
+        }
+      }
+    },
     "status": "NEW",
     "severity": "HIGH"
   }

@@ -25,14 +25,6 @@
       "from": "{{ item.id }}"
     },
     {
-      "to": "mirror_id",
-      "from": "{{ item.key }}"
-    },
-    {
-      "to": "mirror_direction",
-      "from": "in"
-    },
-    {
       "to": "Ticket(val.ID == obj.ID)",
       "from": {
         "ID": "{{ item.id }}",

@@ -268,7 +268,7 @@ export default function MailDetail({
                 >
                   {item.label}
                   {count !== null && (
-                    <span className="rounded-full bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">{count}</span>
+                    <span className="bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">{count}</span>
                   )}
                 </button>
               )

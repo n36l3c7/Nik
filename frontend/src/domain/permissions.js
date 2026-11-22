@@ -1,8 +1,7 @@
 /*
  * Roles and what they grant, as the server defines them
  * (backend/app/core/permissions.py). The server decides: this copy is for
- * what the interface shows (the role picker and its descriptions) and for the
- * accounts of releases before 4.0, which have a single `role`. What the
+ * what the interface shows (the role picker and its descriptions). What the
  * signed-in account may do comes from `permissions` of GET /api/auth/me.
  */
 

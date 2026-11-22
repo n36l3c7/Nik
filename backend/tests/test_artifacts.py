@@ -6,9 +6,6 @@ import hashlib
 
 from fastapi.testclient import TestClient
 
-from app import artifacts
-from app.core.db import SessionLocal
-from app.core.models import Artifact, ArtifactLink
 from app.malware.samples import sample_path
 from app.network import store
 from tests.conftest import make_key
@@ -166,20 +163,3 @@ def test_artifacts_need_a_write_key_and_a_known_id(admin: TestClient):
     assert (
         admin.post("/api/artifacts/files", headers=key, data={"incident": "missing"}, files={"file": ("a", b"x")})
     ).status_code == 404
-
-
-def test_backfill_registers_what_was_stored_before(admin: TestClient):
-    key = make_key(admin)
-    _incident(admin, key, "b1")
-    sha = admin.post("/api/incidents/b1/samples", headers=key, files={"file": ("old.bin", b"stored earlier")}).json()[
-        "sample"
-    ]["sha256"]
-    # As after an upgrade: the sample and the incident's reference exist, the registry is empty.
-    with SessionLocal() as db:
-        db.query(ArtifactLink).delete()
-        db.query(Artifact).delete()
-        db.commit()
-    assert artifacts.backfill(SessionLocal) == 1
-    assert artifacts.backfill(SessionLocal) == 0
-    entry = admin.get(f"/api/artifacts/file-{sha}", headers=key).json()
-    assert entry["name"] == "old.bin" and entry["incidents"] == [{"id": "b1", "name": "b1"}]

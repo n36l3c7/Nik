@@ -121,7 +121,6 @@ const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage
 // drag time); this is the hard floor so the incident list stays usable.
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_DEFAULT_WIDTH = 288
-const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
 // The side panel the rail last opened: 'artifacts' or 'iocs'; '' when the person hid it, and it
 // then stays closed until they open one; anything else when none is shown and one comes with what
 // is opened (an artifact, the Indicators page). Until 6.2 the list of incidents was a side panel
@@ -640,7 +639,6 @@ export default function App() {
     initial: SIDEBAR_DEFAULT_WIDTH,
     min: SIDEBAR_MIN_WIDTH,
     max: 560,
-    legacyKey: SIDEBAR_WIDTH_KEY,
   })
 
   // The tabs of the incident on screen: those its type shows, in the order its type gives them.

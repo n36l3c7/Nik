@@ -13,7 +13,6 @@ from sqlalchemy import select
 from app import lists as named_lists
 from app import mapping, pack_build, packs, preprocess
 from app import pack_catalogue as catalogue
-from app.automation import connector_actions as ca
 from app.core.db import SessionLocal
 from app.core.models import (
     Connection,
@@ -89,11 +88,6 @@ def test_every_pack_of_the_repository_is_a_pack_a_new_nik_installs_whole(admin: 
         assert all(item.extras.get("readme") for item in connectors) or folder.name in BEFORE_READMES, folder.name
         found = inspect(admin, data)
         assert found["problems"] == [] and set(actions(found).values()) == {"add"}, (folder.name, found)
-    # What a Nik older than 6.0 held as its own is written down as these same packs.
-    assert {spec["id"] for spec in packs.legacy()} <= {folder.name for folder in folders}
-    for spec in packs.legacy():
-        held = packs.read(packs.folder_bytes(vendor.REPO_PACKS / spec["id"]))
-        assert sorted(spec["playbooks"]) == sorted(item.name for item in held.items if item.kind == "playbooks")
 
 
 def test_the_catalogue_is_read_only_when_its_signature_is_right(admin: TestClient, published):
@@ -171,11 +165,11 @@ def test_a_pack_is_installed_from_the_catalogue_then_updated(admin: TestClient, 
     done = admin.post("/api/packs/import", json={"token": found.json()["token"]})
     assert done.status_code == 200, done.text
     installed = done.json()["installed"]
-    assert (installed["source"], installed["vendor"], installed["version"]) == ("catalogue", "ServiceNow", "1.0.1")
+    assert (installed["source"], installed["vendor"], installed["version"]) == ("catalogue", "ServiceNow", "1.1.0")
     assert {item["kind"] for item in installed["items"]} == {"connectors", "mappers", "playbooks"}
     assert not any(item["changed"] for item in installed["items"])
     here = {entry["id"]: entry for entry in admin.get("/api/packs/catalogue").json()["packs"]}
-    assert (here["servicenow"]["installed"], here["servicenow"]["update"]) == ("1.0.1", False)
+    assert (here["servicenow"]["installed"], here["servicenow"]["update"]) == ("1.1.0", False)
     # A new instance starts with the classifier its pack gave.
     with SessionLocal() as db:
         assert "servicenow" in (mapping.state_defaults(db))
@@ -183,7 +177,7 @@ def test_a_pack_is_installed_from_the_catalogue_then_updated(admin: TestClient, 
     # A newer version in the catalogue is an update: the difference is shown before anything changes.
     newer, files = dict(json.loads(published.index)), published.files
     line = next(entry for entry in newer["packs"] if entry["id"] == "servicenow")
-    line["version"] = "1.1.0"
+    line["version"] = "1.2.0"
     index = json.dumps(newer).encode()
     published.answer("github.com", body=index, path=BASE + "index.json")
     published.answer("github.com", body=pack_build.sign(index, PRIVATE), path=BASE + "index.json.sig")
@@ -193,8 +187,8 @@ def test_a_pack_is_installed_from_the_catalogue_then_updated(admin: TestClient, 
     # A file that is not the one the index lists is not read.
     published.answer(
         "objects.githubusercontent.com",
-        body=files["jira-cloud-1.0.1.nikpack"] + b"x",
-        path="/x/jira-cloud-1.0.1.nikpack",
+        body=files["jira-cloud-1.1.0.nikpack"] + b"x",
+        path="/x/jira-cloud-1.1.0.nikpack",
     )
     refused = admin.post("/api/packs/catalogue/jira-cloud/inspect")
     assert refused.status_code == 502 and "not the one the catalogue lists" in refused.json()["detail"]
@@ -517,44 +511,6 @@ def test_a_pack_that_another_requires_and_the_pack_of_nik_are_not_uninstalled(ad
         assert db.get(Connector, "acme") is not None
 
 
-def test_what_a_nik_older_than_6_held_becomes_the_packs_it_is(admin: TestClient):
-    texts = {connector.id: text for text, connector in vendor.connectors()}
-    with SessionLocal() as db:
-        # As 5.x left them: connectors of Nik, the mappers they came with, and one it had removed.
-        for name in ("servicenow", "jira-cloud", "zscaler-zia"):
-            ca.install(db, texts[name], "nik", builtin=True)
-        body = {"connectorId": "servicenow", "direction": "incoming", "incidentType": mapping.ANY_TYPE}
-        mapping.save_mapper(db, {**body, "rules": vendor.mappers()["servicenow"]["incoming"]}, "nik", builtin=True)
-        db.commit()
-        assert packs.adopt_legacy(db) == 3
-        db.commit()
-        assert packs.adopt_legacy(db) == 0  # the next start has nothing to do
-        assert not db.get(Connector, "servicenow").builtin
-    listed = {row["id"]: row for row in admin.get("/api/packs").json()["packs"]}
-    assert set(listed) == {"servicenow", "jira-cloud", "zscaler-zia"}
-    assert (listed["servicenow"]["source"], listed["servicenow"]["version"]) == ("nik-5", "0.9.0")
-    assert {item["kind"] for item in listed["servicenow"]["items"]} == {"connectors", "mappers"}
-    assert listed["jira-cloud"]["vendor"] == "Atlassian" and not listed["jira-cloud"]["builtin"]
-    # The pack of the catalogue is newer, and brings the logo the connector of 5.x never had.
-    pack = packs.read(packs.folder_bytes(vendor.REPO_PACKS / "jira-cloud"))
-    with SessionLocal() as db:
-        assert db.get(Connector, "jira-cloud").logo is None
-        found = packs.plan(db, pack)
-        assert found["installed"] == "0.9.0"
-        assert {item["action"] for item in found["items"] if item["kind"] == "connectors"} == {"same"}
-        packs.apply(db, pack, {}, "admin", source="catalogue")
-        db.commit()
-        assert db.get(Connector, "jira-cloud").logo and db.get(Pack, "jira-cloud").version == "1.0.1"
-    # It is uninstalled like one that came from the catalogue.
-    assert admin.delete("/api/packs/zscaler-zia?remove=true").status_code == 200
-    with SessionLocal() as db:
-        assert db.get(Connector, "zscaler-zia") is None
-        # One uploaded by hand under the same id was never Nik's: it is left alone.
-        ca.install(db, texts["checkpoint-sase"], "admin")
-        db.commit()
-        assert packs.adopt_legacy(db) == 0
-
-
 def test_a_folder_of_packs_is_installed_at_start(admin: TestClient, tmp_path):
     (tmp_path / "acme-1.0.0.nikpack").write_bytes(acme_pack())
     (tmp_path / "notes.txt").write_text("not a pack")
@@ -701,7 +657,7 @@ def test_several_packs_are_installed_from_the_catalogue_each_on_its_own(admin: T
     done = bulk(admin, "apply", "update", [{"id": "servicenow", "token": plan["servicenow"]["token"]}])
     assert done[0]["ok"] and done[0]["same"] >= 2 and done[0]["added"] == 0
     with SessionLocal() as db:
-        assert db.get(Pack, "servicenow").version == "1.0.1"
+        assert db.get(Pack, "servicenow").version == "1.1.0"
     assert (
         admin.post("/api/packs/bulk/plan", json={"action": "burn", "packs": [{"id": "servicenow"}]}).status_code == 400
     )

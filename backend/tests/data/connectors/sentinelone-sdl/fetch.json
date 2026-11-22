@@ -95,5 +95,14 @@
       "Alert(val.ID == obj.ID)",
       "Host(val.Name == obj.Name)"
     ]
+  },
+  "outgoing": {
+    "incident": {
+      "status": "closed",
+      "name": "Suspicious PowerShell"
+    },
+    "sent": {
+      "status": "RESOLVED"
+    }
   }
 }

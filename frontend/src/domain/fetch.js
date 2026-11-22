@@ -254,6 +254,10 @@ function goesOut(can) {
   return joined(parts)
 }
 
+/** Why a direction that sends is not offered to someone who manages connectors and runs no playbook. */
+export const NOT_YOURS =
+  'It sends to another system: choosing it needs the permission to run playbooks, which you do not have.'
+
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1)
 
 /**
@@ -261,8 +265,20 @@ const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1)
  * what it does for this connector in one sentence, and, for one the connector
  * cannot do, why it is not offered:
  * `[{ id, label, offered, text }]`. `connector` is what the lists say of it.
+ * A direction that sends is chosen only by who may run playbooks (`canSend`),
+ * as starting such a mirror on an incident is; the one that is saved already
+ * (`saved`) stays offered, so that the rest of the form can be saved by who
+ * manages connectors.
  */
-export function mirrorChoices(connector) {
+export function mirrorChoices(connector, { canSend = true, saved = 'none' } = {}) {
+  const choices = everyChoice(connector)
+  if (canSend) return choices
+  return choices.map((choice) =>
+    choice.offered && sends(choice.id) && choice.id !== saved ? { ...choice, offered: false, text: NOT_YOURS } : choice,
+  )
+}
+
+function everyChoice(connector) {
   const can = mirrorAbilities(connector)
   const name = connector?.name ?? 'This connector'
   if (!can) {
@@ -297,8 +313,8 @@ export function mirrorChoices(connector) {
 }
 
 /** Why the Mirroring part cannot be saved as it stands (a sentence), or null. */
-export function mirrorChoiceProblem(form, connector) {
-  const chosen = mirrorChoices(connector).find((choice) => choice.id === (form.mirror ?? 'none'))
+export function mirrorChoiceProblem(form, connector, who) {
+  const chosen = mirrorChoices(connector, who).find((choice) => choice.id === (form.mirror ?? 'none'))
   if (!chosen) return 'Mirroring: choose None, In, Out or In-out'
   return chosen.offered ? null : `Mirroring: ${chosen.label} is not possible. ${chosen.text}`
 }

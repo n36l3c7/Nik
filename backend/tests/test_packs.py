@@ -383,7 +383,6 @@ def test_what_nik_ships_is_listed_as_packs_and_reads_back_as_it_is(admin: TestCl
         shipped.seed(db)
         db.commit()
         assert packs.register_builtin(db) > 4
-        assert packs.adopt_legacy(db) == 0  # a new Nik holds nothing of a vendor
         db.commit()
         assert packs.register_builtin(db) == 0
     listed = admin.get("/api/packs").json()["packs"]

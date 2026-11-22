@@ -861,9 +861,10 @@
         documentation (<code>example.com</code>), the hosts XML and JSON documents name as their schema, your
         organisation's own domains and the IOC allowlist. Keys that are noise by nature are never read (identifiers,
         versions, console links, the other system's address of its own ticket or alert). And an incident is given
-        <strong>50</strong> indicators at most this way: past that the line of the War Room says how many more there
-        were, and none of them is kept. A file name, a version number or a word of code is not an indicator:
-        <code>kernel32.dll</code>, <code>10.0.19041.1</code> and <code>this.name</code> are left alone.
+        <strong>500</strong> indicators at most this way, unless the setting says another number: past that the line of
+        the War Room says how many more there were, and none of them is kept. A file name, a version number or a word of
+        code is not an indicator: <code>kernel32.dll</code>, <code>10.0.19041.1</code> and <code>this.name</code> are
+        left alone.
       </p>
       <p>
         An indicator that is in the incident only because it was found has an <strong>×</strong> at the end of its row.
@@ -878,7 +879,8 @@
         for an incident that came in before incidents were read, or whose context has grown since. What a playbook
         writes to the context later is not read by itself; a playbook that wants indicators of a value asks for them
         with <a href="automation.html#make-indicators"><em>Make indicators of a text</em></a
-        >.
+        >. A playbook can also wait for a reading that kept something new: the event <code>indicators.found</code>, with
+        <a href="automation.html#indicators-found-playbook">an example</a>.
       </p>
       <p>
         Finding an indicator asks nothing of any threat-intelligence source. The automatic look-ups leave out what an
@@ -888,13 +890,13 @@
       <p id="found-settings">
         <strong>Settings → Indicators found</strong> (administrators) holds all of it: whether incidents are read at all
         (on, unless turned off), the types that are kept, the two kinds of things left out, the number an incident may
-        be given (1 to 500), the paths that are never read, and whether the automatic look-ups ask about what was found.
-        A path is written one a line: a word alone is the name of a key wherever it is (<code>*uuid</code>,
-        <code>console*</code>), and with dots it is a whole path as the Context tab shows it, without the numbers of a
-        list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything. An instance that fetches
-        follows the setting unless it is told apart, <em>Read</em> or <em>Not read</em>: that is chosen in the
-        <em>Fetch</em> tab of the instance (<a href="automation.html#fetch-status">Connectors</a>), where it is saved at
-        once, and the instances told apart are listed under this form.
+        be given (1 to 1000; 500 until someone sets it), the paths that are never read, and whether the automatic
+        look-ups ask about what was found. A path is written one a line: a word alone is the name of a key wherever it
+        is (<code>*uuid</code>, <code>console*</code>), and with dots it is a whole path as the Context tab shows it,
+        without the numbers of a list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything.
+        An instance that fetches follows the setting unless it is told apart, <em>Read</em> or <em>Not read</em>: that
+        is chosen in the <em>Fetch</em> tab of the instance (<a href="automation.html#fetch-status">Connectors</a>),
+        where it is saved at once, and the instances told apart are listed under this form.
       </p>
       <h4 id="held-look-ups">When a look-up is held</h4>
       <p>

@@ -308,6 +308,9 @@ test('each event says what its trigger holds, what it is about and a filter to s
   assert.deepEqual(names({ event: 'not.an.event' }), [])
 
   assert.equal(runsOn({ event: 'ioc.watch_hit' }), 'incident')
+  assert.ok(names({ event: 'indicators.found' }).includes('found.by_type'))
+  assert.ok(names({ event: 'indicators.found' }).includes('incident.id'))
+  assert.equal(runsOn({ event: 'indicators.found' }), 'incident')
   assert.equal(runsOn({ event: 'url.analysed' }), 'url')
   assert.equal(runsOn({ event: 'storage.low' }), '')
   assert.equal(runsOn({ manual: true }), '')

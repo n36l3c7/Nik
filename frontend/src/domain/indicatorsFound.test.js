@@ -20,8 +20,8 @@ const SETTINGS = {
   allTypes: ['ip', 'domain', 'url', 'email', 'md5', 'sha1', 'sha256'],
   leaveOutPrivate: true,
   leaveOutBenign: true,
-  cap: 50,
-  capMax: 500,
+  cap: 500,
+  capMax: 1000,
   skip: ['*id', 'context.Ticket.URL'],
   lookUps: false,
   instances: {},
@@ -34,7 +34,7 @@ test('the form of the setting, and what it changes', () => {
     types: SETTINGS.types,
     leaveOutPrivate: true,
     leaveOutBenign: true,
-    cap: '50',
+    cap: '500',
     skip: '*id\ncontext.Ticket.URL',
     lookUps: false,
   })
@@ -61,8 +61,11 @@ test('the form of the setting, and what it changes', () => {
 test('what the form cannot be saved with', () => {
   const form = formOf(SETTINGS)
   assert.deepEqual(problemsOf(form, SETTINGS), {})
-  for (const cap of ['', '0', '501', '1.5', 'many', '-3']) {
-    assert.equal(problemsOf({ ...form, cap }, SETTINGS).cap, 'A whole number from 1 to 500', cap)
+  for (const cap of ['', '0', '1001', '1.5', 'many', '-3']) {
+    assert.equal(problemsOf({ ...form, cap }, SETTINGS).cap, 'A whole number from 1 to 1000', cap)
+  }
+  for (const cap of ['1', '500', '1000']) {
+    assert.equal(problemsOf({ ...form, cap }, SETTINGS).cap, undefined, cap)
   }
   assert.match(problemsOf({ ...form, skip: 'two words' }, SETTINGS).skip, /^"two words" is not a path/)
   assert.equal(

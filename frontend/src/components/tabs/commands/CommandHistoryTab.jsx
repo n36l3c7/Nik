@@ -137,7 +137,7 @@ export default function CommandHistoryTab({ incident }) {
               {count > 0 && (
                 <span
                   className={[
-                    'rounded-full px-1.5 text-xs tabular-nums',
+                    'px-1.5 text-xs tabular-nums',
                     isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >

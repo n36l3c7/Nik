@@ -513,28 +513,6 @@ def _announce(db: OrmSession, row: Incident, before: set, after: set) -> None:
         emit_detached(db, "ioc.watch_hit", {"incident": hits[0]["incident"], "hits": hits[:200]})
 
 
-def backfill(session_factory) -> int:
-    """Index the incidents of a database that has no index yet (the first start
-    after the upgrade that added it). One transaction per incident, so several
-    api workers starting together only repeat each other's work."""
-    with session_factory() as db:
-        if db.scalar(select(IocEntry.incident_id).limit(1)) is not None:
-            return 0
-        ids = list(db.scalars(select(Incident.id)))
-    indexed = 0
-    for incident_id in ids:
-        with session_factory() as db:
-            row = db.get(Incident, incident_id)
-            if row is None:
-                continue
-            try:
-                indexed += reindex_incident(db, row, alerts=False)
-                db.commit()
-            except Exception:  # noqa: BLE001 - another worker got there first
-                db.rollback()
-    return indexed
-
-
 def incident_iocs(db: OrmSession, incident_id: str, allowlist: Allowlist) -> list[dict[str, Any]]:
     """The incident's indicators with the number of OTHER incidents each is in."""
     other = aliased(IocEntry)

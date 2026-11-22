@@ -353,7 +353,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
               >
                 <TabIcon className="h-4 w-4" />
                 {tab.label}
-                <span className="rounded-full bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">
+                <span className="bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">
                   {count.toLocaleString('en-US')}
                 </span>
               </button>

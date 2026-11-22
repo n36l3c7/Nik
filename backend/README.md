@@ -25,7 +25,7 @@ target. The JS and Python parsers must stay in sync on the normalized shapes.
 
 ## Requirements
 
-- Python 3.11–3.13
+- Python 3.12
 - (Production) PostgreSQL. Development runs on SQLite with zero setup.
 
 ## Quick start (development)

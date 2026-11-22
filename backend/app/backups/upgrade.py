@@ -7,7 +7,9 @@ nothing. When there are migrations to run:
 1. **One at a time.** It takes a lock in the database that a second instance
    waits behind, and that a backup stops at.
 2. **Checks.** The revision the database is at must be one this version
-   knows (a database migrated by a later Nik is refused, untouched); the
+   knows (a database migrated by a later Nik is refused, untouched) and not
+   older than the one 6.0.0 ended at (an older installation goes through
+   6.9.0 first: it is refused, untouched, with that sentence); the
    server must be a PostgreSQL this version runs on; the backup directory
    must have room for the snapshot.
 3. **A snapshot** of the database goes into the backup directory, in the
@@ -65,6 +67,12 @@ RELEASES = {
     "0051_audit_chain": "6.8.0",
     "0053_jobs": "6.9.0",
 }
+# The oldest release an upgrade may start from, by the revision it ended at: a database at an
+# earlier one is not migrated by this version. It goes through ``THROUGH`` first, the last release
+# that still took an installation from before ``OLDEST_VERSION`` all the way.
+OLDEST_REVISION = "0039_pack_catalogue"
+OLDEST_VERSION = "6.0.0"
+THROUGH = "6.9.0"
 PORT = 8000
 
 
@@ -341,6 +349,14 @@ def run(config: Path | None = None, now: float | None = None) -> Outcome:
                 f"The database is at the revision {about['revision']}, which Nik {runner.nik_version()} does not "
                 "know: a later version of Nik migrated it. Nothing was changed. Start that version again, or put "
                 "back the snapshot it took before upgrading (deploy/rollback.sh)",
+            )
+        if about["revision"] and database.is_before(about["revision"], OLDEST_REVISION, config):
+            raise Stopped(
+                "checks",
+                f"The database is at the revision {about['revision']}, of a Nik older than {OLDEST_VERSION}: "
+                f"Nik {runner.nik_version()} upgrades from {OLDEST_VERSION} or later. Nothing was changed. Start "
+                f"Nik {THROUGH} on this database first (git checkout v{THROUGH}, then start the stack), let it "
+                "migrate, then start this version again",
             )
         if about["engine"] == "postgresql" and about["major"] < MIN_POSTGRES:
             raise Stopped(

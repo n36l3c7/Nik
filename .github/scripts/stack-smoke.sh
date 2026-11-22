@@ -75,6 +75,12 @@ echo "== the backend answers through nginx"
 [ "$(get "$base/api/health")" = '{"status":"ok"}' ] || fail "/api/health"
 get "$base/api/ready" | grep -q ready || fail "/api/ready (database)"
 
+echo "== nginx lets through a mailbox as large as the backend takes"
+passes=$("${COMPOSE[@]}" exec -T web nginx -T 2>/dev/null | tr -d '\r' |
+  sed -n '/location = \/api\/artifacts\/mailboxes/,/}/s/.*client_max_body_size \([0-9]*\)m;.*/\1/p')
+taken=$("${COMPOSE[@]}" exec -T api python -c 'from app.core.config import settings as s; print(max(s.MAILBOX_MAX_MB, s.PST_MAX_MB))' | tr -d '\r')
+[ -n "$passes" ] && [ "$passes" -ge "$taken" ] || fail "nginx passes a mailbox of ${passes:-?} MB, the backend takes $taken MB"
+
 echo "== plain HTTP only redirects, keeping the address"
 location=$(curl -s --max-time 20 -o /dev/null -D - "http://127.0.0.1:$HTTP_PORT/incident/abc?x=1" | tr -d '\r' | sed -n 's/^[Ll]ocation: //p')
 [ "$location" = "https://127.0.0.1:$TLS_PORT/incident/abc?x=1" ] || fail "redirect goes to '$location'"

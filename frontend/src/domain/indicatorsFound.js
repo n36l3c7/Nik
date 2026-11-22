@@ -40,7 +40,7 @@ export function skipLines(text) {
 /** What the form cannot be saved with: `{ cap?, skip?, types? }`, a sentence each. */
 export function problemsOf(form, settings) {
   const problems = {}
-  const max = settings.capMax ?? 500
+  const max = settings.capMax ?? 1000
   if (!/^\d+$/.test(form.cap.trim()) || Number(form.cap) < 1 || Number(form.cap) > max) {
     problems.cap = `A whole number from 1 to ${max}`
   }

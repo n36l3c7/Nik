@@ -44,6 +44,7 @@ import pytest
 from app import unpack
 from app.automation import connector_actions as ca
 from app.automation import connector_runtime as rt
+from app.automation import connectors as cn
 from app.automation import egress
 from tests import vendor
 
@@ -480,7 +481,9 @@ def test_the_products_that_raise_alerts_and_keep_tickets_are_fetched():
 
 def test_the_mirror_of_a_shipped_connector_names_commands_that_take_what_it_gives():
     mirrored = [connector for _text, connector in SHIPPED if connector.mirror is not None]
-    assert {connector.id for connector in mirrored} >= {"servicenow", "jira-cloud", "jira-datacenter", "sentinelone"}
+    assert {connector.id for connector in mirrored} >= {
+        "servicenow", "jira-cloud", "jira-datacenter", "sentinelone", "sentinelone-sdl"
+    }  # fmt: skip
     for connector in mirrored:
         for where, call in connector.mirror_calls():
             command = connector.command(call.command)
@@ -494,29 +497,38 @@ def test_the_mirror_of_a_shipped_connector_names_commands_that_take_what_it_give
         assert connector.fetch is not None, f"{connector.id}: mirrors what it does not fetch"
 
 
-# The connectors that fetch and do not mirror: each says why in its file (``no_mirror``).
-NOT_MIRRORED = {"sentinelone-sdl"}
+# The shipped connectors that fetch and do not mirror. There is none: ``no_mirror`` stays in the
+# format for the connectors people write, and nothing that ships uses it.
+NOT_MIRRORED: set[str] = set()
 
 
-def test_every_shipped_connector_that_fetches_mirrors_or_says_why():
+def test_every_shipped_connector_that_fetches_mirrors():
     silent = {}
     for _text, connector in vendor.connectors():
         if connector.fetch is None:
             assert connector.mirror is None and connector.no_mirror is None, connector.id
         elif connector.mirror is None:
             silent[connector.id] = connector.no_mirror
-    assert set(silent) == NOT_MIRRORED, "a connector that fetches has a mirror, or says why it has none"
-    assert all(why and len(why) > 40 for why in silent.values())
+    assert NOT_MIRRORED == set(), "no shipped connector is an exception"
+    assert set(silent) == NOT_MIRRORED, "a connector that fetches has a mirror"
+    # The packs and the connectors Nik starts with are the same rule: what is read from the folders too.
+    for text, connector in SHIPPED:
+        assert connector.no_mirror is None, connector.id
+        assert cn.warnings(text) == [], connector.id
     # The mailbox is mirrored by its fetch, and only in: Nik never sends a mail by itself.
     mail = next(connector for _text, connector in vendor.connectors() if connector.id == "mail")
     assert mail.mirror.thread is not None and mail.mirror.get is None and mail.mirror.update is None
+    # The alerts of the SIEM are read again and their status is set, with the commands the pack had.
+    siem = next(connector for _text, connector in vendor.connectors() if connector.id == "sentinelone-sdl")
+    assert siem.mirror.get.command == "get-alert" and siem.mirror.update.command == "update-alert"
+    assert siem.mirror.comments is None
 
 
 MIRROR_FIXTURES = [connector for _text, connector in SHIPPED if (DATA / connector.id / "mirror.json").exists()]
 
 
-def test_sentinelone_has_its_mirror_recorded():
-    assert "sentinelone" in {connector.id for connector in MIRROR_FIXTURES}
+def test_sentinelone_has_its_mirrors_recorded():
+    assert {"sentinelone", "sentinelone-sdl"} <= {connector.id for connector in MIRROR_FIXTURES}
 
 
 @pytest.mark.parametrize("connector", MIRROR_FIXTURES, ids=[connector.id for connector in MIRROR_FIXTURES])

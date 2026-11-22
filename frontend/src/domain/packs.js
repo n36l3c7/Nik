@@ -316,6 +316,23 @@ export function bulkPlanLine(action, line) {
     .join(', ')
 }
 
+/**
+ * What a pack update did so that mirroring goes on as it did, in a sentence, or
+ * '': its mapper named the direction until now, and the instances that said
+ * None were told that direction (`mirroring`: `[{ connector, direction, instances }]`).
+ */
+export function mirroringKept(mirroring) {
+  const labels = { in: 'In', out: 'Out', both: 'In-out' }
+  return (mirroring ?? [])
+    .filter((item) => (item.instances ?? []).length > 0)
+    .map(
+      (item) =>
+        `Mirroring was set to ${labels[item.direction] ?? item.direction} in ${item.instances.join(', ')}: ` +
+        'the mapper said so until now, and the instance says it from now on.',
+    )
+    .join(' ')
+}
+
 /** What was done to one pack, in a line: "installed: 3 added, 1 updated", "not uninstalled: it is in use". */
 export function bulkResultLine(action, line) {
   if (!line.ok) {
@@ -330,7 +347,8 @@ export function bulkResultLine(action, line) {
     line.updated ? `${line.updated} updated` : '',
     line.same ? `${line.same} the same` : '',
   ].filter(Boolean)
-  return `${BULK[action].done}${parts.length ? `: ${parts.join(', ')}` : ''}`
+  const kept = mirroringKept(line.mirroring)
+  return `${BULK[action].done}${parts.length ? `: ${parts.join(', ')}` : ''}${kept ? `. ${kept}` : ''}`
 }
 
 /** Cards by vendor: Nik first, then the vendors by name, "Other" last. `[{ vendor, cards }]`. */

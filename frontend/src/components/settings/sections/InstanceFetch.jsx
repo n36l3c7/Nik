@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeftRight, Download, ListChecks, RotateCcw } from 'lucide-react'
 import { api } from '../../../services/api.js'
+import { useAuth } from '../../../context/AuthContext.jsx'
 import { setPath } from '../../../lib/location.js'
 import { formatDateTime } from '../../../lib/time.js'
 import {
@@ -158,8 +159,10 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
   // Giving the saved direction to what was fetched before: how many they are, asked when the dialog opens.
   const [applying, setApplying] = useState(null)
   const theirs = connector.fetch ?? {}
-  const choices = mirrorChoices(connector)
+  const { can } = useAuth()
   const saved = status?.mirror?.direction ?? 'none'
+  // A direction that sends is for who may run playbooks; the others see why it is not offered.
+  const choices = mirrorChoices(connector, { canSend: can('automation.run'), saved })
   const classes = status?.mirror?.classes ?? []
   const byTime = theirs.byTime !== false
   const minInterval = status?.minIntervalSeconds ?? 30

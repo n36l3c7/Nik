@@ -25,6 +25,7 @@ from .. import fetch, mirror
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Connection
+from ..core.permissions import AUTOMATION_RUN
 from ..core.security import Principal, manager_principal
 
 router = APIRouter(prefix="/fetch", tags=["fetch"])
@@ -163,8 +164,11 @@ def apply_mirror_to_fetched(
 ) -> dict:
     """Give the open incidents the instance fetched the direction it says now: those with no mirror
     start one, the others change, and ``none`` stops them. One mirrored with another instance is left
-    alone. ``{started, changed, stopped, unchanged, skipped}``."""
+    alone. ``{started, changed, stopped, unchanged, skipped}``. A direction that sends needs the
+    permission to run playbooks as well, as choosing it does."""
     connection = _connection(db, connection_id)
+    if mirror.choice_of(connection)[0] in ("out", "both") and not caller.has(AUTOMATION_RUN):
+        raise HTTPException(status_code=403, detail="Sending to another system needs the permission to run playbooks")
     try:
         return mirror.apply_choice(db, connection, caller.actor, time.time())
     except mirror.MirrorError as error:

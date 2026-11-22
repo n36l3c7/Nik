@@ -37,6 +37,7 @@ import {
   importable,
   initialSkips,
   itemKey,
+  mirroringKept,
   packCards,
   packProblem,
   planSummary,
@@ -1235,7 +1236,8 @@ export default function ContentPacksSection() {
           onDone={(done) => {
             setPlan(null)
             setMessage(
-              `${done.pack.name} ${done.pack.version} is installed: ${done.added} added, ${done.updated} updated, ${done.skipped} left out.`,
+              `${done.pack.name} ${done.pack.version} is installed: ${done.added} added, ${done.updated} updated, ${done.skipped} left out.` +
+                (mirroringKept(done.mirroring) ? ` ${mirroringKept(done.mirroring)}` : ''),
             )
             reload()
           }}

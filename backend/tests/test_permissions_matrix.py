@@ -274,7 +274,8 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/classifiers/{connection_id}"): ("connectors.manage",),
     ("PUT", "/api/classifiers/{connection_id}"): ("connectors.manage",),
     ("POST", "/api/classifiers/try"): ("connectors.manage",),
-    # Fetching: whoever manages connectors.
+    # Fetching: whoever manages connectors. Choosing a mirroring that sends (Out, In-out) in an instance
+    # (PUT /api/automation/instances/{id}) and applying one also need automation.run: checked in the routes.
     ("GET", "/api/fetch"): ("connectors.manage",),
     ("PUT", "/api/fetch/{connection_id}"): ("connectors.manage",),
     ("POST", "/api/fetch/{connection_id}/run"): ("connectors.manage",),

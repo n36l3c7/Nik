@@ -183,6 +183,15 @@ def watch_hit(db: OrmSession, incident: Incident, hits: list[dict]) -> None:
     publish(db, "ioc.watch_hit", "incident", incident.id, data, classes)
 
 
+def indicators_found(db: OrmSession, incident: Incident, door: str, found: list[dict], kept: int) -> None:
+    """A reading of an incident kept indicators that are new to it (``indicators_found.scan``):
+    one event for the reading, never one for each indicator, in the transaction of the reading."""
+    if settings.AUTOMATION_WORKER == "off" or not found:
+        return
+    data, classes = payloads.indicators_found(db, incident, door, found, kept)
+    publish(db, "indicators.found", "incident", incident.id, data, classes)
+
+
 def indicator_id(kind: str, value: str) -> str:
     """An indicator as the object of a run: ``domain:evil.example``."""
     return f"{kind}:{value}"
@@ -415,6 +424,7 @@ _ABOUT = {
     "incident.created": "incident",
     "incident.updated": "incident",
     "ioc.watch_hit": "incident",
+    "indicators.found": "incident",
     "mail.analysed": "mail",
     "file.analysed": "file",
     "code.analysed": "file",

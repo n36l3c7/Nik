@@ -76,7 +76,7 @@ class ConnectionPatch(BaseModel):
     # How the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours}.
     keyPolicy: dict[str, Any] | None = None
     # How it fetches (6.4), for a connector that can: {enabled, intervalSeconds, firstFetch,
-    # lookbackMinutes}; a value left out stays as it is.
+    # lookbackMinutes, mirror, mirrorAllow}; a value left out stays as it is.
     fetch: dict[str, Any] | None = None
 
 
@@ -306,12 +306,15 @@ def list_connectors(_caller: Principal = Depends(manager_principal), db: OrmSess
 
 @router.post("/connectors/check")
 def check_connector(body: SourceIn, _caller: Principal = Depends(manager_principal)) -> dict:
-    """What is wrong with a file, without installing it: ``{problems: [{line, message, where}]}``."""
+    """What is wrong with a file, without installing it: ``{problems: [{line, message, where}]}``.
+    ``warnings`` has the same shape and stops nothing: what the file would better say (a connector
+    that fetches and says neither how it mirrors nor why it does not)."""
     try:
         connector = files.load(body.source)
     except files.ConnectorError as error:
-        return {"problems": [problem.as_dict() for problem in error.problems], "connector": None}
-    return {"problems": [], "connector": files.summary(connector)}
+        return {"problems": [problem.as_dict() for problem in error.problems], "warnings": [], "connector": None}
+    said = [warning.as_dict() for warning in files.warnings(body.source)]
+    return {"problems": [], "warnings": said, "connector": files.summary(connector)}
 
 
 @router.get("/connectors/samples")
@@ -353,7 +356,7 @@ def install_connector(
         target=connector.id,
     )
     db.commit()
-    return _connector_out(db, row, source=True)
+    return {**_connector_out(db, row, source=True), "warnings": [w.as_dict() for w in files.warnings(body.source)]}
 
 
 @router.get("/connectors/{connector_id}")
@@ -577,6 +580,14 @@ def update_connection(
     if body.fetch is not None:
         from .. import mirror as mirroring
 
+        # A direction that sends: every incident the instance fetches from then on writes to the other
+        # system, so choosing it asks what starting such a mirror on an incident asks. One that says it
+        # already is saved again by who manages connectors.
+        wanted = body.fetch.get("mirror")
+        if wanted in ("out", "both") and wanted != mirroring.choice_of(row)[0] and not caller.has(AUTOMATION_RUN):
+            raise HTTPException(
+                status_code=403, detail="Sending to another system needs the permission to run playbooks"
+            )
         # The classes of data the mirrors of its incidents may send: opening one is not a matter of
         # connectors alone, here as on an incident.
         asked = body.fetch.get("mirrorAllow")

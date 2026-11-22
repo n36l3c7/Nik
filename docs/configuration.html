@@ -333,7 +333,10 @@
                 Largest Outlook PST accepted, in MB. It is converted by the document worker on its
                 <code>pst-work</code> volume, a disk, not memory: the volume needs about two and a half times the PST
                 free while it is converted (the worker checks, and says how much is missing). Without the volume the
-                worker converts in memory and takes a PST of 500 MB at most.
+                worker converts in memory and takes a PST of 500 MB at most. The shipped nginx lets a mailbox upload of
+                4200 MB through, which covers this default and that of <code>MAILBOX_MAX_MB</code>: to raise either
+                beyond it, raise <code>client_max_body_size</code> of the mailbox location in
+                <code>frontend/nginx/nginx.conf</code> (or in your own nginx file) as well.
               </td>
             </tr>
             <tr>
@@ -744,7 +747,10 @@
                 Largest Outlook PST accepted, in MB. It is converted by the document worker on its
                 <code>pst-work</code> volume, a disk, not memory: the volume needs about two and a half times the PST
                 free while it is converted (the worker checks, and says how much is missing). Without the volume the
-                worker converts in memory and takes a PST of 500 MB at most.
+                worker converts in memory and takes a PST of 500 MB at most. The shipped nginx lets a mailbox upload of
+                4200 MB through, which covers this default and that of <code>MAILBOX_MAX_MB</code>: to raise either
+                beyond it, raise <code>client_max_body_size</code> of the mailbox location in
+                <code>frontend/nginx/nginx.conf</code> (or in your own nginx file) as well.
               </td>
             </tr>
             <tr>
@@ -902,11 +908,6 @@
               </td>
             </tr>
             <tr>
-              <td><code>NIK_PG_UPGRADE</code></td>
-              <td>—</td>
-              <td>Set by <code>deploy/upgrade-postgres.sh</code> while it moves the data; never by hand.</td>
-            </tr>
-            <tr>
               <td><code>NIK_BACKUP_WAIT</code>, <code>NIK_ROTATE_WAIT</code></td>
               <td><code>21600</code> each</td>
               <td>
@@ -975,9 +976,9 @@
           <p>
             Admins set whether the fields and the context of an incident are read for indicators as it comes in (on by
             default), which types are kept, that private addresses and what is known to be benign are left out, how many
-            an incident may be given this way (50, up to 500), the paths that are never read, and whether the automatic
-            look-ups ask about what was found (they do not, by default). An instance that fetches can be told apart from
-            the setting, in the Fetch tab of its own form. See
+            an incident may be given this way (500 until it is set, from 1 to 1000), the paths that are never read, and
+            whether the automatic look-ups ask about what was found (they do not, by default). An instance that fetches
+            can be told apart from the setting, in the Fetch tab of its own form. See
             <a href="guide.html#found-indicators">Indicators found by themselves</a>.
           </p>
         </div>

@@ -222,6 +222,53 @@ def test_a_database_from_a_later_version_is_refused_untouched(at_head):
     assert revision_now() == "9999_from_later" and not Path(settings.BACKUP_DIR).exists()
 
 
+def test_a_database_older_than_6_0_is_refused_untouched_and_told_which_version_to_pass_through(at_head):
+    """The oldest release an upgrade starts from is 6.0.0, which ended at 0039: the revision before
+    it is of 5.4, and is sent through 6.9.0. Nothing is read, written or snapshotted."""
+    assert database.known_revision(upgrade.OLDEST_REVISION)
+    with SessionLocal() as db:
+        users_before = db.query(User).count()
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE alembic_version SET version_num = '0038_incident_page'"))
+    with pytest.raises(upgrade.Stopped) as stopped:
+        upgrade.run()
+    assert stopped.value.stage == "checks" and stopped.value.snapshot == ""
+    assert "of a Nik older than 6.0.0" in stopped.value.message
+    assert "Start Nik 6.9.0 on this database first" in stopped.value.message
+    assert "Nothing was changed" in stopped.value.message
+    assert revision_now() == "0038_incident_page" and not Path(settings.BACKUP_DIR).exists()
+    with SessionLocal() as db:
+        assert db.query(User).count() == users_before
+    body = upgrade.stopped_body(stopped.value)
+    assert body["upgrade"]["stage"] == "checks" and "The data is as it was" in body["detail"]
+    assert "Nothing has to be put back" in upgrade.explain(stopped.value)
+
+
+def test_which_revisions_are_older_is_read_in_the_chain_not_in_their_names():
+    for revision in ("0001_baseline", "0038_incident_page"):
+        assert database.is_before(revision, upgrade.OLDEST_REVISION), revision
+    # 6.0.0 itself, every later release, and a revision nobody knows are not older.
+    for revision in (upgrade.OLDEST_REVISION, "0040_instance_keys", *upgrade.RELEASES, HEAD, "0000_unknown"):
+        assert not database.is_before(revision, upgrade.OLDEST_REVISION), revision
+    # The release to pass through is one this version still upgrades from.
+    assert upgrade.THROUGH in upgrade.RELEASES.values()
+
+
+def test_a_database_at_the_revision_of_6_0_is_not_refused(at_head, tmp_path, monkeypatch):
+    """From the revision 6.0.0 ended at, an upgrade goes on to its snapshot as any other. The
+    migrations themselves are not run here: the tables are those of this version."""
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE alembic_version SET version_num = :rev"), {"rev": upgrade.OLDEST_REVISION})
+    monkeypatch.setattr(settings, "UPGRADE_REHEARSAL", False)
+    ran = []
+    monkeypatch.setattr(upgrade, "_migrate_live", lambda _url, _config, snapshot: ran.append(snapshot))
+    outcome = upgrade.run(now=T0)
+    assert outcome.migrated and outcome.before == upgrade.OLDEST_REVISION and ran == [outcome.snapshot]
+    assert len(snapshots()) == 1
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE alembic_version SET version_num = :head"), {"head": HEAD})
+
+
 def test_no_room_for_the_snapshot_stops_the_upgrade_before_it_starts(at_head, tmp_path, monkeypatch):
     from collections import namedtuple
 

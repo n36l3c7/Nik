@@ -30,9 +30,11 @@ async function kind(name) {
   await tabs().getByRole('button', { name: 'Evidence', exact: true }).click()
   await evidence().getByRole('button', { name, exact: true }).click()
 }
-/** Save the page as docs/img/<name>.png, with the mouse out of the way (no hover state). */
+/** Save the page as docs/img/<name>.png, with the mouse out of the way (no hover state) and colours settled. */
 async function shot(name) {
   await page.mouse.move(0, 0)
+  // What was just chosen fades in: a picture taken at once shows two tabs half chosen.
+  await page.waitForTimeout(300)
   await page.screenshot({ path: fileURLToPath(new URL(`${name}.png`, OUT)) })
 }
 

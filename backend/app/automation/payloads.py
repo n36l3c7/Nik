@@ -24,6 +24,10 @@ from ..core.models import Artifact, Incident, Mail, NetworkCapture, Sample, Samp
 LIST_MAX = 200
 # Above this many hits their values are not looked up one by one: the guard's scan decides.
 HITS_CLASSED = 20
+# How many of the indicators a reading found its event lists. A reading may keep as many as the
+# limit of the setting allows (1000 at most): the event says how many they were, by type, lists
+# the first of them and says that it was cut.
+FOUND_LISTED = 100
 
 # The incident as an event carries it and as a node gives it (``trigger.incident``, the ``incident``
 # of "Get an incident"): each key with its type, what it is, and its class of data. ``incident_data``
@@ -452,6 +456,58 @@ def watch_hit(db, incident: Incident, hits: list[dict]) -> tuple[dict, dict]:
     classes["list.id"] = ["nik_id"]
     data = {"ioc": ioc, "list": dict(first["list"]), "hits": hits, "incident": incident_data(incident)}
     classes.update(incident_classes())
+    return data, classes
+
+
+def indicators_found(db, incident: Incident, door: str, found: list[dict], kept: int) -> tuple[dict, dict]:
+    """``indicators.found``: a reading of an incident kept indicators it did not hold.
+
+    ``found`` is what the reading kept, each ``{type, value, path}``, in the order they were read.
+    The event carries how many they were and how many of each type, and lists the first
+    ``FOUND_LISTED`` of them: ``cut`` says the list is not whole, ``more`` how many it leaves out
+    (the Indicators tab of the incident has them all)."""
+    from .. import ioc_library as lib
+    from ..iocs import TYPES, Allowlist
+    from ..routers.settings import read_settings
+
+    listed = [{"type": item["type"], "value": item["value"], "path": item["path"]} for item in found[:FOUND_LISTED]]
+    by_type = dict.fromkeys(TYPES, 0)
+    for item in found:
+        by_type[item["type"]] += 1
+    allowlist = Allowlist(read_settings(db).get("iocAllowlist") or [])
+    red = lib.red_pairs(db)
+    held: set[str] = set()
+    for item in listed:
+        kind, value = item["type"], item["value"]
+        mine = [
+            name
+            for name, on in (
+                ("private_value", _is_private(kind, value)),
+                ("allowlisted", allowlist.matches(kind, value)),
+                ("tlp_red", (kind, value) in red),
+            )
+            if on
+        ]
+        held.update(mine or ["public_indicator"])
+    data = {
+        "incident": incident_data(incident),
+        "found": {
+            "door": door,
+            "count": len(found),
+            "by_type": by_type,
+            "indicators": listed,
+            "values": [item["value"] for item in listed],
+            "cut": len(found) > len(listed),
+            "more": len(found) - len(listed),
+            "kept": kept,
+        },
+    }
+    classes = incident_classes()
+    for key in ("door", "count", "cut", "more", "kept", "indicators.type", *(f"by_type.{kind}" for kind in TYPES)):
+        classes[f"found.{key}"] = ["verdict"]
+    classes["found.indicators.value"] = classes["found.values"] = sorted(held) or ["public_indicator"]
+    # Where it was read: the name of a key of the context, or of a field.
+    classes["found.indicators.path"] = ["incident_text"]
     return data, classes
 
 

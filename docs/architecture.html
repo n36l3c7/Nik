@@ -222,7 +222,7 @@
 │                                   #   server.py, tests/
 ├── deploy/                         # Operations: init-env.sh (writes .env and the secrets), secrets.sh (moves
 │                                   #   and changes them), db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
-│                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh,
+│                                   #   install-systemd.sh + systemd/, check-images.sh,
 │                                   #   recover-to.sh (restore.sh --to), standby.sh, recovery-lib.sh (what the
 │                                   #   two share), db/ (the scripts PostgreSQL archives and restores its log
 │                                   #   with, the recovery service, the base backup put in place)
@@ -743,8 +743,7 @@
         <strong>IOC allowlist</strong> (one entry per line: a domain and its subdomains, an IP or CIDR network, or an
         exact value) starts with private and loopback ranges and common vendor and CDN domains; matching values are
         hidden by default and never exported. The index keeps them, so editing the list applies at once. Exports: CSV, a
-        <strong>STIX 2.1</strong> bundle and a <strong>MISP</strong> event, for a TIP or a firewall blocklist. Incidents
-        saved before 2.12.0 are indexed on the api's first start.
+        <strong>STIX 2.1</strong> bundle and a <strong>MISP</strong> event, for a TIP or a firewall blocklist.
       </p>
       <p>
         <strong>Incident report.</strong> The report button in the header (or <code>&gt; report</code> in the search
@@ -1589,9 +1588,8 @@
           caller's transaction, each kind through the function that saves it everywhere else. Items are known by kind
           and name. An inspected file waits in <code>pack_uploads</code> for an hour. What Nik ships is installed by
           each kind's own seeding as before, and <code>register_builtin</code> writes it down as one pack,
-          <em>Nik built-in</em> (four until 5.4). What is about a product of a vendor is not seeded: it is a pack of the
-          catalogue (<code>pack_catalogue.py</code>), and <code>adopt_legacy</code> writes down as packs the vendors'
-          connectors a Nik older than 6.0 holds.
+          <em>Nik built-in</em>. What is about a product of a vendor is not seeded: it is a pack of the catalogue
+          (<code>pack_catalogue.py</code>).
         </li>
         <li>
           <strong>The debugger</strong> (<code>automation/debugger.py</code>, the column <code>runs.debug</code>). A

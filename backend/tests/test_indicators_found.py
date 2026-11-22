@@ -11,12 +11,13 @@ from sqlalchemy import func, select
 from app import context as incident_context
 from app import indicators_found as found
 from app import recognise
-from app.automation import worker
+from app.automation import payloads, triggers, worker
 from app.core.db import SessionLocal
 from app.core.models import AutomationEvent, FoundIndicator, FoundScan, Incident, IocEntry, Run
 from app.enrichment import service
 from tests.conftest import make_key
 from tests.test_automation_engine import T0, edge, go, node, playbook, steps, test_actions  # noqa: F401 - a fixture
+from tests.test_automation_events import on, said
 from tests.test_commands import ran
 from tests.test_enrichment import HOSTS, asked, turn_on
 from tests.test_fetch import mapped, radar, run
@@ -328,7 +329,7 @@ def test_the_setting_says_what_is_read_and_who_may_change_it(admin: TestClient):
     shown = admin.get("/api/iocs/found/settings").json()
     assert (shown["enabled"], shown["cap"], shown["leaveOutPrivate"], shown["leaveOutBenign"], shown["lookUps"]) == (
         True,
-        50,
+        500,
         True,
         True,
         False,
@@ -339,7 +340,7 @@ def test_the_setting_says_what_is_read_and_who_may_change_it(admin: TestClient):
     assert admin.get("/api/iocs/found/settings", headers=analyst).status_code == 200
     assert admin.put("/api/iocs/found/settings", headers=analyst, json={"enabled": False}).status_code == 403
     wrong = {
-        "cap": [0, 501, "many", True],
+        "cap": [0, 1001, "many", True],
         "types": [["registry"], "ip"],
         "skip": [["two words"], "x", ["x" * 201]],
         "enabled": ["yes"],
@@ -347,6 +348,12 @@ def test_the_setting_says_what_is_read_and_who_may_change_it(admin: TestClient):
     for name, values in wrong.items():
         for value in values:
             assert admin.put("/api/iocs/found/settings", json={name: value}).status_code == 400, (name, value)
+    # Never saved, the limit is 500; it goes from 1 to 1000, and a saved one is kept as it was saved.
+    assert (found.CAP_DEFAULT, found.CAP_MAX, shown["capMax"]) == (500, 1000, 1000)
+    assert setting(admin, cap=1000)["cap"] == 1000 and setting(admin, cap=1)["cap"] == 1
+    assert setting(admin, cap=50)["cap"] == 50
+    with SessionLocal() as db:
+        assert found.config(db)["cap"] == 50
 
     # Only some types; private and harmless values kept; a path of its own never read.
     field(admin, "details_note")
@@ -549,6 +556,189 @@ def test_events_are_written_once_and_a_playbook_they_start_does_not_start_itself
     assert [payload["caused_by_run"] for payload in hits()] == [None, run_id]
 
 
+def many_hosts(db, count: int, source: str = "connector:desk") -> None:
+    """Write ``count`` names nobody has seen to the context of i1, 300 to a text."""
+    row = db.get(Incident, "i1")
+    names = [f"host{index:04d}.evil-site.com" for index in range(count)]
+    writes = [(f"ext.report.part{at // 300}", " ".join(names[at : at + 300])) for at in range(0, count, 300)]
+    incident_context.apply(db, row, writes, source)
+    db.commit()
+
+
+def test_at_the_largest_limit_a_thousand_are_kept_and_the_rest_is_counted_and_said(admin: TestClient):
+    assert setting(admin, cap=1000)["cap"] == 1000
+    incident(admin)
+    with SessionLocal() as db:
+        many_hosts(db, 1200)
+    shown = listing(admin)
+    scan = shown["scan"]
+    assert (len(shown["found"]), scan["new"], scan["kept"], scan["over"], scan["cap"]) == (1000, 1000, 1000, 200, 1000)
+    assert scan["unread"] == 0 and scan["byType"] == {"domain": 1000}
+    # In the order they were read: the first thousand, each with where it was.
+    assert shown["found"][0]["value"] == "host0000.evil-site.com"
+    assert shown["found"][-1]["value"] == "host0999.evil-site.com"
+    assert shown["found"][-1]["path"] == "context.ext.report.part3"
+    assert found_lines(admin) == [
+        "1000 indicators found: 1000 domains; 200 more were not kept: an incident is given 1000 at most this way "
+        "(Settings, Indicators found)."
+    ]
+    # All of them are the incident's indicators, not only a first page of them.
+    assert len(iocs(admin)) == 1000
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(IocEntry).where(IocEntry.incident_id == "i1")) == 1000
+        # One event for the reading, small: how many of each type, the first hundred, and that it was cut.
+        (event,) = db.scalars(select(AutomationEvent).where(AutomationEvent.kind == "indicators.found")).all()
+    said = event.payload["data"]["found"]
+    assert (said["count"], said["kept"], said["by_type"]["domain"], said["cut"], said["more"]) == (
+        1000, 1000, 1000, True, 900
+    )  # fmt: skip
+    assert len(said["indicators"]) == len(said["values"]) == payloads.FOUND_LISTED == 100
+    assert len(json.dumps(event.payload)) < 20_000
+    # Read again: nothing new, the same two hundred are over, no second line and no second event.
+    again = admin.post("/api/incidents/i1/iocs/found/scan").json()["scan"]
+    assert (again["new"], again["over"]) == (0, 200) and len(found_lines(admin)) == 1
+    with SessionLocal() as db:
+        assert len(db.scalars(select(AutomationEvent).where(AutomationEvent.kind == "indicators.found")).all()) == 1
+
+
+def test_an_install_that_never_saved_the_setting_keeps_five_hundred(admin: TestClient):
+    incident(admin)
+    with SessionLocal() as db:
+        assert db.get(found.Setting, found.SETTINGS_ID) is None
+        many_hosts(db, 520)
+    scan = listing(admin)["scan"]
+    assert (scan["new"], scan["over"], scan["cap"]) == (500, 20, 500)
+    assert found_lines(admin)[0].endswith(
+        "20 more were not kept: an incident is given 500 at most this way (Settings, Indicators found)."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The event of a reading                                                      #
+# --------------------------------------------------------------------------- #
+def found_events() -> list[AutomationEvent]:
+    with SessionLocal() as db:
+        wanted = select(AutomationEvent).where(AutomationEvent.kind == "indicators.found")
+        return list(db.scalars(wanted.order_by(AutomationEvent.created_at, AutomationEvent.id)))
+
+
+def runs_of_book(book: str) -> list[Run]:
+    with SessionLocal() as db:
+        return list(db.scalars(select(Run).where(Run.playbook_id == book).order_by(Run.started_at)))
+
+
+def test_a_reading_that_kept_something_new_writes_one_event_and_starts_a_playbook_once(
+    admin: TestClient,
+    test_actions,  # noqa: F811
+):
+    offered = admin.get("/api/automation/catalog").json()["events"]
+    assert "indicators.found" in offered and triggers.object_of({"event": "indicators.found"}) == "incident"
+    text = (
+        "{{ trigger.found.count }} by {{ trigger.found.door }} in {{ trigger.incident.id }}: "
+        "{{ trigger.found.values | join(' ') }} ({{ trigger.found.by_type.domain }} domains)"
+    )
+    book = on(admin, "On found", "indicators.found", text)
+    incident(admin, name="Beacon to evil-site.com and 185.220.101.47, also 10.1.2.3")
+    (event,) = found_events()
+    data, classes = event.payload["data"], event.payload["classes"]
+    assert (event.object_kind, event.object_id, event.payload["caused_by_run"]) == ("incident", "i1", None)
+    assert data["incident"]["id"] == "i1"
+    assert data["found"] == {
+        "door": "hand",
+        "count": 2,
+        "by_type": {"ip": 1, "domain": 1, "url": 0, "email": 0, "md5": 0, "sha1": 0, "sha256": 0},
+        "indicators": [
+            {"type": "domain", "value": "evil-site.com", "path": "incident.name"},
+            {"type": "ip", "value": "185.220.101.47", "path": "incident.name"},
+        ],
+        "values": ["evil-site.com", "185.220.101.47"],
+        "cut": False,
+        "more": 0,
+        "kept": 2,
+    }
+    assert classes["found.indicators.value"] == classes["found.values"] == ["public_indicator"]
+    assert classes["found.count"] == ["verdict"] and classes["incident.name"] == ["incident_text"]
+    # The same event read twice by the worker, and read again by hand: one run, whatever the order.
+    worker.drain()
+    with SessionLocal() as db:
+        again = db.get(AutomationEvent, event.id)
+        assert triggers.handle_event(db, again, T0) == []
+        db.commit()
+    worker.drain()
+    assert said(admin, book) == ["2 by hand in i1: evil-site.com 185.220.101.47 (1 domains)"]
+    # A reading that finds nothing new writes no event: asked again, or updated with what it holds.
+    admin.post("/api/incidents/i1/iocs/found/scan")
+    assert len(found_events()) == 1
+    # A playbook that waits for many of them is not started by few.
+    many = {"all": [{"left": "{{ trigger.found.count }}", "op": "gte", "right": 10}]}
+    quiet = on(admin, "On many", "indicators.found", "many", conditions=many)
+    with SessionLocal() as db:
+        incident_context.apply(db, db.get(Incident, "i1"), [("Domain", {"Name": "bad-domain.net"})], "connector:desk")
+        db.commit()
+    assert sorted(item.payload["data"]["found"]["door"] for item in found_events()) == ["hand", "mirror"]
+    worker.drain()
+    assert len(runs_of_book(book)) == 2 and runs_of_book(quiet) == []
+    # A private address that the setting keeps is said to be one, to the playbook and to the guard.
+    setting(admin, leaveOutPrivate=False, leaveOutBenign=False)
+    admin.post("/api/incidents/i1/iocs/found/scan")
+    (inside,) = [item for item in found_events() if item.payload["data"]["found"]["values"] == ["10.1.2.3"]]
+    assert "private_value" in inside.payload["classes"]["found.values"]
+    assert "public_indicator" not in inside.payload["classes"]["found.values"]
+
+
+def test_a_playbook_started_by_what_was_found_cannot_start_itself_again(admin: TestClient, outside, test_actions):  # noqa: F811
+    """The loop, tried three ways, each bounded by a counter: the run makes an incident with
+    indicators (read: the event names the run, and its playbook does not start on it); the run writes
+    to the context (that starts no reading); and the other side says something new at every turn, as
+    if the run made it do so (each reading with something new is one run, and none past the limit of
+    the setting)."""
+    assert setting(admin, cap=4)["cap"] == 4
+    make = node("make", "action", action="nik.create-incident", args={"title": "Seen with other-site.org"})
+    book = playbook(
+        admin, "On found", [make], [edge("start", "make")], trigger={"event": "indicators.found"}, enabled=True
+    )
+    connection, world = desk(admin, outside)
+    incident(admin, name="Beacon to evil-site.com")
+    assert start(admin, connection, "in").status_code == 201
+    for _turn in range(5):
+        worker.drain()
+    first = runs_of_book(book)
+    assert [row.status for row in first] == ["done"]
+    # The incident the run made was read, and the event of that reading names the run.
+    (made,) = [item for item in found_events() if item.object_id != "i1"]
+    assert (made.payload["caused_by_run"], made.payload["depth"]) == (first[0].id, 1)
+    # What a run writes to the context of the incident starts no reading, so no event.
+    with SessionLocal() as db:
+        wrote = [("Domain", {"Name": "run-wrote.net"})]
+        incident_context.apply(db, db.get(Incident, "i1"), wrote, f"run:{first[0].id}")
+        db.commit()
+    assert len(found_events()) == 2 and len(listing(admin)["found"]) == 1
+
+    # The other side changes at every other turn. Ten turns: the same thing said twice is one
+    # reading with something new. The first of them reads the whole incident, what the run wrote
+    # too; the limit of four is reached at the second, and nothing is kept or started after it.
+    names = ["evil-site.com"]
+    for turn in range(10):
+        if turn % 2 == 0:
+            names.append(f"c2-{turn}.bad-domain.net")
+        world.ticket["title"] = "Laptop talks to " + " ".join(names)
+        sync(admin)
+        for _again in range(3):
+            worker.drain()
+    kept = [row["value"] for row in listing(admin)["found"]]
+    assert kept == ["evil-site.com", "c2-0.bad-domain.net", "run-wrote.net", "c2-2.bad-domain.net"]
+    assert listing(admin)["scan"]["over"] == 3
+    mine = [item.payload for item in found_events() if item.object_id == "i1"]
+    assert sorted(payload["data"]["found"]["count"] for payload in mine) == [1, 1, 2]
+    assert [payload["caused_by_run"] for payload in mine] == [None, None, None]
+    runs = runs_of_book(book)
+    # One run for each reading of i1 that kept something new, and none for the incidents those runs made.
+    assert len(runs) == 3 and {row.status for row in runs} == {"done"}
+    assert len({row.event_key for row in runs}) == 3 and all(row.event_key for row in runs)
+    others = [item for item in found_events() if item.object_id != "i1"]
+    assert len(others) == 3 and all(item.payload["caused_by_run"] for item in others)
+
+
 # --------------------------------------------------------------------------- #
 # Look-ups                                                                    #
 # --------------------------------------------------------------------------- #
@@ -586,6 +776,28 @@ def test_found_indicators_start_no_storm_of_look_ups(admin: TestClient, outside)
         assert service.run_cycle(db, admin.get("/api/settings").json(), budget_seconds=5) == 19
         assert service.run_cycle(db, admin.get("/api/settings").json(), budget_seconds=5) == 0
     assert sorted(request["path"] for request in asked(outside, "shodan")) == sorted(f"/{ip}" for ip in addresses)
+
+
+def test_five_hundred_found_addresses_are_left_alone_by_the_automatic_look_ups(admin: TestClient, outside):
+    """The limit as it is when nobody set it: an incident given 500 addresses by finding, with the
+    automatic look-ups on for addresses, asks no source about any of them."""
+    turn_on(outside, "shodan", answers=False)
+    outside.answer(HOSTS["shodan"], json={"ports": [80], "tags": []})
+    shared = admin.get("/api/settings").json()
+    shared["enrichment"]["auto"]["ip"] = True
+    assert admin.put("/api/settings", json=shared).status_code == 200
+    incident(admin)
+    addresses = [f"185.220.{100 + index // 250}.{1 + index % 250}" for index in range(500)]
+    with SessionLocal() as db:
+        writes = [(f"ext.scan.part{at // 250}", " ".join(addresses[at : at + 250])) for at in range(0, 500, 250)]
+        incident_context.apply(db, db.get(Incident, "i1"), writes, "connector:desk")
+        db.commit()
+    shown = listing(admin)
+    assert (len(shown["found"]), shown["scan"]["new"], shown["scan"]["over"]) == (500, 500, 0)
+    assert len(iocs(admin)) == 500
+    with SessionLocal() as db:
+        assert service.run_cycle(db, admin.get("/api/settings").json(), budget_seconds=5) == 0
+    assert outside.requests == []
 
 
 # --------------------------------------------------------------------------- #

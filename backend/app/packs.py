@@ -59,6 +59,7 @@ from .automation import catalog, connector_actions, connector_logo, graph, scrip
 from .automation import engine as automation_engine
 from .automation.connectors import ConnectorError
 from .automation.connectors import load as load_connector
+from .core import audit
 from .core.models import (
     Connection,
     Connector,
@@ -1123,7 +1124,7 @@ def apply(
     if found["problems"]:
         raise PackError(found["problems"][0], 409)
     actions = {(entry["kind"], entry["name"]): entry for entry in found["items"]}
-    done = {"added": 0, "updated": 0, "same": 0, "skipped": 0}
+    done: dict[str, Any] = {"added": 0, "updated": 0, "same": 0, "skipped": 0, "mirroring": []}
     applied: list[Item] = []
     for item in pack.items:
         entry = actions[(item.kind, item.name)]
@@ -1142,6 +1143,8 @@ def apply(
                 _give_extras(db, item)
             applied.append(item)
             continue
+        # What its mapper says of mirroring for every item, before the pack replaces it.
+        named = _direction_named(db, item) if item.kind == "mappers" and entry["action"] == "update" else None
         try:
             _apply_item(db, pack, item, actor)
         except PackError:
@@ -1156,8 +1159,73 @@ def apply(
             raise PackError(f'{entry["label"]} "{item.name}": {getattr(error, "message", str(error))}') from None
         done["added" if entry["action"] == "add" else "updated"] += 1
         applied.append(item)
+        if named:
+            kept = _keep_direction(db, pack, item, named, actor)
+            if kept:
+                done["mirroring"].append(kept)
     remember(db, pack.manifest, [(item.kind, item.name) for item in applied], actor, logo=pack.logo, source=source)
     return {"pack": pack.manifest, **done}
+
+
+def _direction_of(rules: Any) -> str | None:
+    """The direction an incoming mapper gives the mirror of every incident it makes, when it names one
+    outright (``mirror_direction`` from "in"); None when it names none, or works it out of the item."""
+    for rule in rules if isinstance(rules, list) else []:
+        if isinstance(rule, dict) and rule.get("to") == "mirror_direction":
+            said = str(rule.get("from") or "").strip()
+            return said if said in ("in", "out", "both") else None
+    return None
+
+
+def _direction_named(db: OrmSession, item: Item) -> str | None:
+    """The direction the mapper that is here names for every type, for the connector a pack's mapper is for."""
+    connector = str(item.data.get("connector") or item.name)
+    for row in mapping.mappers_of(db, connector):
+        if row.direction == "incoming" and row.incident_type == mapping.ANY_TYPE:
+            return _direction_of(row.rules)
+    return None
+
+
+def _keep_direction(db: OrmSession, pack: PackFile, item: Item, named: str, actor: str) -> dict[str, Any] | None:
+    """A pack just replaced a mapper that named the direction of mirroring by one that leaves it to
+    the instance: the instances of that connector that say None are told the direction the mapper
+    named, so that what they fetch goes on being mirrored as it was with nobody touching anything.
+    An instance someone gave a direction is left as it is. None when nothing was to be done: a mapper
+    of the connector still names a direction (one of a type, which the pack does not carry)."""
+    from . import mirror
+
+    connector_id = str(item.data.get("connector") or item.name)
+    if any(row.direction == "incoming" and _direction_of(row.rules) for row in mapping.mappers_of(db, connector_id)):
+        return None
+    row = db.get(Connector, connector_id)
+    connector = connector_actions.parsed(row) if row is not None else None
+    if connector is None or connector.mirror is None:
+        return None
+    told = []
+    for connection in db.scalars(
+        select(Connection).where(Connection.connector_id == connector_id).order_by(Connection.name)
+    ):
+        if mirror.choice_of(connection)[0] != mirror.NONE:
+            continue
+        try:
+            mirror.set_choice(connection, connector, {"mirror": named})
+        except mirror.MirrorError:
+            continue  # a direction this connector cannot do any more: nothing is chosen for it
+        told.append(connection.name)
+    if not told:
+        return None
+    db.flush()
+    label = mirror.LABELS[named]
+    audit.record(
+        db,
+        actor,
+        "mirror.kept",
+        f'The pack "{pack.manifest["name"]}" {pack.manifest["version"]} leaves the direction of mirroring to the '
+        f"instances, where its mapper said {label} until now. Mirroring was set to {label} in the instances that "
+        f"said None, so that they mirror as before: {', '.join(told)}",
+        target=connector_id,
+    )
+    return {"connector": connector_id, "direction": named, "instances": told}
 
 
 def digest(db: OrmSession, kind: str, name: str) -> str:
@@ -1640,12 +1708,6 @@ def take_upload(db: OrmSession, token: str, actor: str, now: float | None = None
 # --------------------------------------------------------------------------- #
 # What Nik ships, as one pack                                                 #
 # --------------------------------------------------------------------------- #
-# The four packs Nik was written down as before 6.0: one pack now.
-OLD_BUILTIN = ("nik-incidents", "nik-automation", "nik-connectors", "nik-dashboards")
-LEGACY_VERSION = "0.9.0"  # what came inside Nik 5.x, as a version of the pack it became
-LEGACY_FILE = Path(__file__).parent / "automation" / "seed" / "legacy_packs.json"
-
-
 def builtin_manifest() -> tuple[dict[str, Any], list[tuple[str, str]]]:
     """The pack Nik is made of, with the items it ships, by name. They are installed by Nik itself at
     startup (each kind by its own seeding); here they are only written down, so that what ships is listed,
@@ -1682,13 +1744,6 @@ def register_builtin(db: OrmSession) -> int:
     """Write down the pack Nik ships and what is of it (the caller commits). An item that a pack someone
     installed gave last stays of that pack. Returns how many packs or items changed."""
     changed = 0
-    for old in OLD_BUILTIN:
-        gone = db.get(Pack, old)
-        if gone is not None and gone.builtin:
-            db.execute(delete(PackItem).where(PackItem.pack_id == old))
-            db.delete(gone)
-            changed += 1
-    db.flush()
     owners = {(row.kind, row.name.lower()): row for row in db.scalars(select(PackItem)).all()}
     manifest, items = builtin_manifest()
     row = db.get(Pack, manifest["id"])
@@ -1714,50 +1769,6 @@ def register_builtin(db: OrmSession) -> int:
             del owners[key]
             changed += 1
     return changed
-
-
-def legacy() -> list[dict[str, Any]]:
-    """The packs of vendors' products whose content came inside Nik before 6.0."""
-    return json.loads(LEGACY_FILE.read_text(encoding="utf-8"))
-
-
-def adopt_legacy(db: OrmSession) -> int:
-    """A Nik that was here before 6.0 holds the connectors of vendors' products as its own. Each of those
-    still here, with its mappers and its playbook, is written down as the pack it is from now on, at
-    version 0.9.0 (older than anything the catalogue publishes, so that the pack is offered as an update,
-    which brings what 5.x never had: the logo), and "Uninstall" removes it (the caller commits).
-    Nothing is added or changed: a connector that was removed stays removed. Returns how many packs."""
-    adopted = 0
-    for spec in legacy():
-        connector = db.get(Connector, spec["id"])
-        if connector is None or not connector.builtin:
-            continue
-        connector.builtin = False  # it is its pack's now, not Nik's
-        if spec.get("classifier"):
-            mapping.keep_default_classifier(db, spec["id"], spec["classifier"])
-        if db.get(Pack, spec["id"]) is not None:
-            continue
-        items = [("connectors", spec["id"])]
-        if mapping.mappers_of(db, spec["id"]):
-            items.append(("mappers", spec["id"]))
-        for name in spec.get("playbooks") or []:
-            playbook = _playbook(db, name)
-            if playbook is not None and playbook.builtin:
-                items.append(("playbooks", playbook.name))
-        manifest = clean_manifest(
-            {
-                "id": spec["id"],
-                "name": spec["name"],
-                "vendor": spec["vendor"],
-                "category": spec["category"],
-                "version": LEGACY_VERSION,
-                "description": spec["description"],
-                "author": "Nik",
-            }
-        )
-        remember(db, manifest, items, "nik", source="nik-5")
-        adopted += 1
-    return adopted
 
 
 # --------------------------------------------------------------------------- #

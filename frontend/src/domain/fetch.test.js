@@ -8,6 +8,7 @@ import {
   mirrorAbilities,
   mirrorChoiceProblem,
   mirrorChoices,
+  NOT_YOURS,
   mirrorTimes,
   originText,
   fetchChanged,
@@ -247,6 +248,30 @@ test('the direction an instance gives its incidents: what is offered, and what e
   assert.equal(mirrorChoices({ name: 'Old' })[2].text, 'Old does not say how to mirror.')
   assert.equal(mirrorChoiceProblem({ mirror: 'none' }, silent), null)
   assert.equal(mirrorChoiceProblem({}, silent), null)
+
+  // Someone who manages connectors and runs no playbook: None and In, and why not the others. What
+  // is saved already stays, so that the rest of the form can be saved.
+  const mine = mirrorChoices(desk, { canSend: false })
+  assert.deepEqual(
+    mine.map((choice) => choice.offered),
+    [true, true, false, false],
+  )
+  assert.equal(mine[2].text, NOT_YOURS)
+  assert.match(NOT_YOURS, /needs the permission to run playbooks/)
+  assert.equal(
+    mirrorChoiceProblem({ mirror: 'both' }, desk, { canSend: false }),
+    `Mirroring: In-out is not possible. ${NOT_YOURS}`,
+  )
+  assert.deepEqual(
+    mirrorChoices(desk, { canSend: false, saved: 'both' }).map((choice) => choice.offered),
+    [true, true, false, true],
+  )
+  assert.equal(mirrorChoiceProblem({ mirror: 'both' }, desk, { canSend: false, saved: 'both' }), null)
+  // What the connector cannot do is said as that, whoever asks.
+  assert.equal(
+    mirrorChoices(reading, { canSend: false })[2].text,
+    'Radar has no command that writes to the other side.',
+  )
 
   // The names the product uses: the stored "both" is In-out wherever it is read.
   assert.deepEqual(['none', 'in', 'out', 'both', 'x'].map(choiceLabel), ['None', 'In', 'Out', 'In-out', 'x'])

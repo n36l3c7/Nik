@@ -68,9 +68,7 @@
       "status": "open",
       "ticket": "INC0010001",
       "category": "security",
-      "source_id": "9d385017c611228701d22104cc95c371",
-      "mirror_id": "9d385017c611228701d22104cc95c371",
-      "mirror_direction": "in"
+      "source_id": "9d385017c611228701d22104cc95c371"
     },
     "context": [
       "Ticket(val.ID == obj.ID)"

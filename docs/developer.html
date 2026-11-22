@@ -52,12 +52,11 @@
       </nav>
       <h2 id="local-development-setup">Local development setup</h2>
       <p>
-        <strong>Prerequisites:</strong> Node.js 22+ (with npm; 20.19 or later also works) and Python 3.11–3.13. No
-        database server is needed: the backend defaults to a local SQLite file. The incident report's
-        <strong>PDF</strong> needs the Pango libraries WeasyPrint uses (Debian/Ubuntu:
-        <code>apt install libpango-1.0-0 libpangoft2-1.0-0</code>; Fedora/RHEL: <code>dnf install pango</code>; macOS:
-        <code>brew install pango</code>); everything else, the HTML report included, works without them. The container
-        image installs them.
+        <strong>Prerequisites:</strong> Node.js 22+ (with npm; 20.19 or later also works) and Python 3.12. No database
+        server is needed: the backend defaults to a local SQLite file. The incident report's <strong>PDF</strong> needs
+        the Pango libraries WeasyPrint uses (Debian/Ubuntu: <code>apt install libpango-1.0-0 libpangoft2-1.0-0</code>;
+        Fedora/RHEL: <code>dnf install pango</code>; macOS: <code>brew install pango</code>); everything else, the HTML
+        report included, works without them. The container image installs them.
       </p>
       <p><strong>Backend</strong> (terminal 1):</p>
       <pre><code class="language-bash">cd backend

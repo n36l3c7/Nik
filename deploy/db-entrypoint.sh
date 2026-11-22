@@ -7,9 +7,10 @@
 #    PostgreSQL 18 cannot open a version 16 data directory, so 2.12.2 keeps its
 #    data on a new volume (db-data-18). Without this check, `compose up` after
 #    the update would initialise an EMPTY database next to the old one and the
-#    app would greet you with its first-run screen. deploy/upgrade-postgres.sh
-#    moves the data (dump and restore) and sets NIK_PG_UPGRADE=1 for the first
-#    start of the new cluster. Once the new cluster exists this check passes.
+#    app would greet you with its first-run screen. This version does not move
+#    that data: an installation that old is updated to 6.9.0 first, whose
+#    deploy/upgrade-postgres.sh does. Once the new cluster exists this check
+#    passes.
 #
 # 2. It gives PostgreSQL its password from where it is kept. The password is
 #    needed once, to create the database: from the file DB_PASSWORD_FILE names
@@ -35,9 +36,10 @@ set -eu
 
 OLD=/var/lib/postgresql-16
 
-if [ ! -s "$PGDATA/PG_VERSION" ] && [ -s "$OLD/PG_VERSION" ] && [ "${NIK_PG_UPGRADE:-}" != "1" ]; then
+if [ ! -s "$PGDATA/PG_VERSION" ] && [ -s "$OLD/PG_VERSION" ]; then
   echo "nik: PostgreSQL $(cat "$OLD/PG_VERSION") data found on the old volume, none for PostgreSQL 18." >&2
-  echo "nik: run deploy/upgrade-postgres.sh to move it (the deployment guide, \"Upgrading to PostgreSQL 18\")." >&2
+  echo "nik: this installation is older than Nik 6.0.0. Update it to Nik 6.9.0 first (git checkout v6.9.0)," >&2
+  echo "nik: move its data there with deploy/upgrade-postgres.sh, then come back to this version." >&2
   exit 1
 fi
 
