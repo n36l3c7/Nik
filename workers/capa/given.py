@@ -211,7 +211,10 @@ class Given:
             sample = _SAMPLE.fullmatch(name)
             if sample and sample.group(1) != digest.hexdigest():
                 raise Refused(422, "The file is not the one its name says: its SHA-256 is another")
-            target = os.path.join(folder, "files", name)
+            root = os.path.realpath(os.path.join(folder, "files"))
+            target = os.path.realpath(os.path.join(root, name))
+            if not target.startswith(root + os.sep):
+                raise Refused(400, "Not a file this worker is given")
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with self._lock:
                 stale = self._find(name)

@@ -88,6 +88,19 @@ def test_a_link_in_the_folder_that_leads_outside_it_is_never_handed_out(held, tm
     assert held.path(name) is None and held.missing([name]) == [name]
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt", reason="needs symbolic links")
+def test_a_file_given_through_a_linked_folder_is_never_written_outside(held, tmp_path):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    files = Path(held.folder, "files")
+    files.mkdir(parents=True)
+    (files / "_flirt").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(given.Refused) as refused:
+        take(held, "_flirt/" + "a" * 32 + ".sig", b"IDASGN")
+    assert refused.value.status == 400
+    assert not os.listdir(outside) and not os.listdir(os.path.join(held.folder, "incoming"))
+
+
 @pytest.mark.parametrize(
     "name",
     ["../etc/passwd", "/etc/passwd", "a.bin", "A" * 64 + ".bin", "a" * 64 + ".bin\n", "a" * 64 + ".exe",
