@@ -70,7 +70,6 @@ PRIMARY, STANDBY, SUPERSEDED = "primary", "standby", "superseded"
 MARKER = "superseded.json"
 # The answer of the process that has a way out is waited for this long when the server starts.
 ASK_WAIT = 45
-ASK_FRESH = 600
 
 
 def in_recovery(db: OrmSession) -> bool:

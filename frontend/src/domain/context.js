@@ -45,10 +45,20 @@ export const CONTEXT_FIELDS = [
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 
+/**
+ * A key between quotes as the expressions of a playbook read one: a backslash before a
+ * backslash and before a quote, `\n` and `\t` for a new line and a tab, everything else as
+ * it is. (Not JSON: the expressions know no `\u00e9`, and read `\r` as the letter r.)
+ */
+function quoted(key) {
+  const inside = key.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t')
+  return `"${inside}"`
+}
+
 /** A step of a path as an expression writes it: `.name`, `["a key"]` or `[0]`. */
 function step(key) {
   if (typeof key === 'number') return `[${key}]`
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? `.${key}` : `[${quoted(key)}]`
 }
 
 /** `context.Ticket[0].Number` from its steps. */
@@ -149,4 +159,53 @@ export function shown(value) {
   if (value === null || value === undefined) return 'null'
   if (typeof value === 'string') return value
   return JSON.stringify(value)
+}
+
+/** What a row of the tree holds: the value at its steps, a branch with everything under it. */
+export function valueAt(answer, root, keys) {
+  let value = answer?.[root]
+  for (const key of keys) {
+    if (value === null || value === undefined) return undefined
+    value = value[key]
+  }
+  return value
+}
+
+/**
+ * A value as it is copied: a text as it is, whole however long; a number, true, false and
+ * null as they are written; an object or a list as JSON on several lines.
+ */
+export function copied(value) {
+  if (value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (value === null || typeof value !== 'object') return String(value)
+  return JSON.stringify(value, null, 2)
+}
+
+/**
+ * Where the keyboard goes from a row of the tree: `{ focus }` the id of the row to go to, or
+ * `{ toggle }` the id of the branch to open or close. Up and down move by a row, Home and End
+ * to the ends; right opens a closed branch, then steps into it; left closes an open branch,
+ * and from anything else goes to what holds it.
+ */
+export function treeKey(list, open, id, key) {
+  const at = list.findIndex((row) => row.id === id)
+  if (at < 0) return {}
+  const row = list[at]
+  if (key === 'ArrowDown') return at + 1 < list.length ? { focus: list[at + 1].id } : {}
+  if (key === 'ArrowUp') return at > 0 ? { focus: list[at - 1].id } : {}
+  if (key === 'Home') return { focus: list[0].id }
+  if (key === 'End') return { focus: list[list.length - 1].id }
+  if (key === 'ArrowRight') {
+    if (row.leaf) return {}
+    if (!open.has(row.id)) return { toggle: row.id }
+    return list[at + 1]?.depth > row.depth ? { focus: list[at + 1].id } : {}
+  }
+  if (key === 'ArrowLeft') {
+    if (!row.leaf && open.has(row.id)) return { toggle: row.id }
+    for (let index = at - 1; index >= 0; index -= 1) {
+      if (list[index].depth < row.depth) return { focus: list[index].id }
+    }
+  }
+  return {}
 }

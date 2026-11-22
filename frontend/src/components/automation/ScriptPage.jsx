@@ -15,7 +15,7 @@ import {
 } from '../../domain/automation/scripts.js'
 import { saveBlob } from '../../lib/download.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import CodeEditor from './CodeEditor.jsx'
 import { SandboxBox } from './ScriptsPage.jsx'
 import { INPUT, SectionTitle } from './fields.jsx'
@@ -229,11 +229,7 @@ function VersionDialog({ scriptId, number, draftCode, onClose, onRestore }) {
           {error}
         </p>
       )}
-      {!version && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading…
-        </p>
-      )}
+      {!version && !error && <Wait>Loading…</Wait>}
       {version && (
         <div className="flex flex-col gap-3 text-sm">
           <p className="text-fg-muted">
@@ -472,9 +468,9 @@ export default function ScriptPage({ id, onBack, onOpenPlaybooks }) {
   }
   if (!script || !draft) {
     return (
-      <p role="status" className="p-6 font-mono text-sm text-fg-muted">
-        Loading the script…
-      </p>
+      <div className="p-6">
+        <Wait>Loading the script…</Wait>
+      </div>
     )
   }
 

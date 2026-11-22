@@ -3,7 +3,7 @@ import { Search, X } from 'lucide-react'
 import SortHeader from './SortHeader.jsx'
 import IocText from '../../ioc/IocText.jsx'
 import { useIocLookup } from '../../../context/IocLookupContext.jsx'
-import { Badge } from '../../ui/index.js'
+import { Badge, Wait } from '../../ui/index.js'
 import { hexRows, formatOffset, neutraliseLinks } from '../../../domain/mail.js'
 import {
   base64Text,
@@ -440,7 +440,9 @@ export default function RequestLog({ entries, loadEntry, live = false }) {
           ) : detail && detail.id === selected ? (
             <Detail entry={detail} onClose={() => setSelected(null)} />
           ) : (
-            <p className="p-3 text-[11px] text-fg-muted">Loading…</p>
+            <div className="p-3">
+              <Wait className="text-[11px]">Loading…</Wait>
+            </div>
           ))}
       </div>
     </div>

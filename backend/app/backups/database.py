@@ -153,6 +153,20 @@ def known_revision(revision: str, config: Path | None = None) -> bool:
         return False
 
 
+def is_before(revision: str, other: str, config: Path | None = None) -> bool:
+    """Whether ``revision`` comes before ``other`` in the chain of the migrations: by the place
+    each has in it, never by its name. False for a revision this version does not know."""
+    from alembic.script import ScriptDirectory
+    from alembic.util import CommandError
+
+    try:
+        scripts = ScriptDirectory.from_config(_alembic_config(config))
+        earlier = {script.revision for script in scripts.iterate_revisions(other, "base")} - {other}
+    except CommandError:
+        return False
+    return revision in earlier
+
+
 def migrate(url: URL, revision: str = "head", config: Path | None = None) -> None:
     """Run the migrations on the database at ``url`` up to ``revision``.
 

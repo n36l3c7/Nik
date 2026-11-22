@@ -31,7 +31,12 @@ whose database cannot be written, and a server that was replaced by its
 standby (``recovery/role.py``). Every loop takes a lease before it does
 anything, so this one place is what keeps all of them still there: nothing
 runs, and nothing fills the log with the refusals of a read-only database.
-The loops go on by themselves once the server may serve.
+The loops go on by themselves once the server may serve. The two loops every
+process runs without a lease (what playbooks ask about files and addresses:
+rows claimed one by one) ask the same question first (``may_work``).
+
+**Between two passes** a loop waits on the flag of the process (``wait``),
+not on the clock alone: asked to stop, it starts no new pass.
 """
 
 from __future__ import annotations
@@ -78,14 +83,40 @@ def _upsert(db: OrmSession, name: str, holder: str, now: float, seconds: float) 
     return 1 if db.execute(statement).first() is not None else 0
 
 
-def take(db: OrmSession, name: str, holder: str, seconds: float, now: float | None = None) -> bool:
-    """Take or renew the lease ``name`` for ``seconds``, and commit; False while another holds it."""
-    global _registered
+def stop_flag() -> threading.Event:
+    """What says that this process was asked to stop: one flag for every loop of the process (the
+    automation worker sets it on a signal, the API when it shuts down)."""
+    from ..automation import worker
+
+    return worker._stopping
+
+
+def stopping() -> bool:
+    """Whether this process was asked to stop: a loop starts no new pass."""
+    return stop_flag().is_set()
+
+
+def wait(seconds: float) -> bool:
+    """The pause of a loop between two passes. It ends at once when the process is asked to stop,
+    and says so."""
+    return bool(stop_flag().wait(seconds))
+
+
+def may_work(db: OrmSession) -> bool:
+    """Whether a loop of this process may do anything now: not once the process ends, and not on a
+    server that does not serve. ``take`` asks; a loop that takes no lease because every process
+    runs it (rows are claimed one by one) asks here before it looks for work."""
     if _closed:
         return False
     from ..recovery import role
 
-    if not role.may_work(db):
+    return role.may_work(db)
+
+
+def take(db: OrmSession, name: str, holder: str, seconds: float, now: float | None = None) -> bool:
+    """Take or renew the lease ``name`` for ``seconds``, and commit; False while another holds it."""
+    global _registered
+    if not may_work(db):
         return False
     now = time.time() if now is None else now
     taken = _upsert(db, name, holder, now, seconds)
@@ -113,6 +144,32 @@ def take(db: OrmSession, name: str, holder: str, seconds: float, now: float | No
             _registered = True
             atexit.register(close)
     return True
+
+
+class Renewing:
+    """Keeps a lease while a long piece of work runs in the thread that entered it: the lease is
+    taken again every quarter of its length, until the work is through."""
+
+    def __init__(self, name: str, holder: str, seconds: float) -> None:
+        self._name, self._holder, self._seconds, self._stop = name, holder, seconds, threading.Event()
+        self._thread = threading.Thread(target=self._run, name=f"nik-lease-{name}", daemon=True)
+
+    def _run(self) -> None:
+        from .db import SessionLocal
+
+        while not self._stop.wait(self._seconds / 4):
+            try:
+                with SessionLocal() as db:
+                    take(db, self._name, self._holder, self._seconds)
+            except Exception:  # noqa: BLE001 - the work goes on; the next renewal tries again
+                logger.exception("The lease %s could not be renewed", self._name)
+
+    def __enter__(self) -> Renewing:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self._stop.set()
 
 
 def release(db: OrmSession, name: str, holder: str) -> None:

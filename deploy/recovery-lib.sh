@@ -161,8 +161,11 @@ wait_for_api() { # $1 = seconds
   return 1
 }
 
-# A value of .env (the last line that sets it), or nothing.
-env_value() { sed -n "s/^$1=//p" "$NIK_DIR/.env" 2>/dev/null | tail -n 1; }
+# A value of .env (the last line that sets it) without the quotes around it, or nothing: read as
+# value_of reads it in deploy/secrets.sh and deploy/init-env.sh.
+env_value() {
+  sed -n "s/^$1=//p" "$NIK_DIR/.env" 2>/dev/null | tail -n 1 | sed "s/^['\"]//; s/['\"]\$//"
+}
 
 # Set a value of .env, keeping the file as it was beside it the first time this run changes it.
 set_env_value() { # $1 = name, $2 = value

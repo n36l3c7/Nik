@@ -15,11 +15,9 @@ from .. import fetch, preprocess
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Connection, PreprocessRule
-from ..core.permissions import INCIDENTS_CONFIGURE
-from ..core.security import Principal, require
+from ..core.security import Principal, configure_principal
 
 router = APIRouter(prefix="/preprocess-rules", tags=["pre-processing"])
-configure_principal = require(INCIDENTS_CONFIGURE)
 
 
 class RuleIn(BaseModel):

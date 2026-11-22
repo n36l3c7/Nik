@@ -7,6 +7,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.10.0] - 2026-11-22
+
+Many at once, and nothing missed: incidents, artifacts and indicators are
+selected and acted on together, indicators are found in what comes in,
+and everything that fetches can be mirrored.
+
+### Added
+
+- **Select many and act on them at once** on the incidents, the artifacts
+  and the indicators: a checkbox column, shift-click for a range, "Select
+  all N that match" the current filter, and one bar with the actions a
+  person may do. Incidents: status and close with a reason, severity,
+  owner, type, TLP, tags, fields safe to set on many, run a playbook on
+  each, mirroring, find indicators now, export, delete. Artifacts: tags,
+  expiry, link and unlink, analyse again, download together in one
+  protected archive, delete. Indicators: check now, lists, allowlist,
+  tags, TLP, remove from the incident, delete from the library, export
+  (CSV, STIX 2.1, MISP), copy the values.
+- **Bulk jobs**: up to 50 items are done in the request, more run in the
+  background, survive a restart and never do an item twice. Each item goes
+  through the same rules as a single change, with its own audit entry and
+  events marked `bulk`; the result tells done, skipped, refused and failed,
+  downloads as CSV and offers *Try again on the N that failed*. A job can
+  be cancelled; the count is confirmed before it runs, deleting is
+  confirmed by typing, and so is closing more than 100. *Settings →
+  System → Bulk actions* lists the jobs and holds the thresholds; Health
+  has a row for jobs.
+- **Indicators are found by themselves** in the fields and the context of
+  an incident as it comes in, and in what a mirror brings (comments,
+  notes, replies to a mailbox mirrored In), with the path they came from
+  and one War Room line. Up to 500 per incident, from 1 to 1000 in
+  *Settings → Indicators found*; each instance can be told apart. A found
+  indicator can be removed and stays removed. *Find indicators now* reads
+  an incident on request.
+- Playbook trigger **`indicators.found`**, once per reading that kept
+  something new; a run it starts never starts the same playbook again.
+- **`nik.make-indicators`** / `!nik-make-indicators`: a text made
+  indicators, the type worked out, defanged forms read; a URL gives the
+  URL and its host.
+- **Mirroring is chosen in the instance**: None, In, Out or In-out, in its
+  Fetch part; each choice says what it does for that connector. *Apply
+  mirroring to open incidents…* gives the choice to what was already
+  fetched. The incident's Mirror panel shows the direction, where it came
+  from, the last read and send, and the last problem.
+- **Everything that fetches can be mirrored**: SentinelOne EDR mirrors its
+  threats (status, verdict and notes both ways, pack 1.2.0); SentinelOne
+  SIEM mirrors its alerts (read again, status both ways, pack 1.2.0); a
+  mailbox can be mirrored In, replies becoming lines of the incident.
+- **Copy from the Context tab**: values, branches and paths, by button,
+  right-click or Ctrl C; text there can be selected, and every JSON box
+  has a copy button.
+- Connector format: `mirror.id`, `mirror.kinds`, `mirror.thread`,
+  `no_mirror`. A connector file that fetches and says nothing of mirroring
+  is installed with a warning.
+- API: `POST /api/incidents/bulk`, `/api/artifacts/bulk`,
+  `/api/iocs/bulk` (each with a `/plan` that counts first) and
+  `/api/bulk/{id}` for the job; `PATCH /api/incidents/{id}/mirror`;
+  `GET` and `POST /api/fetch/{id}/mirror[/apply]`; `GET /api/audit` gives
+  `total` in the body.
+
+### Changed
+
+- **The oldest version an update may start from is 6.0.0.** An older
+  database is refused at start, untouched, with the version to go through
+  (6.9.0).
+- Jira Cloud, Jira Data Center and ServiceNow leave the direction of
+  mirroring to the instance (packs 1.1.0). Updating the pack sets the
+  instances that said None to In, so nothing changes by itself, and says
+  so.
+- Choosing Out or In-out, in an instance or on many incidents, and
+  applying mirroring to open incidents, need the permission to run
+  playbooks as well.
+- "Check all", "Save as a list" and the exports of the indicators act on
+  the selection, or on all rows when nothing is selected.
+- The automatic look-ups leave out indicators that were only found,
+  unless the setting says otherwise.
+- A read of a mirror is read for indicators once, when it changed
+  something.
+- Square tabs and counters in Browser, Command History, Endpoint, Mail and
+  Malware; loading lines show the standard wait; three dates follow the
+  product's format whatever the browser's language.
+- Python 3.12 is the version the backend is built and documented for.
+
+### Fixed
+
+- Copying works on a server reached over plain HTTP, everywhere.
+- A PST up to 4096 MB passes the shipped nginx.
+- Starting a server with two API processes wrote `duplicate key` errors
+  to the PostgreSQL log.
+- On a standby, two queues of playbook questions wrote a traceback at
+  every pass.
+- `deploy/standby.sh` read a quoted `NIK_SECRETS_DIR` or
+  `NIK_STANDBY_INBOX` wrongly.
+- The path of a context key with unusual characters is written as the
+  expressions read it.
+- A WordPerfect document is offered a preview.
+- A failed pack download shows the server's sentence.
+
+### Removed
+
+- `deploy/upgrade-postgres.sh`, `NIK_PG_UPGRADE`, and the start-up passes
+  that served installs from before 6.0.
+
+### Upgrade notes
+
+- **From before 6.0.0**: update to 6.9.0 first, start it once, then 6.10.
+- `git pull`, then `docker compose up -d --build` (or `podman compose`).
+  Migrations `0054_indicators_found` and `0055_bulk` run after the
+  snapshot and the rehearsal.
+- **Update Nik first, then the packs** Jira Cloud, Jira Data Center,
+  ServiceNow, SentinelOne and SentinelOne SIEM from *Settings → Content
+  packs*: they need 6.10.
+- Every instance starts at mirroring None; existing mirrors go on as
+  before. The mail connector is brought to version 4 at start and mirrors
+  nothing until an instance is set to In.
+- Finding indicators is on for incidents that come in after the upgrade;
+  older incidents are read only by *Find indicators now*.
+- A role that manages connectors without running playbooks can no longer
+  choose Out or In-out.
+- A manual nginx install sets the mailbox location to `4200m` and takes
+  the block of the deployment guide again.
+
 ## [6.9.0] - 2026-11-21
 
 It starts again in minutes: the server can go back to a moment, a second
@@ -3792,7 +3914,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.9.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.10.0...HEAD
+[6.10.0]: https://github.com/n36l3c7/Nik/compare/v6.9.0...v6.10.0
 [6.9.0]: https://github.com/n36l3c7/Nik/compare/v6.8.0...v6.9.0
 [6.8.0]: https://github.com/n36l3c7/Nik/compare/v6.7.1...v6.8.0
 [6.7.1]: https://github.com/n36l3c7/Nik/compare/v6.7.0...v6.7.1

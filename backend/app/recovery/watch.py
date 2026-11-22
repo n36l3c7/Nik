@@ -35,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..backups import runner
+from ..core.clock import when as _when
 from ..core.models import RecoveryBase, User
 from ..core.security import stored_roles
 from . import agent, archive, config, layout, role, ship
@@ -63,12 +64,6 @@ SOLVED = {
     "asked": "The second host was asked: this server was not replaced.",
     "marker": "The file on the second host that this server did not believe is gone.",
 }
-
-
-def _when(at: float) -> str:
-    from datetime import datetime, timezone
-
-    return datetime.fromtimestamp(at, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _tell_admins(db: OrmSession, kind: str, text: str) -> None:

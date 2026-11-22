@@ -152,7 +152,7 @@ class RizinPipe:
             self.proc.stdin.write(b"q!\n")
             self.proc.stdin.flush()
             self.proc.wait(timeout=5)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a rizin that does not leave when asked is killed
             self.kill()
 
 

@@ -91,7 +91,7 @@ export default function EndpointArtifactsTab({ incident }) {
     take('endpoint')
     const source = sources.find((s) => s.key === request.params?.source) ?? sources[0]
     if (source) handleFile(source, request.file)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for a new dropped file, and again once its category is the active one
   }, [requests.endpoint, activeCategoryId])
 
   const handleConfirmClear = () => {
@@ -132,7 +132,7 @@ export default function EndpointArtifactsTab({ incident }) {
               {count > 0 && (
                 <span
                   className={[
-                    'rounded-full px-1.5 text-xs tabular-nums',
+                    'px-1.5 text-xs tabular-nums',
                     isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >

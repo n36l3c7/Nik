@@ -12,12 +12,9 @@ from ..automation import state as automation_state
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import PlaygroundEntry
-from ..core.permissions import AUTOMATION_RUN
-from ..core.security import Principal, require
+from ..core.security import Principal, runner_principal
 
 router = APIRouter(prefix="/playground", tags=["playground"])
-
-runner_principal = require(AUTOMATION_RUN)
 
 
 class LineIn(BaseModel):
@@ -68,14 +65,7 @@ def run_line(body: LineIn, caller: Principal = Depends(runner_principal), db: Or
     except commands.CommandError as error:
         raise HTTPException(status_code=400, detail=error.message) from None
     if target.changes and not body.confirm:
-        return JSONResponse(
-            status_code=409,
-            content={
-                "detail": f"{target.title} changes something outside Nik: confirm to run it",
-                "needsConfirm": True,
-                "command": target.title,
-            },
-        )
+        return JSONResponse(status_code=409, content=commands.confirm_answer(target))
     entry, run = commands.start(db, None, body.line.strip(), target, parsed, caller.actor)
     audit.record(db, caller.actor, "playground.command", f"Ran {target.title} in the Playground", target=target.title)
     db.commit()

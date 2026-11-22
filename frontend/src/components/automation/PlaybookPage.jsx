@@ -30,7 +30,7 @@ import {
   undo,
 } from '../../domain/automation/graph.js'
 import { tidy } from '../../domain/automation/layout.js'
-import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import AddNodeDialog from './AddNodeDialog.jsx'
 import BranchCompare from './BranchCompare.jsx'
 import BranchTree from './BranchTree.jsx'
@@ -718,9 +718,9 @@ export default function PlaybookPage({
   }
   if (!detail || !graph) {
     return (
-      <p role="status" className="p-6 font-mono text-sm text-fg-muted">
-        Loading the playbook…
-      </p>
+      <div className="p-6">
+        <Wait>Loading the playbook…</Wait>
+      </div>
     )
   }
 

@@ -29,14 +29,6 @@
       "from": "{{ item.sys_id }}"
     },
     {
-      "to": "mirror_id",
-      "from": "{{ item.sys_id }}"
-    },
-    {
-      "to": "mirror_direction",
-      "from": "in"
-    },
-    {
       "to": "Ticket(val.ID == obj.ID)",
       "from": {
         "ID": "{{ item.sys_id }}",

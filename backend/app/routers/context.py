@@ -13,11 +13,9 @@ from .. import context as incident_context
 from .. import fields as registry
 from ..core.db import get_db
 from ..core.models import Incident, IncidentContext
-from ..core.permissions import AUTOMATION_RUN
-from ..core.security import Principal, require
+from ..core.security import Principal, runner_principal
 
 router = APIRouter(prefix="/incidents", tags=["context"])
-runner_principal = require(AUTOMATION_RUN)
 
 
 @router.get("/{incident_id}/context")

@@ -36,7 +36,7 @@ request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
-_logger = logging.getLogger("nik.access")
+logger = logging.getLogger("nik.access")
 
 # --- Prometheus metrics --------------------------------------------------- #
 REQUESTS = Counter(
@@ -117,11 +117,11 @@ async def observability_middleware(request: Request, call_next):
         try:
             REQUESTS.labels(method, path, str(status_code)).inc()
             LATENCY.labels(method, path).observe(elapsed)
-        except Exception:  # pragma: no cover - metrics must never break a request
+        except Exception:  # noqa: BLE001 - metrics must never break a request
             pass
         # Skip the noisy metrics scrape from the access log.
         if path != "/api/metrics":
-            _logger.info("%s %s -> %s (%.1f ms)", method, request.url.path, status_code, elapsed * 1000)
+            logger.info("%s %s -> %s (%.1f ms)", method, request.url.path, status_code, elapsed * 1000)
         request_id_ctx.reset(token)
         # The response object exists only on the success path; header set there.
 

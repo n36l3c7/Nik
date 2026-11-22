@@ -14,7 +14,7 @@ The [developer guide](https://n36l3c7.github.io/Nik/developer.html) has the
 details. In short:
 
 ```bash
-# Backend (Python 3.11 to 3.13)
+# Backend (Python 3.12)
 cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -59,11 +59,11 @@ inside their images, and the end-to-end suite against the real workers.
 
 ## Commits and pull requests
 
-- [Conventional Commits](https://www.conventionalcommits.org/):
-  `type(scope): summary` in the imperative, at most 72 characters, then a
-  body that says what changed and why. Types: `feat`, `fix`, `docs`,
-  `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`. A breaking
-  change has a `!` and a `BREAKING CHANGE:` footer.
+- A commit message is a plain sentence that says what changed, as the
+  history does: "After a restart of the host the server waits for the
+  database". No type prefix, no scope. A body, when there is one, says why.
+- The commit of a release is `Release X.Y.Z: ` followed by what the release
+  brings, in a few words.
 - One pull request does one thing. It is squashed into one commit when
   merged, so its title is that commit's summary.
 - The pull request says what it changes, why, and how to test it.

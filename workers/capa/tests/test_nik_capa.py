@@ -11,8 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import nik_capa  # noqa: E402
-from nik_capa import CapaError, CapaTimeout, compact, run_capa  # noqa: E402
+import nik_capa
+from nik_capa import CapaError, CapaTimeout, compact, run_capa
 
 REPORT = json.loads((Path(__file__).parent / "fixtures" / "report.json").read_text(encoding="utf-8"))
 

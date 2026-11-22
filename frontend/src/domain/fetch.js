@@ -32,6 +32,7 @@ export function lastText(connection) {
   if (last.dropped) parts.push(`${last.dropped} dropped`)
   if (last.linked) parts.push(`${last.linked} linked`)
   if (last.duplicate) parts.push(plural(last.duplicate, 'duplicate'))
+  if (last.mirrored) parts.push(`${last.mirrored} added to incidents there were`)
   return parts.join(' · ')
 }
 
@@ -61,12 +62,14 @@ export function outcomeBadge(outcome) {
       return { label: 'linked', color: 'cyan' }
     case 'duplicate':
       return { label: 'duplicate', color: 'slate' }
+    case 'mirrored':
+      return { label: 'a line', color: 'cyan' }
     default:
       return { label: outcome ?? '', color: 'slate' }
   }
 }
 
-export const OUTCOMES = ['', 'created', 'incomplete', 'dropped', 'linked', 'duplicate']
+export const OUTCOMES = ['', 'created', 'incomplete', 'dropped', 'linked', 'duplicate', 'mirrored']
 
 /** How close a connection is to being paused: '' while it is far. */
 export function limitText(connection) {
@@ -75,10 +78,6 @@ export function limitText(connection) {
   if (!limit || made < limit / 2) return ''
   return `${made} of ${limit} incidents this hour`
 }
-
-/** The connections that need someone: failing or paused. */
-export const needingCare = (connections) =>
-  (connections ?? []).filter((connection) => connection.state === 'failing' || connection.state === 'paused')
 
 /* ------------------------------------------------- how an instance fetches */
 
@@ -115,6 +114,9 @@ export function fetchForm(connector, instance) {
     interval: String(held.intervalSeconds ?? theirs.intervalSeconds ?? 120),
     firstFetch: String(held.firstFetch ?? theirs.firstFetch ?? '3 days'),
     lookback: String(held.lookbackMinutes ?? theirs.lookbackMinutes ?? 0),
+    // The direction the incidents it fetches are mirrored in, and the classes their mirrors may send.
+    mirror: held.mirror?.direction ?? 'none',
+    mirrorAllow: [...(held.mirror?.allow ?? [])].sort(),
   }
 }
 
@@ -137,21 +139,26 @@ export function fetchProblem(form, { minInterval = 30, maxLookback = 1440, byTim
 }
 
 /** What the form sends as `fetch` with the rest of the instance. */
-export function fetchPayload(form, { byTime = true } = {}) {
+export function fetchPayload(form, { byTime = true, mirrors = false } = {}) {
   const body = {
     enabled: Boolean(form.enabled),
     intervalSeconds: Number(form.interval),
     firstFetch: String(form.firstFetch).trim().toLowerCase().replace(/\s+/g, ' '),
   }
   if (byTime) body.lookbackMinutes = Number(form.lookback)
+  if (mirrors) {
+    // A connector that mirrors: the direction, and what may be sent when the direction sends.
+    body.mirror = form.mirror ?? 'none'
+    body.mirrorAllow = sends(body.mirror) ? [...(form.mirrorAllow ?? [])].sort() : []
+  }
   return body
 }
 
 /** Whether the Fetch part differs from what the instance has: only then is it sent. */
 export function fetchChanged(form, connector, instance) {
   const before = fetchForm(connector, instance)
-  return ['enabled', 'interval', 'firstFetch', 'lookback'].some(
-    (name) => String(form[name]).trim() !== String(before[name]).trim(),
+  return ['enabled', 'interval', 'firstFetch', 'lookback', 'mirror', 'mirrorAllow'].some(
+    (name) => String(form[name] ?? '').trim() !== String(before[name] ?? '').trim(),
   )
 }
 
@@ -177,15 +184,8 @@ export function lookbackHint(form, { byTime = true } = {}) {
 export const DIRECTIONS = [
   { id: 'in', label: 'In', hint: 'What changes on the other side comes here. Nothing is sent.' },
   { id: 'out', label: 'Out', hint: 'What changes here is sent to the other side.' },
-  { id: 'both', label: 'Both ways', hint: 'Each side follows the other.' },
+  { id: 'both', label: 'In-out', hint: 'Each side follows the other.' },
 ]
-
-/** The direction of a mirror, in words. */
-export function directionText(direction) {
-  if (direction === 'in') return 'read from there'
-  if (direction === 'out') return 'sent from here'
-  return direction === 'both' ? 'both ways' : String(direction ?? '')
-}
 
 /** Why a mirror cannot be started as the form stands (a sentence), or null. */
 export function mirrorProblem({ connection, mirrorId, direction, canSend }) {
@@ -209,4 +209,150 @@ export function jobText(job, now = Date.now()) {
         ? `in ${seconds} s`
         : `in ${Math.round(seconds / 60)} min`
   return `${what}: tried ${job.attempts} time${job.attempts === 1 ? '' : 's'}, again ${again}`
+}
+
+/* ------------------------------------- the direction an instance gives its incidents */
+
+/** Whether a direction sends anything to the other side. */
+export const sends = (direction) => direction === 'out' || direction === 'both'
+
+const CHOICE_LABELS = { none: 'None', in: 'In', out: 'Out', both: 'In-out' }
+
+/** A direction as the product names it: None, In, Out, In-out. */
+export const choiceLabel = (direction) => CHOICE_LABELS[direction] ?? String(direction ?? '')
+
+/**
+ * What a mirror with a connector can do, each way, from what the lists say of
+ * the connector (`connector.mirror`): null for one that does not mirror.
+ */
+export function mirrorAbilities(connector) {
+  const said = connector?.mirror
+  if (!said) return null
+  return {
+    fieldsIn: said.fieldsIn !== false && !said.fed,
+    commentsIn: Boolean(said.comments),
+    fieldsOut: Boolean(said.fieldsOut),
+    commentsOut: Boolean(said.commentsOut),
+  }
+}
+
+const joined = (parts) => (parts.length === 2 ? `${parts[0]} and ${parts[1]}` : (parts[0] ?? ''))
+
+/** What comes in with a connector, and what goes out, in words; '' for nothing. */
+function comesIn(can, fed) {
+  if (fed) return 'what goes on with the conversation (a reply) becomes a line of the War Room'
+  const parts = []
+  if (can.fieldsIn) parts.push('its fields follow the object on the other side')
+  if (can.commentsIn) parts.push('new comments there become lines of the War Room')
+  return joined(parts)
+}
+
+function goesOut(can) {
+  const parts = []
+  if (can.fieldsOut) parts.push('the fields the outgoing mapper reads are written to the other side when they change')
+  if (can.commentsOut) parts.push('notes tagged mirror are added there as comments')
+  return joined(parts)
+}
+
+/** Why a direction that sends is not offered to someone who manages connectors and runs no playbook. */
+export const NOT_YOURS =
+  'It sends to another system: choosing it needs the permission to run playbooks, which you do not have.'
+
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1)
+
+/**
+ * The directions an instance may give the incidents it fetches, each with
+ * what it does for this connector in one sentence, and, for one the connector
+ * cannot do, why it is not offered:
+ * `[{ id, label, offered, text }]`. `connector` is what the lists say of it.
+ * A direction that sends is chosen only by who may run playbooks (`canSend`),
+ * as starting such a mirror on an incident is; the one that is saved already
+ * (`saved`) stays offered, so that the rest of the form can be saved by who
+ * manages connectors.
+ */
+export function mirrorChoices(connector, { canSend = true, saved = 'none' } = {}) {
+  const choices = everyChoice(connector)
+  if (canSend) return choices
+  return choices.map((choice) =>
+    choice.offered && sends(choice.id) && choice.id !== saved ? { ...choice, offered: false, text: NOT_YOURS } : choice,
+  )
+}
+
+function everyChoice(connector) {
+  const can = mirrorAbilities(connector)
+  const name = connector?.name ?? 'This connector'
+  if (!can) {
+    const why = connector?.noMirror || `${name} does not say how to mirror.`
+    return [
+      { id: 'none', label: 'None', offered: true, text: 'Each item becomes an incident, and that is all.' },
+      ...['in', 'out', 'both'].map((id) => ({ id, label: choiceLabel(id), offered: false, text: why })),
+    ]
+  }
+  const fed = Boolean(connector.mirror.fed)
+  const into = comesIn(can, fed)
+  const out = goesOut(can)
+  const cannotSend = fed
+    ? `${name} is only read: Nik never sends a message by itself.`
+    : `${name} has no command that writes to the other side.`
+  return [
+    {
+      id: 'none',
+      label: 'None',
+      offered: true,
+      text: 'Each item becomes an incident, and that is all, unless a mapper starts a mirror itself.',
+    },
+    { id: 'in', label: 'In', offered: Boolean(into), text: `${capital(into)}. Nothing is sent.` },
+    { id: 'out', label: 'Out', offered: Boolean(out), text: out ? `${capital(out)}. Nothing is read.` : cannotSend },
+    {
+      id: 'both',
+      label: 'In-out',
+      offered: Boolean(out) && Boolean(into),
+      text: out ? `${capital(into)}; ${out}.` : cannotSend,
+    },
+  ]
+}
+
+/** Why the Mirroring part cannot be saved as it stands (a sentence), or null. */
+export function mirrorChoiceProblem(form, connector, who) {
+  const chosen = mirrorChoices(connector, who).find((choice) => choice.id === (form.mirror ?? 'none'))
+  if (!chosen) return 'Mirroring: choose None, In, Out or In-out'
+  return chosen.offered ? null : `Mirroring: ${chosen.label} is not possible. ${chosen.text}`
+}
+
+/** Where the direction of the mirror of an incident came from, in words. */
+export function originText(origin) {
+  if (origin === 'instance') return 'from the instance'
+  if (origin === 'mapper') return 'from the mapper'
+  return 'set here'
+}
+
+/** What giving the choice of an instance to what it already fetched will do, said before it is done. */
+export function applyText(count, direction) {
+  const open = count?.open ?? 0
+  if (!open) return 'No open incident was fetched from this instance: there is nothing to change.'
+  const them = `${open} open incident${open === 1 ? '' : 's'} fetched from this instance`
+  const more = open >= (count?.most ?? Infinity) ? ' (the first ones: run it again for the rest)' : ''
+  if (direction === 'none') {
+    return `${count.mirrored} of the ${them} ${count.mirrored === 1 ? 'is' : 'are'} mirrored with it: mirroring stops for ${count.mirrored === 1 ? 'it' : 'them'}, and what waited to be sent is dropped${more}.`
+  }
+  return `The ${them} will be mirrored ${choiceLabel(direction)}${more}. One mirrored with another instance is left as it is.`
+}
+
+/** What applying did, in a line. */
+export function appliedText(done) {
+  const parts = ['started', 'changed', 'stopped', 'unchanged', 'skipped']
+    .filter((name) => done?.[name])
+    .map((name) => `${done[name]} ${name === 'skipped' ? 'left alone' : name}`)
+  return parts.length ? `${capital(parts.join(', '))}.` : 'Nothing to change.'
+}
+
+/** The last time a mirror read and wrote, as the panel of an incident says it. */
+export function mirrorTimes(state, format) {
+  const parts = []
+  if (state?.lastPull) parts.push(`read ${format(state.lastPull)}`)
+  if (state?.lastPush) parts.push(`sent ${format(state.lastPush)}`)
+  if (!parts.length && state?.lastSync) parts.push(`in step ${format(state.lastSync)}`)
+  if (!parts.length) parts.push(state?.fed ? 'no reply yet' : 'not read yet')
+  if (state?.waiting) parts.push(`${state.waiting} to send`)
+  return capital(parts.join(' · '))
 }

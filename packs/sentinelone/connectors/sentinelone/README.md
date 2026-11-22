@@ -4,7 +4,8 @@ The management console of SentinelOne Singularity, through its Management API v2
 analyst does with the console during an incident: find an endpoint and cut it off the network, read a threat and
 kill, quarantine or roll back, take the file of a threat or files and logs of an endpoint as artifacts of the
 incident, block a hash, write a detection rule, run a script, start a forensic collection. It brings the threats
-of the console in as incidents. It has 142 commands.
+of the console in as incidents, and keeps each incident in step with its threat when its instance says so. It has
+142 commands.
 
 It was written from SentinelOne's own reference of the API, the one the console shows to a signed-in user. It was
 not run against a real console: the connector says `verified: false` until someone has.
@@ -425,3 +426,37 @@ Left out because the reference does not say enough to write them:
 - **Whether an answer is one object or a list.** Creating a blocklist entry, an exclusion or an indicator is read
   as a list; the tags of `tag-agent` are sent as a list.
 - **Two answers**: moving agents to a group, and starting a forensic collection (it says 202 and no body).
+
+## Mirroring (new in 1.2, needs Nik 6.10)
+
+In the *Fetch* part of an instance, *Mirroring* says which way the incidents it fetches are kept in step with their
+threats: *None* (as before), *In*, *Out* or *In-out*. The object is the threat the incident was made from, by its id.
+Only commands of this connector are used:
+
+| | What | With |
+| --- | --- | --- |
+| In | the threat is read again every two minutes; its **incident status** becomes the status of the incident and its **analyst verdict** the close reason | `get-threats` by id (`GET /threats`) |
+| In | the **notes** of the threat become lines of the War Room | `get-threat-notes` (`GET /threats/{id}/notes`) |
+| Out | the status of the incident and its close reason are written as the incident status and the analyst verdict, in one request | `set-threat-incident` (`POST /threats/incident`) |
+| Out | a note tagged `mirror` becomes a note of the threat | `add-note` (`POST /threats/notes`) |
+
+How the two vocabularies meet is in the mappers of the pack, which are yours to change:
+
+| SentinelOne | Nik |
+| --- | --- |
+| incident status `unresolved` · `in_progress` · `resolved` | status open · in progress · closed (both ways) |
+| analyst verdict `true_positive` · `false_positive` | close reason *Resolved* · *False positive* (coming in) |
+| analyst verdict `true_positive` · `false_positive` · `suspicious` | close reason *Resolved* or *True positive* · *False positive* · *Suspicious* (going out; any other reason sends no verdict) |
+
+Things to know:
+
+- A field a person set in Nik is kept when the threat says otherwise, unless the mapper marks it as winning over
+  edits. Setting the status twice leaves the threat as setting it once, so an update cut by a restart is sent
+  again; a note is never sent twice.
+- A threat that is not in the console any more is said once on the incident and read no more.
+- With these mappers, a threat that is already in progress or resolved when it is fetched makes an incident that
+  starts in progress or closed.
+- The token needs what `set-threat-incident` and `add-note` need to mirror out; viewing is enough to mirror in.
+- The alerts of custom detection rules are another object, which the fetch does not bring and for which the
+  reference gives no notes: they are not mirrored. Their status and verdict are still set by the commands
+  `set-alert-incident` and `set-alert-verdict`.

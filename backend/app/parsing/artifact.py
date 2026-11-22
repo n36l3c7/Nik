@@ -83,7 +83,7 @@ def parse_xbel(text, category):
             continue
         try:
             target = unquote(re.sub(r"^file:/*", "/", href, flags=re.I))
-        except Exception:
+        except Exception:  # noqa: BLE001 - an address that cannot be read is shown as it was written
             target = href
         when = b.get("modified") or b.get("visited") or b.get("added")
         records.append(

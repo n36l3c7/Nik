@@ -38,7 +38,7 @@ from ..core.security import Principal, admin_principal, require
 
 router = APIRouter(prefix="/packs", tags=["content packs"])
 CATALOGUE_MARK = bulk.CATALOGUE_MARK
-manage_principal = require(CONTENT_MANAGE)
+content_principal = require(CONTENT_MANAGE)
 
 
 class ItemIn(BaseModel):
@@ -99,13 +99,13 @@ def _chosen(body: ChosenIn) -> list[tuple[str, str]]:
 
 
 @router.get("")
-def list_packs(_caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_packs(_caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The packs that are installed (Nik's own first), each with its items and whether each is still here."""
     return {"packs": [packs.out(db, row) for row in packs.installed(db)]}
 
 
 @router.get("/items")
-def list_items(_caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_items(_caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)) -> dict:
     """What there is to put in a pack, by kind: ``{kinds: [{kind, label, items: [{name, label, builtin}]}]}``."""
     return {
         "kinds": [{"kind": kind, "label": packs.LABELS[kind], "items": packs.names(db, kind)} for kind in packs.KINDS]
@@ -114,7 +114,7 @@ def list_items(_caller: Principal = Depends(manage_principal), db: OrmSession = 
 
 @router.post("/dependencies")
 def dependencies(
-    body: ChosenIn, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    body: ChosenIn, _caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """The items chosen and what they cannot do without: the scripts and connectors of a playbook, the
     fields of a type… ``asked`` is false for what was added."""
@@ -128,7 +128,7 @@ def dependencies(
 
 @router.post("/export")
 def export_pack(
-    body: ExportIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    body: ExportIn, caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     """A ``.nikpack`` file of the items chosen and of what they need. Never a connection or a secret."""
     try:
@@ -150,7 +150,7 @@ def export_pack(
 
 
 @router.get("/catalogue")
-def read_catalogue(_caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def read_catalogue(_caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The catalogue as it was last read: ``{address, custom, fetchedAt, error, read, packs: [{id, name,
     vendor, category, tags, version, description, contents, connectors, logo, installed, update,
     needsNik}]}``. Nothing
@@ -159,7 +159,7 @@ def read_catalogue(_caller: Principal = Depends(manage_principal), db: OrmSessio
 
 
 @router.post("/catalogue/refresh")
-def refresh_catalogue(_caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def refresh_catalogue(_caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Read the catalogue again from its address. ``502`` with why when it cannot be read or its
     signature is not the one of the key Nik holds: what was read before stays."""
     try:
@@ -189,7 +189,7 @@ def set_catalogue(
 
 @router.get("/catalogue/{pack_id}/logo")
 def catalogue_logo(
-    pack_id: str, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    pack_id: str, _caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     """The logo the catalogue gives for a pack (it came inside the signed index)."""
     try:
@@ -207,7 +207,7 @@ def catalogue_logo(
 
 @router.post("/catalogue/{pack_id}/inspect")
 def inspect_from_catalogue(
-    pack_id: str, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    pack_id: str, caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Take a pack from the catalogue (its size and SHA-256 are checked against the signed index) and say
     what applying it would do, like ``/packs/inspect``. Nothing is changed."""
@@ -226,7 +226,7 @@ def inspect_from_catalogue(
 
 @router.post("/inspect")
 async def inspect_pack(
-    file: UploadFile = File(...), caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    file: UploadFile = File(...), caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Read a pack and say what applying it would do: ``{token, pack, installed, problems, items: [{kind,
     name, action: add | update | same | conflict, diff?, why?, note?, from?}], counts}``. Nothing is changed."""
@@ -243,7 +243,7 @@ async def inspect_pack(
 
 @router.post("/import")
 def import_pack(
-    body: ImportIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    body: ImportIn, caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """Apply an inspected pack, in one transaction: ``{pack, added, updated, same, skipped}``. An item
     that conflicts must be skipped (``choices``) or settled first: otherwise nothing is applied (409)."""
@@ -269,7 +269,7 @@ def import_pack(
 
 @router.get("/{pack_id}/download")
 def download_pack(
-    pack_id: str, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    pack_id: str, _caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     """An installed pack as a file again, from what its items are now (lists without their items)."""
     row = db.get(Pack, pack_id)
@@ -295,7 +295,7 @@ def download_pack(
 
 @router.get("/{pack_id}/logo")
 def pack_logo(
-    pack_id: str, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    pack_id: str, _caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> Response:
     row = db.get(Pack, pack_id)
     if row is None or not row.logo:
@@ -308,7 +308,7 @@ def pack_logo(
 
 
 @router.post("/bulk/plan")
-def bulk_plan(body: BulkIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def bulk_plan(body: BulkIn, caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)) -> dict:
     """What installing, updating or uninstalling several packs would do (``action``; ``packs: [{id}]``),
     in the order they would be done: ``{action, packs: [{id, name, version, installed, ok, why, counts,
     items, token? | held?}]}``. ``ok`` is false, with ``why``, for one that would be left out. To install
@@ -325,7 +325,7 @@ def bulk_plan(body: BulkIn, caller: Principal = Depends(manage_principal), db: O
 
 
 @router.post("/bulk/apply")
-def bulk_apply(body: BulkIn, caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)) -> dict:
+def bulk_apply(body: BulkIn, caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)) -> dict:
     """Do it: the packs one after the other, each in its own transaction, a pack after the ones it
     requires (before them, to uninstall). ``{action, packs: [{id, name, ok, why, …}]}``: one that failed
     says why (``held`` lists what uses a pack that was not uninstalled), and undoes none of the others."""
@@ -342,7 +342,7 @@ def bulk_apply(body: BulkIn, caller: Principal = Depends(manage_principal), db: 
 
 @router.get("/{pack_id}/uninstall")
 def uninstall_plan(
-    pack_id: str, _caller: Principal = Depends(manage_principal), db: OrmSession = Depends(get_db)
+    pack_id: str, _caller: Principal = Depends(content_principal), db: OrmSession = Depends(get_db)
 ) -> dict:
     """What uninstalling the pack would do: ``{items: [{kind, name, label, action: remove | keep | gone,
     why}], held: [{kind, name, label, what, todo}]}``. ``held`` is what is in use, each with what to do
@@ -360,7 +360,7 @@ def uninstall_plan(
 def remove_pack(
     pack_id: str,
     remove: bool = False,
-    caller: Principal = Depends(manage_principal),
+    caller: Principal = Depends(content_principal),
     db: OrmSession = Depends(get_db),
 ) -> Response | dict:
     """Without ``remove``: take the pack off the list (``204``); what it brought stays, and is no pack's

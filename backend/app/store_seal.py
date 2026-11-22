@@ -55,7 +55,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .core import sealed, store
+from .core import leases, sealed, store
 from .core.config import settings
 
 logger = logging.getLogger("nik.store")
@@ -63,7 +63,7 @@ logger = logging.getLogger("nik.store")
 SETTINGS_ID = 50  # 40 to 46 are the audit log and the health page; 51 is key_rotation.py
 LEASE = "store-seal"
 LEASE_SECONDS = 45
-HOLDER = f"{uuid.uuid4()}"
+HOLDER = uuid.uuid4().hex
 LINK = "/settings/system/storage"
 SEALING = ".sealing"
 PIECE = 1024 * 1024
@@ -364,30 +364,6 @@ def _acquire(now: float | None = None, holder: str = HOLDER) -> bool:
         return leases.take(db, LEASE, holder, LEASE_SECONDS, now)
 
 
-class _Renewing:
-    """Keeps the lease while a pass works in this thread."""
-
-    def __init__(self, holder: str) -> None:
-        import threading
-
-        self._holder, self._stop = holder, threading.Event()
-        self._thread = threading.Thread(target=self._run, name="nik-store-lease", daemon=True)
-
-    def _run(self) -> None:
-        while not self._stop.wait(LEASE_SECONDS / 4):
-            try:
-                _acquire(holder=self._holder)
-            except Exception:  # noqa: BLE001 - the work goes on; the next renewal tries again
-                logger.exception("The lease of the encryption of the store could not be renewed")
-
-    def __enter__(self) -> _Renewing:
-        self._thread.start()
-        return self
-
-    def __exit__(self, *_exc) -> None:
-        self._stop.set()
-
-
 def _problem(doc: dict[str, Any], name: str, text: str | None) -> dict[str, Any] | None:
     """One notice when a problem appears and one when it is gone, as the other watches do
     (``backups/watch.py``). Returns the notice to send, or None."""
@@ -467,7 +443,7 @@ def convert_pass(
     # file, it ran out of time, or a file changed under it.
     left = _cursor[0] > 0
     seen = 0
-    with _Renewing(holder):
+    with leases.Renewing(LEASE, holder, LEASE_SECONDS):
         for name, path in _files(root) if root.is_dir() else ():
             seen += 1
             if seen <= _cursor[0]:

@@ -65,7 +65,7 @@ every action is attributed to a named analyst in the audit log.
 
 ```bash
 git clone https://github.com/n36l3c7/Nik.git && cd Nik
-deploy/init-env.sh                # writes .env with fresh random secrets
+deploy/init-env.sh                # writes .env and fresh random secrets, each in a file of its own
 docker compose up -d --build      # or: podman compose up -d --build
 ```
 
@@ -82,14 +82,17 @@ install on RHEL: see [Deployment](https://n36l3c7.github.io/Nik/deployment.html)
 
 ## Configuration
 
-Compose reads `.env`, which `deploy/init-env.sh` creates. The values that
-matter before the first start:
+Compose reads `.env`, which `deploy/init-env.sh` creates; the secrets are
+kept as files beside it (an install from before 6.8 keeps them in `.env`
+until `deploy/secrets.sh move`), and are changed with
+`deploy/secrets.sh rotate`. The values that matter before the first start:
 
 | Variable | Purpose |
 | --- | --- |
 | `DB_PASSWORD` | PostgreSQL password (generated). |
 | `SECRET_KEY` | Encrypts the provider API keys and TLS key logs stored in the database (generated). Keep it with the backups; change it only together with `SECRET_KEY_PREVIOUS`. |
-| `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN` | Shared secrets between the API and each analysis worker (generated). |
+| `STORE_KEY` | Encrypts the files Nik holds on the disk (generated). It is in no database and in no backup: keep a copy off the server. |
+| `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN`, `SANDBOX_TOKEN` | Shared secrets between the API and each worker (generated). |
 | `TLS_HOSTNAME` | Name users type in the browser, written into the self-signed certificate. |
 | `WEB_TLS_PORT`, `WEB_PORT` | Published HTTPS port (8443) and the HTTP port that redirects to it (8080). |
 
@@ -115,7 +118,8 @@ screen.
 frontend/      React single-page app, its Dockerfile and nginx configuration, E2E tests
 backend/       FastAPI API, Alembic migrations, tests
 workers/       Isolated workers: analyzer (rizin), capa, docview, browser, pcap, sandbox (scripts)
-deploy/        Database entrypoint, backups, systemd units, upgrade scripts
+deploy/        Database entrypoint and archive, backups and restore, secrets, standby host, systemd units
+packs/         Content packs: connectors, mappers and playbooks for the products Nik talks to
 integrations/  Cortex XSOAR integration pack
 docs/          GitHub Pages site
 ```
@@ -123,7 +127,7 @@ docs/          GitHub Pages site
 ## Development
 
 ```bash
-# Backend (Python 3.11–3.13)
+# Backend (Python 3.12)
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -202,7 +206,9 @@ data, and ask for a second factor at sign-in; 6.8 encrypted the store on
 the disk, took the keys out of `.env`, made the audit log a signed chain
 sent to syslog, and added a page that says whether the server is well;
 6.9 brought recovery to a moment, a standby host that takes the
-server's place by one command, and work that survives a restart.
+server's place by one command, and work that survives a restart;
+6.10 lets many incidents, artifacts or indicators be acted on at once,
+finds indicators in what comes in, and mirrors everything that fetches.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

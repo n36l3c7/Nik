@@ -83,7 +83,7 @@ export default function DebugPanel({ run, graph, onChanged }) {
     setArgs(argsText(at))
     setReal(false)
     // A new stop, new arguments: the step is its id.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the step is its id: a refresh of the same stop keeps what is typed
   }, [at?.id])
   const typed = parseObject(args)
   useUnsavedChanges(Boolean(at) && args !== argsText(at), {
@@ -231,7 +231,7 @@ export function DebugStepTools({ run, graph, step, onChanged }) {
     const held = run.debug?.context?.[step.node]
     setOutput(held === undefined ? '' : JSON.stringify(held, null, 2))
     // The context is read when another step is chosen, not at every refresh (it would undo what is typed).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read when another step is chosen, not at every refresh of the run
   }, [step.id, step.status])
   const patched = parseValue(output)
   const heldOutput = run.debug?.context?.[step.node]

@@ -95,9 +95,7 @@
       "severity": "high",
       "status": "open",
       "ticket": "SEC-12",
-      "source_id": "10000",
-      "mirror_id": "SEC-12",
-      "mirror_direction": "in"
+      "source_id": "10000"
     },
     "context": [
       "Ticket(val.ID == obj.ID)"

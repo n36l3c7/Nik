@@ -328,7 +328,7 @@ export default function UrlAnalysisTab({ incident, focus = null, evidence = fals
     if (!scanning) return undefined
     const timer = setInterval(() => fetchDetail(current.id), POLL_MS)
     return () => clearInterval(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the scan is its id; `details` changes at every answer
   }, [current?.id, scanning, fetchDetail])
 
   // A scan that just finished changed the incident's reference and the artifact list.
@@ -337,7 +337,7 @@ export default function UrlAnalysisTab({ incident, focus = null, evidence = fals
     if (status !== 'done' && status !== 'error') return
     refreshArtifacts()
     if (!standalone && current && current.status !== status) retryActiveIncident()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the status of the scan changes
   }, [status])
 
   const handleSubmit = async (event) => {

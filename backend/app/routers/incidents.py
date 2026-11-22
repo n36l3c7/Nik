@@ -36,7 +36,7 @@ from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import fields as field_registry
-from .. import incident_quick, incident_tags, query, work
+from .. import incident_quick, incident_tags, indicators_found, query, work
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
@@ -53,9 +53,9 @@ from ..parsing.registry import apply_upload
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
-SEVERITIES = ("low", "medium", "high", "critical")
+SEVERITIES = field_registry.SEVERITIES
 # Where the work on an incident stands; an incident with no status is open.
-STATUSES = ("open", "in_progress", "closed")
+STATUSES = field_registry.STATUSES
 
 
 def _timers(db: OrmSession, incident: Incident) -> None:
@@ -205,6 +205,16 @@ def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: An
     db.commit()
 
 
+def matching(db: OrmSession, caller: Principal, q: str | None) -> list:
+    """The conditions a query keeps incidents by: what the list shows for it, and what a bulk
+    action on "all that match" works on (bulk_incidents.py). A query that cannot be read is
+    answered ``422`` with the position and the reason."""
+    conditions = query.sql("incidents", q, caller, db=db) if q and q.strip() else []
+    if conditions:
+        query.statement_timeout(db)
+    return conditions
+
+
 @router.get("")
 def list_incidents(
     response: Response,
@@ -248,9 +258,7 @@ def list_incidents(
     """
     # `q` is the query language (app/query); the older parameters below are kept
     # for API clients and add their conditions to it.
-    conditions = query.sql("incidents", q, caller, db=db) if q and q.strip() else []
-    if conditions:
-        query.statement_timeout(db)
+    conditions = matching(db, caller, q)
     if host:
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
@@ -421,6 +429,8 @@ def create_incident(
     triggers.incident_changed(db, incident, "incident.created")
     if field_changes:
         _set_fields(db, incident, field_changes, caller)
+    # The incident is whole: its fields and its context are read for indicators (indicators_found.py).
+    indicators_found.scan(db, incident, "api" if caller.actor.startswith("api:") else "hand")
     db.commit()
     emit(db, background_tasks, "incident.created", {"id": incident_id, "name": doc.get("name")})
     response.headers["ETag"] = _etag(incident.rev)
@@ -547,25 +557,34 @@ def delete_incident(
     """Delete an incident (idempotent-ish; 204 regardless if it existed)."""
     row = lock_incident(db, incident_id)
     if row is not None:
-        name = (row.doc or {}).get("name") or incident_id
-        _audit(db, caller, "incident.delete", f'Deleted incident "{name}"', row)
-        db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
-        from .artifacts import remove_incident_artifacts
-        from .network import remove_incident_captures
-
-        # What only this incident references goes with it; shared artifacts stay.
-        remove_incident_artifacts(db, incident_id)
-        remove_incident_captures(db, incident_id)
-        # Its context and its War Room go with it.
-        from .. import context as incident_context
-        from ..core.models import WarRoomEntry
-
-        incident_context.forget(db, incident_id)
-        db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
-        db.delete(row)
+        name = remove_incident(db, row, caller.actor)
         db.commit()
         emit(db, background_tasks, "incident.deleted", {"id": incident_id, "name": name})
     # 204 No Content
+
+
+def remove_incident(db: OrmSession, row: Incident, actor: str) -> str:
+    """Delete an incident that is locked, with what only it holds (the caller commits). Returns
+    its name. What the route does, and what a bulk delete does to each one."""
+    incident_id = row.id
+    name = (row.doc or {}).get("name") or incident_id
+    audit.record(db, actor, "incident.delete", f'Deleted incident "{name}"', row)
+    db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
+    from .artifacts import remove_incident_artifacts
+    from .network import remove_incident_captures
+
+    # What only this incident references goes with it; shared artifacts stay.
+    remove_incident_artifacts(db, incident_id)
+    remove_incident_captures(db, incident_id)
+    # Its context and its War Room go with it.
+    from .. import context as incident_context
+    from ..core.models import WarRoomEntry
+
+    incident_context.forget(db, incident_id)
+    indicators_found.forget(db, incident_id)
+    db.execute(delete(WarRoomEntry).where(WarRoomEntry.incident_id == incident_id))
+    db.delete(row)
+    return name
 
 
 # ---------------------------------------------------------------------------
@@ -623,7 +642,7 @@ def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor)
             job.updated_at = now_iso()
         db.commit()
         emit_now(db, "upload.completed", {"incidentId": incident_id, **summary})
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:  # noqa: BLE001 - whatever a parser raises, the job says that it failed
         db.rollback()
         job = db.get(Job, job_id)
         if job is not None:

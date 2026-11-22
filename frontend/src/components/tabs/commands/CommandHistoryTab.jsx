@@ -58,7 +58,7 @@ export default function CommandHistoryTab({ incident }) {
     if (!visibleShells.some((s) => s.id === activeShellId)) {
       setActiveShell(incident.id, visibleShells[0]?.id ?? SHELLS[0].id)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the shell or the incident changes
   }, [activeShellId, incident.id])
 
   /* ---- Import the history file (into the active shell, or `target`) ---- */
@@ -93,7 +93,7 @@ export default function CommandHistoryTab({ incident }) {
     if (!requests.commands) return
     const request = take('commands')
     if (request?.file) handleFile(request.file, getShellById(request.params?.shell) ?? shell)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per dropped file; `take` empties the request
   }, [requests.commands])
 
   const handleRemoveSource = () => {
@@ -137,7 +137,7 @@ export default function CommandHistoryTab({ incident }) {
               {count > 0 && (
                 <span
                   className={[
-                    'rounded-full px-1.5 text-xs tabular-nums',
+                    'px-1.5 text-xs tabular-nums',
                     isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >

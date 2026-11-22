@@ -58,6 +58,25 @@
           <li><a href="#upgrades">Updates, and the snapshot before each</a></li>
           <li><a href="#upgrade-went-wrong">An upgrade went wrong</a></li>
           <li><a href="#upgrading-to-43">Upgrading to 4.3</a></li>
+          <li><a href="#upgrading-to-610">Upgrading to 6.10</a></li>
+          <li><a href="#upgrading-to-69">Upgrading to 6.9</a></li>
+          <li><a href="#upgrading-to-68">Upgrading to 6.8</a></li>
+          <li><a href="#upgrading-to-67">Upgrading to 6.7</a></li>
+          <li><a href="#upgrading-to-66">Upgrading to 6.6</a></li>
+          <li><a href="#upgrading-to-65">Upgrading to 6.5</a></li>
+          <li><a href="#upgrading-to-64">Upgrading to 6.4</a></li>
+          <li><a href="#upgrading-to-63">Upgrading to 6.3</a></li>
+          <li><a href="#upgrading-to-62">Upgrading to 6.2</a></li>
+          <li><a href="#upgrading-to-61">Upgrading to 6.1</a></li>
+          <li><a href="#upgrading-to-60">Upgrading to 6.0</a></li>
+          <li><a href="#upgrading-to-54">Upgrading to 5.4</a></li>
+          <li><a href="#upgrading-to-53">Upgrading to 5.3</a></li>
+          <li><a href="#upgrading-to-52">Upgrading to 5.2</a></li>
+          <li><a href="#upgrading-to-51">Upgrading to 5.1</a></li>
+          <li><a href="#upgrading-to-50">Upgrading to 5.0</a></li>
+          <li><a href="#upgrading-to-47">Upgrading to 4.7</a></li>
+          <li><a href="#upgrading-to-46">Upgrading to 4.6</a></li>
+          <li><a href="#upgrading-to-45">Upgrading to 4.5</a></li>
           <li><a href="#upgrading-to-44">Upgrading to 4.4</a></li>
           <li><a href="#upgrading-to-42">Upgrading to 4.2</a></li>
           <li><a href="#upgrading-to-41">Upgrading to 4.1</a></li>
@@ -1413,13 +1432,21 @@ podman restart nik_api_1
 podman compose up -d --build    # rebuild images, recreate containers, keep data
 </code></pre>
       <p>
+        <strong>The oldest version an update may start from is 6.0.0.</strong> An installation older than that is
+        updated to 6.9.0 first (<code>git checkout v6.9.0</code>, then the command above, following the sections below
+        for the versions it passes), started once so that it migrates, and then to this version. A server started on the
+        database of an older version changes nothing and says so: the page and the log of the API container name the
+        version to go through.
+      </p>
+      <p>
         Release notes say when an update needs more than this. When a release changes the database, the API container
         does this before it serves, and says each step in its log (<code>compose logs api</code>):
       </p>
       <ol>
         <li>
           it takes a lock, so that a second instance waits and no backup starts; it checks that the database is at a
-          revision it knows, that the server is a PostgreSQL it runs on, and that the backup directory has room;
+          revision it knows and not one from before 6.0.0, that the server is a PostgreSQL it runs on, and that the
+          backup directory has room;
         </li>
         <li>
           it takes a <strong>snapshot</strong> of the database into the backup directory
@@ -1526,6 +1553,32 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           the connectors <em>ServiceNow</em> and <em>Jira</em> are replaced by version 2 of their files, which also
           write the ticket they open to the context of the incident. A connector you changed and installed with a higher
           version is left as it is.
+        </li>
+      </ul>
+      <h4 id="upgrading-to-610">Upgrading to 6.10</h4>
+      <p>
+        An installation older than 6.0.0 updates to 6.9.0 first and starts it once. Then <code>git pull</code> and
+        <code>docker compose up -d --build</code>: migrations <code>0054_indicators_found</code> and
+        <code>0055_bulk</code> run after the snapshot and the rehearsal.
+      </p>
+      <ul>
+        <li>
+          <strong>update Nik first, then the packs</strong> Jira Cloud, Jira Data Center, ServiceNow, SentinelOne and
+          SentinelOne SIEM from <em>Settings → Content packs</em>: they need 6.10. Updating Jira or ServiceNow sets
+          their instances that said None to In, so their tickets go on being mirrored as before;
+        </li>
+        <li>
+          every other instance starts at mirroring None and existing mirrors go on as they were. The mail connector is
+          brought to version 4 at start and mirrors nothing until an instance is set to In;
+        </li>
+        <li>
+          indicators are found in the incidents that come in after the upgrade, up to 500 each; older incidents are read
+          only when someone presses <em>Find indicators now</em>;
+        </li>
+        <li>choosing Out or In-out now needs the permission to run playbooks as well as to manage connectors;</li>
+        <li>
+          an installation without containers sets the mailbox location of its nginx to <code>4200m</code>, as the block
+          of this guide does.
         </li>
       </ul>
       <h4 id="upgrading-to-69">Upgrading to 6.9</h4>
@@ -1987,7 +2040,7 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           file says how;
         </li>
         <li>
-          the automation worker does the fetching and the mirroring: with <code>AUTOMATION_ENABLED</code> off, or the
+          the automation worker does the fetching and the mirroring: with <code>AUTOMATION_WORKER=off</code>, or the
           worker stopped, nothing comes in and nothing is sent. The worker reaches the host of each connection through
           the proxy the playbooks use.
         </li>
@@ -2520,6 +2573,14 @@ podman compose exec api python -m app.auditlog verify-audit --head 4182:9f2c…
               <td>Pieces of work set aside after they were interrupted, not tried again by themselves.</td>
             </tr>
             <tr>
+              <td><code>nik_bulk_running</code>, <code>nik_bulk_failed</code></td>
+              <td></td>
+              <td>
+                Bulk actions that run now, and those given up in the last month after they were interrupted three times
+                (what they did stays; their result says what they did not do).
+              </td>
+            </tr>
+            <tr>
               <td><code>nik_work_held</code>, <code>nik_work_silent_seconds</code></td>
               <td></td>
               <td>
@@ -2857,6 +2918,12 @@ podman compose up -d
         short maintenance window: the app is down for the dump, the restore and the restart, a few minutes for a typical
         database.
       </p>
+      <p>
+        The script is part of the releases up to 6.9.0. An installation still on PostgreSQL 16 is older than 6.0.0, and
+        goes <a href="#upgrades">through 6.9.0</a>: these steps are done there, with the script of that release. A later
+        release started on such an installation does not create an empty database beside the old one: its
+        <code>db</code> container stops and says so.
+      </p>
       <ol>
         <li>
           Pull the new release, but <strong>do not</strong> run <code>compose up</code> yet; the running stack is still
@@ -2881,9 +2948,8 @@ podman compose up -d
       <p><code>podman exec nik_db_1 psql -U nik -d nik -Atc 'SHOW server_version'</code></p>
       <p>
         <strong>If <code>compose up</code> already ran</strong> on 2.12.2 before the script, the <code>db</code>
-        container restarts in a loop and its log says
-        <code>run deploy/upgrade-postgres.sh</code>: it refuses to create an empty database while the old data has not
-        been moved (<code>deploy/db-entrypoint.sh</code>). Run the script anyway: it dumps the old volume with a
+        container restarts in a loop and its log says so: it refuses to create an empty database while the old data has
+        not been moved (<code>deploy/db-entrypoint.sh</code>). Run the script anyway: it dumps the old volume with a
         temporary PostgreSQL 16 container instead.
       </p>
       <p>
@@ -2967,18 +3033,18 @@ host    nik      nik  ::1/128         scram-sha-256
       </p>
       <h4 id="step-3-deploy-the-fastapi-backend-systemd">Step 3 — Deploy the FastAPI backend (systemd)</h4>
       <p>
-        The backend needs <strong>Python 3.11 or later</strong>. The default <code>python3</code> of RHEL 8 and 9 is
-        older: install <code>python3.11</code> and call it by that name. Copy <code>backend/</code> to
-        <code>/opt/nik/backend</code> and build a virtualenv:
+        The backend needs <strong>Python 3.12</strong>, the version it is built and tested with. The default
+        <code>python3</code> of RHEL 8 and 9 is older: install <code>python3.12</code> and call it by that name. Copy
+        <code>backend/</code> to <code>/opt/nik/backend</code> and build a virtualenv:
       </p>
-      <pre><code class="language-bash">sudo dnf install -y python3.11 python3.11-pip pango
+      <pre><code class="language-bash">sudo dnf install -y python3.12 python3.12-pip pango
 sudo useradd --system --home /opt/nik --shell /sbin/nologin nik
 
 sudo mkdir -p /opt/nik
 sudo cp -r backend /opt/nik/backend
 cd /opt/nik/backend
 
-sudo python3.11 -m venv .venv
+sudo python3.12 -m venv .venv
 sudo .venv/bin/pip install --upgrade pip
 sudo .venv/bin/pip install -r requirements.txt
 sudo mkdir -p /var/lib/nik/samples      # the sample store: exclude it from the antivirus
@@ -3077,7 +3143,7 @@ sudo openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
 server {
     listen 80;
     server_name nik.example.internal;
-    return 301 https://$host$request_uri;
+    return 308 https://$host$request_uri;
 }
 
 server {
@@ -3087,6 +3153,7 @@ server {
 
     ssl_certificate     /etc/pki/nginx/nik.crt;
     ssl_certificate_key /etc/pki/nginx/private/nik.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
 
     # Large uploads (packet captures up to PCAP_MAX_MB, backup restore,
     # incidents with parsed artifacts) blow past nginx's 1m default and get
@@ -3095,12 +3162,14 @@ server {
 
     root  /var/www/nik;
     index index.html;
-    include /etc/nginx/snippets/nik-headers.conf;
+    include /etc/nginx/snippets/nik-headers-page.conf;
 
-    # A mailbox (mbox, Maildir archive) can be as large as MAILBOX_MAX_MB:
-    # only its upload is allowed that much, and it is not buffered to disk.
+    # A mailbox (mbox, Maildir archive, Outlook PST) can be gigabytes: only
+    # its upload is allowed that much, and it is not buffered to disk. The
+    # backend applies MAILBOX_MAX_MB and PST_MAX_MB to what passes: this
+    # number covers the larger of their defaults, and is raised with them.
     location = /api/artifacts/mailboxes {
-        client_max_body_size 2100m;
+        client_max_body_size 4200m;
         proxy_request_buffering off;
         proxy_read_timeout 900s;
         proxy_send_timeout 900s;
@@ -3109,6 +3178,13 @@ server {
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
+        include /etc/nginx/snippets/nik-headers-api.conf;
+    }
+
+    # What the processes of the server ask of each other is not for whoever
+    # can open the app: none of them comes through nginx.
+    location /api/internal/ {
+        return 404;
     }
 
     # Reverse-proxy the REST API to the gunicorn/uvicorn backend.
@@ -3122,19 +3198,20 @@ server {
         # The client's address as nginx saw it: the API limits sign-ins by it.
         proxy_set_header X-Forwarded-For   $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
+        include /etc/nginx/snippets/nik-headers-api.conf;
     }
 
     # Fingerprinted assets can be cached forever…
     location /assets/ {
         expires 1y;
         add_header Cache-Control &quot;public, immutable&quot;;
-        include /etc/nginx/snippets/nik-headers.conf;
+        include /etc/nginx/snippets/nik-headers-page.conf;
     }
 
     # …but never cache the HTML entry point, so updates are picked up.
     location = /index.html {
         add_header Cache-Control &quot;no-cache&quot;;
-        include /etc/nginx/snippets/nik-headers.conf;
+        include /etc/nginx/snippets/nik-headers-page.conf;
     }
 
     # Serve static files; fall back to index.html
@@ -3152,19 +3229,34 @@ server {
         </p>
       </blockquote>
       <p>
-        Put the security headers in a file of their own, <code>/etc/nginx/snippets/nik-headers.conf</code>, so the
-        server block and the two locations that set a header of their own can include it (nginx drops the inherited ones
-        there):
+        The security headers go in two files of their own, as in the Compose image, so that the server block and every
+        location that sets a header of its own can include one (nginx drops the inherited ones there).
+        <code>/etc/nginx/snippets/nik-headers-page.conf</code> is sent with the app's pages and assets:
       </p>
       <pre><code class="language-nginx">add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
 add_header X-Frame-Options "DENY" always;
 add_header Strict-Transport-Security "max-age=31536000" always;
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
 </code></pre>
       <p>
-        That policy is the one the Compose image sends (<code>frontend/security-headers.js</code>): copy it again from
-        there after an update.
+        <code>/etc/nginx/snippets/nik-headers-api.conf</code> is sent with what the API answers, which includes
+        documents of its own (the PDF reports, <code>/api/docs</code>): they get the generic protections, not the app's
+        policy:
+      </p>
+      <pre><code class="language-nginx">add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header Strict-Transport-Security "max-age=31536000" always;
+</code></pre>
+      <p>
+        These are the files the Compose image sends, written from <code>frontend/security-headers.js</code>:
+        <code>node frontend/security-headers.js &lt;directory&gt;</code> writes both, so make them again that way after
+        an update.
       </p>
       <h4 id="step-9-open-the-firewall-and-reload">Step 9 — Open the firewall and reload</h4>
       <p>Only <strong>80/443</strong> are exposed; the backend stays on <code>127.0.0.1:8000</code>:</p>

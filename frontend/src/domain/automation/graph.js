@@ -67,9 +67,6 @@ export const PORT_LABELS = {
   timeout: 'no answer',
 }
 
-/** What a port is called where it has to be named (the inspector, the node list). */
-export const PORT_NAMES = { ...PORT_LABELS, out: 'then' }
-
 /** The port an answer leaves by: "Yes, block it" gives "yes_block_it" (as the server does). */
 export function slug(text) {
   const out = String(text ?? '')
@@ -158,8 +155,6 @@ const RESERVED = new Set([
 
 export const ID_RE = /^[a-z][a-z0-9_]{0,31}$/
 export const MAX_NODES = 200
-
-export const emptyGraph = () => ({ nodes: [], edges: [] })
 
 const list = (value) => (Array.isArray(value) ? value : [])
 

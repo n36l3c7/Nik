@@ -3,8 +3,8 @@ name: Jira Data Center
 vendor: Atlassian
 category: Ticketing
 tags: [ticketing]
-version: 1.0.1
+version: 1.1.0
 description: >-
   Issues of Jira Data Center as incidents, kept in step both ways: the connector, its classifier and its mappers.
 author: Nik
-nik: ">=6.0"
+nik: ">=6.10"

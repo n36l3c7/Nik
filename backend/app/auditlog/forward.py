@@ -62,14 +62,15 @@ import re
 import ssl
 import time
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from ..core import audit, vault
+from ..core import audit, leases, vault
+from ..core.clock import iso_or_none as _iso
+from ..core.clock import stamp as _stamp
 from ..core.models import AuditEntry, Setting
 from . import syslog, transport
 from .transport import TransportError
@@ -368,17 +369,6 @@ def write(db: OrmSession, sent: dict[str, Any], actor: str, now: float | None = 
 # --------------------------------------------------------------------------- #
 # How things stand                                                            #
 # --------------------------------------------------------------------------- #
-def _iso(at: Any) -> str | None:
-    return datetime.fromtimestamp(float(at), timezone.utc).isoformat() if at else None
-
-
-def _stamp(text: Any) -> float:
-    try:
-        return datetime.fromisoformat(str(text)).timestamp()
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _active(state: dict[str, Any]) -> dict[str, Any]:
     held = state.get("active")
     return {**DEFAULTS, **held} if isinstance(held, dict) else dict(DEFAULTS)
@@ -789,13 +779,13 @@ _shipping = False
 
 
 def _loop() -> None:
-    time.sleep(12)  # let the server start
-    while True:
+    leases.wait(12)  # let the server start
+    while not leases.stopping():
         try:
             ship()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("A pass of the forwarding of the audit log failed")
-        time.sleep(SHIP_EVERY)
+        leases.wait(SHIP_EVERY)
 
 
 def start() -> None:

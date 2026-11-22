@@ -26,7 +26,6 @@ from .core.models import Artifact, ArtifactLink, Mail, NetworkCapture, Sample, U
 from .iocs import TYPES, capture_iocs, normalize, quiet_mail
 
 Pair = tuple[str, str]
-SOURCE = "nik"  # Nik's own analysis among an indicator's sources
 LABEL = "Nik's analysis"
 # An artifact's verdict in the words of a reputation. A clean scan or a file
 # with no rule match is not a judgement that the value is harmless: it is left out.

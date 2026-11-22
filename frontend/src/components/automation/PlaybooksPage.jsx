@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { formatRelative } from '../../lib/time.js'
-import { Badge, Button, EmptyState, Modal } from '../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../ui/index.js'
 import { Field, Switch, TextInput } from './fields.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -148,11 +148,7 @@ export default function PlaybooksPage({ playbooks, error, onOpen, onReload }) {
           {error}
         </p>
       )}
-      {!playbooks && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the playbooks…
-        </p>
-      )}
+      {!playbooks && !error && <Wait>Loading the playbooks…</Wait>}
       {playbooks?.length === 0 && (
         <EmptyState
           skull

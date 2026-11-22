@@ -3,7 +3,7 @@ import { FolderClosed, FolderOpen, X } from 'lucide-react'
 import { useTasks } from '../../context/TasksContext.jsx'
 import { api } from '../../services/api.js'
 import { byUrgency, dueText, statusBadge, tasksPath } from '../../domain/tasks.js'
-import { Badge, EmptyState } from '../ui/index.js'
+import { Badge, EmptyState, Wait } from '../ui/index.js'
 import TaskCard from './TaskCard.jsx'
 import { numberedName } from '../../domain/incidentName.js'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
@@ -127,9 +127,9 @@ export default function TasksPage({ taskId, onSelect, onClose, onOpenIncident, o
               {error}
             </p>
           ) : tasks === null ? (
-            <p role="status" className="p-4 font-mono text-sm text-fg-muted">
-              Loading tasks…
-            </p>
+            <div className="p-4">
+              <Wait>Loading tasks…</Wait>
+            </div>
           ) : tasks.length === 0 ? (
             <div className="p-4">
               <EmptyState

@@ -12,7 +12,6 @@ later whether it belongs to a case.
   so the documents stay the single source of truth.
 - ``relate`` records where an artifact comes from (an attachment of an e-mail,
   an object extracted from a capture).
-- ``backfill`` writes the entries of what was stored before 2.19.0.
 """
 
 from __future__ import annotations
@@ -234,34 +233,3 @@ def set_tags(db: OrmSession, row: Artifact, tags: Iterable[str]) -> list[str]:
     row.tags = clean[:TAGS_MAX]
     flag_modified(row, "tags")
     return row.tags
-
-
-def backfill(session_factory) -> int:
-    """Startup pass: entries for the samples, e-mails and captures stored
-    before artifacts existed. Links follow from re-indexing the incidents."""
-    from .iocs import reindex_incident
-
-    with session_factory() as db:
-        if db.scalar(select(Artifact.id).limit(1)) is not None:
-            return 0
-        stored = (
-            db.scalar(select(Sample.sha256).limit(1)),
-            db.scalar(select(Mail.sha256).limit(1)),
-            db.scalar(select(NetworkCapture.id).limit(1)),
-        )
-        if not any(stored):
-            return 0
-        for incident in db.scalars(select(Incident)).all():
-            reindex_incident(db, incident)
-        for sample in db.scalars(select(Sample)).all():
-            register_file(db, sample)
-        for mail in db.scalars(select(Mail)).all():
-            register_mail(db, mail)
-        for capture in db.scalars(select(NetworkCapture)).all():
-            register_capture(db, capture)
-        for scan in db.scalars(select(UrlScan)).all():
-            register_url(db, scan)
-        db.commit()
-        count = len(db.scalars(select(Artifact.id)).all())
-        logger.info("Registered %d artifact(s) stored by earlier releases", count)
-        return count

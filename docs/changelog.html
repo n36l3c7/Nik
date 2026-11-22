@@ -40,6 +40,30 @@
       </p>
 
       <section class="release">
+        <h3>6.10.0 <span class="date">2026-11-22</span></h3>
+        <ul>
+          <li>
+            <span class="tag added">added</span> <strong>Select many and act on them at once</strong> on incidents,
+            artifacts and indicators: jobs that survive a restart, never do an item twice and tell what they did.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Indicators are found by themselves</strong> in what comes in,
+            up to 500 per incident, with the trigger <code>indicators.found</code> and <code>nik.make-indicators</code>.
+          </li>
+          <li>
+            <span class="tag added">added</span> <strong>Mirroring is chosen in the instance</strong> (None, In, Out,
+            In-out), and everything that fetches can be mirrored, SentinelOne included.
+          </li>
+          <li>
+            <span class="tag changed">changed</span> Updates start from 6.0.0 or later; packs are updated after Nik (<a
+              href="deployment.html#upgrading-to-610"
+              >Upgrading to 6.10</a
+            >).
+          </li>
+        </ul>
+      </section>
+
+      <section class="release">
         <h3>6.9.0 <span class="date">2026-11-21</span></h3>
         <ul>
           <li>

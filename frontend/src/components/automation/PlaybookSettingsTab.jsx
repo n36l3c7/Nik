@@ -3,7 +3,7 @@ import { Copy, Download, Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
-import { saveBlob } from '../../lib/download.js'
+import { copyText, saveBlob } from '../../lib/download.js'
 import { formatDateTime } from '../../lib/time.js'
 import { hostOf } from '../../domain/automation/hosts.js'
 import { Badge, Button, Modal } from '../ui/index.js'
@@ -73,14 +73,8 @@ function HookBox({ playbook, canEdit, base, onChanged }) {
   }
   const create = () => change(() => api.post(`${base}/hook`, {}))
   const remove = () => change(() => api.del(`${base}/hook`))
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(made.url)
-      showToast({ message: 'Address copied.' })
-    } catch {
-      showToast({ message: 'The browser refused to copy.' })
-    }
-  }
+  const copy = async () =>
+    showToast({ message: (await copyText(made.url)) ? 'Address copied.' : 'The browser refused to copy.' })
 
   const waits = Boolean(playbook.triggerConfig?.webhook)
   return (

@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { chartNote, chartPath } from '../../../domain/linked.js'
 import { api } from '../../../services/api.js'
+import { Wait } from '../../ui/index.js'
 
 // The charts are the dashboards': loaded when a page shows one.
 const Widget = lazy(() => import('../../dashboards/Widget.jsx'))
@@ -48,7 +49,7 @@ export default function DashboardChart({ incident, widget }) {
   if (state.error && state.key === key) return <p className={MUTED}>{state.error}.</p>
   // While it is asked again for the same incident the last answer stays: no flash at every save.
   const found = state.path === path ? state.found : null
-  if (!found) return <p className={`font-mono ${MUTED}`}>Loading…</p>
+  if (!found) return <Wait>Loading…</Wait>
   if (found.empty) {
     return (
       <p className={MUTED}>This incident has no {found.field}: the chart would count everything, so it is not drawn.</p>
@@ -57,7 +58,7 @@ export default function DashboardChart({ incident, widget }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-1">
       <div className="min-h-0 flex-1">
-        <Suspense fallback={<p className={`font-mono ${MUTED}`}>Loading…</p>}>
+        <Suspense fallback={<Wait>Loading…</Wait>}>
           <Widget widget={found.widget} board={found.board} range={found.board.timeRange} />
         </Suspense>
       </div>

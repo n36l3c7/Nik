@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import set_committed_value
 
 from . import client_address, signin_policy
+from .clock import now_iso
 from .config import settings
 from .db import get_db
 from .models import ApiKey, User, UserFactor
@@ -42,6 +43,8 @@ from .permissions import (
     AUDIT_READ,
     AUTOMATION_EDIT,
     AUTOMATION_RUN,
+    CONNECTORS_MANAGE,
+    INCIDENTS_CONFIGURE,
     PERMISSIONS,
     READ,
     RULES_MANAGE,
@@ -63,11 +66,6 @@ _BCRYPT_HASH = re.compile(r"^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$")
 def utcnow() -> datetime:
     """The time, for everything that decides when a session or a wait ends (a test puts its own clock here)."""
     return datetime.now(timezone.utc)
-
-
-def now_iso() -> str:
-    """Current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _parse_iso(value: str) -> datetime:
@@ -356,9 +354,15 @@ def generate_api_key() -> tuple[str, str]:
     return token, token[: len(API_KEY_PREFIX) + 8]
 
 
+def token_digest(token: str) -> str:
+    """What is kept of a token Nik gave out (an API key, a ticket of the sign-in, the token of the
+    metrics, the key of a hook): its SHA-256, in hexadecimal. The token itself is never stored."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def hash_api_key(key: str) -> str:
     """SHA-256 hex digest of an API key (used for storage and lookup)."""
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return token_digest(key)
 
 
 # Documented in OpenAPI so Swagger UI shows an "Authorize" box for the header.
@@ -508,6 +512,10 @@ rules_reader_principal = require(READ, RULES_MANAGE)
 # Automation: run a playbook and read runs; build playbooks and scripts.
 runner_principal = require(AUTOMATION_RUN)
 editor_principal = require(AUTOMATION_EDIT)
+# Connectors with their instances, credentials and mappers; the fields, the types and the
+# pre-processing of incidents.
+manager_principal = require(CONNECTORS_MANAGE)
+configure_principal = require(INCIDENTS_CONFIGURE)
 
 
 # ---------------------------------------------------------------------------

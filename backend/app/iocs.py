@@ -394,23 +394,37 @@ def add_manual(db: OrmSession, row: Incident, kind: str, value: Any, source: str
     found = indicator_of(kind, value)
     if found is None:
         return None
+    added = add_manual_many(db, row, [found], source, by)
+    return added[0] if added else None
+
+
+def add_manual_many(
+    db: OrmSession, row: Incident, pairs: list[tuple[str, str]], source: str, by: str = ""
+) -> list[dict]:
+    """Add several indicators to the incident by hand, each ``(type, value)`` as the library
+    stores it, and index them once. Returns the entries added: one the incident holds from this
+    source already is not added again, and nothing is past the 500 an incident keeps this way."""
     doc = dict(row.doc or {})
     data = dict(doc.get("data") or {}) if isinstance(doc.get("data"), dict) else {}
     held = dict(data.get("iocs") or {}) if isinstance(data.get("iocs"), dict) else {}
     manual = [entry for entry in held.get("manual") or [] if isinstance(entry, dict)]
-    if any((entry.get("type"), entry.get("value"), entry.get("source")) == (*found, source) for entry in manual):
-        return None
-    if len(manual) >= MAX_MANUAL:
-        return None
-    entry = {"type": found[0], "value": found[1], "source": source, "time": int(time.time() * 1000), "by": by}
-    held["manual"] = [*manual, entry]
+    there = {(entry.get("type"), entry.get("value"), entry.get("source")) for entry in manual}
+    added: list[dict] = []
+    for kind, value in pairs:
+        if kind not in MANUAL_KINDS or (kind, value, source) in there or len(manual) + len(added) >= MAX_MANUAL:
+            continue
+        there.add((kind, value, source))
+        added.append({"type": kind, "value": value, "source": source, "time": int(time.time() * 1000), "by": by})
+    if not added:
+        return []
+    held["manual"] = [*manual, *added]
     data["iocs"] = held
     doc["data"] = data
     row.doc = doc
     flag_modified(row, "doc")
     db.flush()
     reindex_incident(db, row)
-    return entry
+    return added
 
 
 def reindex_incident(db: OrmSession, row: Incident, alerts: bool = True) -> int:
@@ -449,6 +463,10 @@ def reindex_incident(db: OrmSession, row: Incident, alerts: bool = True) -> int:
 
     incident_context.sync_analysis(db, row, samples, mails, urls, names)
     items = extract(doc, samples, mails, captures, urls)
+    # What was found by itself in the fields and the context when the incident came in.
+    from . import indicators_found
+
+    indicators_found.add_to(db, row.id, items, MAX_PER_INCIDENT)
     before = (
         {(t, v) for t, v in db.execute(select(IocEntry.type, IocEntry.value).where(IocEntry.incident_id == row.id))}
         if alerts
@@ -493,36 +511,6 @@ def _announce(db: OrmSession, row: Incident, before: set, after: set) -> None:
 
         triggers.watch_hit(db, row, hits)
         emit_detached(db, "ioc.watch_hit", {"incident": hits[0]["incident"], "hits": hits[:200]})
-
-
-def reindex_all(db: OrmSession) -> int:
-    """Rebuild the whole index (backup restore)."""
-    count = 0
-    for row in db.scalars(select(Incident)):
-        count += reindex_incident(db, row, alerts=False)
-    return count
-
-
-def backfill(session_factory) -> int:
-    """Index the incidents of a database that has no index yet (the first start
-    after the upgrade that added it). One transaction per incident, so several
-    api workers starting together only repeat each other's work."""
-    with session_factory() as db:
-        if db.scalar(select(IocEntry.incident_id).limit(1)) is not None:
-            return 0
-        ids = list(db.scalars(select(Incident.id)))
-    indexed = 0
-    for incident_id in ids:
-        with session_factory() as db:
-            row = db.get(Incident, incident_id)
-            if row is None:
-                continue
-            try:
-                indexed += reindex_incident(db, row, alerts=False)
-                db.commit()
-            except Exception:  # noqa: BLE001 - another worker got there first
-                db.rollback()
-    return indexed
 
 
 def incident_iocs(db: OrmSession, incident_id: str, allowlist: Allowlist) -> list[dict[str, Any]]:

@@ -159,6 +159,11 @@ export const EVENTS = {
     about: 'incident',
     sample: ['list.name', 'My watched list'],
   },
+  'indicators.found': {
+    label: 'Indicators are found in an incident',
+    about: 'incident',
+    sample: ['found.door', 'fetch'],
+  },
   'storage.low': { label: 'The disk is nearly full', about: '', sample: ['disk.free_percent', 5] },
   'sla.breached': {
     label: 'A timer of an incident passes its time',
@@ -237,6 +242,20 @@ function eventFields(event, shapes) {
         { name: 'list.id', type: 'text', description: 'The id of the watched list' },
         { name: 'list.name', type: 'text', description: 'Its name' },
         { name: 'hits', type: 'list', description: 'Every hit: each with type, value, list and incident' },
+        ...INCIDENT_FIELDS,
+      ]
+    case 'indicators.found':
+      return [
+        ...fieldsOf('found', [
+          ['count', 'number', 'How many indicators this reading kept that the incident did not hold'],
+          ['door', 'text', 'How the incident was read: fetch, api, hand, playbook, mirror or asked'],
+          ['by_type', 'object', 'How many of each type: by_type.ip, .domain, .url, .email, .md5, .sha1, .sha256'],
+          ['indicators', 'list', 'The first 100 of them, each with type, value and path (where it was read)'],
+          ['values', 'list', 'Their values alone, in the same order'],
+          ['cut', 'bool', 'True when there were more than the 100 listed'],
+          ['more', 'number', 'How many the list leaves out'],
+          ['kept', 'number', 'How many the incident now holds by finding, removed ones aside'],
+        ]),
         ...INCIDENT_FIELDS,
       ]
     case 'sla.breached':

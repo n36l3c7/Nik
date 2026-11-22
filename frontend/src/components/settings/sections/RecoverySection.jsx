@@ -32,6 +32,7 @@ import {
   windowText,
 } from '../../../domain/recovery.js'
 import { useToast } from '../../../context/ToastContext.jsx'
+import { copyText } from '../../../lib/download.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { Badge, Button, Select, Wait } from '../../ui/index.js'
@@ -311,14 +312,8 @@ export default function RecoverySection() {
       setAsking(null)
     }
   }
-  const copy = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      showToast({ message: 'The command copied.' })
-    } catch {
-      showToast({ message: 'The browser refused to copy.' })
-    }
-  }
+  const copy = async (text) =>
+    showToast({ message: (await copyText(text)) ? 'The command copied.' : 'The browser refused to copy.' })
 
   const heading = (
     <div>

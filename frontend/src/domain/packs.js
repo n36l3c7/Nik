@@ -102,23 +102,9 @@ export function byKind(items) {
 /** "Field" → "Fields", "Pre-processing rule" → "Pre-processing rules", "Incident type" → "Incident types". */
 export const plural = (label, count) => (count === 1 ? label : `${label}s`)
 
-/** What a pack is, in a line: "12 items · installed by admin on 2026-11-19". */
-export function packLine(pack) {
-  const count = pack?.items?.length ?? 0
-  const missing = (pack?.items ?? []).filter((item) => !item.there).length
-  const parts = [`${count} ${count === 1 ? 'item' : 'items'}`]
-  if (missing) parts.push(`${missing} no longer here`)
-  if (pack?.builtin) parts.push('part of Nik')
-  else if (pack?.updatedBy) parts.push(`installed by ${pack.updatedBy} on ${String(pack.updatedAt ?? '').slice(0, 10)}`)
-  return parts.join(' · ')
-}
-
 // --------------------------------------------------------------------------- //
 // The catalogue (GET /api/packs/catalogue) beside what is installed            //
 // --------------------------------------------------------------------------- //
-
-/** The id of the pack that is Nik itself. */
-export const NIK_PACK = 'nik'
 
 const KIND_WORDS = {
   playbooks: 'playbook',
@@ -330,6 +316,23 @@ export function bulkPlanLine(action, line) {
     .join(', ')
 }
 
+/**
+ * What a pack update did so that mirroring goes on as it did, in a sentence, or
+ * '': its mapper named the direction until now, and the instances that said
+ * None were told that direction (`mirroring`: `[{ connector, direction, instances }]`).
+ */
+export function mirroringKept(mirroring) {
+  const labels = { in: 'In', out: 'Out', both: 'In-out' }
+  return (mirroring ?? [])
+    .filter((item) => (item.instances ?? []).length > 0)
+    .map(
+      (item) =>
+        `Mirroring was set to ${labels[item.direction] ?? item.direction} in ${item.instances.join(', ')}: ` +
+        'the mapper said so until now, and the instance says it from now on.',
+    )
+    .join(' ')
+}
+
 /** What was done to one pack, in a line: "installed: 3 added, 1 updated", "not uninstalled: it is in use". */
 export function bulkResultLine(action, line) {
   if (!line.ok) {
@@ -344,7 +347,8 @@ export function bulkResultLine(action, line) {
     line.updated ? `${line.updated} updated` : '',
     line.same ? `${line.same} the same` : '',
   ].filter(Boolean)
-  return `${BULK[action].done}${parts.length ? `: ${parts.join(', ')}` : ''}`
+  const kept = mirroringKept(line.mirroring)
+  return `${BULK[action].done}${parts.length ? `: ${parts.join(', ')}` : ''}${kept ? `. ${kept}` : ''}`
 }
 
 /** Cards by vendor: Nik first, then the vendors by name, "Other" last. `[{ vendor, cards }]`. */

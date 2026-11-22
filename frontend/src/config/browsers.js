@@ -241,9 +241,6 @@ export function isBrowserAvailableOn(browser, osId) {
   return !browser?.platforms || browser.platforms.includes(osId)
 }
 
-/** All supported artifacts (keys of a browser's data arrays). */
-export const BROWSER_ARTIFACT_KEYS = ['history', 'downloads', 'bookmarks', 'shortcuts']
-
 /** Returns the definition of a browser from its id. */
 export function getBrowserById(browserId) {
   return BROWSERS.find((b) => b.id === browserId) ?? null

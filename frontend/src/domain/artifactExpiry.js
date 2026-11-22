@@ -27,12 +27,6 @@ export function expiryText(artifact) {
   return `expires in ${left} days (${artifact.expiresAt})`
 }
 
-/** How pressing a date is: 'soon' within a week, 'later' otherwise, null with no date. */
-export function expiryUrgency(artifact) {
-  if (!artifact?.expiresAt) return null
-  return artifact.expiresInDays != null && artifact.expiresInDays <= 7 ? 'soon' : 'later'
-}
-
 /** "12 artifacts (3.4 GB) have no date and are kept until someone deletes them." */
 export function undatedText(undated, formatBytes) {
   const count = undated?.count ?? 0

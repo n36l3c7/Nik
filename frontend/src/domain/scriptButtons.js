@@ -137,20 +137,6 @@ export function fieldTree(fields) {
   ]
 }
 
-/** The fields a type shows: those of its sections, in their order, each once. */
-export function fieldsOfType(layout, known) {
-  const seen = new Set()
-  const out = []
-  for (const section of list(layout?.sections)) {
-    for (const name of list(section.fields)) {
-      if (seen.has(name) || !known?.[name]) continue
-      seen.add(name)
-      out.push(known[name])
-    }
-  }
-  return out
-}
-
 /** A value of an argument as one line of the dialog. */
 export function shownValue(value) {
   if (value === null || value === undefined) return ''

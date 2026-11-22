@@ -33,14 +33,13 @@ from ..automation import connectors as files
 from ..core import audit, vault
 from ..core.db import get_db
 from ..core.models import Connection, Connector, Credential, Playbook, PlaybookVersion
-from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_RUN, CONNECTORS_MANAGE
-from ..core.security import Principal, now_iso, reader_principal, require
+from ..core.permissions import AUTOMATION_EDIT, AUTOMATION_OPEN, AUTOMATION_RUN, CONNECTORS_MANAGE
+from ..core.security import Principal, manager_principal, now_iso, reader_principal, require
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
-manager_principal = require(CONNECTORS_MANAGE)
 # Whoever builds or runs playbooks sees which connections there are (never what is in them).
-chooser_principal = require(CONNECTORS_MANAGE, AUTOMATION_RUN, AUTOMATION_EDIT)
+instance_chooser_principal = require(CONNECTORS_MANAGE, AUTOMATION_RUN, AUTOMATION_EDIT)
 
 
 class SourceIn(BaseModel):
@@ -77,7 +76,7 @@ class ConnectionPatch(BaseModel):
     # How the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours}.
     keyPolicy: dict[str, Any] | None = None
     # How it fetches (6.4), for a connector that can: {enabled, intervalSeconds, firstFetch,
-    # lookbackMinutes}; a value left out stays as it is.
+    # lookbackMinutes, mirror, mirrorAllow}; a value left out stays as it is.
     fetch: dict[str, Any] | None = None
 
 
@@ -266,7 +265,7 @@ def _merge_secrets(
 
 def _set_fetching(db: OrmSession, row: Connection, given: dict[str, Any]) -> list[str]:
     """Whether an instance fetches and how, as its form sends it with the rest. Gives what changed."""
-    known = {"enabled", "intervalSeconds", "firstFetch", "lookbackMinutes"}
+    known = {"enabled", "intervalSeconds", "firstFetch", "lookbackMinutes", "mirror", "mirrorAllow"}
     for name in given:
         if name not in known:
             raise fetching.FetchError(f'"{name}" is not something of how an instance fetches')
@@ -307,12 +306,15 @@ def list_connectors(_caller: Principal = Depends(manager_principal), db: OrmSess
 
 @router.post("/connectors/check")
 def check_connector(body: SourceIn, _caller: Principal = Depends(manager_principal)) -> dict:
-    """What is wrong with a file, without installing it: ``{problems: [{line, message, where}]}``."""
+    """What is wrong with a file, without installing it: ``{problems: [{line, message, where}]}``.
+    ``warnings`` has the same shape and stops nothing: what the file would better say (a connector
+    that fetches and says neither how it mirrors nor why it does not)."""
     try:
         connector = files.load(body.source)
     except files.ConnectorError as error:
-        return {"problems": [problem.as_dict() for problem in error.problems], "connector": None}
-    return {"problems": [], "connector": files.summary(connector)}
+        return {"problems": [problem.as_dict() for problem in error.problems], "warnings": [], "connector": None}
+    said = [warning.as_dict() for warning in files.warnings(body.source)]
+    return {"problems": [], "warnings": said, "connector": files.summary(connector)}
 
 
 @router.get("/connectors/samples")
@@ -354,7 +356,7 @@ def install_connector(
         target=connector.id,
     )
     db.commit()
-    return _connector_out(db, row, source=True)
+    return {**_connector_out(db, row, source=True), "warnings": [w.as_dict() for w in files.warnings(body.source)]}
 
 
 @router.get("/connectors/{connector_id}")
@@ -458,7 +460,7 @@ def delete_connector(
 # Connections                                                                 #
 # --------------------------------------------------------------------------- #
 @router.get("/instances")
-def list_connections(caller: Principal = Depends(chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
+def list_connections(caller: Principal = Depends(instance_chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The connections. With ``connectors.manage``: their address, which secrets are set, the last
     test. Otherwise their names only, to choose one on a node."""
     full = caller.has(CONNECTORS_MANAGE)
@@ -576,6 +578,23 @@ def update_connection(
         db.rollback()
         raise HTTPException(status_code=400, detail=error.message) from None
     if body.fetch is not None:
+        from .. import mirror as mirroring
+
+        # A direction that sends: every incident the instance fetches from then on writes to the other
+        # system, so choosing it asks what starting such a mirror on an incident asks. One that says it
+        # already is saved again by who manages connectors.
+        wanted = body.fetch.get("mirror")
+        if wanted in ("out", "both") and wanted != mirroring.choice_of(row)[0] and not caller.has(AUTOMATION_RUN):
+            raise HTTPException(
+                status_code=403, detail="Sending to another system needs the permission to run playbooks"
+            )
+        # The classes of data the mirrors of its incidents may send: opening one is not a matter of
+        # connectors alone, here as on an incident.
+        asked = body.fetch.get("mirrorAllow")
+        named = [name for name in asked if isinstance(name, str)] if isinstance(asked, list) else []
+        opened = set(named) - set(mirroring.choice_of(row)[1])
+        if opened and not caller.has(AUTOMATION_OPEN):
+            raise HTTPException(status_code=403, detail="Opening a class of data needs the permission that opens them")
         try:
             changes += _set_fetching(db, row, body.fetch)
         except fetching.FetchError as error:

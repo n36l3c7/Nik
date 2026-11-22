@@ -27,7 +27,6 @@ import logging
 import os
 import re
 import shutil
-import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -38,6 +37,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core import audit
+from ..core.clock import iso, stamp
 from ..core.config import settings
 from ..core.models import Backup, Lease
 from . import config, database, policy, store
@@ -47,7 +47,7 @@ logger = logging.getLogger("nik.backups")
 
 LEASE = "backup"
 LEASE_SECONDS = 120
-HOLDER = f"{uuid.uuid4()}"
+HOLDER = uuid.uuid4().hex
 NAME = re.compile(r"^nik-(upgrade-)?\d{8}-\d{6}$")
 SYSTEM = "system"
 # Room asked for beyond what the database and the store measure.
@@ -80,17 +80,6 @@ def file_of(name: str, folder: Path | None = None) -> Path:
 
 def note_of(name: str, folder: Path | None = None) -> Path:
     return file_of(name, folder).with_suffix(".json")
-
-
-def iso(at: float) -> str:
-    return datetime.fromtimestamp(at, timezone.utc).isoformat()
-
-
-def stamp(text: str | None) -> float:
-    try:
-        return datetime.fromisoformat(str(text)).timestamp()
-    except ValueError:
-        return 0.0
 
 
 def new_name(kind: str, now: float, folder: Path | None = None) -> str:
@@ -143,32 +132,6 @@ def held_by_another(db: OrmSession, holder: str = HOLDER, now: float | None = No
     now = time.time() if now is None else now
     row = db.get(Lease, LEASE)
     return row is not None and row.holder != holder and row.expires_at >= now
-
-
-class Renewing:
-    """Keeps the lease while a long piece of work runs in this thread."""
-
-    def __init__(self, holder: str, name: str = LEASE, seconds: float = LEASE_SECONDS) -> None:
-        self._holder, self._name, self._seconds, self._stop = holder, name, seconds, threading.Event()
-        self._thread = threading.Thread(target=self._run, name="nik-backup-lease", daemon=True)
-
-    def _run(self) -> None:
-        from ..core import leases
-        from ..core.db import SessionLocal
-
-        while not self._stop.wait(self._seconds / 4):
-            try:
-                with SessionLocal() as db:
-                    leases.take(db, self._name, self._holder, self._seconds)
-            except Exception:  # noqa: BLE001 - the work goes on; the next renewal tries again
-                logger.exception("The lease of the backups could not be renewed")
-
-    def __enter__(self) -> Renewing:
-        self._thread.start()
-        return self
-
-    def __exit__(self, *_exc) -> None:
-        self._stop.set()
 
 
 # --------------------------------------------------------------------------- #
@@ -350,7 +313,7 @@ def check_file(path: Path, secrets: Secrets) -> dict[str, Any]:
                 with open(path, "rb") as source:
                     reader = Reader(source, secrets)
                     for part in reader.parts():
-                        loader.take(part) or unpacker.take(part)  # noqa: B018 - the first that knows the part takes it
+                        loader.take(part) or unpacker.take(part)  # the first that knows the part takes it
                 manifest = reader.manifest
                 checks = [f"every chunk decrypts, and the {len(reader.found)} parts have the size and checksum written"]
                 checks += loader.finish(manifest)

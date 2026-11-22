@@ -71,6 +71,14 @@ export const SETTINGS_GROUPS = [
         permission: 'admin',
         keywords: 'sources connectors instances api keys virustotal reputation lookups retention automatic enrichment',
       },
+      {
+        id: 'found',
+        slug: 'found',
+        label: 'Indicators found',
+        permission: 'admin',
+        keywords:
+          'ingestion new incident context read by itself extract recognise defanged limit paths left out private',
+      },
     ],
   },
   {
@@ -270,6 +278,13 @@ export const SETTINGS_GROUPS = [
         keywords: 'health status down answering analyzer capa browser sandbox pcap document containers notifications',
       },
       {
+        id: 'bulk',
+        slug: 'bulk',
+        label: 'Bulk actions',
+        permission: 'read',
+        keywords: 'multi selection many at once jobs result what it did refused failed retry limits maximum',
+      },
+      {
         id: 'backup',
         slug: 'backup',
         label: 'Backup',
@@ -289,9 +304,6 @@ export const SETTINGS_GROUPS = [
 
 const SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.sections.map((section) => ({ ...section, group: group.id })))
 const BY_ID = new Map(SECTIONS.map((section) => [section.id, section]))
-
-/** The section with this id, or null. */
-export const settingsSection = (id) => BY_ID.get(id) ?? null
 
 /** The address of a section (by id); of the page itself when the id is unknown. */
 export function settingsPath(id) {

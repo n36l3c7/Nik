@@ -68,7 +68,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session as OrmSession
 
 from . import artifacts, work
-from .core import audit, vault
+from .core import audit, leases, vault
 from .core.locking import lock_incident
 from .core.models import (
     Artifact,
@@ -534,6 +534,9 @@ def run_due(limit: int = 20, *, threads: bool = True, now: float | None = None) 
     starts on a worker run each in a thread of its own (``threads`` off: here, one by one, for tests)."""
     from .core.db import SessionLocal
 
+    with SessionLocal() as db:
+        if not leases.may_work(db):
+            return 0  # a standby, or a server its standby replaced: its database takes no claim
     done = 0
     while done < limit and not work.stopping():
         with SessionLocal() as db:
@@ -551,6 +554,8 @@ def prune(now: float | None = None) -> int:
 
     now = time.time() if now is None else now
     with SessionLocal() as db:
+        if not leases.may_work(db):
+            return 0
         old = select(ArtifactJob.id).where(ArtifactJob.created_epoch < now - KEPT_SECONDS)
         db.execute(delete(ArtifactJobPart).where(ArtifactJobPart.job_id.in_(old)))
         gone = db.execute(delete(ArtifactJob).where(ArtifactJob.created_epoch < now - KEPT_SECONDS)).rowcount
@@ -670,9 +675,9 @@ def kept(db: OrmSession, waiting: dict[str, Any], actor: str, now: float) -> boo
 
 
 def _loop() -> None:
-    time.sleep(15)  # let the API start
+    leases.wait(15)  # let the API start
     pruned = 0.0
-    while not work.stopping():
+    while not leases.stopping():
         try:
             run_due()
             if time.time() - pruned > 3600:
@@ -680,7 +685,7 @@ def _loop() -> None:
                 prune()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("Looking for what playbooks asked about files failed")
-        time.sleep(LOOK_EVERY)
+        leases.wait(LOOK_EVERY)
 
 
 def start() -> None:

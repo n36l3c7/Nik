@@ -19,7 +19,7 @@
 # the texts as plain text, not in the document format.
 name: Jira Cloud
 id: jira-cloud
-version: 4
+version: 5
 description: Issues, comments and transitions in Jira Cloud.
 api_version: "Jira Cloud platform REST API v3 (/rest/api/3)"
 verified: false
@@ -240,7 +240,10 @@ schema:
     - { name: labels, type: list }
     - { name: priority, type: object, description: "{\"name\": \"High\"}" }
 
+# The object an incident is kept in step with is the issue its item was, by its key. The direction is
+# what the instance says (None, In, Out, In-out): the mapper of the pack no longer names it.
 mirror:
+  id: "{{ item.key }}"
   interval_seconds: 120
   get: { command: get-issue-text }
   item: "{{ result.issue }}"

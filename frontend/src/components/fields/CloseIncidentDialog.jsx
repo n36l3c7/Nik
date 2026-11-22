@@ -5,7 +5,7 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { UNCLASSIFIED, byName, fromInput, toInput } from '../../domain/fields.js'
 import { closeFields, closeSections, openTasksText } from '../../domain/typePages.js'
-import { Button, Modal } from '../ui/index.js'
+import { Button, Modal, Wait } from '../ui/index.js'
 import FieldInput from './FieldInput.jsx'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
 
@@ -188,11 +188,7 @@ function OpenDialog({ incidentId, onDone }) {
           {loaded?.type ? ` · ${loaded.type.name}` : ''}
           {form ? ' · the form of its type' : ''}
         </p>
-        {!loaded && !error && (
-          <p role="status" className="font-mono text-fg-muted">
-            Loading…
-          </p>
-        )}
+        {!loaded && !error && <Wait>Loading…</Wait>}
         {loaded && (
           <>
             <label className="flex flex-col gap-1" htmlFor="close-reason">

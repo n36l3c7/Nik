@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session as OrmSession
 
+from . import origin
 from .models import AuditEntry, Incident
 from .security import now_iso
 
@@ -47,7 +48,11 @@ def record(
     target: str | None = None,
 ) -> AuditEntry:
     """Add an audit entry to the session (the caller commits). The entry gets its place in
-    the chain when the transaction commits (``app/auditlog/chain.py``)."""
+    the chain when the transaction commits (``app/auditlog/chain.py``). A change a bulk job makes
+    says so at the end of its details (``core/origin.py``)."""
+    mark = origin.bulk_mark()
+    if mark:
+        details = details[: MAX_DETAILS - len(mark)] + mark
     doc = (incident.doc if incident is not None else {}) or {}
     entry = AuditEntry(
         id=str(uuid.uuid4()),

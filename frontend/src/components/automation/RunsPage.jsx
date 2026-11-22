@@ -5,7 +5,7 @@ import { api } from '../../services/api.js'
 import { RUN_COLORS, RUN_STATUSES, duration, isFinished, triggerLabel } from '../../domain/automation/runs.js'
 import { runStatus } from '../../domain/restarts.js'
 import { formatDateTime } from '../../lib/time.js'
-import { Badge, Button, EmptyState } from '../ui/index.js'
+import { Badge, Button, EmptyState, Wait } from '../ui/index.js'
 import { SelectInput } from './fields.jsx'
 import { useObjectMenu } from '../menu/useObjectMenu.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
@@ -125,11 +125,7 @@ export default function RunsPage({ playbookId = null, playbooks = [], onOpenRun,
           {error}
         </p>
       )}
-      {!found && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the runs…
-        </p>
-      )}
+      {!found && !error && <Wait>Loading the runs…</Wait>}
       {found?.runs.length === 0 &&
         (debug ? (
           <EmptyState

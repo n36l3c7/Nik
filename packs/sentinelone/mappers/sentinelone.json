@@ -13,6 +13,14 @@
       "from": "{{ item.threatInfo.confidenceLevel | map(malicious='high', suspicious='medium', else='low') }}"
     },
     {
+      "to": "status",
+      "from": "{{ item.threatInfo.incidentStatus | map(unresolved='open', in_progress='in_progress', resolved='closed', else='') }}"
+    },
+    {
+      "to": "close_reason",
+      "from": "{{ item.threatInfo.analystVerdict | map(true_positive='Resolved', false_positive='False positive', else='') }}"
+    },
+    {
       "to": "source_id",
       "from": "{{ item.id }}"
     },
@@ -41,6 +49,16 @@
         "SHA256": "{{ item.threatInfo.sha256 }}",
         "Path": "{{ item.threatInfo.filePath }}"
       }
+    }
+  ],
+  "outgoing": [
+    {
+      "to": "incidentStatus",
+      "from": "{{ incident.status | map(open='unresolved', in_progress='in_progress', closed='resolved', else='') }}"
+    },
+    {
+      "to": "analystVerdict",
+      "from": "{{ incident.close_reason | map('resolved', 'true_positive', 'true positive', 'true_positive', 'false positive', 'false_positive', 'suspicious', 'suspicious', else='') }}"
     }
   ],
   "classifier": {

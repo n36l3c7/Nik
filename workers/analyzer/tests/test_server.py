@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import given  # noqa: E402
-import server  # noqa: E402
+import given
+import server
 
 DATA = b"MZ a harmless fixture, never a sample"
 SHA = hashlib.sha256(DATA).hexdigest()

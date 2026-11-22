@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Boxes,
   Bug,
@@ -23,9 +23,11 @@ import {
 } from '../../domain/artifactRegistry.js'
 import { useToast } from '../../context/ToastContext.jsx'
 import { formatRelative } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, Wait } from '../ui/index.js'
+import { AsciiSkull, Badge, BulkBar, Button, SelectBox, Wait, useSelection } from '../ui/index.js'
 import { useItemMenu } from '../menu/useRowMenu.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useBulk } from '../../context/BulkContext.jsx'
+import { api } from '../../services/api.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import { useQuerySchema } from '../../services/querySchema.js'
 import { writeValue } from '../../domain/query/complete.js'
@@ -40,7 +42,14 @@ import { transfer as showTransfer } from '../../lib/transfers.js'
  * their own or in incidents, and scanned addresses, for the whole team, newest first. The filter
  * is a query read by the server ("mine" writes its condition into it); the kind chips count
  * what the query keeps of each kind.
+ *
+ * The checkbox of an artifact selects it, as in every list (components/ui/useSelection.js); the
+ * bar that appears tags, links, analyses again, downloads together or deletes what is selected,
+ * or everything the filter keeps.
  */
+
+// How many artifacts one archive holds (the server's limit of an export).
+const TOGETHER_MAX = 500
 
 export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2, mailbox: Inbox }
 
@@ -84,6 +93,84 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
   const mineCondition = currentUser ? `createdBy:${writeValue(currentUser.username)}` : ''
   const mine = Boolean(mineCondition) && conditionOn(filters.q, 'createdBy', schema) === mineCondition
   const [transfer, setTransfer] = useState(null) // { mode: 'export', ids, label } | { mode: 'import' }
+  const { askBulk } = useBulk()
+  const canWrite = can('write')
+  const total = filters.kind
+    ? (counts[filters.kind] ?? 0)
+    : ARTIFACT_KINDS.reduce((sum, kind) => sum + (counts[kind.id] ?? 0), 0)
+  // What the server is told the filter is, when everything it keeps is selected.
+  const query = useMemo(
+    () => ({ ...(filters.q.trim() ? { q: filters.q.trim() } : {}), ...(filters.kind ? { kind: filters.kind } : {}) }),
+    [filters],
+  )
+  const pageIds = useMemo(() => artifacts.map((artifact) => artifact.id), [artifacts])
+  const picked = useSelection({ filter: JSON.stringify(query), pageIds, total })
+  const ask = (action, title, more = {}) =>
+    askBulk({
+      list: 'artifacts',
+      action,
+      title,
+      selection: picked.body(query),
+      onStarted: picked.reset,
+      onDone: refresh,
+      ...more,
+    })
+  // One archive made by the server, the files inside an encrypted archive: the export of the artifacts.
+  const downloadTogether = async () => {
+    try {
+      let rows = artifacts.filter((artifact) => picked.has(artifact.id))
+      if (picked.all) {
+        if (total > TOGETHER_MAX) {
+          showToast({ message: `One archive holds ${TOGETHER_MAX} artifacts at most: narrow the filter.` })
+          return
+        }
+        rows = []
+        // The whole filter, two hundred at a time (bounded by the limit above).
+        for (let from = 0; from < total; from += 200) {
+          const params = new URLSearchParams({ ...query, limit: '200', offset: String(from) })
+          rows.push(...(await api.get(`/artifacts?${params}`)).artifacts)
+        }
+      }
+      setTransfer(exportRequest(rows))
+    } catch (failure) {
+      showToast({ message: failure.message })
+    }
+  }
+  const bulkActions = [
+    ...(canWrite
+      ? [
+          {
+            id: 'tags',
+            label: 'Change the tags…',
+            onSelect: () => ask('tags', 'Change the tags', { form: { kind: 'tags' } }),
+          },
+          { id: 'reanalyse', label: 'Analyse again', onSelect: () => ask('reanalyse', 'Analyse again') },
+          {
+            id: 'link',
+            label: 'Link to an incident…',
+            onSelect: () =>
+              ask('link', 'Link to an incident', { form: { kind: 'incident', params: (id) => ({ incident: id }) } }),
+          },
+          {
+            id: 'unlink',
+            label: 'Take out of an incident…',
+            onSelect: () =>
+              ask('unlink', 'Take out of an incident', {
+                form: { kind: 'incident', params: (id) => ({ incident: id }) },
+              }),
+          },
+          {
+            id: 'expiry',
+            label: 'Set the expiry…',
+            onSelect: () => ask('expiry', 'Set the expiry', { form: { kind: 'date' } }),
+          },
+        ]
+      : []),
+    { id: 'download', label: 'Download together…', onSelect: downloadTogether },
+    ...(canWrite ? [{ id: 'delete', label: 'Delete…', onSelect: () => ask('delete', 'Delete the artifacts') }] : []),
+  ]
+  const focusItem = (id) =>
+    document.querySelector(`[aria-label="Artifacts"] li[data-row="${CSS.escape(id)}"] button`)?.focus()
   // No incident here: the menu offers what an artifact offers on its own.
   const menu = useItemMenu(null)
   const artifactMenu = (event, artifact) =>
@@ -126,7 +213,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
     })
   // Uploads made inside an incident add artifacts too: reload when the panel opens.
   useEffect(() => refresh(), [refresh])
-  const total = ARTIFACT_KINDS.reduce((sum, kind) => sum + (counts[kind.id] ?? 0), 0)
+  const every = ARTIFACT_KINDS.reduce((sum, kind) => sum + (counts[kind.id] ?? 0), 0)
 
   return (
     <aside
@@ -136,7 +223,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
     >
       {/* Three things share the width of the panel: the title is set tight so its count is not cut. */}
       <div className="flex items-center gap-1.5 border-b border-line px-3 py-3">
-        <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-fg-muted">ARTIFACTS · {total}</p>
+        <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-fg-muted">ARTIFACTS · {every}</p>
         {can('write') && (
           <Button size="sm" icon={Plus} onClick={onNewAnalysis}>
             New analysis
@@ -178,6 +265,14 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
         </div>
       </div>
 
+      <BulkBar picked={picked} noun="artifacts" actions={bulkActions} className="mx-2 mt-2" />
+      {artifacts.length > 0 && (
+        <div className="flex items-center gap-1 border-b border-line-soft px-1 font-mono text-[10px] text-fg-muted">
+          <SelectBox label="Select the artifacts listed" state={picked.page} onPick={picked.pickPage} />
+          <span>{artifacts.length < total ? `the first ${artifacts.length} of ${total}` : `${total} listed`}</span>
+        </div>
+      )}
+
       <nav aria-label="Artifacts" className="flex-1 overflow-y-auto">
         {error ? (
           <p role="alert" className="px-3 py-3 font-mono text-xs text-high">
@@ -200,18 +295,32 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
               const Icon = KIND_ICONS[artifact.kind] ?? Boxes
               const badge = verdictBadge(artifact)
               const active = artifact.id === currentId
+              const ticked = picked.has(artifact.id)
               return (
                 <li
                   key={artifact.id}
-                  className="border-b border-line-soft"
+                  data-row={artifact.id}
+                  aria-selected={ticked}
+                  className={`flex items-start border-b border-line-soft ${ticked ? 'bg-accent-soft/40' : ''}`}
                   onContextMenu={(event) => artifactMenu(event, artifact)}
                 >
+                  <SelectBox
+                    label={`Select ${artifact.name}`}
+                    checked={ticked}
+                    onPick={(event) => picked.pick(artifact.id, event)}
+                    className="mt-1 shrink-0 pl-1"
+                  />
                   <button
                     type="button"
                     onClick={() => openArtifact(artifact.id)}
+                    onKeyDown={(event) => {
+                      // Space ticks, Shift and an arrow tick the next one too; Enter opens, as it did.
+                      const moved = picked.key(event, artifact.id)
+                      if (moved) focusItem(moved)
+                    }}
                     aria-current={active ? 'true' : undefined}
                     className={[
-                      'w-full px-3 py-2 text-left transition-colors',
+                      'min-w-0 flex-1 py-2 pl-1 pr-3 text-left transition-colors',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
                       active ? 'bg-panel shadow-[inset_2px_0_0_var(--color-accent)]' : 'hover:bg-panel/60',
                     ].join(' ')}

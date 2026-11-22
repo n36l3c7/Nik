@@ -235,13 +235,6 @@ export function usedIn(usedBy) {
   return [...byInstance.values()]
 }
 
-/** "not used", "1 instance", "3 instances". */
-export function usedText(usedBy) {
-  const count = usedIn(usedBy).length
-  if (count === 0) return 'not used'
-  return count === 1 ? '1 instance' : `${count} instances`
-}
-
 /** The credentials narrowed by what is typed: the name, the description, the user name, an instance that uses it. */
 export function filterCredentials(credentials, query) {
   const words = String(query ?? '')

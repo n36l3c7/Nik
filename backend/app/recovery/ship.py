@@ -58,7 +58,7 @@ from .. import store_handover
 from ..backups import config as backup_config
 from ..backups import runner
 from ..backups.offsite import OffsiteError
-from ..core import audit, vault
+from ..core import audit, leases, vault
 from ..core.config import settings
 from ..core.models import RecoveryBase, StoreCopy
 from . import archive, config, envelope, files, layout, role
@@ -304,7 +304,7 @@ def ship(
     if not waits:
         return did
     try:
-        with runner.Renewing(holder, LEASE, config.LEASE_SECONDS), remote.session() as session:
+        with leases.Renewing(LEASE, holder, config.LEASE_SECONDS), remote.session() as session:
             did += _pass(session, remote, phrase, earlier, clock, budget, stopping)
     except (OffsiteError, OSError, EOFError) as error:
         with SessionLocal() as db:

@@ -22,13 +22,15 @@ from typing import Any, Iterable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from . import artifacts, recognise
+from .core.clock import iso
 from .core.models import Incident, IocAlert, IocEntry, IocList, IocListItem, IocRecord
 from .enrichment import service
 from .enrichment import sources as lookup_sources
 from .iocs import TYPES, Allowlist, misp_event, normalize, stix_bundle, text_iocs
 
 TLPS = ("clear", "green", "amber", "red")
-TAG_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,39}")
+TAG_RE = artifacts.TAG_RE  # one way to write a tag, whatever carries it
 TAGS_MAX = 12
 NOTE_MAX = 2000
 MAX_BATCH = 10_000
@@ -61,20 +63,8 @@ DEFAULT_FIELDS = ("type", "value", "verdict", "score", "tags", "first_seen")
 # --------------------------------------------------------------------------- #
 # Reading what is pasted or dropped                                           #
 # --------------------------------------------------------------------------- #
-_REFANG = (
-    (re.compile(r"\bh(?:xx|XX)p(s?)://", re.IGNORECASE), r"http\1://"),
-    (re.compile(r"\[(?:\.|dot)\]|\((?:\.|dot)\)|\{\.\}", re.IGNORECASE), "."),
-    (re.compile(r"\[(?:@|at)\]|\(at\)", re.IGNORECASE), "@"),
-    (re.compile(r"\[:\]"), ":"),
-    (re.compile(r"\[://\]"), "://"),
-)
-
-
-def refang(text: str) -> str:
-    """``hxxps://evil[.]example`` as it is meant: ``https://evil.example``."""
-    for pattern, replacement in _REFANG:
-        text = pattern.sub(replacement, text)
-    return text
+# The defanged forms are read in one place (recognise.py): ``hxxps://evil[.]example`` as it is meant.
+refang = recognise.refang
 
 
 def defang(kind: str, value: str) -> str:
@@ -339,7 +329,7 @@ def _iso_ms(ms: int | None) -> str | None:
     if not ms:
         return None
     try:
-        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+        return iso(ms / 1000)
     except (ValueError, OverflowError, OSError):
         return None
 
@@ -348,7 +338,7 @@ def never_sent(kind: str, value: str, allowlist: Allowlist, red: bool) -> str | 
     """Why the indicator is not sent to the sources, without a query per row."""
     if red:
         return "it is classified TLP:RED"
-    return service.blocked(None, kind, value, allowlist, red=set())  # type: ignore[arg-type]
+    return service.blocked(None, kind, value, allowlist, red=set())  # type: ignore[arg-type] - no session: it is read only to find the TLP:RED values, given here
 
 
 def red_pairs(db: OrmSession) -> set[Pair]:
@@ -640,10 +630,11 @@ def save_items(
 
 def add_to_list(db: OrmSession, target: IocList, pairs: Iterable[Pair], actor: str, now: str) -> int:
     wanted = list(dict.fromkeys(pairs))
-    have = {
-        (t, v)
-        for t, v in db.execute(select(IocListItem.type, IocListItem.value).where(IocListItem.list_id == target.id))
-    }
+    inside = select(IocListItem.type, IocListItem.value).where(IocListItem.list_id == target.id)
+    if len(wanted) <= 200:
+        # A few of them: only they are looked for, not the whole list (a bulk action adds one at a time).
+        inside = inside.where(IocListItem.value.in_([value for _, value in wanted]))
+    have = {(t, v) for t, v in db.execute(inside)}
     fresh = [pair for pair in wanted if pair not in have]
     db.add_all(IocListItem(list_id=target.id, type=t, value=v, added_at=now, added_by=actor) for t, v in fresh)
     if fresh:

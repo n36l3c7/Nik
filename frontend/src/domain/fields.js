@@ -33,17 +33,6 @@ export const FIELD_TYPES = {
   json: 'JSON',
 }
 
-export const TYPE_COLOURS = {
-  slate: 'slate',
-  red: 'red',
-  amber: 'amber',
-  emerald: 'emerald',
-  cyan: 'cyan',
-  blue: 'blue',
-  violet: 'violet',
-  pink: 'pink',
-}
-
 const list = (value) => (Array.isArray(value) ? value : [])
 const isEmpty = (value) =>
   value === null ||
@@ -210,12 +199,6 @@ export function typeOf(types, incident) {
   )
 }
 
-/** Whether a field can be put on a type: a system one, one of every type, or one the type lists. */
-export function onType(type, field) {
-  if (!field) return false
-  return Boolean(field.system || field.allTypes || list(type?.fields).some((item) => item.name === field.name))
-}
-
 /** The fields of a type's Summary that are in no section: what the side list offers to add. */
 export function unplaced(type, fields) {
   const placed = new Set(list(type?.layout?.sections).flatMap((section) => list(section.fields)))
@@ -241,14 +224,6 @@ export function valuesOf(incident) {
   }
   const values = { ...system, ...(incident.fields ?? {}) }
   return Object.fromEntries(Object.entries(values).filter(([, value]) => !isEmpty(value) || value === false))
-}
-
-/** The labels of the fields a type wants filled before closing, that are still empty. */
-export function missingOnClose(type, fields, values) {
-  const known = byName(fields)
-  return list(type?.fields)
-    .filter((item) => item.requiredOnClose && known[item.name] && isEmpty(values?.[item.name]))
-    .map((item) => known[item.name].label)
 }
 
 // --------------------------------------------------------------------------- //

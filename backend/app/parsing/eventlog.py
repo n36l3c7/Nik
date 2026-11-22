@@ -223,7 +223,7 @@ def _records(data: bytes):
     """Yield the parser's JSON records; damaged records are skipped, not fatal."""
     try:
         import evtx  # imported lazily: only uploads of .evtx files need it
-    except ImportError as exc:  # pragma: no cover - the package is a requirement
+    except ImportError as exc:  # the package is a requirement: only a bare install lacks it
         raise ValueError("The evtx package is not installed on the server.") from exc
     if data[:8] != b"ElfFile\x00":
         raise ValueError("Not an .evtx file (missing the ElfFile signature).")

@@ -4,14 +4,18 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { formatDateTime } from '../../lib/time.js'
 import { api } from '../../services/api.js'
-import { DIRECTIONS, directionText, mirrorProblem } from '../../domain/fetch.js'
+import { useUnsavedChanges } from '../../lib/unsaved.js'
+import { DIRECTIONS, choiceLabel, mirrorProblem, mirrorTimes, originText } from '../../domain/fetch.js'
 import { Button, Modal } from '../ui/index.js'
 
 /*
  * Mirroring, in the side panel of an incident: whether the incident is kept
  * in step with an object of another product (a ticket, an issue), which way,
- * and how it goes. Whoever writes incidents starts it, reads the other side
- * now, and stops it. Nothing is shown when no connection can mirror.
+ * where that direction came from (the instance that fetched the incident, a
+ * mapper, or a person here) and how it goes: the last read, the last send,
+ * the last problem. Whoever writes incidents starts it, changes its
+ * direction, reads the other side now, and stops it. Nothing is shown when no
+ * connection can mirror.
  */
 
 const INPUT =
@@ -26,6 +30,12 @@ function StartDialog({ incident, connections, canSend, onClose, onStarted }) {
   const [busy, setBusy] = useState(false)
   const connection = connections.find((item) => item.id === instanceId)
   const problem = mirrorProblem({ connection, mirrorId, direction, canSend })
+  // What was typed is not lost without asking (lib/unsaved.js): closing the dialog asks first.
+  const unsaved = useUnsavedChanges(Boolean(mirrorId.trim()) && !busy, {
+    what: 'The mirror being started',
+    name: incident.name ?? '',
+  })
+  const close = () => unsaved.leave(onClose)
 
   const start = async (event) => {
     event.preventDefault()
@@ -48,11 +58,11 @@ function StartDialog({ incident, connections, canSend, onClose, onStarted }) {
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={close}
       title="Mirror this incident"
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={close} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" form="mirror-start" size="sm" disabled={busy || Boolean(problem)}>
@@ -176,30 +186,59 @@ export default function Mirror({ incident }) {
         <>
           <p className="text-sm text-fg">
             {state.connection}
-            <span className="block font-mono text-xs text-fg-muted">
-              {state.id} · {directionText(state.direction)}
-            </span>
+            <span className="block font-mono text-xs text-fg-muted">{state.id}</span>
           </p>
-          <p className="text-xs text-fg-muted">
-            {state.lastSync ? `In step ${formatDateTime(Date.parse(state.lastSync))}` : 'Not read yet'}
-            {state.waiting ? ` · ${state.waiting} to send` : ''}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
+            {canWrite ? (
+              <select
+                aria-label="Direction of the mirror"
+                value={state.direction}
+                onChange={(event) =>
+                  act(
+                    () => api.patch(path, { direction: event.target.value }),
+                    `Mirroring is ${choiceLabel(event.target.value)} for this incident.`,
+                  )
+                }
+                className="cursor-pointer border border-line bg-canvas px-1.5 py-0.5 text-xs text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {DIRECTIONS.map((item) => (
+                  <option
+                    key={item.id}
+                    value={item.id}
+                    disabled={item.id !== 'in' && !(state.can?.fieldsOut || state.can?.commentsOut)}
+                  >
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-fg">{choiceLabel(state.direction)}</span>
+            )}
+            <span>{originText(state.origin)}</span>
           </p>
-          {state.error && <p className="text-xs text-high-fg">{state.error}</p>}
+          <p className="text-xs text-fg-muted">{mirrorTimes(state, (stamp) => formatDateTime(Date.parse(stamp)))}</p>
+          {state.error && <p className={`text-xs ${state.gone ? 'text-med-fg' : 'text-high-fg'}`}>{state.error}</p>}
           {canWrite && (
             <div className="flex flex-wrap gap-1.5">
               <Button
                 variant="secondary"
                 size="xs"
                 icon={RefreshCw}
+                disabled={state.fed}
+                title={
+                  state.fed ? 'Replies come with what the instance fetches: there is nothing to read now' : undefined
+                }
                 onClick={() =>
                   act(
                     () => api.post(`${path}/sync`),
                     (answer) =>
-                      answer.changed.length || answer.comments
-                        ? `Read: ${answer.changed.length} field${answer.changed.length === 1 ? '' : 's'} changed, ${answer.comments} new comment${answer.comments === 1 ? '' : 's'}.`
-                        : answer.kept.length
-                          ? `Nothing changed: ${answer.kept.join(', ')} kept as set here.`
-                          : 'Nothing new on the other side.',
+                      answer.gone
+                        ? 'It is still gone on the other side.'
+                        : answer.changed.length || answer.comments
+                          ? `Read: ${answer.changed.length} field${answer.changed.length === 1 ? '' : 's'} changed, ${answer.comments} new comment${answer.comments === 1 ? '' : 's'}.`
+                          : answer.kept.length
+                            ? `Nothing changed: ${answer.kept.join(', ')} kept as set here.`
+                            : 'Nothing new on the other side.',
                   )
                 }
               >

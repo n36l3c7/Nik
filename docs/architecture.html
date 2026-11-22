@@ -214,14 +214,20 @@
 │   │                               #   (the DevTools-like request log), server.py, tests/
 │   ├── pcap/                       # packet capture: Dockerfile (tshark, sharkd),
 │   │                               #   nik_pcap.py (summary, sharkd sessions), server.py, tests/
+│   │                               # In analyzer, capa and pcap: given.py (the files the backend sends, the
+│   │                               #   secret the worker starts with); in those and docview: jobs.py (the jobs
+│   │                               #   in flight, so the backend can ask after one). Copies, kept alike by a test
 │   └── sandbox/                    # scripts of playbooks: Dockerfile (Python and nothing else),
 │                                   #   harness.py (the child a script runs in), runner.py (the limits),
 │                                   #   server.py, tests/
-├── deploy/                         # Operations: db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
-│                                   #   upgrade-postgres.sh, install-systemd.sh + systemd/, check-images.sh,
+├── deploy/                         # Operations: init-env.sh (writes .env and the secrets), secrets.sh (moves
+│                                   #   and changes them), db-entrypoint.sh, backup.sh, restore.sh, rollback.sh,
+│                                   #   install-systemd.sh + systemd/, check-images.sh,
 │                                   #   recover-to.sh (restore.sh --to), standby.sh, recovery-lib.sh (what the
 │                                   #   two share), db/ (the scripts PostgreSQL archives and restores its log
 │                                   #   with, the recovery service, the base backup put in place)
+├── packs/                          # Content packs, one folder a product: pack.yml and its connectors, mappers,
+│                                   #   playbooks; published as the catalogue a Nik reads
 ├── integrations/cortex-xsoar/      # Cortex XSOAR integration pack
 ├── docs/                           # GitHub Pages site (plain HTML + one stylesheet)
 ├── docker-compose.yml              # db + recovery + api + automation + sandbox + analyzer + capa +
@@ -252,6 +258,11 @@
 │   ├── vault.py                    # Encryption of API keys, second-factor secrets and TLS key logs (Fernet,
 │   │                               #   HKDF of SECRET_KEY);
 │   │                               #   re-encryption after SECRET_KEY changes (SECRET_KEY_PREVIOUS)
+│   ├── keys.py                     # Where the secrets of the server come from: a file (NAME_FILE) or the environment
+│   ├── sealed.py                   # A file of the store as it is on the disk: sealed, its own key wrapped
+│   │                               #   with the store key
+│   ├── store.py                    # Reading and writing the files of the store: the one module that opens them
+│   ├── leases.py                   # Leases: what lets one process at a time run a loop that must run once
 │   ├── ratelimit.py                # Shared rate limiter (slowapi)
 │   └── observability.py            # Request ids, structured access logs, Prometheus metrics
 ├── automation/                     # Playbooks (4.1), connectors (4.2): see "The automation engine" below
@@ -276,7 +287,9 @@
 ├── workers/                        # Clients of the analysis workers
 │   ├── analyzer.py                 # rizin worker client + disassembly job
 │   ├── capa.py                     # capa worker client + capabilities job (one at a time)
-│   └── previews.py                 # document viewer and isolated browser clients
+│   ├── previews.py                 # document viewer and isolated browser clients
+│   ├── handover.py                 # Giving a worker the files a job needs: the store is sealed and no worker sees it
+│   └── watching.py                 # Waiting for a long job: a slow worker told from a restarted or a dead one
 ├── malware/                        # Malware samples
 │   ├── samples.py                  # Sample store (files by SHA-256, e-mails as .mail) + protected zip
 │   ├── yara_rules.py               # YARA: built-in + admin rules compiled together, scan
@@ -340,6 +353,9 @@
 │                                   #   holds each piece, its heartbeat, the sweeper that takes back what lost
 │                                   #   its holder (started again or failed loudly), what is set aside
 ├── serving.py                      # The gunicorn worker: how long a stop waits for the requests in flight
+├── preflight.py                    # The check the entrypoint runs first: secrets missing, publicly known, given
+│                                   #   twice or unreadable; the store key against the store
+├── stopped.py                      # A server that does not start: it stays up and answers every request with why
 ├── backups/                        # Backups Nik takes by itself, and upgrades one can come back from
 │   ├── container.py                #   the file format (encrypted, streamed); also runs alone, without Nik
 │   ├── database.py · store.py      #   the database and the store inside a backup; scratch databases
@@ -727,8 +743,7 @@
         <strong>IOC allowlist</strong> (one entry per line: a domain and its subdomains, an IP or CIDR network, or an
         exact value) starts with private and loopback ranges and common vendor and CDN domains; matching values are
         hidden by default and never exported. The index keeps them, so editing the list applies at once. Exports: CSV, a
-        <strong>STIX 2.1</strong> bundle and a <strong>MISP</strong> event, for a TIP or a firewall blocklist. Incidents
-        saved before 2.12.0 are indexed on the api's first start.
+        <strong>STIX 2.1</strong> bundle and a <strong>MISP</strong> event, for a TIP or a firewall blocklist.
       </p>
       <p>
         <strong>Incident report.</strong> The report button in the header (or <code>&gt; report</code> in the search
@@ -1036,6 +1051,13 @@
               <td>
                 who holds each piece of work the API process does outside a request, its last sign of life, how many
                 times it was taken, and when a restart cut it (kept a week after it ended)
+              </td>
+            </tr>
+            <tr>
+              <td><code>bulk_jobs</code>, <code>bulk_items</code></td>
+              <td>
+                the actions asked of many incidents, artifacts or indicators at once: who asked for what, of how many,
+                how it went, and what became of each item (kept a month after the job ended)
               </td>
             </tr>
             <tr>
@@ -1406,6 +1428,18 @@
         (<code>workers/watching.py</code>, <code>jobs.py</code> in each worker): "unknown job" is a restart, and the job
         is handed out again with its file.
       </p>
+      <p>
+        <strong>Bulk jobs (6.10).</strong> One action on many rows of a list is a job (<code>bulk.py</code>): a row of
+        <code>bulk_jobs</code> and one of <code>bulk_items</code> for each item, written with a claim of
+        <code>work_claims</code> in the transaction of the request. The job calls, for each item, the function the
+        single action calls (<code>bulk_incidents.py</code>, <code>bulk_artifacts.py</code>,
+        <code>bulk_indicators.py</code>), and commits each item with its state: after a restart the process that takes
+        the claim goes on from the first item still pending. While it works on an item it says so in a variable of the
+        thread (<code>core/origin.py</code>): the audit log ends the entry of each change with the job, and the outbox
+        marks each event with it. Before an item that writes events, and while a playbook waits for one, it waits for
+        the worker to have read the outbox (<code>bulk.Pace</code>). It holds a lease of its own and looks at the stop
+        flag between two items, like every loop.
+      </p>
       <h3 id="incident-model">Fields, types, context and the War Room (4.3)</h3>
       <p>
         An incident is still one JSON document (<code>incidents.doc</code>) with a few of its values mirrored to columns
@@ -1531,7 +1565,15 @@
           <strong>Mirroring</strong> (<code>mirror.py</code>, <code>mirror_queue</code>). What is read from the other
           side goes through the incoming mapper and <code>fields.update</code>, which records who set each field last
           (<code>registry.note_source</code>): a field a person set is kept unless the rule is authoritative. What is
-          sent is put in a queue in the transaction of the change and sent by the worker through the data guard.
+          sent is put in a queue in the transaction of the change and sent by the worker through the data guard. Since
+          6.10 the fetch starts the mirror of what it makes (<code>mirror.start_fetched</code>) in the direction its
+          instance holds in <code>connections.fetch_settings</code> (<code>mirror</code>, <code>mirrorAllow</code>; no
+          migration: the column is a document), a mapper that names both the object and the direction being obeyed
+          first. A connector whose mirror is fed by its fetch (<code>mirror.thread</code>, the mailbox) is never read at
+          an interval: <code>fetch.ingest</code> asks <code>mirror.absorb</code> first, and an item that goes on with a
+          conversation an incident holds becomes a line of it. The indicators of a new incident are found last, once
+          what it was made of is kept (<code>indicators_found.scan</code>); a read of a mirror, or a reply taken in, is
+          read once for the whole update.
         </li>
       </ul>
       <p>
@@ -1565,9 +1607,8 @@
           caller's transaction, each kind through the function that saves it everywhere else. Items are known by kind
           and name. An inspected file waits in <code>pack_uploads</code> for an hour. What Nik ships is installed by
           each kind's own seeding as before, and <code>register_builtin</code> writes it down as one pack,
-          <em>Nik built-in</em> (four until 5.4). What is about a product of a vendor is not seeded: it is a pack of the
-          catalogue (<code>pack_catalogue.py</code>), and <code>adopt_legacy</code> writes down as packs the vendors'
-          connectors a Nik older than 6.0 holds.
+          <em>Nik built-in</em>. What is about a product of a vendor is not seeded: it is a pack of the catalogue
+          (<code>pack_catalogue.py</code>).
         </li>
         <li>
           <strong>The debugger</strong> (<code>automation/debugger.py</code>, the column <code>runs.debug</code>). A

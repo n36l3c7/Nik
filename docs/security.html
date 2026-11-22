@@ -102,13 +102,13 @@
               <td><code>analyzer</code> (rizin)</td>
               <td>disassembly and decompilation of samples</td>
               <td>internal only, no route outside</td>
-              <td>the sample store, read-only</td>
+              <td>only the samples it is sent</td>
             </tr>
             <tr>
               <td><code>capa</code></td>
               <td>capabilities of samples</td>
               <td>internal only</td>
-              <td>the sample store, read-only</td>
+              <td>only the samples it is sent</td>
             </tr>
             <tr>
               <td><code>docview</code> (LibreOffice, pdfium)</td>
@@ -123,7 +123,7 @@
               <td><code>pcap</code> (tshark, sharkd)</td>
               <td>packet captures</td>
               <td>internal only</td>
-              <td>the sample store, read-only</td>
+              <td>only the captures it is sent</td>
             </tr>
             <tr>
               <td><code>browser</code> (Chromium)</td>
@@ -379,6 +379,15 @@
           while it is held.
         </li>
         <li>
+          <strong>What nobody chose is not asked about.</strong> The indicators Nik finds by itself in an incident as it
+          comes in (<a href="guide.html#found-indicators">Indicators found by themselves</a>) start no look-up, and the
+          automatic look-ups leave out a value that incidents hold for that reason alone: an alert with a hundred
+          addresses spends no quota and sends nothing out. An administrator can let the automatic look-ups ask about
+          them (Settings → Indicators found); they are then judged like every other value, by the rule above and by the
+          guard. A value a person looked up, or one that also comes from an analysed file, mail or capture, is asked
+          about as before.
+        </li>
+        <li>
           <strong>What the guard cannot see.</strong> It reads addresses, names and e-mail addresses. A person's name, a
           token or a customer number written in the path of a link has no class and leaves with the link: do not turn on
           the automatic look-ups of URLs where such links must not reach a vendor.
@@ -445,10 +454,10 @@
         </li>
         <li>
           <strong>The store and the worker.</strong> Everything a playbook keeps is written by the backend. The
-          <code>automation</code> container mounts the store read-only and is on no network with the analysis workers,
-          and nothing was added to either: the file a connector's command gives, the files of an archive, the
-          attachments of a message, a message a fetch made an incident from and a file a node downloads are handed over
-          through the database (<code>artifact_jobs</code>, the bytes in parts of 4 MB in
+          <code>automation</code> container mounts no store (a step that needs a file asks the backend for it) and is on
+          no network with the analysis workers, and nothing was added to either: the file a connector's command gives,
+          the files of an archive, the attachments of a message, a message a fetch made an incident from and a file a
+          node downloads are handed over through the database (<code>artifact_jobs</code>, the bytes in parts of 4 MB in
           <code>artifact_job_parts</code>, deleted once the file is in the store or the job is given up) and the step
           waits. The backend treats them as it treats an upload: the same size limit, the same analyses.
         </li>
@@ -601,7 +610,13 @@
           more than 500 incidents in an hour is paused. A mirror that sends is a standing permission, given by someone
           who may run playbooks and recorded with their name; what it sends passes the data guard with only the classes
           opened for that mirror, by someone who may open them. What a person set in Nik is not written over by the
-          other side unless the mapper says the field is authoritative.
+          other side unless the mapper says the field is authoritative. Since 6.10 an instance can give a direction to
+          every incident it fetches: choosing one that sends there is the same standing permission for all of them,
+          given by someone who manages connectors <em>and</em> may run playbooks, and recorded with the instance; giving
+          that direction to the incidents already fetched asks the same; the classes of data those mirrors may send are
+          none until someone who may open classes ticks them in the instance, and the classes kept for whole messages
+          and files cannot be opened there. An instance says <em>None</em> until someone chooses. A mailbox is mirrored
+          in only: nothing in mirroring sends a message.
         </li>
         <li id="dashboards-security">
           <strong>Dashboards.</strong> A dashboard holds questions, never answers: each widget is asked of the server
@@ -973,8 +988,9 @@
         look-ups; hosts a playbook is let reach; playbooks created, saved as a version, enabled, run by a person,
         stopped, deleted, imported; approvals answered; connectors, instances and credentials; packs; evidence uploaded,
         deleted, downloaded (samples, attachments, captures and what is exported from them), incident exports and
-        reports; webhooks added and removed (from 6.8); the audit log itself (verified, old entries removed, forwarding
-        changed and tested, a restore) and the health page (thresholds, the scrape token).
+        reports; webhooks added and removed (from 6.8); the tags, the note, the TLP and the expiry of an indicator, and
+        bulk actions with each row they changed (from 6.10); the audit log itself (verified, old entries removed,
+        forwarding changed and tested, a restore) and the health page (thresholds, the scrape token).
       </p>
       <p>
         <strong>Not recorded</strong>, by design so far: what is only read (an incident opened, a list of accounts, the
@@ -982,10 +998,49 @@
         stand: the start of a second-factor enrolment (its confirmation is recorded); runs a playbook starts by
         schedule, trigger or inbound webhook (they are in the runs, not in the audit log); the draft of a playbook or a
         script saved without making a version; tests of an instance and of its keys; saved filters and dashboards
-        created; tags and notes of an indicator in the library; a task given to somebody else; the export of a playbook,
-        a script, a dashboard or a list as a file; reading the source of an e-mail or an attachment's bytes in the page.
-        Old values are not kept: an entry says what changed, not what it was before.
+        created; a task given to somebody else; the export of a playbook, a script, a dashboard or a list as a file;
+        reading the source of an e-mail or an attachment's bytes in the page. Old values are not kept: an entry says
+        what changed, not what it was before.
       </p>
+
+      <h3 id="bulk-security">Actions on many rows at once</h3>
+      <p>
+        A <a href="guide.html#bulk">bulk action</a> is not another way in. The route asks for the permission to change
+        things (or to run playbooks), each action asks for its own, and each row is then changed by the function that
+        changes one alone, with its checks: a field the registry refuses, a type that wants something filled to close, a
+        mirror that needs the permission to run playbooks are refused row by row, with the sentence a single change
+        would have answered. The permission is read again for every row, from the account as it is at that moment: a
+        person whose roles are taken away, or whose account is disabled, while their job runs does nothing more through
+        it, and a key that is revoked neither.
+      </p>
+      <ul>
+        <li>
+          <strong>Bounds.</strong> A job takes 5,000 rows at most (a setting of the administrators), one job of a person
+          runs at a time on each list, and a selection by filter is acted on only if it is still the number the person
+          was shown.
+        </li>
+        <li>
+          <strong>What cannot be undone is typed.</strong> Deleting incidents, artifacts or indicators in bulk, and
+          closing more than 100 incidents at once, wait for the words the dialog shows (<code>delete 12</code>); the
+          server asks for them too, so a request made by hand does not skip them.
+        </li>
+        <li>
+          <strong>The audit log</strong> has one entry for the job when it starts (who, what, how many, the filter when
+          there was one), one when it ends with its counts, and one for each row changed, ending with the first
+          characters of the job: the entries of a job are found by searching for them. They are part of the
+          <a href="#audit-chain">chain</a> like every other.
+        </li>
+        <li>
+          <strong>Files.</strong> Downloading many artifacts together is the export of the artifacts: one archive made
+          by the API, the files inside an AES-encrypted archive as a single sample is downloaded, never loose files, and
+          bounded in number and size.
+        </li>
+        <li>
+          <strong>Look-ups.</strong> A bulk check is one check in the queue the look-ups always had: the quota of each
+          source, what is never sent out and what the <a href="#held-look-ups">data guard</a> holds apply to it as to
+          any other.
+        </li>
+      </ul>
 
       <h3 id="health-and-metrics-security">The health page and the metrics</h3>
       <ul>

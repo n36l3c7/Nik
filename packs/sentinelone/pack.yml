@@ -3,10 +3,10 @@ name: SentinelOne EDR
 vendor: SentinelOne
 category: Endpoint
 tags: [edr]
-version: 1.1.0
+version: 1.2.0
 description: >-
-  Threats of the SentinelOne console as incidents, and what a SOC does with the console as commands: agents and
+  Threats of the SentinelOne console as incidents, kept in step both ways, and what a SOC does with the console as commands: agents and
   their isolation, threats and their mitigation, files fetched from endpoints, the blocklist and exclusions, alerts
   and custom detection rules, remote scripts, forensic collections, threat intelligence and vulnerable applications.
 author: Nik
-nik: ">=6.6"
+nik: ">=6.10"

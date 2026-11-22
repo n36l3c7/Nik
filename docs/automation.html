@@ -367,7 +367,9 @@
                 <code>incident.id</code>, <code>.url</code>, <code>.name</code>, <code>.ticket</code>,
                 <code>.status</code>, <code>.severity</code>, <code>.assignee</code>, <code>.host</code>,
                 <code>.username</code>, <code>.os</code>, <code>.created</code>, <code>.modified</code>; for
-                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed.
+                <code>incident.updated</code> also <code>changed</code>, the list of fields that changed. An event of a
+                change made by a <a href="#bulk-events">bulk action</a> also carries <code>bulk</code>, the id of its
+                job.
               </td>
             </tr>
             <tr>
@@ -459,6 +461,26 @@
                 <code>ioc.…</code> and <code>list.id</code>, <code>list.name</code> of the first hit; <code>hits</code>,
                 every hit (each with <code>type</code>, <code>value</code>, <code>list</code>, <code>incident</code>);
                 the <code>incident.…</code> fields.
+              </td>
+            </tr>
+            <tr>
+              <td><code>indicators.found</code></td>
+              <td>
+                A reading of an incident kept indicators it did not hold (<a href="guide.html#found-indicators"
+                  >Indicators found by themselves</a
+                >): as it came in, at an update its mirror brought, or when someone asked. Said once for a reading,
+                never once for each indicator, and not at all for a reading that found nothing new. The run works on the
+                incident.
+              </td>
+              <td>
+                <code>found.count</code>, <code>found.door</code> (<code>fetch</code>, <code>api</code>,
+                <code>hand</code>, <code>playbook</code>, <code>mirror</code>, <code>asked</code>),
+                <code>found.by_type.ip</code> (and <code>.domain</code>, <code>.url</code>, <code>.email</code>,
+                <code>.md5</code>, <code>.sha1</code>, <code>.sha256</code>), <code>found.indicators</code> (the first
+                100, each with <code>type</code>, <code>value</code>, <code>path</code>),
+                <code>found.values</code> (their values alone), <code>found.cut</code> and
+                <code>found.more</code> (whether and by how many the list was cut), <code>found.kept</code>; the
+                <code>incident.…</code> fields.
               </td>
             </tr>
             <tr>
@@ -778,6 +800,17 @@ Content-Type: application/json
                 them), <code>tags</code>, <code>note</code>
               </td>
               <td><code>added</code>, <code>known</code></td>
+            </tr>
+            <tr>
+              <td><a href="#make-indicators">Make indicators of a text</a></td>
+              <td>
+                <code>text</code> (a value, a list of values, or a text that holds them), <code>type</code> (when you
+                know it), <code>tags</code>, <code>note</code>, <code>leave_out_harmless</code>, <code>incident</code>
+              </td>
+              <td>
+                <code>indicators</code> (each <code>{type, value, new, marks}</code>), <code>created</code>,
+                <code>linked</code>, <code>not_recognised</code> (each <code>{text, reason}</code>)
+              </td>
             </tr>
             <tr>
               <td>Tag indicators</td>
@@ -1237,6 +1270,75 @@ Content-Type: application/json
         leads somewhere. <code>indicators</code> are those an incident that holds the artifact lists: there is no node
         that "adds the indicators to the incident", because an artifact in an incident gives it its indicators at once,
         as on the screens. To keep them in the library, give them to <em>Add indicators</em>.
+      </p>
+      <h3 id="make-indicators">Making indicators of a text</h3>
+      <p>
+        <em>Make indicators of a text</em> (<code>nik.make-indicators</code>) takes a value as it is written anywhere, a
+        ticket, a mail, the output of a command, and works out by itself what it is: an IP address (IPv4 or IPv6), a
+        domain, a URL, an e-mail address, an MD5, SHA-1 or SHA-256. A defanged value is read as meant
+        (<code>hxxp://</code>, <code>[.]</code>, <code>(.)</code>, <code>[at]</code>, <code>[:]</code>). A
+        <strong>URL gives two indicators</strong>: the URL, and its host, a domain or an address. An e-mail address
+        gives the address alone. A longer text gives every indicator in it; a list is read item by item.
+      </p>
+      <pre><code>!nik-make-indicators hxxps://login-portal[.]top/a?id=7
+!nik-make-indicators text="C2 at 185.220.101[.]47 and update-cdn[.]net, dropper 44d88612fea8a8f36de82e1278abb02f"
+!nik-make-indicators text=${context.ext.proofpoint.clicked} tags=phishing
+!nik-make-indicators text=update.pl type=domain</code></pre>
+      <p>
+        On the canvas, give <code>text</code> an expression: <code>{{ fetch_alert.alert.description }}</code>, or a list
+        such as <code>{{ context.Mail[*].From }}</code>. With an incident (the incident of the run, or the one named in
+        <code>incident</code>) the indicators become <strong>the incident's</strong>, seen in the War Room or made by a
+        playbook; with none they are kept on the Indicators page. <code>tags</code> and <code>note</code> are kept on
+        the Indicators page in both cases. It is safe to run twice: an indicator Nik knows is linked and not made again
+        (<code>new</code> is false, <code>created</code> and <code>linked</code> count only what was not there). Nothing
+        is sent anywhere: no source is asked about what is made, and the outputs carry the data classes of what went in,
+        so the <a href="#data-guard">data guard</a> judges a later node that would send them.
+      </p>
+      <p>
+        What is not an indicator is listed in <code>not_recognised</code> with the reason, in words:
+        <code>install.sh</code> <em>reads as a file name</em>, <code>1.2.3</code> <em>reads as a version number</em>, a
+        SHA-512 <em>is not a type Nik keeps</em>. When you know better, say the <code>type</code>: the value is then
+        that or nothing (<code>update.pl</code> is a script to the recogniser and a Polish domain to you). Private
+        addresses, names kept for documentation, your organisation's own domains and the IOC allowlist are made
+        indicators like the rest when you ask for them, each with its <code>marks</code> (<code>private</code>,
+        <code>benign</code>, <code>own</code>, <code>allowlisted</code>); <code>leave_out_harmless=true</code> leaves
+        them out, as the <a href="guide.html#found-indicators">finding of indicators in a new incident</a> does. A dry
+        run makes nothing and shows what it would have made.
+      </p>
+      <h4 id="indicators-found-playbook">A playbook for what was found</h4>
+      <p>
+        The event <code>indicators.found</code> starts a playbook when a reading of an incident kept something new. This
+        one checks what was found and tags the incident when a source calls one of them malicious:
+      </p>
+      <ol>
+        <li>
+          <strong>Trigger</strong>: <em>On an event</em>, <em>Indicators are found in an incident</em>. To leave the
+          large readings to a person, add <em>Only when the event matches</em>:
+          <code>{{ trigger.found.count }}</code> at most <code>20</code>.
+        </li>
+        <li>
+          <strong>For each</strong> over <code>{{ trigger.found.indicators }}</code> (at most 100: the event lists no
+          more). Inside it, <em>Reputation of an indicator</em> (<code>nik.reputation</code>) with <code>kind</code>
+          <code>{{ item.type | map(md5='file', sha1='file', sha256='file') }}</code> (a hash is looked up as a file) and
+          <code>value</code> <code>{{ item.value }}</code>, then a <strong>condition</strong>:
+          <code>{{ check.verdict }}</code> equals <code>malicious</code>.
+        </li>
+        <li>
+          On its <em>yes</em> port, <em>Tag the incident</em> (<code>nik.add-incident-tags</code>) with
+          <code>malicious-indicator</code>, and <em>Add a note</em> that names <code>{{ item.value }}</code> and
+          <code>{{ item.path }}</code>.
+        </li>
+      </ol>
+      <p>
+        The look-ups are the same as <em>Check now</em>: an answer that still stands is not asked again, a source's
+        quota and the <a href="#data-guard">data guard</a> apply, and a private address the setting keeps is held as
+        one. <strong>It cannot start itself again.</strong> What a run writes to the context starts no reading. An
+        incident a run makes is read, and the event of that reading names the run: the playbook that made it does not
+        start on it, and no chain goes more than three runs deep. The same event never starts the same playbook twice.
+        And a reading that finds nothing new writes no event, which is every reading of the same values. One thing can
+        still go round: a playbook that makes the <em>other system</em> say something new each time (a comment with new
+        addresses, which the mirror reads). Each turn needs values the incident does not hold yet, and it ends for good
+        at the limit of <em>Settings → Indicators found</em>, besides the playbook's own runs per hour.
       </p>
       <p id="files-and-the-guard">
         <strong>The data guard.</strong> None of these nodes sends anything out, so none is held. What they give carries
@@ -1946,6 +2048,56 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         A trigger refused by a limit starts nothing and is not queued: the next event that matches starts a run again.
         The variables are described in <a href="configuration.html">Configuration</a>.
       </p>
+      <h3 id="bulk-events">Events from bulk actions</h3>
+      <p>
+        A <a href="guide.html#bulk">bulk action</a> changes each incident, artifact or indicator through what changes
+        one alone, so it writes the same events: closing 500 incidents writes 500 <code>incident.updated</code>, and a
+        playbook that waits for that event runs once for each incident, as it would have for 500 single changes. Two
+        things are different.
+      </p>
+      <ul>
+        <li>
+          <strong>The event says so.</strong> <code>{{ trigger.bulk }}</code> is the id of the job, and is empty for a
+          change made alone. A playbook that should not run for mass changes says it in its trigger's conditions (<code
+            >{{ trigger.bulk }}</code
+          >
+          <em>is empty</em>); one that should treat them apart branches on it. This holds for every event a job causes,
+          whatever its kind (an artifact analysed again, indicators found).
+        </li>
+        <li>
+          <strong>The job keeps to the pace of the engine.</strong> While a playbook that is on waits for an event,
+          before each row whose change writes events the job waits while 50 events are still to be read by the worker
+          (what it reads in one pass), or while those and the runs in progress together would pass
+          <code>AUTOMATION_MAX_ACTIVE_RUNS</code>: so a job never makes the server refuse a trigger for being at its
+          ceiling. A slow engine is waited for as long as it moves, so a bulk change that a playbook follows takes the
+          time the playbook's runs take. When the engine reads nothing at all for 60 seconds the job goes on, and its
+          result says <em>The automation engine did not keep up</em>. With automation stopped, or no worker running,
+          there is no pace to keep to and the job does not wait.
+        </li>
+      </ul>
+      <p>
+        The limits of each playbook hold as they are: one that starts 60 runs an hour starts 60 for a bulk change of
+        500, and the other events start nothing, as written above. Raise the limit of a playbook that must follow mass
+        changes, or have it leave them out.
+      </p>
+      <p>
+        <strong>Find indicators now</strong>, on many incidents, reads each as the button of one does: it writes one
+        <a href="#indicators-found-playbook"><code>indicators.found</code></a> for each incident whose reading kept
+        something new, and none for the others. A playbook that waits for it runs once for each of those incidents, at
+        the pace above, and what such a run does is held by the rules of that event: an incident the run makes is read
+        and its event names the run, so the same playbook does not start on it.
+      </p>
+      <p>
+        <strong>Run a playbook on each</strong>, from the selection of the incidents, starts the runs as
+        <em>Run a playbook…</em> does on one, 20 unfinished at a time at most: the next ones wait for those to end. An
+        incident the playbook cannot run on now (its runs an hour are used up, a run of it is in progress on that
+        incident) is refused in the result with that sentence, and can be tried again from there.
+      </p>
+      <p>
+        No node starts a bulk action: a playbook that must change many incidents does it with
+        <a href="#for-each">For each</a>, within its own limits. So a playbook started by an event of a bulk job cannot
+        start another job on the same rows.
+      </p>
 
       <h2 id="outside">What a playbook may reach and send</h2>
       <p>
@@ -2400,7 +2552,8 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
 !ip 185.220.101.47
 !servicenow-get-incident number=INC0012345
 !sentinelone-isolate-agent agent_id=${context.Host[0].AgentID} using="SentinelOne EU"
-!ExtractDomains text={{ context.Mail[0].Subject }}</code></pre>
+!ExtractDomains text={{ context.Mail[0].Subject }}
+!nik-make-indicators hxxp://update-cdn[.]net/gate.php</code></pre>
       <div class="table-wrap">
         <table>
           <thead>
@@ -2811,8 +2964,19 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <code>12 hours</code> or <code>3 days</code> (a month at most). Changed later, it counts from the next time
           the last run is reset;
         </li>
-        <li><strong>Look-back</strong>, in minutes: see below.</li>
+        <li><strong>Look-back</strong>, in minutes: see below;</li>
+        <li>
+          <strong>Mirroring</strong>: the direction the incidents it fetches are <a href="#mirroring">mirrored</a> in,
+          and the classes of data those mirrors may send.
+        </li>
       </ul>
+      <p>
+        One choice of this tab is <strong>saved at once</strong> and does not wait for Save, and the tab says so:
+        <strong>Indicators found</strong>, whether the incidents of this instance are read for
+        <a href="guide.html#found-indicators">indicators</a> as they come in and at each update a mirror brings: as the
+        setting says, always, or never. It is kept with the setting (<em>Settings → Indicators found</em>, which lists
+        the instances told apart), not in the instance, and this tab is the one place where it is chosen.
+      </p>
       <p>
         Under them, <em>How it goes</em>: fetching, failing or paused and why, when it last fetched and will next, what
         its last cycle found, and the moment the next cycle asks from. These are done at once and are not part of the
@@ -2892,12 +3056,63 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
 
       <h3 id="mirroring">Mirroring: an incident and a ticket in step</h3>
       <p>
-        An incident can be kept in step with one object of another product, a ticket or an issue, through an instance
-        whose connector has a <a href="#connector-fetch"><code>mirror</code></a
-        >. It is started from the panel of the incident (<em>Mirror with…</em>: the instance, the id of the object on
-        the other side, and which way), or by a mapper that sets <code>mirror_id</code> and
-        <code>mirror_direction</code> on what it fetches. The fields <code>mirror_id</code>,
-        <code>mirror_direction</code> and <code>mirror_last_sync</code> of the incident say how it stands.
+        An incident can be kept in step with one object of another product (a ticket, an issue, a threat, a conversation
+        by mail) through an instance whose connector has a
+        <a href="#connector-fetch"><code>mirror</code></a
+        >. Every connector Nik ships that fetches also mirrors.
+      </p>
+      <p>
+        <strong>The direction is chosen in the instance.</strong> The <em>Fetch</em> part of the form of an instance has
+        <em>Mirroring</em>: <em>None</em>, <em>In</em>, <em>Out</em> or <em>In-out</em>. An incident the instance
+        fetches from then on starts mirrored that way by itself, with the object it was made from. Each choice says in a
+        sentence what it does with this connector, and one that cannot be chosen is shown and not offered, with why: a
+        connector with no command that writes cannot go out, a mailbox is only ever read, and <em>Out</em> and
+        <em>In-out</em> send to another system, so choosing one needs the permission to run playbooks as well as the one
+        to manage connectors, as starting such a mirror on an incident does (<em>None</em> and <em>In</em> need only the
+        second; a direction that is saved already can be saved again with the rest of the form). A new instance, and
+        every instance that was there before 6.10, says <em>None</em>: nothing changes until someone chooses.
+      </p>
+      <ul>
+        <li>
+          <strong>Which object.</strong> The connector says where the id of the object is in a fetched item
+          (<code>mirror.id</code>); when it says nothing, it is the id the fetch tells items apart by.
+        </li>
+        <li>
+          <strong>A mapper comes first.</strong> An incoming mapper that sets both <code>mirror_id</code> and
+          <code>mirror_direction</code> starts the mirror itself, as before 6.10, whatever the instance says. No shipped
+          mapper does any more: those of ServiceNow and Jira did, with <code>in</code>, until their packs 1.1.0 (<a
+            href="#mirror-packs"
+            >below</a
+          >). To let the instance decide where one of yours does, remove the rule that sets
+          <code>mirror_direction</code>. A mapper that sets <code>mirror_id</code> alone names the object, and the
+          instance gives the direction; with an instance that says <em>None</em> it starts nothing.
+        </li>
+        <li>
+          <strong>What was fetched before.</strong> Saving the choice changes nothing for the incidents already there.
+          <em>Apply mirroring to open incidents…</em>, in the same part of the form, counts the open incidents the
+          instance fetched and, once confirmed, gives them the saved direction: those with no mirror start one, the
+          others change, and <em>None</em> stops them. An incident a person mirrored with another instance is left as it
+          is. It is recorded in the audit log with the counts.
+        </li>
+        <li>
+          <strong>What a mirror may send.</strong> A mirror that sends passes the <a href="#data-guard">data guard</a>.
+          Where the direction is chosen, the instance also says which classes of data the mirrors it starts may send
+          beside those that always may (hashes, public indicators, verdicts, Nik's own ids): none, until someone ticks
+          one, which needs the permission that opens classes for playbooks. The classes kept for whole messages and
+          files are not offered there.
+        </li>
+        <li>
+          <strong>On one incident.</strong> The panel of the incident shows the direction and where it came from (<em
+            >from the instance</em
+          >, <em>from the mapper</em>, <em>set here</em>), and changes it for that incident alone. A mirror is still
+          started by hand from there too (<em>Mirror with…</em>: the instance, the id of the object on the other side,
+          and which way).
+        </li>
+      </ul>
+      <p>
+        The fields <code>mirror_id</code>, <code>mirror_direction</code> and <code>mirror_last_sync</code> of the
+        incident say how it stands. The direction is stored as <code>in</code>, <code>out</code> or <code>both</code>;
+        <code>both</code> is what the screens call In-out.
       </p>
       <ul>
         <li>
@@ -2906,7 +3121,11 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           <strong>kept</strong>: the other side writes over it only when the mapper marks it <em>authoritative</em> (<em
             >Wins over edits</em
           >). What the connector itself wrote, or nobody set, follows the other side. Comments not seen before become
-          lines of the War Room. A closed incident is read for a day more, then left alone.
+          lines of the War Room. A closed incident is read for a day more, then left alone. An object that is
+          <strong>gone</strong> on the other side (deleted there: the product answers that it does not exist, or an
+          empty list for its id) is not asked for every two minutes for ever: the mirror is read no more, the War Room
+          says so in one line and whoever has the incident is told once (who manages connectors, when nobody has it).
+          <em>Read now</em> tries again, and reading goes on if the object is back.
         </li>
         <li>
           <strong>Out.</strong> When a field the <a href="#mappers">outgoing mapper</a> reads changes in Nik, the
@@ -2922,7 +3141,76 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         log with who gave it, and what is sent passes the <a href="#data-guard">data guard</a> with no class of data
         opened unless one was opened for this mirror, which needs the permission that opens classes for playbooks. It
         reaches the host of its instance and nothing else. A loop is not possible: what the mirror's own connector wrote
-        is never sent back, and a comment Nik sent is recognised when it comes back.
+        is never sent back, and a comment Nik sent is recognised when it comes back. What a read brings (fields,
+        context, comments) is read once for <a href="guide.html#found-indicators">indicators</a>, when something
+        changed; an indicator found is no change of a field, and is never sent. Choosing a direction that sends in an
+        instance is the same standing permission for every incident it will fetch: it takes the permission to manage
+        connectors, and is written in the audit log with the instance.
+      </p>
+      <p>What mirrors with the connectors Nik ships:</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Connector</th>
+              <th>In</th>
+              <th>Out</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ServiceNow, Jira Cloud, Jira Data Center</td>
+              <td>The fields of the ticket or issue, and its comments</td>
+              <td>The fields the outgoing mapper writes, and notes as comments</td>
+            </tr>
+            <tr>
+              <td>SentinelOne EDR</td>
+              <td>
+                The threat read again by its id: its incident status becomes the status, its analyst verdict the close
+                reason; its notes become lines of the War Room
+              </td>
+              <td>
+                The status as the incident status and the close reason as the analyst verdict, in one request; notes as
+                notes of the threat
+              </td>
+            </tr>
+            <tr>
+              <td>Mail listener / sender</td>
+              <td>
+                A message that answers one an incident was made from becomes a line of its War Room, and is kept as
+                evidence of it, instead of an incident of its own (<a href="#mail-connector">below</a>)
+              </td>
+              <td>Nothing, ever: Nik does not send a message by itself</td>
+            </tr>
+            <tr>
+              <td>SentinelOne SIEM</td>
+              <td>
+                The alert read again by its id (<code>get-alert</code>): its status becomes the status, and
+                <code>FALSE_POSITIVE</code> closes the incident with that reason. No notes: the pack has no command that
+                reads them
+              </td>
+              <td>
+                The status, set with <code>update-alert</code> (<code>NEW</code>, <code>IN_PROGRESS</code>,
+                <code>RESOLVED</code>; <code>FALSE_POSITIVE</code> for an incident closed as a false positive). No notes
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The alerts of the SentinelOne SIEM are not in SentinelOne's reference of the API: its two commands are written
+        from other public sources (the pack's README says which), and the one that sets a status is the less certain of
+        the two. Try <em>Out</em> on a test alert before relying on it.
+      </p>
+      <p id="mirror-packs">
+        <strong>ServiceNow and Jira, from their packs 1.1.0.</strong> Until then their incoming mappers named the object
+        and said <code>in</code>, so every ticket fetched was mirrored <em>In</em> whatever the instance said. The
+        mappers no longer say it, and the instance decides like every other. Nothing changes by itself for an
+        installation that has them: when the update of the pack replaces such a mapper, every instance of that connector
+        whose <em>Mirroring</em> is <em>None</em> is set to <em>In</em> in the same step, which the update reports and
+        the audit log records (<code>mirror.kept</code>). An instance someone gave a direction is left as it is. A
+        mapper you changed and keep at the update (left out of it) still names the direction and is still obeyed first,
+        and no instance is touched. A new installation of the pack starts at <em>None</em>.
       </p>
 
       <h3 id="mail-connector">Mail listener / sender</h3>
@@ -2960,6 +3248,21 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           reply names to stay in its conversation is not judged: it goes back only to the people the message was sent by
           and to. A dry run does not read the mailbox: its step says that what is taken from the message is judged when
           the step runs.
+        </li>
+        <li id="mail-mirror">
+          <strong>Replies</strong> (<a href="#mirroring">mirroring</a>, <em>In</em>). With the instance set to
+          <em>In</em>, a message the listener reads that answers one an incident was made from does not become an
+          incident: it becomes a line of the War Room of that incident, with its sender, its time and its text, and the
+          message is kept as evidence of the incident as the first one was (the same analysis, the same size limit).
+          What decides is what the message names in <code>In-Reply-To</code> and <code>References</code>, never its
+          subject: a forward that names nothing, or a new message whose subject starts with <em>Re:</em>, is an incident
+          of its own. A reply that is read before the message it answers is the incident, and the message joins it when
+          it arrives. The same message delivered twice is said once. A reply to an incident closed more than a day ago
+          is a new incident. With <em>None</em>, every message is an incident, as before.
+          <strong>Nothing is sent</strong>: <em>Out</em> and <em>In-out</em> are not offered for a mailbox, a note
+          tagged <code>mirror</code> on such an incident stays in Nik and the War Room says so, and
+          <code>reply</code> remains what a person or a playbook answers with. The pre-processing rules are not asked
+          about a message that goes on with an incident.
         </li>
         <li>
           <strong>Reading</strong> (<code>search</code>, <code>get-message</code>, <code>list-folders</code>): a message
@@ -3116,11 +3419,10 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         A connector that fetches comes with a <a href="#mappers">mapper</a>: the title, the details, the severity, the
         status and the id of what it brings in, and the ticket, the alert, the host or the file it is about in the
         <a href="#context">context</a>. Nik adds these mappers at startup, for every type of incident, and brings them
-        up to date with a release until someone saves one: from then on it is yours. The mappers of ServiceNow and Jira
-        set <code>mirror_id</code> and <code>mirror_direction: in</code>, so a ticket that came in by fetching is read
-        again when it changes there; to send what changes in Nik, start the mirror from the incident with a direction
-        that sends. None says which type of incident an item becomes: without a <a href="#mappers">classifier</a>, the
-        default type is used. Things to know before turning a fetch on:
+        up to date with a release until someone saves one: from then on it is yours. Whether a ticket or an alert that
+        came in by fetching is read again when it changes there, and whether what changes in Nik is sent, is what the
+        instance says of <a href="#mirroring">mirroring</a>. None says which type of incident an item becomes: without a
+        <a href="#mappers">classifier</a>, the default type is used. Things to know before turning a fetch on:
       </p>
       <ul>
         <li>
@@ -3138,16 +3440,30 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
           those detected since five minutes before the last one and reads 100. Where more than 100 alerts are detected
           between two cycles, some are not read.
         </li>
+        <li>
+          <strong>SentinelOne EDR</strong> mirrors the threats it fetches. Its mappers say how the two vocabularies
+          meet, and are yours to change: coming in, <code>unresolved</code>, <code>in_progress</code> and
+          <code>resolved</code> are the statuses open, in progress and closed, and the verdicts
+          <code>true_positive</code> and <code>false_positive</code> are the close reasons <em>Resolved</em> and
+          <em>False positive</em>; going out, the same statuses the other way, and the close reasons
+          <em>Resolved</em> (or <em>True positive</em>), <em>False positive</em> and <em>Suspicious</em> are the
+          verdicts <code>true_positive</code>, <code>false_positive</code> and <code>suspicious</code>; any other close
+          reason sends no verdict. With the 1.2 mappers a threat that is already resolved when it is fetched makes an
+          incident that starts closed. The alerts of custom detection rules are another object, which the fetch does not
+          bring: they are not mirrored.
+        </li>
       </ul>
 
       <h3 id="connector-format">The connector file, key by key</h3>
       <p>
         A file is YAML, at most 1 MB and 400 commands. <strong>A key the format does not know is an error</strong>, so a
         typo is told and not ignored. A file that says <code>native: mail</code> is of the one kind Nik speaks for
-        itself: it has no <code>base_url</code>, <code>headers</code>, <code>test</code> nor <code>mirror</code>, its
-        commands have no <code>request</code> and are among those Nik has for mail, and its <code>fetch</code> has no
-        request either; everything else (configuration, arguments, outputs, samples, schema) is as below. Texts between
-        <code>{{ }}</code> are <a href="#expressions">expressions</a>; what they can read depends on where they are:
+        itself: it has no <code>base_url</code>, <code>headers</code> nor <code>test</code>, its commands have no
+        <code>request</code> and are among those Nik has for mail, its <code>fetch</code> has no request either, and its
+        <code>mirror</code>, when it has one, is fed by that fetch (<code>thread</code>, and no <code>get</code>:
+        <a href="#connector-fetch">below</a>); everything else (configuration, arguments, outputs, samples, schema) is
+        as below. Texts between <code>{{ }}</code> are <a href="#expressions">expressions</a>; what they can read
+        depends on where they are:
       </p>
       <div class="table-wrap">
         <table>
@@ -4070,8 +4386,47 @@ download_hosts_from: download_hosts</code></pre>
         (<code>id</code>, <code>text</code>, <code>author</code>, <code>at</code>, over <code>item</code>).
         <code>interval_seconds</code> is how often the other side is read (120 by default). <code>item</code> says where
         the object is in what <code>get</code> gave (<code>"{{ result.ticket }}"</code>; the whole result by default):
-        it must have the shape a fetched item has, since the same incoming mapper reads both.
+        it must have the shape a fetched item has, since the same incoming mapper reads both. An <code>item</code> that
+        is empty means the object is gone: a command that lists by id says <code>"{{ result.tickets | first }}"</code>,
+        which is nothing for an empty list. A command that answers 404 or 410 means the same.
       </p>
+      <p>Four more keys, since 6.10, for a mirror that an instance starts by itself:</p>
+      <ul>
+        <li>
+          <strong><code>id</code></strong
+          >: where the id of the object is in a fetched item, a template over <code>item</code> (<code
+            >"{{ item.key }}"</code
+          >). Left out, it is the <code>item_id</code> of the fetch.
+        </li>
+        <li>
+          <strong><code>kinds</code></strong
+          >: for a product with more than one object to keep in step (a ticket and a task). Each kind has a name and its
+          own <code>get</code>, <code>item</code>, <code>update</code> and <code>comments</code>. An incident is
+          mirrored with an object of a kind when the id of its mirror is written
+          <code>&lt;kind&gt;:&lt;id&gt;</code> (<code>task:K-12</code>); the calls are then given the id alone as
+          <code>mirror.id</code> and the kind as <code>mirror.kind</code>. An id with no kind is the object the keys of
+          <code>mirror</code> itself describe.
+        </li>
+        <li>
+          <strong><code>thread</code></strong
+          >: a mirror <em>fed by the fetch</em>, for a product where what follows an item arrives as other items (the
+          replies to a message). <code>ids</code> is a template over a fetched <code>item</code> that gives the ids of
+          the earlier items it goes on from (a list, or ids separated by spaces or commas); <code>text</code>,
+          <code>author</code> and <code>at</code> say what the line of the War Room holds. An incident mirrored in keeps
+          the ids of its conversation, starting with its own (<code>mirror.id</code>); an item that names one of them,
+          or is named by one, becomes a line of that incident and no incident of its own, and what the fetch keeps as
+          evidence of an item is kept for it too. With <code>thread</code> and no <code>get</code> nothing is read at an
+          interval and nothing is sent: such a mirror goes in only. This is the one form a native connector may have.
+        </li>
+        <li>
+          <strong><code>no_mirror</code></strong
+          >, beside <code>fetch</code> and instead of <code>mirror</code>: a sentence that says why a connector that
+          fetches does not mirror. It is shown where an instance chooses its mirroring. No connector Nik ships uses it.
+          A file of yours that has a <code>fetch</code> and neither <code>mirror</code> nor <code>no_mirror</code> is
+          installed and works as before; checking it gives a <strong>warning</strong> with the line of its
+          <code>fetch</code>, and its instances are offered <em>None</em> only.
+        </li>
+      </ul>
 
       <h4 id="connector-samples">Two complete files</h4>
       <p>

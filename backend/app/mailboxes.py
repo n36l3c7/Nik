@@ -425,10 +425,3 @@ def select_messages(
                 found.setdefault(row.seq, row)
         rows = list(found.values())
     return sorted(rows, key=lambda row: (row.date_ms or 0, row.seq), reverse=True)
-
-
-def store_size(mailbox_id: str) -> int:
-    try:
-        return store.size(mbox_path(mailbox_id))
-    except (OSError, store.SealError):
-        return 0

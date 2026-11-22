@@ -15,10 +15,9 @@ from ..core import audit
 from ..core.db import get_db
 from ..core.models import Incident, IncidentType
 from ..core.permissions import ADMIN, INCIDENTS_CONFIGURE
-from ..core.security import Principal, now_iso, reader_principal, require
+from ..core.security import Principal, configure_principal, now_iso, reader_principal
 
 router = APIRouter(prefix="/incident-types", tags=["incident types"])
-configure_principal = require(INCIDENTS_CONFIGURE)
 
 
 class TypeIn(BaseModel):

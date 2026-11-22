@@ -18,9 +18,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   CalendarClock,
-  Check,
   Clock,
-  Copy,
   Download,
   ExternalLink,
   Eye,
@@ -29,7 +27,17 @@ import {
   History,
   RotateCcw,
 } from 'lucide-react'
-import { Badge, Button, Card, DataTable, EmptyState, EvidenceLink, Select, StatCard } from '../../ui/index.js'
+import {
+  Badge,
+  Button,
+  Card,
+  CopyButton,
+  DataTable,
+  EmptyState,
+  EvidenceLink,
+  Select,
+  StatCard,
+} from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
@@ -102,37 +110,6 @@ function ExternalLinkIcon({ href }) {
     >
       <ExternalLink className="h-3.5 w-3.5" />
     </EvidenceLink>
-  )
-}
-
-/**
- * Copy-to-clipboard button, hidden until the surrounding `group` cell is
- * hovered (or the button is focused). Shows a brief check-mark after copying.
- */
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-  if (!text) return null
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      // Clipboard API unavailable (e.g. insecure context): ignore silently.
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label="Copy"
-      title="Copy"
-      className="shrink-0 p-0.5 text-fg-muted opacity-0 transition hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
-    >
-      {copied ? <Check className="h-3.5 w-3.5 text-accent" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
   )
 }
 
@@ -209,7 +186,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
       start: incident?.suspiciousStart ?? null,
       end: incident?.suspiciousEnd ?? null,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only another incident resets the range, not an edit of its window
   }, [incident?.id])
 
   const { historyEvents, downloadEvents, allEvents } = useMemo(
@@ -376,7 +353,7 @@ export default function EventsSection({ incident, browserId, profile = null, his
               >
                 <TabIcon className="h-4 w-4" />
                 {tab.label}
-                <span className="rounded-full bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">
+                <span className="bg-canvas px-1.5 text-xs tabular-nums text-fg-muted">
                   {count.toLocaleString('en-US')}
                 </span>
               </button>
@@ -488,7 +465,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
             <span className="group inline-flex items-center gap-1.5">
               <span className="font-mono text-xs text-fg-muted">{domain || truncate(site, 40) || '—'}</span>
               <ExternalLinkIcon href={site} />
-              <CopyButton text={site} />
+              <CopyButton text={site} hover />
             </span>
           )
         },
@@ -543,7 +520,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
               from {extractDomain(site) || truncate(site, 36) || '—'}
             </span>
             <ExternalLinkIcon href={site} />
-            <CopyButton text={site} />
+            <CopyButton text={site} hover />
           </span>
         )
       }
@@ -553,7 +530,7 @@ function buildColumns(tab, redirectIndex, { incidentId, browserId, profile, flag
           <span className="inline-flex items-center gap-1.5">
             <span className="break-all font-mono text-xs text-fg-muted">{truncate(row.url, 64)}</span>
             <ExternalLinkIcon href={row.url} />
-            <CopyButton text={row.url} />
+            <CopyButton text={row.url} hover />
           </span>
           {target && (
             // Link to the redirect destination page

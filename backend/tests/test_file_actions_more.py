@@ -5,7 +5,7 @@ The files are harmless: texts, a message written in the tests, a capture built f
 a minimal PE with two instructions.
 """
 
-# ruff: noqa: E501, F811 (graphs of test playbooks read better on one line; fixtures are imported)
+# ruff: noqa: F811 (fixtures are imported)
 
 from __future__ import annotations
 

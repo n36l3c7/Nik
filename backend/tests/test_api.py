@@ -162,3 +162,10 @@ def test_ticket_and_severity_in_the_light_list_and_search(admin: TestClient):
     k.patch("/api/incidents/t1", headers=H, json={"severity": "low", "ticketId": ""})
     row = next(r for r in k.get("/api/incidents?view=summary", headers=H).json()["incidents"] if r["id"] == "t1")
     assert row["severity"] == "low" and row["ticketId"] == ""
+
+
+def test_the_audit_log_says_how_many_entries_match_in_the_body_too(admin: TestClient):
+    admin.post("/api/incidents", json={"id": "counted", "name": "Counted", "data": {}})
+    r = admin.get("/api/audit?limit=1")
+    assert r.status_code == 200 and len(r.json()["entries"]) == 1
+    assert r.json()["total"] == int(r.headers["X-Total-Count"]) >= 1

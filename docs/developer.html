@@ -52,12 +52,11 @@
       </nav>
       <h2 id="local-development-setup">Local development setup</h2>
       <p>
-        <strong>Prerequisites:</strong> Node.js 22+ (with npm; 20.19 or later also works) and Python 3.11–3.13. No
-        database server is needed: the backend defaults to a local SQLite file. The incident report's
-        <strong>PDF</strong> needs the Pango libraries WeasyPrint uses (Debian/Ubuntu:
-        <code>apt install libpango-1.0-0 libpangoft2-1.0-0</code>; Fedora/RHEL: <code>dnf install pango</code>; macOS:
-        <code>brew install pango</code>); everything else, the HTML report included, works without them. The container
-        image installs them.
+        <strong>Prerequisites:</strong> Node.js 22+ (with npm; 20.19 or later also works) and Python 3.12. No database
+        server is needed: the backend defaults to a local SQLite file. The incident report's <strong>PDF</strong> needs
+        the Pango libraries WeasyPrint uses (Debian/Ubuntu: <code>apt install libpango-1.0-0 libpangoft2-1.0-0</code>;
+        Fedora/RHEL: <code>dnf install pango</code>; macOS: <code>brew install pango</code>); everything else, the HTML
+        report included, works without them. The container image installs them.
       </p>
       <p><strong>Backend</strong> (terminal 1):</p>
       <pre><code class="language-bash">cd backend
@@ -110,7 +109,11 @@ npm run test:e2e   # Playwright smoke test of the whole stack (build first)
         and a Chromium from <code>npx playwright install chromium</code>. With the analyzer worker running and
         <code>E2E_ANALYZER_URL</code> / <code>E2E_ANALYZER_TOKEN</code> set (CI does both), it also checks the Code view
         against real rizin output; likewise <code>E2E_CAPA_URL</code> / <code>E2E_CAPA_TOKEN</code> for the Capabilities
-        view and the capa worker. Without them it checks the "not configured" messages.
+        view and the capa worker. The other workers have their pairs too, read the same way:
+        <code>E2E_DOCVIEW_URL</code> / <code>E2E_DOCVIEW_TOKEN</code>, <code>E2E_BROWSER_URL</code> /
+        <code>E2E_BROWSER_TOKEN</code>, <code>E2E_PCAP_URL</code> / <code>E2E_PCAP_TOKEN</code> and
+        <code>E2E_SANDBOX_URL</code> / <code>E2E_SANDBOX_TOKEN</code> (CI sets all six). Without them it checks the "not
+        configured" messages.
       </p>
       <p>
         <strong>Analyzer worker in development.</strong> The Code view needs the rizin worker
@@ -118,7 +121,7 @@ npm run test:e2e   # Playwright smoke test of the whole stack (build first)
       </p>
       <pre><code class="language-bash">docker build -t nik-analyzer workers/analyzer
 docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
-  -v &quot;$PWD/backend/samples:/samples:ro&quot; -e ANALYZER_TOKEN=dev-token nik-analyzer
+  -e ANALYZER_TOKEN=dev-token nik-analyzer
 # backend/.env: ANALYZER_URL=http://127.0.0.1:8700  ANALYZER_TOKEN=dev-token
 </code></pre>
       <p>
@@ -131,7 +134,7 @@ docker run -d --name nik-analyzer -p 127.0.0.1:8700:8700 \
       </p>
       <pre><code class="language-bash">docker build -t nik-capa workers/capa
 docker run -d --name nik-capa -p 127.0.0.1:8710:8710 --read-only --tmpfs /tmp \
-  -v &quot;$PWD/backend/samples:/samples:ro&quot; -e CAPA_TOKEN=dev-capa-token nik-capa
+  -e CAPA_TOKEN=dev-capa-token nik-capa
 # backend/.env: CAPA_URL=http://127.0.0.1:8710  CAPA_TOKEN=dev-capa-token
 </code></pre>
       <p>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
+import { copyText } from '../../../lib/download.js'
 import { formatRelative } from '../../../lib/time.js'
 import { rolesOf } from '../../../domain/permissions.js'
 import { Badge, Button } from '../../ui/index.js'
@@ -23,13 +24,10 @@ const INPUT_CLASS =
 function CreatedKey({ value, onDismiss }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      /* insecure context: ignore */
-    }
+    // Refused by the browser: the key stays on the screen, to be selected by hand.
+    if (!(await copyText(value))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1200)
   }
   return (
     <div className="space-y-2 border border-accent-strong bg-accent-soft p-3">

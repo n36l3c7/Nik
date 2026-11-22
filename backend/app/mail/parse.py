@@ -29,13 +29,6 @@ class MailError(ValueError):
     """The file is not an e-mail Nik can read."""
 
 
-def _decode(value: Any) -> str:
-    try:
-        return str(value)
-    except Exception:  # noqa: BLE001 - a malformed encoded word
-        return value.encode("utf-8", "replace").decode() if isinstance(value, str) else repr(value)
-
-
 def _header_pairs(message) -> list[list[str]]:
     pairs = []
     for name, value in message.raw_items():

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
+import { copyText, saveBlob } from '../../../lib/download.js'
 
 /*
  * Collection-script block: a copy/download-able code snippet the analyst runs
@@ -21,23 +22,14 @@ export default function ScriptBlock({ script, filename }) {
   const meta = LANG_META[script.lang] ?? { label: script.lang, ext: 'txt' }
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(script.code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      /* insecure context: ignore */
-    }
+    // Refused by the browser: the script stays selectable, and can be downloaded.
+    if (!(await copyText(script.code))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1200)
   }
 
   const handleDownload = () => {
-    const blob = new Blob([script.code], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${filename}.${meta.ext}`
-    anchor.click()
-    URL.revokeObjectURL(url)
+    saveBlob(new Blob([script.code], { type: 'text/plain;charset=utf-8' }), `${filename}.${meta.ext}`)
   }
 
   return (

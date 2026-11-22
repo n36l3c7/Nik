@@ -2,3 +2,9 @@
 **/__pycache__/
 *.db
 .env
+tests/
+.pytest_cache/
+samples/
+.e2e-samples/
+backups/
+.e2e-backups/

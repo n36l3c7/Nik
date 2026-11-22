@@ -56,7 +56,7 @@ def desk(admin: TestClient, acme):  # noqa: F811
     return acme
 
 
-def ask(desk, number: str = "T-1", at: float = NOW, **more) -> actions.Result:  # noqa: F811
+def ask(desk, number: str = "T-1", at: float = NOW, **more) -> actions.Result:
     with SessionLocal() as db:
         call = actions.Call(
             db=db,

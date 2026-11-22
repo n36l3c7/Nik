@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SKULL_PRESETS, gazeFrame, microSkull, renderSkull, skullToText } from './asciiSkull.js'
+import { SKULL_PRESETS, gazeFrame, microSkull, renderSkull } from './asciiSkull.js'
+
+/** The skull as plain text, one line per row. */
+const skullToText = (rows) => rows.map((segments) => segments.map((s) => s.text).join('')).join('\n')
 
 const mirror = (line) =>
   [...line]

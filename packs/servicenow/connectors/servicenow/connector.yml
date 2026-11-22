@@ -20,7 +20,7 @@
 # the fields to change as an object: {"u_site": "Milan", "state": "2"}.
 name: ServiceNow
 id: servicenow
-version: 4
+version: 5
 description: Incidents and their comments in ServiceNow.
 api_version: "Table API (/api/now/table), release Australia"
 verified: false
@@ -207,6 +207,9 @@ schema:
     - { name: close_code, type: text }
     - { name: close_notes, type: text }
 
+# The object an incident is kept in step with is the record its item was, by its sys_id (the id of
+# the fetched item). The direction is what the instance says (None, In, Out, In-out): the mapper of
+# the pack no longer names it.
 mirror:
   interval_seconds: 120
   get: { command: get-incident-by-id }

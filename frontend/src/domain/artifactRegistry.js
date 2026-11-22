@@ -27,11 +27,6 @@ export const artifactKind = (id) => BY_ID[id] ?? null
 /** The artifact kind a dropped file becomes, from its analysis tab; null for host evidence. */
 export const kindForTab = (tab) => (BY_TAB[tab]?.uploadPath ? BY_TAB[tab].id : null)
 
-/** Where the artifact's analysis is read from. */
-export function artifactId(kind, ref) {
-  return `${kind}-${ref}`
-}
-
 /* ---- A file analysed as what it is ---- */
 
 const ANALYSE_AS = {

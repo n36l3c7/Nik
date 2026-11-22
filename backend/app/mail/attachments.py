@@ -78,7 +78,7 @@ def macros(name: str, data: bytes) -> dict[str, Any] | None:
     """VBA and Excel 4 (XLM) macros with olevba's keyword analysis, or None."""
     try:
         from oletools.olevba import VBA_Parser
-    except ImportError:  # pragma: no cover - a requirement
+    except ImportError:  # a requirement: only a bare install lacks it
         return None
     try:
         parser = VBA_Parser(name or "attachment", data=data, relaxed=True)

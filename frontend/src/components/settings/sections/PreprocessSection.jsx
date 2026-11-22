@@ -15,7 +15,7 @@ import {
 } from '../../../domain/mappers.js'
 import { instancePath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
-import { Badge, Button, EmptyState, Modal } from '../../ui/index.js'
+import { Badge, Button, EmptyState, Modal, Wait } from '../../ui/index.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -314,9 +314,7 @@ export default function PreprocessSection() {
         </p>
       )}
       {found === null && !error ? (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the rules…
-        </p>
+        <Wait>Loading the rules…</Wait>
       ) : rules.length === 0 ? (
         <EmptyState skull title="No rule yet" message="No rule yet: every new item becomes an incident." />
       ) : (

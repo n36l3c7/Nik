@@ -7,6 +7,7 @@ import { SHELLS } from '../../config/shells.js'
 import { ARTIFACT_CATEGORIES, artifactSourcesFor, getArtifactCategoryById } from '../../config/artifacts.js'
 import { DEFAULT_OS } from '../../config/os.js'
 import { kindForTab } from '../../domain/artifactRegistry.js'
+import { pickedSize } from '../../domain/transfers.js'
 import { formatRelative } from '../../lib/time.js'
 
 /*
@@ -35,8 +36,6 @@ const TABS = [
 
 const SELECT =
   'w-full border border-line bg-canvas px-3 py-2 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
-
-const size = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 
 function Select({ id, label, value, onChange, options }) {
   return (
@@ -70,7 +69,7 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
     setTab(route?.tab ?? 'malware')
     setParams(route?.params ?? {})
     // A new drop resets the form; the open incident only sets the default.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new drop resets the form
   }, [drop])
 
   const os = (target === 'current' ? activeIncident?.os : fields.os) || DEFAULT_OS
@@ -140,7 +139,7 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
           <div className="min-w-0">
             <p className="break-all font-mono text-sm text-fg">{drop.file.name}</p>
             <p className="text-xs text-fg-muted">
-              {size(drop.file.size)} ·{' '}
+              {pickedSize(drop.file.size)} ·{' '}
               {route ? (
                 <>
                   {route.label} → <span className="text-fg">{TABS.find((t) => t.id === route.tab)?.label}</span>

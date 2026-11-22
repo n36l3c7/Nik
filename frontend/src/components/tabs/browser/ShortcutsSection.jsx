@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from 'react'
-import { Check, Copy, ExternalLink, Flag, Zap } from 'lucide-react'
+import { useCallback, useMemo } from 'react'
+import { ExternalLink, Flag, Zap } from 'lucide-react'
 import { useRowMenu } from '../../menu/useRowMenu.js'
-import { Card, DataTable, EmptyState, EvidenceLink } from '../../ui/index.js'
+import { Card, CopyButton, DataTable, EmptyState, EvidenceLink } from '../../ui/index.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { formatDateTime } from '../../../lib/time.js'
 import { truncate } from '../../../lib/url.js'
@@ -28,35 +28,6 @@ function FlagButton({ flagged, onToggle }) {
       ].join(' ')}
     >
       <Flag size={15} className={flagged ? 'fill-accent' : ''} />
-    </button>
-  )
-}
-
-/** Copy-to-clipboard button; shows on hover and flips to a check briefly. */
-function CopyButton({ text }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async (event) => {
-    event.stopPropagation()
-    if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      // Clipboard API may be unavailable (insecure context): fail silently.
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label="Copy"
-      title="Copy to clipboard"
-      className="shrink-0 p-0.5 text-fg-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
-    >
-      {copied ? <Check size={13} className="text-accent" /> : <Copy size={13} />}
     </button>
   )
 }
@@ -139,7 +110,7 @@ export default function ShortcutsSection({ incident, browserId, profile = null, 
                 >
                   <ExternalLink size={13} />
                 </EvidenceLink>
-                <CopyButton text={row.url} />
+                <CopyButton text={row.url} title="Copy to clipboard" hover small />
               </>
             )}
           </span>

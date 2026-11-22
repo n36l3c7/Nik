@@ -21,9 +21,9 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import given  # noqa: E402
-import nik_pcap  # noqa: E402
-import server  # noqa: E402
+import given
+import nik_pcap
+import server
 
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "phish.pcapng")
 CAPTURE_ID = "c" * 32

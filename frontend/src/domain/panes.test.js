@@ -14,16 +14,11 @@ test('a width stays inside the limits of its panel and of the window', () => {
   assert.equal(clampWidth(400, { ...limits, viewport: 200 }), 180)
 })
 
-test('the width of a panel is remembered under its own key, and found where 4.x kept it', () => {
+test('the width of a panel is remembered under its own key', () => {
   const storage = (items) => ({ getItem: (key) => items[key] ?? null })
   assert.equal(paneKey('settings.nav'), 'nik.pane.settings.nav')
   assert.equal(readWidth(storage({ 'nik.pane.sidebar': '310' }), 'sidebar'), 310)
-  assert.equal(readWidth(storage({ 'nik.sidebarWidth': '288' }), 'sidebar', 'nik.sidebarWidth'), 288)
-  assert.equal(
-    readWidth(storage({ 'nik.pane.sidebar': '310', 'nik.sidebarWidth': '288' }), 'sidebar', 'nik.sidebarWidth'),
-    310,
-  )
-  assert.equal(readWidth(storage({}), 'sidebar', 'nik.sidebarWidth'), null)
+  assert.equal(readWidth(storage({}), 'sidebar'), null)
   assert.equal(readWidth(storage({ 'nik.pane.sidebar': 'wide' }), 'sidebar'), null)
   assert.equal(readWidth(storage({ 'nik.pane.sidebar': '-4' }), 'sidebar'), null)
   // A browser that refuses storage: no width, no error.

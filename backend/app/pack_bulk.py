@@ -155,7 +155,9 @@ def apply_install(db: OrmSession, action: str, chosen: list[dict[str, str]], act
             db.rollback()
             line["why"] = error.message
             continue
-        line.update(ok=True, added=done["added"], updated=done["updated"], same=done["same"])
+        line.update(
+            ok=True, added=done["added"], updated=done["updated"], same=done["same"], mirroring=done["mirroring"]
+        )
     return [lines[pack_id] for pack_id in order] + [line for pack_id, line in lines.items() if pack_id not in files]
 
 

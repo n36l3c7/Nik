@@ -16,12 +16,23 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import given  # noqa: E402
-import jobs  # noqa: E402
-import server  # noqa: E402
+import given
+import jobs
+import server
 
 DATA = b"MZ a harmless fixture, never a sample"
 SHA = hashlib.sha256(DATA).hexdigest()
+
+
+def test_the_copies_of_this_file_in_the_other_workers_are_the_same():
+    """Each image is built from its own folder and holds its own copy: they must not drift apart."""
+    here = Path(__file__).resolve().parent.parent
+    mine = (here / "jobs.py").read_bytes()
+    others = [here.parent / worker / "jobs.py" for worker in ("capa", "docview", "pcap")]
+    if not all(path.is_file() for path in others):
+        pytest.skip("the other workers are not beside this one here")
+    for path in others:
+        assert path.read_bytes() == mine, f"{path} differs from workers/analyzer/jobs.py"
 
 
 class Clock:

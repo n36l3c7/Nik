@@ -252,14 +252,7 @@ def run_line(
     except commands.CommandError as error:
         raise HTTPException(status_code=400, detail=error.message) from None
     if target.changes and not body.confirm:
-        return JSONResponse(
-            status_code=409,
-            content={
-                "detail": f"{target.title} changes something outside Nik: confirm to run it",
-                "needsConfirm": True,
-                "command": target.title,
-            },
-        )
+        return JSONResponse(status_code=409, content=commands.confirm_answer(target))
     entry, run = commands.start(db, incident, body.line.strip(), target, parsed, caller.actor)
     audit.record(
         db, caller.actor, "warroom.command", f"Ran {target.title} in the War Room", incident, target=target.title

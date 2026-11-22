@@ -5,7 +5,7 @@ import { cellText, cleanSort, neighbour } from '../../domain/incidentList.js'
 import { fitTags } from '../../domain/incidentTags.js'
 import { numberedName } from '../../domain/incidentName.js'
 import { formatRelative } from '../../lib/time.js'
-import { Chip, MicroSkull, SeverityTag, StatusTag } from '../ui/index.js'
+import { Chip, MicroSkull, SelectBox, SeverityTag, StatusTag } from '../ui/index.js'
 import ConnectorLogo from '../ui/ConnectorLogo.jsx'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
 
@@ -17,6 +17,12 @@ import IncidentNumber from '../ui/IncidentNumber.jsx'
  * row, opens the incident. The arrows go to the row above and below, and the
  * quick view follows when it is open. The right-click menu of a row is the
  * one the side panel had. A click on a tag of a row filters the list by it.
+ *
+ * The first column selects: a click on its checkbox ticks the row, with Shift
+ * the range from the last one ticked; the checkbox of the heading ticks the
+ * rows on screen. On a row, Space ticks it, Shift and an arrow tick the next
+ * one too, Ctrl/⌘+A ticks the rows on screen and Escape unticks everything
+ * (components/ui/useSelection.js).
  */
 
 const EMPTY = <span className="text-fg-subtle">—</span>
@@ -132,6 +138,7 @@ function Cell({ row, column, types, onTag }) {
  *   exportingId: string | null,
  *   onExport: (row: object) => void,
  *   onDelete: (row: object) => void,
+ *   picked: object,                    // the selection: what useSelection() returns
  * }} props
  */
 export default function IncidentTable({
@@ -150,18 +157,23 @@ export default function IncidentTable({
   exportingId,
   onExport,
   onDelete,
+  picked,
 }) {
   const body = useRef(null)
   const current = cleanSort(sort)
 
+  const focusRow = (id) => body.current?.querySelector(`tr[data-row="${CSS.escape(id)}"]`)?.focus()
   const onRowKey = (event, row) => {
     if (event.target !== event.currentTarget) return
+    // The keys of the selection first: Space, Shift and an arrow, Ctrl/⌘+A, Escape.
+    const moved = picked.key(event, row.id)
+    if (moved !== undefined) {
+      if (moved) focusRow(moved)
+      return
+    }
     if (event.key === 'Enter') {
       event.preventDefault()
       onOpen(row.id)
-    } else if (event.key === ' ') {
-      event.preventDefault()
-      onShow(row.id)
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const next = neighbour(
@@ -179,6 +191,9 @@ export default function IncidentTable({
     <table aria-label="Incidents" className="w-full min-w-max border-collapse text-left text-[13px]">
       <thead className="sticky top-0 z-10 bg-canvas">
         <tr>
+          <th scope="col" className="w-px border-b border-line pl-3">
+            <SelectBox label="Select the incidents on screen" state={picked.page} onPick={picked.pickPage} />
+          </th>
           {columns.map((column) => {
             const sorted = current.key === column.key
             const name = column.name ?? column.label
@@ -216,12 +231,14 @@ export default function IncidentTable({
       <tbody ref={body}>
         {rows.map((row) => {
           const shown = row.id === shownId
+          const ticked = picked.has(row.id)
           return (
             <tr
               key={row.id}
               data-row={row.id}
               tabIndex={0}
               aria-current={shown ? 'true' : undefined}
+              aria-selected={ticked}
               aria-label={numberedName(row)}
               onClick={(event) => !event.target.closest('button, a') && onShow(row.id)}
               onDoubleClick={(event) => !event.target.closest('button, a') && onOpen(row.id)}
@@ -230,9 +247,20 @@ export default function IncidentTable({
               className={[
                 'group cursor-pointer border-b border-line-soft transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
-                shown ? 'bg-raised shadow-[inset_2px_0_0_var(--color-accent)]' : 'hover:bg-panel',
+                shown
+                  ? 'bg-raised shadow-[inset_2px_0_0_var(--color-accent)]'
+                  : ticked
+                    ? 'bg-accent-soft/40'
+                    : 'hover:bg-panel',
               ].join(' ')}
             >
+              <td className="py-0 pl-3 align-middle">
+                <SelectBox
+                  label={`Select ${numberedName(row)}`}
+                  checked={ticked}
+                  onPick={(event) => picked.pick(row.id, event)}
+                />
+              </td>
               {columns.map((column) => (
                 <td key={column.key} className="whitespace-nowrap px-3 py-2 align-middle text-fg">
                   <Cell row={row} column={column} types={types} onTag={onTag} />

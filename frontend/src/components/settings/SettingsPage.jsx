@@ -22,6 +22,8 @@ import {
   TextCursorInput,
   Timer,
   Radar,
+  ScanSearch,
+  ListChecks,
   ScrollText,
   ServerCog,
   Search,
@@ -54,10 +56,12 @@ import ScriptSignaturesSection from './sections/ScriptSignaturesSection.jsx'
 import ConnectorsSection from './sections/ConnectorsSection.jsx'
 import CredentialsSection from './sections/CredentialsSection.jsx'
 import FlirtSignaturesSection from './sections/FlirtSignaturesSection.jsx'
+import IndicatorsFoundSection from './sections/IndicatorsFoundSection.jsx'
 import IocAllowlistSection from './sections/IocAllowlistSection.jsx'
 import MailSettingsSection from './sections/MailSettingsSection.jsx'
 import MyAccountSection from './sections/MyAccountSection.jsx'
 import ReportBrandingSection from './sections/ReportBrandingSection.jsx'
+import BulkJobsSection from './sections/BulkJobsSection.jsx'
 import HealthSection from './sections/HealthSection.jsx'
 import KeysSection from './sections/KeysSection.jsx'
 import StorageSection from './sections/StorageSection.jsx'
@@ -90,6 +94,7 @@ const SECTION_VIEWS = {
   report: { icon: FileText, Component: ReportBrandingSection },
   allowlist: { icon: ShieldCheck, Component: IocAllowlistSection },
   intel: { icon: Radar, Component: ThreatIntelSection },
+  found: { icon: ScanSearch, Component: IndicatorsFoundSection },
   yara: { icon: FileSearch, Component: YaraRulesSection },
   capa: { icon: Radar, Component: CapaRulesSection },
   flirt: { icon: Fingerprint, Component: FlirtSignaturesSection },
@@ -112,6 +117,7 @@ const SECTION_VIEWS = {
   storage: { icon: HardDrive, Component: StorageSection },
   keys: { icon: FileKey2, Component: KeysSection },
   workers: { icon: ServerCog, Component: WorkersSection },
+  bulk: { icon: ListChecks, Component: BulkJobsSection },
   backup: { icon: DatabaseBackup, Component: BackupSection },
   audit: { icon: ScrollText, Component: AuditLogSection },
 }

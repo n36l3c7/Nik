@@ -61,3 +61,36 @@ and the status of the alert, and the alert and the host in the context.
   the Cortex XSOAR integration, the only public source for it. These are the least certain parts of the two
   packs.
 - **The result of a query**, as said above.
+
+## Mirroring (new in 1.2, needs Nik 6.10)
+
+In the *Fetch* part of an instance, *Mirroring* says which way the incidents it fetches are kept in step with their
+alerts: *None* (as before), *In*, *Out* or *In-out*. The object is the alert the incident was made from, by its id.
+Only the two commands this connector already had for one alert are used; mirroring makes no other request.
+
+| | What | With |
+| --- | --- | --- |
+| In | the alert is read again every two minutes and goes through the incoming mapper as a fetched one does: its name, description, severity and **status** | `get-alert` |
+| Out | the status of the incident is set as the status of the alert | `update-alert` |
+
+How the two vocabularies meet is in the mappers of the pack, which are yours to change:
+
+| SentinelOne | Nik |
+| --- | --- |
+| status `NEW` · `IN_PROGRESS` · `RESOLVED` | status open · in progress · closed (both ways) |
+| status `FALSE_POSITIVE` | closed, with the close reason *False positive* (both ways) |
+
+Things to know:
+
+- **No notes.** `get-alert` asks for no notes of an alert, and nothing that could be read says how to ask for
+  them or how to add one: comments are not mirrored either way. A note tagged `mirror` is not sent.
+- **Out is the less certain half.** `update-alert` is known from the Cortex XSOAR integration only (see above). It
+  is the same request the command made before this version; setting a status twice leaves the alert as setting it
+  once, so an update cut by a restart is sent again. Try it on a test alert first.
+- An alert the console answers nothing for (`alert: null`) is taken as gone: it is said once on the incident and
+  read no more. What the console really answers for an alert that was deleted is not written anywhere that could
+  be read.
+- A field a person set in Nik is kept when the alert says otherwise, unless the mapper marks it as winning over
+  edits.
+- With these mappers, an alert that is already in progress or resolved when it is fetched makes an incident that
+  starts so, as before.

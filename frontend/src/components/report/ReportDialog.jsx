@@ -4,6 +4,7 @@ import { Button, Modal, Wait } from '../ui/index.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useSocEngine } from '../../context/SettingsContext.jsx'
 import { postForBlob } from '../../services/api.js'
+import { saveBlob } from '../../lib/download.js'
 import {
   LANGUAGE_OPTIONS,
   REPORT_SECTIONS,
@@ -22,17 +23,6 @@ import { buildTimelineEvents } from '../../domain/timeline.js'
 
 const inputBase =
   'border border-line bg-canvas px-2.5 py-1.5 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
-
-function saveBlob(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
 
 const safeName = (name) => String(name || 'incident').replace(/[^A-Za-z0-9._-]+/g, '_')
 
@@ -53,7 +43,7 @@ export default function ReportDialog({ open, onClose, incident }) {
     setPreview(null)
     setError(null)
     // Reopening for another incident resets the form; edits re-render only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the incident is its id: saving its settings must not reset the form
   }, [open, incident?.id])
 
   const detections = useMemo(

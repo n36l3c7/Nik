@@ -1,0 +1,292 @@
+{
+  "about": "What mirroring a threat sends, call by call, and what it reads in the answers: the requests are those of get-threats, set-threat-incident, get-threat-notes and add-note, with what a mirror gives them.",
+  "id": "5555555555555555555",
+  "calls": [
+    {
+      "call": "mirror.get",
+      "exchanges": [
+        {
+          "request": {
+            "method": "GET",
+            "path": "/web/api/v2.1/threats",
+            "query": {
+              "ids": "5555555555555555555",
+              "limit": 1
+            },
+            "headers": {
+              "Authorization": "ApiToken s1-service-user-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": [
+                {
+                  "id": "5555555555555555555",
+                  "threatInfo": {
+                    "threatId": "5555555555555555555",
+                    "threatName": "dropper.exe",
+                    "classification": "Trojan",
+                    "confidenceLevel": "malicious",
+                    "analystVerdict": "true_positive",
+                    "incidentStatus": "in_progress",
+                    "mitigationStatus": "not_mitigated",
+                    "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+                    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+                    "filePath": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+                    "storyline": "A1B2C3D4E5F60718",
+                    "createdAt": "2026-11-16T08:30:05.123456Z",
+                    "updatedAt": "2026-11-16T08:31:00.000000Z"
+                  },
+                  "agentRealtimeInfo": {
+                    "agentId": "1234567890123456789",
+                    "agentComputerName": "WKS-FINANCE-01",
+                    "agentOsName": "Windows 11 Pro",
+                    "agentNetworkStatus": "connected",
+                    "siteId": "2222222222222222222",
+                    "siteName": "Milan"
+                  },
+                  "mitigationStatus": [],
+                  "whiteningOptions": [
+                    "hash",
+                    "path"
+                  ]
+                }
+              ],
+              "pagination": {
+                "totalItems": 1,
+                "nextCursor": null
+              }
+            }
+          }
+        }
+      ],
+      "item": {
+        "id": "5555555555555555555",
+        "threatInfo": {
+          "threatId": "5555555555555555555",
+          "threatName": "dropper.exe",
+          "classification": "Trojan",
+          "confidenceLevel": "malicious",
+          "analystVerdict": "true_positive",
+          "incidentStatus": "in_progress",
+          "mitigationStatus": "not_mitigated",
+          "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+          "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+          "filePath": "\\Device\\HarddiskVolume3\\Users\\m.rossi\\Downloads\\dropper.exe",
+          "storyline": "A1B2C3D4E5F60718",
+          "createdAt": "2026-11-16T08:30:05.123456Z",
+          "updatedAt": "2026-11-16T08:31:00.000000Z"
+        },
+        "agentRealtimeInfo": {
+          "agentId": "1234567890123456789",
+          "agentComputerName": "WKS-FINANCE-01",
+          "agentOsName": "Windows 11 Pro",
+          "agentNetworkStatus": "connected",
+          "siteId": "2222222222222222222",
+          "siteName": "Milan"
+        },
+        "mitigationStatus": [],
+        "whiteningOptions": [
+          "hash",
+          "path"
+        ]
+      },
+      "mapped": {
+        "status": "in_progress",
+        "close_reason": "Resolved",
+        "severity": "high"
+      }
+    },
+    {
+      "call": "mirror.get",
+      "about": "A threat that is not there any more: the list comes back empty, and there is no item.",
+      "exchanges": [
+        {
+          "request": {
+            "method": "GET",
+            "path": "/web/api/v2.1/threats",
+            "query": {
+              "ids": "5555555555555555555",
+              "limit": 1
+            },
+            "headers": {
+              "Authorization": "ApiToken s1-service-user-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": [],
+              "pagination": {
+                "totalItems": 0,
+                "nextCursor": null
+              }
+            }
+          }
+        }
+      ],
+      "item": null
+    },
+    {
+      "call": "mirror.update",
+      "values": {
+        "fields": {
+          "incidentStatus": "resolved",
+          "analystVerdict": "false_positive"
+        }
+      },
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/threats/incident",
+            "json": {
+              "filter": {
+                "ids": [
+                  "5555555555555555555"
+                ]
+              },
+              "data": {
+                "incidentStatus": "resolved",
+                "analystVerdict": "false_positive"
+              }
+            },
+            "headers": {
+              "Authorization": "ApiToken s1-service-user-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "affected": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "call": "mirror.update",
+      "about": "An incident with no verdict to give: the status alone.",
+      "values": {
+        "fields": {
+          "incidentStatus": "in_progress"
+        }
+      },
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/threats/incident",
+            "json": {
+              "filter": {
+                "ids": [
+                  "5555555555555555555"
+                ]
+              },
+              "data": {
+                "incidentStatus": "in_progress"
+              }
+            },
+            "headers": {
+              "Authorization": "ApiToken s1-service-user-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "affected": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "call": "mirror.comments.list",
+      "exchanges": [
+        {
+          "request": {
+            "method": "GET",
+            "path": "/web/api/v2.1/threats/5555555555555555555/notes",
+            "query": {
+              "limit": 100
+            },
+            "headers": {
+              "Authorization": "ApiToken s1-service-user-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": [
+                {
+                  "id": "6600000000000000001",
+                  "text": "Contained by the playbook; the file was sent for analysis.",
+                  "creator": "nik-service",
+                  "creatorId": "4400000000000000001",
+                  "edited": false,
+                  "createdAt": "2026-11-16T08:40:00.000000Z",
+                  "updatedAt": "2026-11-16T08:40:00.000000Z"
+                }
+              ],
+              "pagination": {
+                "totalItems": 1,
+                "nextCursor": null
+              }
+            }
+          }
+        }
+      ],
+      "comments": [
+        {
+          "id": "6600000000000000001",
+          "text": "Contained by the playbook; the file was sent for analysis.",
+          "author": "nik-service",
+          "at": "2026-11-16T08:40:00.000000Z"
+        }
+      ]
+    },
+    {
+      "call": "mirror.comments.add",
+      "values": {
+        "comment": {
+          "text": "Contained by the playbook; the file was sent for analysis.",
+          "author": "anna"
+        }
+      },
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/threats/notes",
+            "json": {
+              "filter": {
+                "ids": [
+                  "5555555555555555555"
+                ]
+              },
+              "data": {
+                "text": "Contained by the playbook; the file was sent for analysis."
+              }
+            },
+            "headers": {
+              "Authorization": "ApiToken s1-service-user-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "affected": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

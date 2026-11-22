@@ -191,9 +191,10 @@ class AuditOut(BaseModel):
 
 
 class AuditEnvelope(BaseModel):
-    """Wrapper for a list of audit entries: {entries}."""
+    """Wrapper for a list of audit entries: {entries, total}; ``total`` counts what matches, whatever the page."""
 
     entries: list[AuditOut]
+    total: int = 0
 
 
 # ---------------------------------------------------------------------------

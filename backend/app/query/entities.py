@@ -10,6 +10,7 @@ from __future__ import annotations
 from sqlalchemy import false, func, select
 
 from .. import fields as registry
+from .. import ioc_library
 from ..core.models import (
     Approval,
     Artifact,
@@ -26,13 +27,13 @@ from .fields import Context, Entity, FieldSpec, _bad, _boolean, text_matches
 from .incident_fields import TAG_NAMES, TAGS_FIELD, spec_of
 from .parser import Value
 
-SEVERITIES = ("low", "medium", "high", "critical")
-STATUSES = ("open", "in_progress", "closed")
+SEVERITIES = registry.SEVERITIES
+STATUSES = registry.STATUSES
 ARTIFACT_KINDS = ("file", "mail", "pcap", "url", "mailbox")
 INDICATOR_TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
 VERDICTS = ("unknown", "harmless", "suspicious", "malicious")
 ORIGINS = ("incident", "manual", "import", "artifact")
-TLPS = ("clear", "green", "amber", "red")
+TLPS = ioc_library.TLPS
 
 
 # --------------------------------------------------------------------------- #

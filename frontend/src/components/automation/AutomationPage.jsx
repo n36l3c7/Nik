@@ -5,7 +5,7 @@ import { useAutomation } from '../../context/AutomationContext.jsx'
 import { api } from '../../services/api.js'
 import { visibleAreas } from '../../domain/automationNav.js'
 import { useLayer } from '../../lib/layers.js'
-import { Button, ErrorBoundary } from '../ui/index.js'
+import { Button, ErrorBoundary, Wait } from '../ui/index.js'
 import PlaybookPage from './PlaybookPage.jsx'
 import PlaybooksPage from './PlaybooksPage.jsx'
 import ApprovalsPage from './ApprovalsPage.jsx'
@@ -161,9 +161,9 @@ export default function AutomationPage({ route, onNavigate, onClose, onOpenSetti
           ) : area?.id === 'scripts' && route.id ? (
             <Suspense
               fallback={
-                <p role="status" className="p-6 font-mono text-sm text-fg-muted">
-                  Loading the editor…
-                </p>
+                <div className="p-6">
+                  <Wait>Loading the editor…</Wait>
+                </div>
               }
             >
               <ScriptPage

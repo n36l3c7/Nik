@@ -298,7 +298,8 @@ def apply(db: OrmSession, incident: Incident, writes: list[tuple[str, Any]], sou
             row = IncidentContext(incident_id=incident.id, data={}, version=0, updated_at=now_iso())
             db.add(row)
             db.flush()
-        data = json.loads(json.dumps(row.data or {}))  # a copy to work on
+        before = row.data or {}
+        data = json.loads(json.dumps(before))  # a copy to work on
         touched: list[str] = []
         for path, value in rest:
             touched += _merge(data, path, value)
@@ -319,6 +320,12 @@ def apply(db: OrmSession, incident: Incident, writes: list[tuple[str, Any]], sou
                     db.add(IncidentContextMeta(incident_id=incident.id, path_key=key, source=source, at=stamp))
                 else:
                     meta.source, meta.at = source, stamp
+            if data != before:
+                # What a connector brings to an incident that was read for indicators is read
+                # again; a write that left the context as it was is nothing new to read.
+                from . import indicators_found
+
+                indicators_found.after_update(db, incident, source)
             return [*(f"field:{name}" for name in field_changes), *dict.fromkeys(touched)]
         db.expire(row)  # someone wrote in between: read it again
     raise ContextError("The context was being written by something else: try again")

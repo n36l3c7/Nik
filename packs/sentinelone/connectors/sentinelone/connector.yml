@@ -20,9 +20,16 @@
 # Lists are read by cursor, 1000 items a page at most (the reference's limit).
 #
 # Fetching brings in the threats created since the last cycle, oldest first.
+#
+# Mirroring keeps an incident in step with the threat it was fetched from, with
+# commands of this file and nothing else: the threat is read again by its id
+# (get-threats), its notes are read (get-threat-notes); the incident status and
+# the analyst verdict are written together (set-threat-incident) and a note is
+# added (add-note). An alert of a custom detection rule is another object, which
+# the fetch does not bring and the reference gives no notes for: it is not mirrored.
 name: SentinelOne EDR
 id: sentinelone
-version: 4
+version: 5
 description: Agents, threats, alerts, the blocklist and exclusions, detection rules, remote scripts, forensic collections and threat intelligence of the SentinelOne console.
 api_version: "Management API v2.1 (/web/api/v2.1)"
 verified: false
@@ -4342,3 +4349,34 @@ schema:
     - { name: agentRealtimeInfo.groupName, type: text }
     - { name: agentDetectionInfo.agentLastLoggedInUserName, type: text }
     - { name: agentDetectionInfo.externalIp, type: text }
+  outgoing:
+    - { name: incidentStatus, type: text, description: "unresolved, in_progress or resolved" }
+    - { name: analystVerdict, type: text, description: "undefined, true_positive, false_positive or suspicious" }
+
+# The object is the threat the fetch brought: its id is the id of the item. A threat that is not in
+# the list any more (get-threats answers an empty list for its id) is gone, and is read no more.
+mirror:
+  interval_seconds: 120
+  get:
+    command: get-threats
+    args: { ids: "{{ mirror.id }}", limit: 1, pages: 1 }
+  item: "{{ result.threats | first }}"
+  # The status and the verdict in one request. Setting them twice leaves the threat as setting them once.
+  update:
+    command: set-threat-incident
+    args:
+      threat_id: "{{ mirror.id }}"
+      incident_status: "{{ fields.incidentStatus }}"
+      analyst_verdict: "{{ fields.analystVerdict | default('') }}"
+  comments:
+    list:
+      command: get-threat-notes
+      args: { threat_id: "{{ mirror.id }}" }
+    items: "{{ result.notes }}"
+    id: "{{ item.id }}"
+    text: "{{ item.text }}"
+    author: "{{ item.creator }}"
+    at: "{{ item.createdAt }}"
+    add:
+      command: add-note
+      args: { threat_id: "{{ mirror.id }}", text: "{{ comment.text }}" }

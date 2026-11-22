@@ -70,6 +70,7 @@ EVENTS = (
     "url.analysed",
     "ioc.verdict_changed",
     "ioc.watch_hit",
+    "indicators.found",
     "storage.low",
     "sla.breached",
     "artifact.expiring",

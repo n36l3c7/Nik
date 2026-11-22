@@ -15,7 +15,6 @@ token.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import secrets
 import time
@@ -60,6 +59,7 @@ from ..core.models import (
 from ..core.permissions import AUTOMATION_DEBUG, AUTOMATION_EDIT, AUTOMATION_RUN
 from ..core.ratelimit import limiter
 from ..core.security import Principal, admin_principal, editor_principal, now_iso, require, runner_principal
+from ..core.security import token_digest as _hook_hash
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 # What automation adds to an incident (its runs), under the incident's own address.
@@ -869,14 +869,31 @@ def run_playbook(
     row = _get(db, playbook_id)
     if body.branch is not None:
         raise HTTPException(status_code=400, detail=BRANCH_ONLY_DEBUG)
+    run = start_by_hand(db, row, body.objectKind, body.objectId, caller.actor, body.dryRun, body.inputs)
+    db.commit()
+    return _run_summary(run)
+
+
+def start_by_hand(
+    db: OrmSession,
+    row: Playbook,
+    object_kind: str,
+    object_id: str,
+    actor: str,
+    dry_run: bool = False,
+    inputs: dict[str, Any] | None = None,
+) -> Run:
+    """Start a run of a playbook by hand on an object, within every limit a run started by hand
+    is held to (the caller commits). What the route does, and what "run a playbook on each" of a
+    bulk action does for each incident."""
     if not row.current_version:
         raise HTTPException(status_code=400, detail="The playbook has no saved version")
     config = triggers.trigger_config(db, row)
-    if not body.dryRun and not config.get("manual"):
+    if not dry_run and not config.get("manual"):
         raise HTTPException(status_code=400, detail="This playbook is not meant to be run by hand")
     if not state.enabled(db):
         raise HTTPException(status_code=409, detail="Automation is stopped: an admin can start it again in Settings")
-    found = triggers.manual_object(db, body.objectKind, body.objectId, caller.actor)
+    found = triggers.manual_object(db, object_kind, object_id, actor)
     if found is None:
         raise HTTPException(status_code=404, detail="The object to run the playbook on does not exist")
     data, classes, what, incident_id = found
@@ -884,8 +901,8 @@ def run_playbook(
     if wrong:
         raise HTTPException(status_code=400, detail=wrong)
     now = time.time()
-    if not body.dryRun:
-        why = triggers.refusal(db, row, body.objectKind, body.objectId, now)
+    if not dry_run:
+        why = triggers.refusal(db, row, object_kind, object_id, now)
         if why:
             raise HTTPException(status_code=429, detail=why)
     run = engine.start_run(
@@ -894,25 +911,24 @@ def run_playbook(
         kind="manual",
         payload=data,
         classes=classes,
-        object_kind=body.objectKind,
-        object_id=body.objectId,
+        object_kind=object_kind,
+        object_id=object_id,
         incident_id=incident_id or None,
-        artifact_id=body.objectId if body.objectKind == "artifact" else None,
-        dry_run=body.dryRun,
-        started_by=caller.actor,
-        inputs=body.inputs,
+        artifact_id=object_id if object_kind == "artifact" else None,
+        dry_run=dry_run,
+        started_by=actor,
+        inputs=inputs,
         now=now,
     )
-    what = "a dry run of" if body.dryRun else ""
+    what = "a dry run of" if dry_run else ""
     audit.record(
         db,
-        caller.actor,
+        actor,
         "playbook.run",
         f'Started {what} the playbook "{row.name}"'.replace("  ", " "),
         target=row.name,
     )
-    db.commit()
-    return _run_summary(run)
+    return run
 
 
 # --------------------------------------------------------------------------- #
@@ -925,10 +941,6 @@ HOOK_LIMIT = "60/minute"
 _HOOK_HEADERS = ("content-type", "user-agent")
 _HOOK_NEVER = ("x-forwarded-", "x-real-ip", "x-api-key", "x-nik-", "x-csrf", "x-amz-security", "x-auth")
 _HOOK_SECRET_WORDS = ("token", "secret", "key", "auth", "password", "cookie", "signature")
-
-
-def _hook_hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _hook_key(request: Request) -> str:

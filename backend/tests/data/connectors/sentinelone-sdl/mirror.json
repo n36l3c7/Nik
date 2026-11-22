@@ -1,0 +1,207 @@
+{
+  "about": "What mirroring an alert sends, call by call, and what it reads in the answers: the requests are those of get-alert and update-alert, with what a mirror gives them. The item is shaped as the fetch brings one, so the same mapper reads both.",
+  "id": "0195-aaaa",
+  "calls": [
+    {
+      "call": "mirror.get",
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/unifiedalerts/graphql",
+            "json": {
+              "query": "query Alert($id: ID!) { alert(id: $id) { id name description severity status analystVerdict classification confidenceLevel detectedAt createdAt updatedAt storylineId asset { id name agentUuid osType } } }",
+              "variables": {
+                "id": "0195-aaaa"
+              }
+            },
+            "headers": {
+              "Authorization": "Bearer s1-console-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "alert": {
+                  "id": "0195-aaaa",
+                  "name": "Suspicious PowerShell",
+                  "description": "An encoded command started from a document.",
+                  "severity": "HIGH",
+                  "status": "IN_PROGRESS",
+                  "analystVerdict": "UNDEFINED",
+                  "detectedAt": "2026-11-16T08:30:05Z",
+                  "updatedAt": "2026-11-16T09:02:11Z",
+                  "asset": {
+                    "id": "a-1",
+                    "name": "WKS-FINANCE-01"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "item": {
+        "node": {
+          "id": "0195-aaaa",
+          "name": "Suspicious PowerShell",
+          "description": "An encoded command started from a document.",
+          "severity": "HIGH",
+          "status": "IN_PROGRESS",
+          "analystVerdict": "UNDEFINED",
+          "detectedAt": "2026-11-16T08:30:05Z",
+          "updatedAt": "2026-11-16T09:02:11Z",
+          "asset": {
+            "id": "a-1",
+            "name": "WKS-FINANCE-01"
+          }
+        }
+      },
+      "mapped": {
+        "name": "Suspicious PowerShell",
+        "status": "in_progress",
+        "severity": "high"
+      }
+    },
+    {
+      "call": "mirror.get",
+      "about": "An alert set aside as a false positive closes the incident with that reason.",
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/unifiedalerts/graphql",
+            "json": {
+              "query": "query Alert($id: ID!) { alert(id: $id) { id name description severity status analystVerdict classification confidenceLevel detectedAt createdAt updatedAt storylineId asset { id name agentUuid osType } } }",
+              "variables": {
+                "id": "0195-aaaa"
+              }
+            },
+            "headers": {
+              "Authorization": "Bearer s1-console-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "alert": {
+                  "id": "0195-aaaa",
+                  "name": "Suspicious PowerShell",
+                  "description": "An encoded command started from a document.",
+                  "severity": "HIGH",
+                  "status": "FALSE_POSITIVE",
+                  "analystVerdict": "UNDEFINED",
+                  "detectedAt": "2026-11-16T08:30:05Z",
+                  "updatedAt": "2026-11-16T09:02:11Z",
+                  "asset": {
+                    "id": "a-1",
+                    "name": "WKS-FINANCE-01"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "item": {
+        "node": {
+          "id": "0195-aaaa",
+          "name": "Suspicious PowerShell",
+          "description": "An encoded command started from a document.",
+          "severity": "HIGH",
+          "status": "FALSE_POSITIVE",
+          "analystVerdict": "UNDEFINED",
+          "detectedAt": "2026-11-16T08:30:05Z",
+          "updatedAt": "2026-11-16T09:02:11Z",
+          "asset": {
+            "id": "a-1",
+            "name": "WKS-FINANCE-01"
+          }
+        }
+      },
+      "mapped": {
+        "status": "closed",
+        "close_reason": "False positive"
+      }
+    },
+    {
+      "call": "mirror.get",
+      "about": "An alert that is not there any more: the console answers null, and there is no item.",
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/unifiedalerts/graphql",
+            "json": {
+              "query": "query Alert($id: ID!) { alert(id: $id) { id name description severity status analystVerdict classification confidenceLevel detectedAt createdAt updatedAt storylineId asset { id name agentUuid osType } } }",
+              "variables": {
+                "id": "0195-aaaa"
+              }
+            },
+            "headers": {
+              "Authorization": "Bearer s1-console-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "alert": null
+              }
+            }
+          }
+        }
+      ],
+      "item": null
+    },
+    {
+      "call": "mirror.update",
+      "values": {
+        "fields": {
+          "status": "RESOLVED"
+        }
+      },
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/web/api/v2.1/unifiedalerts/graphql",
+            "json": {
+              "query": "mutation SetStatus($id: String!, $status: String!) { alertTriggerActions(filter: { or: [ { and: [ { fieldId: \"id\", stringEqual: { value: $id } } ] } ] }, actions: [ { id: \"S1/alert/statusUpdate\", payload: { status: { value: $status } } } ]) { actions { actionId alertCount success { id } failure { id errorMessage } } } }",
+              "variables": {
+                "id": "0195-aaaa",
+                "status": "RESOLVED"
+              }
+            },
+            "headers": {
+              "Authorization": "Bearer s1-console-token-0123456789"
+            }
+          },
+          "response": {
+            "status": 200,
+            "json": {
+              "data": {
+                "alertTriggerActions": {
+                  "actions": [
+                    {
+                      "actionId": "S1/alert/statusUpdate",
+                      "alertCount": 1,
+                      "success": [
+                        {
+                          "id": "0195-aaaa"
+                        }
+                      ],
+                      "failure": []
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

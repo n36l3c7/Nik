@@ -32,13 +32,14 @@ import shutil
 import socket
 import ssl
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session as OrmSession
 
+from ..core.clock import stamp
+from ..core.clock import when as _when
 from ..core.config import settings
 
 LINK = "/settings/system/health"
@@ -137,21 +138,6 @@ def lasted(seconds: float) -> str:
             return f"{count} {unit}" + ("" if count == 1 else "s")
     count = round(seconds)
     return f"{count} second" + ("" if count == 1 else "s")
-
-
-def _when(at: float) -> str:
-    return datetime.fromtimestamp(at, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
-def stamp(value: Any) -> float:
-    """An ISO time of the database as seconds; 0 when it cannot be read."""
-    try:
-        moment = datetime.fromisoformat(str(value))
-    except (TypeError, ValueError):
-        return 0.0
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.timestamp()
 
 
 def rising(value: float, attention: float, problem: float) -> str:
@@ -842,6 +828,25 @@ def _work(db: OrmSession, now: float) -> list[dict[str, Any]]:
             link="/settings/system/workers",
             notify=True,
             metrics=[("nik_work_held", {}, facts["held"]), ("nik_work_silent_seconds", {}, silent)],
+        )
+    )
+    from .. import bulk
+
+    jobs = bulk.facts(db)
+    rows.append(
+        row(
+            "work.bulk",
+            group,
+            "Bulk actions",
+            f"{jobs['running']} running, {jobs['failed']} given up in the last month",
+            ATTENTION if jobs["failed"] else FINE,
+            "A bulk action that was interrupted too many times is given up: what it did stays, and its result "
+            "says what it did not do. The person who asked can try again on those from the result "
+            "(Settings → System → Bulk actions)."
+            if jobs["failed"]
+            else "",
+            link="/settings/system/bulk",
+            metrics=[("nik_bulk_running", {}, jobs["running"]), ("nik_bulk_failed", {}, jobs["failed"])],
         )
     )
     return rows

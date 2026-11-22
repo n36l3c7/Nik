@@ -167,7 +167,7 @@ function TimelineRow({ icon: Icon, tone, children, onMenu }) {
     <li className="relative pl-9" onContextMenu={onMenu}>
       {/* The ring matches the Card body background so the rail visually breaks. */}
       <span
-        className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white ${
+        className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-panel ${
           DOT_TONES[tone] ?? DOT_TONES.note
         }`}
       >

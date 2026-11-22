@@ -8,9 +8,9 @@ parser and merged into the incident document exactly like the frontend does.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
 
 from ..browser_profiles import profile_for_upload
+from ..core.clock import now_iso as _now
 from . import artifact as artifact_mod
 from . import browser as browser_mod
 from . import eventlog as eventlog_mod
@@ -142,10 +142,6 @@ ARTIFACT_CATEGORIES = {
 }
 
 BROWSER_KEYS = ("history", "downloads", "bookmarks", "shortcuts")
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _bad(message: str) -> ValueError:

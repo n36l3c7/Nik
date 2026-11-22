@@ -7,11 +7,13 @@
  * own text, selection and undo and says so here with registerEditor().
  *
  * Changes go through the browser's own editing commands, so the page that owns
- * the field hears them as typing and Ctrl Z undoes them. The clipboard is read
- * with the Clipboard API: the browser may ask the person first, and may refuse.
+ * the field hears them as typing and Ctrl Z undoes them. The clipboard is
+ * written through copyText (lib/download.js), and read with the Clipboard API:
+ * the browser may ask the person first, and may refuse.
  */
 
 import { fieldKind } from '../domain/contextMenu.js'
+import { copyText } from './download.js'
 
 const editors = new WeakMap()
 
@@ -158,16 +160,6 @@ function replaceSelection(field, text) {
   element.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-/** Write to the clipboard; false when the browser refuses. */
-export async function writeClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /**
  * Do one entry of the menu of a text field. Resolves to what to tell the
  * person, or to null when there is nothing to say.
@@ -194,7 +186,7 @@ export async function runFieldEntry(id, field) {
     return null
   }
   if (id === 'copy' || id === 'cut') {
-    const copied = await writeClipboard(selectedText(field))
+    const copied = await copyText(selectedText(field))
     // The selection is shown again: it is what was copied.
     if (!copied || id === 'copy') restore(field)
     if (!copied) return 'The browser refused to copy.'

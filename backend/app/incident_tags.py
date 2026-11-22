@@ -22,18 +22,18 @@ only what is added is held to the rules.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy.orm import Session as OrmSession
 
+from . import artifacts
 from . import fields as registry
 from .core.models import Incident
 
 FIELD = "labels"  # the name of the field in the registry, and where the tags are stored
 ALIASES = ("tag", "tags")  # the other names of the field in a query; ``tags`` in an expression
-TAG_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,39}")
+TAG_RE = artifacts.TAG_RE  # one way to write a tag, whatever carries it
 TAGS_MAX = 12
 RULE = "A tag is a letter or a digit, then letters, digits and . _ : - (40 characters at most)"
 

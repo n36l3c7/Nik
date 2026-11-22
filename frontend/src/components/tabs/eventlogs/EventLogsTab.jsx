@@ -165,7 +165,7 @@ export default function EventLogsTab({ incident }) {
     if (!request?.file) return
     if (request.params?.kind === 'json') handleJson(request.file)
     else setDroppedEvtx({ files: [request.file], at: Date.now() })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per dropped file; `take` empties the request
   }, [requests.eventlogs])
 
   return (

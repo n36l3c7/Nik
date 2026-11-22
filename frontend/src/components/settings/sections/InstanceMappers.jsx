@@ -14,7 +14,7 @@ import {
   outgoingRules,
   parseSample,
 } from '../../../domain/mappers.js'
-import { Badge, Button } from '../../ui/index.js'
+import { Badge, Button, Wait } from '../../ui/index.js'
 import InstanceSample from './InstanceSample.jsx'
 import { Expression, INPUT, LABEL, SELECT, TD, TH } from './mapperParts.jsx'
 
@@ -197,9 +197,7 @@ export default function InstanceMappers({ connector, instance, drafts, onDrafts,
       )}
 
       {!ready && !error ? (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the mapper…
-        </p>
+        <Wait>Loading the mapper…</Wait>
       ) : (
         <div className="overflow-x-auto border border-line">
           {direction === 'incoming' ? (

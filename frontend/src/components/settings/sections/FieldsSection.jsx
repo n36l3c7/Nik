@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../../services/api.js'
 import { useFields } from '../../../context/FieldsContext.jsx'
 import { FIELD_TYPES } from '../../../domain/fields.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, Modal, SearchInput, Wait } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
@@ -231,11 +231,7 @@ export default function FieldsSection() {
           {error}
         </p>
       )}
-      {!fields && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the fields…
-        </p>
-      )}
+      {!fields && !error && <Wait>Loading the fields…</Wait>}
       {fields && (
         <div className="overflow-x-auto border border-line">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">

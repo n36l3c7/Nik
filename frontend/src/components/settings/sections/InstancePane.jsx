@@ -26,7 +26,7 @@ import {
   suggestedName,
   valueForMode,
 } from '../../../domain/automation/credentials.js'
-import { fetchChanged, fetchForm, fetchPayload, fetchProblem } from '../../../domain/fetch.js'
+import { fetchChanged, fetchForm, fetchPayload, fetchProblem, mirrorChoiceProblem } from '../../../domain/fetch.js'
 import { classifierBody, mapperBodies, mapperKey, unsavedText } from '../../../domain/mappers.js'
 import { settingsPath } from '../../../domain/settingsNav.js'
 import { setPath } from '../../../lib/location.js'
@@ -158,7 +158,8 @@ export default function InstancePane({
   const problem =
     formProblem(connector, name, values) ??
     (keyed ? keysProblem(connector, keys, policy) : null) ??
-    (fetches ? fetchProblem(fetching, { minInterval: fetchStatus?.minIntervalSeconds, byTime }) : null)
+    (fetches ? fetchProblem(fetching, { minInterval: fetchStatus?.minIntervalSeconds, byTime }) : null) ??
+    (fetches ? mirrorChoiceProblem(fetching, connector) : null)
 
   /** Ask under which name the stored secret of a field (of the first key, or of another) is kept. */
   const askKeep = (key, field) =>
@@ -220,7 +221,9 @@ export default function InstancePane({
       const body = { name: name.trim(), ...payloadOf(connector, values, removed) }
       const more = keyed ? keysPayload(keys, policy) : {}
       // How it fetches is sent when it was changed: an instance nobody touched follows its connector.
-      if (fetches && fetchChanged(fetching, connector, instance)) more.fetch = fetchPayload(fetching, { byTime })
+      if (fetches && fetchChanged(fetching, connector, instance)) {
+        more.fetch = fetchPayload(fetching, { byTime, mirrors: Boolean(connector.mirror) })
+      }
       let saved
       if (instance) {
         saved = await api.put(`/automation/instances/${encodeURIComponent(instance.id)}`, { ...body, ...more })

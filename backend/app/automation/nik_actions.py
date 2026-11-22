@@ -26,13 +26,15 @@ from ..core.locking import lock_incident
 from ..core.models import Incident, IocList, IocListItem, UrlScan, User
 from ..core.permissions import SYSTEM_USER
 from ..core.security import now_iso
+from ..fields import SEVERITIES as INCIDENT_SEVERITIES
+from ..fields import STATUSES
 from ..iocs import TYPES, normalize
 from . import payloads, triggers
 from .actions import ActionError, Call, Result, action
 
 ACTOR = SYSTEM_USER
-SEVERITIES = ("low", "medium", "high", "critical", "")
-STATUSES = ("open", "in_progress", "closed")
+ADHOC_PLAYBOOK = "adhoc"  # the playbook the commands of the War Room run under (commands.ADHOC_ID)
+SEVERITIES = (*INCIDENT_SEVERITIES, "")  # none is an answer too
 FIELDS = ("ticketId", "title", "host", "username", "os", "severity", "status", "assignee")
 
 
@@ -403,6 +405,10 @@ def create_incident(call: Call) -> Result:
     call.db.flush()
     audit.record(call.db, ACTOR, "incident.create", f'Created incident "{row.name}"' + signature(call), row)
     triggers.incident_changed(call.db, row, "incident.created")
+    # The incident is whole: its fields are read for indicators (indicators_found.py).
+    from .. import indicators_found
+
+    indicators_found.scan(call.db, row, "playbook")
     return _incident_result(row)
 
 
@@ -463,6 +469,145 @@ def add_indicators(call: Call) -> Result:
     )
     audit.record(call.db, ACTOR, "ioc.add", f"Added {len(pairs)} indicators to the library" + signature(call))
     return Result(output={"added": done.get("added", 0), "known": len(pairs) - done.get("added", 0)})
+
+
+MAKE_MAX = 500  # values of one call
+MAKE_TEXT = 200  # characters of a value that was not recognised, as the output shows it
+
+
+def _texts(given: Any) -> list[tuple[str, str]]:
+    """What a node gave to make indicators of, as ``(text, type or "")``: a text, a list of texts,
+    or ``{type, value}`` objects."""
+    out: list[tuple[str, str]] = []
+    for item in given if isinstance(given, (list, tuple)) else [given]:
+        if isinstance(item, dict):
+            out.append((str(item.get("value") or ""), str(item.get("type") or "")))
+        elif item not in (None, ""):
+            out.append((str(item), ""))
+    return [(text, kind) for text, kind in out if text.strip()][:MAKE_MAX]
+
+
+@action(
+    "nik.make-indicators",
+    group="Nik",
+    name="Make indicators of a text",
+    description=(
+        "Reads a value, a list of values or a longer text, works out what each indicator in it is (an "
+        "address, a domain, a URL, an e-mail address, a hash) and makes it one: of the incident when the "
+        "run has one, of the Indicators page otherwise. Defanged values are read as meant, and a URL gives "
+        "two: the URL and its host. An indicator that is there already is linked, not made twice."
+    ),
+    arguments=[
+        {
+            "name": "text",
+            "type": "any",
+            "required": True,
+            "description": "A value, a list of values, or a text that holds them",
+        },
+        {
+            "name": "type",
+            "type": "choice",
+            "choices": ["", *TYPES],
+            "default": "",
+            "description": "What they are, when you know; worked out for each one when left empty",
+        },
+        TAGS_ARG,
+        {"name": "note", "type": "text", "description": "A note on each"},
+        {
+            "name": "leave_out_harmless",
+            "type": "bool",
+            "default": False,
+            "description": (
+                "Leave out private and reserved addresses, names kept for documentation, the organisation's "
+                "own domains and the IOC allowlist, as the finding of indicators in a new incident does"
+            ),
+        },
+        INCIDENT_ARG,
+    ],
+    outputs=[
+        {
+            "name": "indicators",
+            "type": "list",
+            "description": "Each indicator: {type, value, new, marks}",
+            "shape": [
+                {"name": "[0].type", "type": "text", "description": "ip, domain, url, email, md5, sha1 or sha256"},
+                {"name": "[0].value", "type": "text", "description": "The first indicator, as Nik writes it"},
+                {"name": "[0].new", "type": "bool", "description": "Whether Nik did not know it before"},
+                {"name": "[0].marks", "type": "list", "description": "private, benign, own, allowlisted"},
+            ],
+        },
+        {"name": "created", "type": "number", "description": "How many Nik did not know before"},
+        {"name": "linked", "type": "number", "description": "How many the incident did not hold before"},
+        {
+            "name": "not_recognised",
+            "type": "list",
+            "description": "What was not made an indicator, and why: {text, reason}",
+            "shape": [
+                {"name": "[0].text", "type": "text", "description": "The first value that was not recognised"},
+                {"name": "[0].reason", "type": "text", "description": "Why"},
+            ],
+        },
+    ],
+)
+def make_indicators(call: Call) -> Result:
+    from .. import indicators_found, iocs, recognise
+
+    forced = str(call.args.get("type") or "")
+    if forced and forced not in TYPES:
+        raise ActionError("The type is one of: " + ", ".join(TYPES), retry=False)
+    texts = _texts(call.args.get("text"))
+    if not texts:
+        raise ActionError("No text was given", retry=False)
+    known = indicators_found.known_of(call.db)
+    leave_out = _truthy(call.args.get("leave_out_harmless"))
+    found: dict[tuple[str, str], recognise.Found] = {}
+    refused: list[dict[str, str]] = []
+    for text, kind in texts:
+        items, why = recognise.identify(text, known, force=forced or (kind if kind in TYPES else ""))
+        if not items:
+            refused.append({"text": text[:MAKE_TEXT], "reason": why})
+        for item in items:
+            if leave_out and item.marks:
+                refused.append({"text": item.value[:MAKE_TEXT], "reason": "left out: " + ", ".join(item.marks)})
+            else:
+                found.setdefault((item.type, item.value), item)
+    pairs = list(found)
+    library = lib.known_pairs(call.db, pairs)
+    incident_id = _wanted(call, call.args.get("incident"))
+    tags = call.args.get("tags") if isinstance(call.args.get("tags"), list) else []
+    note = str(call.args.get("note") or "")
+    output = {
+        "indicators": [
+            {"type": item.type, "value": item.value, "new": key not in library, "marks": list(item.marks)}
+            for key, item in found.items()
+        ],
+        "created": sum(1 for key in pairs if key not in library),
+        "linked": 0,
+        "not_recognised": refused,
+    }
+    # What comes out is made of what went in: it carries the same classes, so nothing is laundered.
+    classes = {"indicators": sorted(call.classes), "not_recognised": sorted(call.classes)}
+    if call.dry_run:
+        return Result(output=output, classes=classes, request={"would": "make indicators", "count": len(pairs)})
+    if not pairs:
+        return Result(output=output, classes=classes, log="No indicator was recognised")
+    if incident_id:
+        row = _incident(call, incident_id)
+        source = "warroom" if call.run.playbook_id == ADHOC_PLAYBOOK else "playbook"
+        output["linked"] = len(iocs.add_manual_many(call.db, row, pairs, source, ACTOR))
+    if not incident_id or tags or note:
+        # With no incident the Indicators page keeps them; tags and a note live there too.
+        items = [{"type": kind, "value": value} for kind, value in pairs]
+        lib.save_items(call.db, items, ACTOR, now_iso(), origin="import", tags=tags, note=note)
+    if output["created"] or output["linked"]:
+        audit.record(
+            call.db,
+            ACTOR,
+            "ioc.add",
+            f"Made {len(pairs)} indicators of a text ({output['created']} new)" + signature(call),
+            call.db.get(Incident, incident_id) if incident_id else None,
+        )
+    return Result(output=output, classes=classes)
 
 
 @action(

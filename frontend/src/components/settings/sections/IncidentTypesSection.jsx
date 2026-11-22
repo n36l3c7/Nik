@@ -17,7 +17,7 @@ import {
   unplaced,
   updateSection,
 } from '../../../domain/fields.js'
-import { Badge, Button, Modal, SearchInput } from '../../ui/index.js'
+import { Badge, Button, Modal, SearchInput, Wait } from '../../ui/index.js'
 import NewFieldDialog from '../../fields/NewFieldDialog.jsx'
 import TypePagesEditor from './TypePagesEditor.jsx'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
@@ -611,11 +611,7 @@ export default function IncidentTypesSection() {
           {error}
         </p>
       )}
-      {!types && !error && (
-        <p role="status" className="font-mono text-sm text-fg-muted">
-          Loading the types…
-        </p>
-      )}
+      {!types && !error && <Wait>Loading the types…</Wait>}
       {types && (
         <div className="overflow-x-auto border border-line">
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">

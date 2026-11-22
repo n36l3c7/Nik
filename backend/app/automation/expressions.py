@@ -103,7 +103,7 @@ class Value:
 
 
 class _Missing:
-    def __repr__(self) -> str:  # pragma: no cover
+    def __repr__(self) -> str:
         return "MISSING"
 
 
@@ -238,7 +238,7 @@ class Expr:
 
 
 class _Star:
-    def __repr__(self) -> str:  # pragma: no cover
+    def __repr__(self) -> str:
         return "*"
 
 

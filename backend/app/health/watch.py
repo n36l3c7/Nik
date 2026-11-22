@@ -28,13 +28,14 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from ..core import leases
+from ..core.clock import iso_or_none as _iso
 from ..core.models import Setting, User
 from ..core.permissions import stored_roles
 from . import checks, thresholds
@@ -147,13 +148,13 @@ def check(now: float | None = None, holder: str | None = None) -> list[str]:
 
 
 def _loop() -> None:
-    time.sleep(30)  # let the server start
-    while True:
+    leases.wait(30)  # let the server start
+    while not leases.stopping():
         try:
             check()
         except Exception:  # noqa: BLE001 - the watch must survive a bad pass
             logger.exception("The check of the health of the server failed")
-        time.sleep(WATCH_EVERY)
+        leases.wait(WATCH_EVERY)
 
 
 def start() -> None:
@@ -162,10 +163,6 @@ def start() -> None:
         return
     _started = True
     threading.Thread(target=_loop, name="nik-health-watch", daemon=True).start()
-
-
-def _iso(at: Any) -> str | None:
-    return datetime.fromtimestamp(float(at), timezone.utc).isoformat() if at else None
 
 
 def page(db: OrmSession, now: float | None = None) -> dict[str, Any]:

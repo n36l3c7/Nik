@@ -24,11 +24,11 @@ import hmac
 import json
 import logging
 import urllib.request
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from .core.clock import now_iso
 from .core.models import Webhook
 
 logger = logging.getLogger("nik.webhooks")
@@ -60,7 +60,7 @@ def sign(secret: str, body: bytes) -> str:
 
 
 def _deliver(url: str, secret: str, event: str, data: dict) -> None:
-    body = json.dumps({"event": event, "at": datetime.now(timezone.utc).isoformat(), "data": data}).encode("utf-8")
+    body = json.dumps({"event": event, "at": now_iso(), "data": data}).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,
@@ -74,8 +74,8 @@ def _deliver(url: str, secret: str, event: str, data: dict) -> None:
     )
     try:
         urllib.request.urlopen(req, timeout=5).read()  # noqa: S310 (operator-configured URL)
-    except Exception as exc:  # pragma: no cover - network best-effort
-        logger.warning("webhook delivery to %s failed: %s", url, exc)
+    except Exception as exc:  # noqa: BLE001 - a receiver that does not answer must not fail what happened
+        logger.warning("Webhook delivery to %s failed: %s", url, exc)
 
 
 def emit(db: OrmSession, background_tasks, event: str, data: dict) -> None:

@@ -85,7 +85,9 @@ def _movable(db: OrmSession) -> dict[str, list[tuple[IntegrationKey, str]]]:
 
 def _was_on(db: OrmSession, provider: str) -> bool:
     """Whether the source was allowed in the settings of before 6.5 (it was, unless turned off)."""
-    row = db.get(Setting, 1)
+    from ..routers.settings import SETTINGS_ID as SHARED_ROW
+
+    row = db.get(Setting, SHARED_ROW)
     held = ((row.doc if row is not None else None) or {}).get("enrichment")
     allowed = held.get("providers") if isinstance(held, dict) else None
     return bool(allowed.get(provider, True)) if isinstance(allowed, dict) else True

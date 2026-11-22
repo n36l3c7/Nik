@@ -236,20 +236,11 @@ export function upload(path, file, { onProgress, signal, fields = {}, method = '
   })
 }
 
-/**
- * POST a JSON body and return the response as a Blob (a generated file: the
- * incident report as HTML or PDF). Errors carry the server's `detail`.
- */
-export async function postForBlob(path, body, { signal } = {}) {
+/** A request whose answer is a file: the response as a Blob. Errors carry the server's `detail`. */
+async function blobOf(path, init) {
   let response
   try {
-    response = await fetch(`${BASE}${path}`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: withActivity({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(body ?? {}),
-      signal,
-    })
+    response = await fetch(`${BASE}${path}`, { credentials: 'include', ...init })
   } catch (networkError) {
     if (networkError?.name === 'AbortError') throw networkError
     throw new Error(networkError?.message || 'Cannot reach the server.', { cause: networkError })
@@ -268,6 +259,21 @@ export async function postForBlob(path, body, { signal } = {}) {
   return response.blob()
 }
 
+/**
+ * POST a JSON body and return the response as a Blob (a generated file: the
+ * incident report as HTML or PDF).
+ */
+export const postForBlob = (path, body, { signal } = {}) =>
+  blobOf(path, {
+    method: 'POST',
+    headers: withActivity({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body ?? {}),
+    signal,
+  })
+
+/** GET a file the server keeps (a pack) and return it as a Blob. */
+export const getBlob = (path, { signal } = {}) => blobOf(path, { method: 'GET', headers: withActivity({}), signal })
+
 /** Absolute URL of an API path, for links the browser follows itself (downloads). */
 export function apiUrl(path) {
   return `${BASE}${path}`
@@ -279,19 +285,4 @@ export const api = {
   patch: (path, body, opts) => request('PATCH', path, body, opts),
   put: (path, body, opts) => request('PUT', path, body, opts),
   del: (path, opts) => request('DELETE', path, undefined, opts),
-}
-
-/**
- * Convenience wrapper that never throws: resolves to `{ ok, data, error }`.
- * Useful for boot-time probes (bootstrap / me) where a rejection is an
- * expected, non-exceptional outcome (e.g. a 401 "not signed in").
- *
- * @param {Promise<*>} promise  A promise returned by one of the `api.*` calls.
- */
-export async function apiSafe(promise) {
-  try {
-    return { ok: true, data: await promise, error: null }
-  } catch (err) {
-    return { ok: false, data: null, error: err?.message || 'Request failed' }
-  }
 }

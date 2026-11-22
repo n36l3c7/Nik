@@ -44,6 +44,7 @@
           <li><a href="#sign-in">Sign in</a></li>
           <li><a href="#incidents">Incidents</a></li>
           <li><a href="#incident-list">The list of incidents</a></li>
+          <li><a href="#bulk">Select many, and act on them at once</a></li>
           <li><a href="#saving">Saving, and working together</a></li>
           <li><a href="#layout">The screen</a></li>
           <li><a href="#evidence">Add evidence</a></li>
@@ -218,6 +219,120 @@
           <strong>Back to the default columns</strong> undoes it.
         </li>
       </ul>
+      <h3 id="bulk">Select many, and act on them at once</h3>
+      <p>
+        The incidents, the artifacts and the indicators are selected the same way. Each row has a checkbox, in a cell of
+        its own: a click ticks the row, and the row still opens as it always did when you click anywhere else on it.
+        <kbd>Shift</kbd> and a click tick every row from the last one you ticked to this one. The checkbox of the
+        heading ticks the rows on screen; it is half ticked when only some of them are.
+      </p>
+      <p>
+        As soon as something is ticked a bar appears over the list: <em>12 selected</em>, a menu
+        <strong>Actions…</strong>, and <strong>Clear</strong>. When every row on screen is ticked and the filter keeps
+        more than that, the bar offers <strong>Select all 1,284 that match</strong>: the selection is then
+        <em>everything the filter keeps</em>, and it is the server that works out which they are from the filter, not
+        the browser from what it has loaded. The selection lives inside one filter: it survives another order of the
+        rows and the next page, it is emptied when the filter changes (the list says
+        <em>The filter changed: the selection was cleared</em>), it is emptied once an action on it has started, and it
+        is forgotten when you leave the page. Nothing selected in one list is ever acted on from another.
+      </p>
+      <p>
+        With the keyboard, on a row: <kbd>Space</kbd> ticks it or unticks it, <kbd>Shift</kbd> + <kbd>↓</kbd> or
+        <kbd>↑</kbd> ticks the next row too and goes there, <kbd>Ctrl</kbd> + <kbd>A</kbd> (<kbd>⌘</kbd> + <kbd>A</kbd>)
+        ticks the rows on screen, <kbd>Esc</kbd> unticks everything. (In the list of incidents <kbd>Space</kbd> used to
+        open the quick view: a click on the row still does.)
+      </p>
+      <p>
+        <strong>What the menu offers</strong> is what your roles let you do; an action you may not do is not in it. A
+        viewer can select, and take out what is selected (export, copy), nothing more.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>List</th>
+              <th>On what is selected</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Incidents</td>
+              <td>
+                Set the status; <strong>Close…</strong>, which asks the reason and the notes once (and, when the
+                incidents are all of one type, the reasons of that type and the fields it wants filled to close); set
+                the severity, the owner (you, somebody, nobody), the type, the TLP; add and remove tags; set any other
+                field that holds one plain value; find indicators now; change the direction of the mirror, or stop it,
+                where there is one (Out and In-out only for who may run playbooks, as on one incident); run a playbook
+                on each; export each as JSON (25 at a time); copy their links; delete.
+              </td>
+            </tr>
+            <tr>
+              <td>Artifacts</td>
+              <td>
+                Add and remove tags; analyse again (files and e-mails); link to an incident, or take out of one; set the
+                day they are deleted on, or take it away; <strong>Download together…</strong>, one archive made by the
+                server with the files inside an encrypted archive (the export of the artifacts: 500 artifacts at most,
+                and a limit on their size together that the dialog states); delete.
+              </td>
+            </tr>
+            <tr>
+              <td>Indicators</td>
+              <td>
+                Check now, which first says what it costs each source; have the isolated browser analyse the addresses;
+                add and remove tags; set the TLP; add to a list, save as a new list, take out of the list that is open;
+                add to the allowlist; export in the chosen format; copy the values; remove from the library. On the
+                Indicators tab of an incident also <strong>Remove from this incident…</strong>, for the ones found by
+                themselves: they are not found again there.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Not offered on many at once, because each incident needs its own answer: its name and its ticket, fields made of
+        parts (tags of hosts and users, tables, JSON), starting a mirror (each incident has its own ticket on the other
+        side), a script button and a command of the War Room (each asks its own arguments and confirmations), and its
+        report. A watch is of a <a href="#indicator-lists">list</a>, not of an indicator: indicators are watched by
+        adding them to a list that is.
+      </p>
+      <p>
+        <strong>Before anything is done</strong> a dialog asks what the action needs (the tags, the reason, the list…)
+        and then says what it will do: <em>Close: 1,284 incidents</em>, how many of them it applies to when not all (<em
+          >It applies to 9 of 12</em
+        >), and what it sets in motion (<em
+          >38 of these are mirrored Out: their tickets will be updated, one update for each</em
+        >; for a check, the requests it costs each source against what is left of today's quota). Deleting, and closing
+        more than 100 incidents at once, wait for a few words to be typed (<code>delete 12</code>). A job takes 5,000
+        rows at most: beyond that the dialog says to narrow the filter. When the selection is everything a filter keeps
+        and it changed while the dialog was open, nothing is done and the dialog shows the new count.
+      </p>
+      <p>
+        The incidents counted as mirrored Out are those the change will be sent for, by the rule a single change
+        follows: mirrored Out or In-out, whether the direction came from the instance that fetched them or was set on
+        the incident, the object still there on the other side, and a field changed that the outgoing mapper of the
+        instance sends. A SentinelOne SIEM alert, for one, is sent its status and nothing else: closing many of them
+        sends one status to each, setting their owner sends nothing.
+      </p>
+      <p>
+        <strong>How it runs.</strong> Each row goes through exactly what changing it alone goes through: the same
+        checks, the same permission, its own line in the audit log (ending with the first characters of the job), the
+        same events for the playbooks, the same update to a mirrored ticket. Up to 50 rows are done before the dialog
+        closes. More than that goes on in the background: its progress is in the tray at the foot of the window, you can
+        go on working, and it goes on by itself after a restart of the server from the row it had reached, without doing
+        any row twice. One bulk action of yours runs at a time on each list.
+      </p>
+      <p>
+        <strong>What it did.</strong> When every row was done a notice says so. Otherwise the result opens: how many
+        were <em>done</em>, <em>skipped</em> (they were so already, or the action is not for them), <em>refused</em>
+        (a rule of a field, a type that wants something filled to close, a permission: with the sentence) and
+        <em>failed</em>, the rows that were not done with the reason for each, and
+        <strong>Download the result (CSV)</strong> for all of them. Nothing is undone when some rows fail: the others
+        stay changed. <strong>Try again on the N not done</strong> makes a new job of the rows that failed or were never
+        reached; a running job has <strong>Stop it</strong>, which ends it after the row it is on and leaves what was
+        done. Every job of the last month is under <em>Settings → System → <a href="#bulk-actions">Bulk actions</a></em
+        >.
+      </p>
+
       <h3 id="saving">Saving, and working on the same incident</h3>
       <p>
         There is no Save button: every change is saved as you make it. Several analysts can work on one incident at the
@@ -516,7 +631,7 @@
         verdict and origin, and sorts by any column. A row is tinted by its verdict only. Click a value for the
         indicator's page.
       </p>
-      <h3>Add one or many</h3>
+      <h3 id="indicators-add">Add one or many</h3>
       <p>
         <strong>Add</strong> opens one box for one indicator or thousands: type, paste, or choose a file. Defanged
         values (<code>hxxps://evil[.]example</code>) are read as they are meant and the type is recognised by itself.
@@ -531,7 +646,7 @@
         past its date is marked expired and left out of exports and feeds. An indicator the library already has is kept
         as it is, and joins the list too.
       </p>
-      <h3>Lists</h3>
+      <h3 id="indicator-lists">Lists</h3>
       <p>
         A list is a named group with its own page and address (<code>/iocs/lists/&lt;id&gt;</code>). The same indicator
         can be in several lists; <em>Take out of the list</em> leaves it in the library. <strong>Remove</strong> takes
@@ -552,7 +667,7 @@
         indicators it had and how many of each verdict. In the table, a row the last check changed says so under its
         verdict. A check of a selection, or of a filter, is not a check of the list and writes nothing here.
       </p>
-      <h3>Analysed or not</h3>
+      <h3 id="indicators-analysed">Analysed or not</h3>
       <p>
         The <strong>Analysis</strong> column shows what Nik saw when it analysed the value itself, and opens it.
         Indicators of artifacts not linked to any incident are in the library too (origin <em>artifact</em>).
@@ -561,17 +676,18 @@
         (analysed already, allowlisted, internal, TLP:RED), and visits at most 20, one after the other, once you
         confirm. A visit is seen by the site.
       </p>
-      <h3>Bulk check and export</h3>
+      <h3 id="indicators-bulk">Bulk check and export</h3>
       <p>
-        Tick rows (or <em>select all</em> of a filter), or use the buttons of a list or of the whole view.
-        <strong>Check</strong> first shows what it costs: how many indicators are asked, how many answers are still
-        fresh, how many are never sent out, and per source how many requests against what is left of today's quota. The
-        check then runs in the background, with its progress at the top of the library. When a source's quota is used up
-        Nik says so and goes on by itself when it resets; <em>Stop</em> ends it. Indicators the data guard holds (<a
-          href="#held-look-ups"
-          >below</a
-        >) are counted apart before the check starts and are not asked about; the check says how many when it ends, and
-        in the table their verdict reads <em>held</em>.
+        Tick rows (or <strong>Select all … that match</strong>, see <a href="#bulk">Select many</a>), or tick nothing:
+        <strong>Check</strong> and <strong>Export</strong> at the top act on the selection when there is one (<em
+          >Check 12 selected</em
+        >) and on everything the view keeps otherwise (<em>Check all 340</em>). <strong>Check</strong> first shows what
+        it costs: how many indicators are asked, how many answers are still fresh, how many are never sent out, and per
+        source how many requests against what is left of today's quota. The check then runs in the background, with its
+        progress at the top of the library. When a source's quota is used up Nik says so and goes on by itself when it
+        resets; <em>Stop</em> ends it. Indicators the data guard holds (<a href="#held-look-ups">below</a>) are counted
+        apart before the check starts and are not asked about; the check says how many when it ends, and in the table
+        their verdict reads <em>held</em>.
       </p>
       <p>
         <strong>Export</strong> asks for the format (CSV, JSON, STIX 2.1, MISP, or one value per line) and the fields.
@@ -580,9 +696,10 @@
         into Nik with its tags and lists.
       </p>
       <p>
-        <strong>Tag…</strong>, on a selection (or on everything a filter keeps, 5 000 indicators at most), adds tags to
-        all of them and takes tags off all of them in one go. An indicator keeps the tags that are not named; one seen
-        only in incidents gets a record to hold them, as when it is edited alone.
+        <strong>Change the tags…</strong>, in the menu of the selection, adds tags to all of them and takes tags off all
+        of them in one go. An indicator keeps the tags that are not named; one seen only in incidents gets a record to
+        hold them, as when it is edited alone. The other actions of the selection are listed under
+        <a href="#bulk">Select many, and act on them at once</a>.
       </p>
 
       <h2 id="tabs">The tabs of an incident</h2>
@@ -813,7 +930,7 @@
           the War Room.
         </li>
       </ul>
-      <h3>Timeline</h3>
+      <h3 id="timeline-tab">Timeline</h3>
       <p>
         Every timestamped event of every tab in one chronological list: browser visits and downloads, commands, endpoint
         artifacts, Windows events, samples, e-mails and network captures. Filter by source, by text or by severity; the
@@ -840,10 +957,64 @@
         asked again by itself. <strong>Open as a page</strong> gives the indicator a full page, and
         <strong>Copy link</strong> its address (<code>/ioc/&lt;type&gt;?v=&lt;value&gt;</code>) to share with a
         colleague. <strong>Check all</strong> asks the sources about every indicator of the incident, and
-        <strong>Save as a list</strong> makes a list of them in the <a href="#ioc-library">Indicators</a>. A row is red
-        when the indicator is malicious and amber when it is suspicious; being seen in other incidents is a number, not
-        a colour. Export the list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the
-        <strong>allowlist</strong> (right-click → Add to the allowlist).
+        <strong>Save as a list</strong> makes a list of them in the <a href="#ioc-library">Indicators</a>; tick rows to
+        do the same, and more, to those only (<a href="#bulk">Select many</a>). A row is red when the indicator is
+        malicious and amber when it is suspicious; being seen in other incidents is a number, not a colour. Export the
+        list as CSV, STIX 2.1 or MISP. Indicators that are known good go to the <strong>allowlist</strong> (right-click
+        → Add to the allowlist).
+      </p>
+      <h4 id="found-indicators">Indicators found by themselves</h4>
+      <p>
+        When an incident comes in (fetched from a connector, the Mail connector included; made by hand; made through the
+        API; made by a playbook) Nik reads its fields and its context and makes an indicator of every address, domain,
+        URL, e-mail address and hash it recognises there. Such an indicator says <em>Found</em> and the path it was read
+        at in its <em>Seen in</em> column (<code>Found · context.URL[0].Data</code>): the same path the Context tab
+        shows. Defanged values are read as meant (<code>hxxp://</code>, <code>[.]</code>, <code>[at]</code>), and a URL
+        gives two indicators, the URL and its host. The War Room keeps <strong>one line</strong> for it, not one per
+        indicator: <em>12 indicators found: 5 domains, 4 URLs, 3 hashes; 40 left out as private or benign</em>.
+      </p>
+      <p>
+        So that an alert with hundreds of strings does not fill the incident, some things are recognised and
+        <strong>left out</strong>: private and reserved addresses and URLs on internal names; names kept for
+        documentation (<code>example.com</code>), the hosts XML and JSON documents name as their schema, your
+        organisation's own domains and the IOC allowlist. Keys that are noise by nature are never read (identifiers,
+        versions, console links, the other system's address of its own ticket or alert). And an incident is given
+        <strong>500</strong> indicators at most this way, unless the setting says another number: past that the line of
+        the War Room says how many more there were, and none of them is kept. A file name, a version number or a word of
+        code is not an indicator: <code>kernel32.dll</code>, <code>10.0.19041.1</code> and <code>this.name</code> are
+        left alone.
+      </p>
+      <p>
+        An indicator that is in the incident only because it was found has an <strong>×</strong> at the end of its row.
+        Removing it is remembered: it does not come back when the incident is updated by a mirror or read again. An
+        update a mirror brings is read too, once for the whole update and only when it changed something: the fields and
+        the context as above, and what the other side <em>said</em>, a comment or a note it added, or a reply to the
+        message of a mailbox mirrored <em>In</em>. What was said is in the War Room and not in the context, so its path
+        is <code>Found · warroom.mirror</code>. The limit and the removals hold for it as for the rest, and one update
+        leaves one line. Nothing that was found is sent to the other side. Under the table,
+        <em>Found by themselves</em> says what the last reading came to, lists what was removed (with
+        <strong>Put back</strong>), and <strong>Find indicators now</strong> reads the incident as it is at this moment:
+        for an incident that came in before incidents were read, or whose context has grown since. What a playbook
+        writes to the context later is not read by itself; a playbook that wants indicators of a value asks for them
+        with <a href="automation.html#make-indicators"><em>Make indicators of a text</em></a
+        >. A playbook can also wait for a reading that kept something new: the event <code>indicators.found</code>, with
+        <a href="automation.html#indicators-found-playbook">an example</a>.
+      </p>
+      <p>
+        Finding an indicator asks nothing of any threat-intelligence source. The automatic look-ups leave out what an
+        incident holds only because it was found, unless an administrator says otherwise; <strong>Check now</strong> and
+        <strong>Check all</strong> ask about them like any other.
+      </p>
+      <p id="found-settings">
+        <strong>Settings → Indicators found</strong> (administrators) holds all of it: whether incidents are read at all
+        (on, unless turned off), the types that are kept, the two kinds of things left out, the number an incident may
+        be given (500 until it is set, from 1 to 1000), the paths that are never read, and whether the automatic
+        look-ups ask about what was found. A path is written one a line: a word alone is the name of a key wherever it
+        is (<code>*uuid</code>, <code>console*</code>), and with dots it is a whole path as the Context tab shows it,
+        without the numbers of a list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything.
+        An instance that fetches follows the setting unless it is told apart, <em>Read</em> or <em>Not read</em>: that
+        is chosen in the <em>Fetch</em> tab of the instance (<a href="automation.html#fetch-status">Connectors</a>),
+        where it is saved at once, and the instances told apart are listed under this form.
       </p>
       <h4 id="held-look-ups">When a look-up is held</h4>
       <p>
@@ -900,7 +1071,7 @@
         These four are kinds of evidence, opened from the list of the <a href="#evidence-tab">Evidence</a> tab. The list
         of each closes with the button in its corner, and stays closed the next time.
       </p>
-      <h3>Mail Analysis</h3>
+      <h3 id="mail-analysis">Mail Analysis</h3>
       <p>
         Drop the reported e-mail (<code>.eml</code> or Outlook <code>.msg</code>). Nik gives a
         <strong>verdict</strong> and a score with the reasons, and shows:
@@ -923,7 +1094,7 @@
         <img src="img/mail.png" alt="The Mail Analysis tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Mail Analysis: verdict, reasons and the message's parts.</figcaption>
       </figure>
-      <h3>Malware Analysis</h3>
+      <h3 id="malware-analysis">Malware Analysis</h3>
       <p>
         Drop a suspicious file. It is stored on the server under its SHA-256, read-only and never executed, and analysed
         statically: hashes, type, <strong>entropy</strong> per block, <strong>structure</strong> of PE, ELF and Mach-O
@@ -936,7 +1107,7 @@
         <img src="img/malware.png" alt="The Malware Analysis tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Malware Analysis: a sample's overview, with the other views as tabs.</figcaption>
       </figure>
-      <h3>Network Analysis</h3>
+      <h3 id="network-analysis">Network Analysis</h3>
       <p>Drop a <code>.pcap</code> or <code>.pcapng</code> (up to 500 MB). Wireshark's own engine reads it:</p>
       <ul>
         <li>
@@ -983,7 +1154,7 @@
         />
         <figcaption>The capture's summary: hosts, DNS, HTTP, submissions and beacons.</figcaption>
       </figure>
-      <h3>URL Analysis</h3>
+      <h3 id="url-analysis">URL Analysis</h3>
       <p>
         Give Nik a link from an e-mail or a chat (defanged text such as <code>hxxps://evil[.]top</code> works): the
         <strong>isolated browser</strong> visits it for you, with network access but never your own network, and types,
@@ -1056,7 +1227,7 @@
         may not change the incident is told so, and can only go back. Until 6.2 these pages showed the paths of Windows
         for an incident with no system, as if it had been said.
       </p>
-      <h3>Endpoint Artifacts</h3>
+      <h3 id="endpoint-artifacts">Endpoint Artifacts</h3>
       <p>
         Four categories: <strong>program execution</strong>, <strong>persistence</strong>,
         <strong>file and folder access</strong> and <strong>removable devices</strong>. Each source (BAM, Run keys,
@@ -1067,7 +1238,7 @@
         <img src="img/endpoint.png" alt="The Endpoint Artifacts tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Endpoint Artifacts: program execution from a BAM export.</figcaption>
       </figure>
-      <h3>Event Logs</h3>
+      <h3 id="event-logs">Event Logs</h3>
       <p>
         Upload Windows <code>.evtx</code> files (parsed on the server, including records left after a log clear) or the
         JSON of the collection script. About fifty event IDs that matter are kept: logons, process creation, services,
@@ -1079,7 +1250,7 @@
         <img src="img/event-logs.png" alt="The Event Logs tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Event Logs: failed logons from one address, then a successful one.</figcaption>
       </figure>
-      <h3>Browser Forensics</h3>
+      <h3 id="browser-forensics">Browser Forensics</h3>
       <p>
         One sub-tab per browser (Chrome, Firefox, Edge, Brave, Opera, Safari), each with several
         <strong>profiles</strong>. Import the history, downloads, bookmarks and omnibox shortcuts as the browser keeps
@@ -1089,7 +1260,7 @@
         <img src="img/browser.png" alt="The Browser Forensics tab" width="1600" height="1000" loading="lazy" />
         <figcaption>Browser Forensics: the bookmarks of a Chrome profile.</figcaption>
       </figure>
-      <h3>Command History</h3>
+      <h3 id="command-history">Command History</h3>
       <p>
         One sub-tab per shell (Bash, Zsh, Fish, PowerShell). Import the native history file; commands with a timestamp
         join the timeline, and the detection engine marks download-and-execute, encoded payloads, reverse shells and
@@ -1273,6 +1444,15 @@
             <tr>
               <td><kbd>Ctrl</kbd> + <kbd>V</kbd></td>
               <td>Pastes a file, an address or an indicator to analyse it.</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Space</kbd> · <kbd>Shift</kbd> + <kbd>↓</kbd> / <kbd>↑</kbd> · <kbd>Ctrl</kbd> + <kbd>A</kbd>
+              </td>
+              <td>
+                On a row of the incidents, the artifacts or the indicators: ticks it, ticks the next one too, ticks the
+                rows on screen; <kbd>Esc</kbd> unticks everything (<a href="#bulk">Select many</a>).
+              </td>
             </tr>
             <tr>
               <td><kbd>?</kbd></td>
@@ -1668,10 +1848,16 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
           pauses, starts and stops one by hand; a playbook can too.
         </li>
         <li id="mirror">
-          <strong>Mirror</strong>, in the same panel, keeps the incident in step with a ticket or an issue of another
-          product: <em>Mirror with…</em> asks for the instance, the id of the object there, and which way.
-          <em>Read now</em> reads the other side at once and says what changed and what was kept because you set it
-          here; a note tagged <code>mirror</code> is sent to the other side as a comment (<a
+          <strong>Mirror</strong>, in the same panel, keeps the incident in step with a ticket, an issue or a threat of
+          another product. An incident a connector fetched is mirrored by itself when its instance says so; otherwise
+          <em>Mirror with…</em> asks for the instance, the id of the object there, and which way. The panel shows the
+          direction (<em>In</em>, <em>Out</em>, <em>In-out</em>), which you can change for this incident, where it came
+          from (<em>from the instance</em>, <em>from the mapper</em>, <em>set here</em>), when the other side was last
+          read and last written to, and the last problem. <em>Read now</em> reads the other side at once and says what
+          changed and what was kept because you set it here; a note tagged <code>mirror</code> is sent to the other side
+          as a comment. An object deleted on the other side is said once, and read no more until you read it by hand. An
+          incident made from a message of a mailbox mirrored <em>In</em> receives the replies to that message as lines
+          of its War Room; nothing is sent back, and a note tagged <code>mirror</code> there says so (<a
             href="automation.html#mirroring"
             >Mirroring</a
           >).
@@ -1694,7 +1880,22 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
         <li>
           <strong>The Context tab</strong> shows what playbooks read of the incident, as a tree to search: its fields,
           and the files, e-mails, addresses, tickets and hosts known for it. Choosing a value gives the path to write in
-          a playbook, and says who set it: Nik's analysis, a connector, a run.
+          a playbook, and says who set it: Nik's analysis, a connector, a run. <span id="context-copy"></span>Everything
+          in it can be copied. A value is text: select it with the mouse, in the tree or, whole, in the box under it
+          (the tree shows a long value on one line, cut; the box and the copy hold all of it). Under the tree,
+          <strong>Copy the value</strong> copies the chosen value (a text as it is, a branch as JSON with everything
+          under it), <strong>Copy the path</strong> copies it as a playbook writes it,
+          <code>{{ context.File[0].SHA256 }}</code>, and the button beside the second path as the command line of the
+          War Room does, <code>${context.File[0].SHA256}</code>. A key that is not a plain word is written between
+          brackets and quotes, <code>context.ext["check-point"]["a key"]</code>, and an item of a list by its number.
+          The same three copies are in the right-click menu of every row. With the keyboard: Tab reaches the tree, the
+          arrows walk it (right opens a branch, left closes it), Enter chooses, and Ctrl&nbsp;C (⌘&nbsp;C) copies the
+          value of the row when no text is selected.
+        </li>
+        <li>
+          In the War Room, the line of a fetched alert shows <strong>the item as it came</strong> when it is opened, and
+          what a command or a step of a playbook was given, sent and gave: each box has a button that copies it whole,
+          and so have the boxes of a step on the page of a run.
         </li>
         <li>
           A note written by a playbook is marked <em>automation</em> and signed <code>nik-automation</code>; the mark
@@ -2017,12 +2218,13 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <p>
         <em>Settings → System → Health</em> (admins). One row for each thing an operator would otherwise go and look at,
         in groups: the disks, the database, the queues, the work in progress (what restarts left behind: steps that wait
-        for a person, work that was set aside, work nobody holds), the workers, the backups, the recovery, the
-        certificate, the audit log, the sign-in, the keys and the encryption of the store, the server. A row has a value
-        (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>, <em>attention</em>, <em>problem</em>, or
-        <em>not known</em> when it could not be measured), since when it is in that state, what to do when it is not
-        fine, and a link to the page that has the whole story: Storage, Workers, Backup and the audit log are summed up
-        here, not repeated. What is not fine is listed again at the top, the problems first.
+        for a person, work that was set aside, work nobody holds, and the bulk actions that run or were given up), the
+        workers, the backups, the recovery, the certificate, the audit log, the sign-in, the keys and the encryption of
+        the store, the server. A row has a value (<em>62% used, 118 GB free of 320 GB</em>), a state (<em>fine</em>,
+        <em>attention</em>, <em>problem</em>, or <em>not known</em> when it could not be measured), since when it is in
+        that state, what to do when it is not fine, and a link to the page that has the whole story: Storage, Workers,
+        Backup and the audit log are summed up here, not repeated. What is not fine is listed again at the top, the
+        problems first.
       </p>
       <ul>
         <li>
@@ -2128,6 +2330,22 @@ sender_domain:* due_back:[2026-11-01 TO *]         the field holds something; a 
       <p>
         A standby serves no page, so it has no health page: its state is read on its host, with
         <code>deploy/standby.sh status</code>.
+      </p>
+
+      <h3 id="bulk-actions">Bulk actions</h3>
+      <p>
+        <em>Settings → System → Bulk actions</em>. The actions asked of many incidents, artifacts or indicators at once
+        (<a href="#bulk">Select many</a>), the newest first: what was asked, of how many, by whom, and how it went. A
+        row opens <em>What it did</em>, with the CSV, <strong>Stop it</strong> while it runs and
+        <strong>Try again</strong> on what was not done. You see your own; an administrator, and who reads the audit
+        log, can tick <em>Everybody's</em>. A job is kept for a month. One that was interrupted three times by restarts
+        is <em>given up</em>: what it did stays, its result says what it did not do, and Health shows it until it is a
+        month old.
+      </p>
+      <p>
+        Administrators set three limits at the foot of the page: how many rows one action takes (5,000), up to how many
+        are done before the dialog closes (50; more goes on in the background), and above how many a closing is
+        confirmed by typing (100; deleting always is).
       </p>
 
       <h3 id="audit-log">Audit log</h3>

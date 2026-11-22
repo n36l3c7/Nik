@@ -25,7 +25,7 @@ DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
 HTML_MAX_BYTES = 10 * 1024 * 1024
 
 OFFICE = {
-    "doc", "docx", "docm", "dot", "dotx", "dotm", "rtf", "odt", "ott",
+    "doc", "docx", "docm", "dot", "dotx", "dotm", "rtf", "odt", "ott", "wpd",
     "xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "xltm", "ods", "csv",
     "ppt", "pptx", "pptm", "pps", "ppsx", "ppsm", "pot", "potx", "odp",
 }  # fmt: skip

@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, Download, Upload } from 'lucide-react'
 import { api } from '../../../services/api.js'
+import { saveBlob } from '../../../lib/download.js'
+import { formatDateTime } from '../../../lib/time.js'
 import { Badge, Button } from '../../ui/index.js'
 
 /*
@@ -20,18 +22,9 @@ import { Badge, Button } from '../../ui/index.js'
  * so that every list shows what arrived.
  */
 
-/** Trigger a client-side download of `data` as a pretty-printed JSON file. */
-function downloadJson(fileName, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: 'application/json',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  URL.revokeObjectURL(url)
-}
+/** Save `data` as a pretty-printed JSON file. */
+const downloadJson = (fileName, data) =>
+  saveBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), fileName)
 
 export default function ContentExport() {
   const [busy, setBusy] = useState(false)
@@ -170,7 +163,7 @@ export default function ContentExport() {
               <Badge color="cyan">{counts.users} users</Badge>
               <Badge color="cyan">{counts.audit} audit entries</Badge>
               {pending.data.exportedAt && (
-                <Badge color="slate">exported {new Date(pending.data.exportedAt).toLocaleString()}</Badge>
+                <Badge color="slate">exported {formatDateTime(new Date(pending.data.exportedAt).getTime())}</Badge>
               )}
             </div>
             <p className="border border-line bg-canvas px-3 py-2 text-sm text-fg-muted">

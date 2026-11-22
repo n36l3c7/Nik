@@ -723,3 +723,54 @@ def test_the_database_going_away_under_a_job_hands_the_job_back(admin: TestClien
     assert artifact_jobs.run_due(threads=False) == 1
     with SessionLocal() as db:
         assert db.get(ArtifactJob, job_id).status == "done"
+
+
+# --------------------------------------------------------------------------- #
+# Starting: what Nik ships is added by one process at a time                  #
+# --------------------------------------------------------------------------- #
+def test_what_one_process_does_at_a_time_is_a_lock_of_the_database_where_there_are_several(client):
+    """The server runs as two processes and both add what Nik ships when they start: the second
+    waits for the first instead of losing to it with an error in the log of the database."""
+    from sqlalchemy import text
+
+    from app.core.db import SEEDING_LOCK, engine, one_process
+
+    def free() -> bool:
+        with engine.connect() as other:
+            asked = text("SELECT pg_try_advisory_xact_lock(:high, :low)")
+            return bool(other.execute(asked, {"high": SEEDING_LOCK[0], "low": SEEDING_LOCK[1]}).scalar())
+
+    several = engine.dialect.name == "postgresql"
+    with one_process(SEEDING_LOCK):
+        with SessionLocal() as db:
+            # The work inside commits as often as it needs: the lock is not of its transaction.
+            db.add(Lease(name="a-row-of-the-test", holder="somebody", expires_at=1.0))
+            db.commit()
+        if several:
+            assert free() is False, "another process waits here"
+    if several:
+        assert free() is True, "and goes on once the first is through"
+    with SessionLocal() as db:
+        row = db.get(Lease, "a-row-of-the-test")
+        assert row is not None
+        db.delete(row)
+        db.commit()
+
+
+def test_a_lock_that_cannot_be_had_does_not_keep_the_server_from_starting(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from app.core import db as database
+
+    class Gone:
+        class dialect:  # noqa: N801 - the name the engine gives it
+            name = "postgresql"
+
+        def connect(self):
+            raise OperationalError("SELECT pg_advisory_xact_lock", {}, Exception("the database went away"))
+
+    monkeypatch.setattr(database, "engine", Gone())
+    done = []
+    with database.one_process(database.SEEDING_LOCK):
+        done.append("the work")
+    assert done == ["the work"]

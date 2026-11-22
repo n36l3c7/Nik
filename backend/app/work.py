@@ -280,7 +280,7 @@ class hold:  # noqa: N801 - reads as a statement: ``with work.hold("code", sha25
 
         with SessionLocal() as db:
             self.claim = take(db, self.kind, self.ref, self.now)
-        self.claim.failed = False  # type: ignore[attr-defined]
+        self.claim.failed = False  # type: ignore[attr-defined] - the block sets it to say that it failed
         with _lock:
             _active.add((self.kind, self.ref))
         return self.claim
@@ -317,6 +317,31 @@ def hand_back(kind: str, ref: str, note: str, now: float | None = None) -> int:
         },
         held_by_us=True,
     )
+
+
+def give_back(kind: str, ref: str, note: str, now: float | None = None) -> int:
+    """Give a piece this process holds back as wanted and due at once, without counting the try:
+    the work stops itself between two steps because the process was asked to stop, or may not
+    work here any more, and goes on from where it is in the process that takes it next."""
+    from .core.db import SessionLocal
+
+    with SessionLocal() as db:
+        handed = db.execute(
+            update(WorkClaim)
+            .where(WorkClaim.kind == kind, WorkClaim.ref == ref, WorkClaim.holder == HOLDER, WorkClaim.state == "held")
+            .values(
+                state="wanted",
+                holder="",
+                beat_at=0,
+                interrupted_at=time.time() if now is None else now,
+                resumed_at=None,
+                attempts=WorkClaim.attempts - 1,
+                progress="",
+                note=note[:500],
+            )
+        ).rowcount
+        db.commit()
+        return handed
 
 
 def describe(db: OrmSession, kind: str, ref: str) -> dict[str, Any] | None:

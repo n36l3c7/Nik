@@ -16,7 +16,7 @@
 # hours off.
 name: Jira Data Center
 id: jira-datacenter
-version: 4
+version: 5
 description: Issues, comments and transitions in Jira Data Center.
 api_version: "Jira Data Center REST API v2 (/rest/api/2), 11.3"
 verified: false
@@ -212,7 +212,10 @@ schema:
     - { name: labels, type: list }
     - { name: priority, type: object, description: "{\"name\": \"High\"}" }
 
+# The object an incident is kept in step with is the issue its item was, by its key. The direction is
+# what the instance says (None, In, Out, In-out): the mapper of the pack no longer names it.
 mirror:
+  id: "{{ item.key }}"
   interval_seconds: 120
   get: { command: get-issue }
   item: "{{ result.issue }}"

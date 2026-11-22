@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .core import audit
+from .core.ids import new_id
 from .core.models import Field, Incident, IncidentType, User
 from .core.security import now_iso
 
@@ -142,12 +143,6 @@ RENAMED = {"labels": "Labels"}
 # --------------------------------------------------------------------------- #
 # The registry                                                                #
 # --------------------------------------------------------------------------- #
-def new_id() -> str:
-    import uuid
-
-    return uuid.uuid4().hex
-
-
 def seed(db: OrmSession) -> int:
     """Add the system fields that are missing (the caller commits); returns how many."""
     known = {row.name: row for row in db.scalars(select(Field))}
@@ -577,6 +572,11 @@ def update(
     from . import mirror
 
     mirror.on_fields_changed(db, incident, changed, source or f"user:{actor}", time.time())
+    if changed:
+        # What a connector brings to an incident that was read for indicators is read again.
+        from . import indicators_found
+
+        indicators_found.after_update(db, incident, source or "")
     return changed
 
 

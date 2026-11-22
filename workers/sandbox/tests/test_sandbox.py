@@ -17,9 +17,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("SANDBOX_TOKEN", "test-token")
 
-import runner  # noqa: E402
-
-import server  # noqa: E402
+import runner
+import server
 
 
 def run(code: str, args: dict | None = None, timeout: int | None = None) -> dict:

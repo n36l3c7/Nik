@@ -7,8 +7,6 @@ each of them is read by a run, real and dry: a path that led nowhere would
 fail the step that reads it.
 """
 
-# ruff: noqa: E501 (graphs of test playbooks read better on one line)
-
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -28,6 +26,7 @@ SHAPED = {
     "nik.set-incident-field",
     "nik.create-incident",
     "nik.get-ioc-lists",
+    "nik.make-indicators",
     "nik.recheck-list",
     "nik.reputation",
 }
@@ -228,6 +227,7 @@ def test_what_is_inside_a_list_an_action_gives_is_there(admin: TestClient):
         act("check", "nik.recheck-list", list="Blocklist"),
         act("known", "nik.get-indicator", value="185.220.101.47"),
         act("said", "nik.reputation", kind="ip", value="185.220.101.47"),
+        act("made", "nik.make-indicators", text=["185.220.101.47", "nothing"]),
     ]
     wanted = [path for item in nodes for path in paths_of(entries[item["config"]["action"]], shapes, item["id"])]
     # A dry run asks no source: who answered and who was skipped are lists with nothing in them.

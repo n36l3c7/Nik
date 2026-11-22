@@ -1,6 +1,6 @@
-# Ruff: lint and format for every Python component (backend, workers,
-# integration). CI runs `ruff check` and `ruff format --check` per component;
-# the analyzer extends this file for its older Python.
+# Ruff: lint and format for the backend and the six workers. CI runs
+# `ruff check` and `ruff format --check` inside each of them; the analyzer
+# extends this file for its older Python.
 target-version = "py312"
 line-length = 120
 # First-party code: the backend's `app` and `tests`, and each worker's modules.
@@ -11,6 +11,7 @@ src = [
   "workers/capa",
   "workers/docview",
   "workers/pcap",
+  "workers/sandbox",
 ]
 
 [lint]

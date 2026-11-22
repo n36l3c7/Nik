@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { EXPIRY_CHOICES, expiryDate, expiryText, expiryUrgency, undatedText } from './artifactExpiry.js'
+import { EXPIRY_CHOICES, expiryDate, expiryText, undatedText } from './artifactExpiry.js'
 
 test('when an artifact expires, in words', () => {
   assert.equal(expiryText({ expiresAt: null }), 'kept: no expiry')
@@ -8,9 +8,6 @@ test('when an artifact expires, in words', () => {
   assert.equal(expiryText({ expiresAt: '2026-11-20', expiresInDays: 1 }), 'expires tomorrow (2026-11-20)')
   assert.equal(expiryText({ expiresAt: '2026-11-19', expiresInDays: 0 }), 'expires today (2026-11-19)')
   assert.equal(expiryText({ expiresAt: '2026-11-25', expiresInDays: null }), 'expires on 2026-11-25')
-  assert.equal(expiryUrgency({ expiresAt: null }), null)
-  assert.equal(expiryUrgency({ expiresAt: '2026-11-25', expiresInDays: 6 }), 'soon')
-  assert.equal(expiryUrgency({ expiresAt: '2027-11-25', expiresInDays: 371 }), 'later')
 })
 
 test('the days offered, and what has no date', () => {

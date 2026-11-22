@@ -21,6 +21,7 @@ import {
 } from '../config/artifacts.js'
 import { normalizeOs } from '../config/os.js'
 import { generateId } from '../lib/id.js'
+import { saveBlob } from '../lib/download.js'
 import { deriveIncidentName, hasIdentity, normalizeSeverity, normalizeStatus } from '../domain/incidentName.js'
 import { useAuth } from './AuthContext.jsx'
 import { freely, onLocationChange, setPath } from '../lib/location.js'
@@ -239,15 +240,8 @@ function normalizeIncident(raw) {
   }
 }
 
-function downloadJson(filename, obj) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
+const downloadJson = (filename, obj) =>
+  saveBlob(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }), filename)
 
 /* ---- URL <-> active incident (permalink: /incident/<id>) ---- */
 // Opening an incident reflects its id in the URL so every incident has a

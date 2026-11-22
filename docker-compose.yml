@@ -40,8 +40,8 @@ x-logging: &logging
 services:
   db:
     image: docker.io/library/postgres:18-alpine
-    # Refuses to create an empty cluster while unmigrated PostgreSQL 16 data
-    # sits on the old volume (see deploy/db-entrypoint.sh and the deployment guide).
+    # Refuses to create an empty cluster while the PostgreSQL 16 data of a release
+    # before 2.12.2 sits on the old volume (see deploy/db-entrypoint.sh).
     entrypoint: ["/usr/local/bin/nik-db-entrypoint.sh"]
     command: ["postgres"]
     environment:
@@ -51,7 +51,6 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD?DB_PASSWORD is not set, run deploy/init-env.sh}
       DB_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: nik
-      NIK_PG_UPGRADE: ${NIK_PG_UPGRADE:-}
       # The archive of the write-ahead log (deploy/db-entrypoint.sh turns it on): what brings the
       # database back to any moment, and what a standby replays. `off` keeps no archive. A
       # segment is closed at least every NIK_ARCHIVE_TIMEOUT seconds while something is written:
@@ -61,8 +60,8 @@ services:
     volumes:
       # PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker.
       - db-data-18:/var/lib/postgresql
-      # The PostgreSQL 16 data of releases before 2.12.2, read-only: kept for
-      # a rollback after deploy/upgrade-postgres.sh, empty on a new install.
+      # The PostgreSQL 16 data of releases before 2.12.2, read-only: only looked at,
+      # so that no empty database is made beside it. Empty on a new install.
       - db-data:/var/lib/postgresql-16:ro
       - ./deploy/db-entrypoint.sh:/usr/local/bin/nik-db-entrypoint.sh:ro,z
       # The scripts PostgreSQL archives and restores its log with (deploy/db).
@@ -170,7 +169,8 @@ services:
       # after failed sign-ins and the administrators' networks go by it.
       FORWARDED_ALLOW_IPS: ""
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
-      # Optional bearer token for /api/metrics (never published by nginx).
+      # Optional bearer token for /api/metrics (reached through nginx like the
+      # rest of /api; the route answers to a token only).
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       METRICS_TOKEN_FILE: /run/secrets/metrics_token
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
@@ -586,8 +586,8 @@ volumes:
   wal-archive:
   # The socket of PostgreSQL, for the `recovery` service.
   db-socket:
-  # PostgreSQL 16 data (releases before 2.12.2). After the upgrade, remove it
-  # with `podman volume rm <project>_db-data` once you no longer need a rollback.
+  # PostgreSQL 16 data (releases before 2.12.2), moved to PostgreSQL 18 by a release up to
+  # 6.9.0. Remove it with `podman volume rm <project>_db-data` once you no longer need it.
   db-data:
   sample-store:
   # The backups the server takes (unused when NIK_BACKUP_DIR names a directory of the host).

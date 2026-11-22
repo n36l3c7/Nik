@@ -1514,3 +1514,75 @@ def test_migration_0053_adds_what_holds_work_across_a_restart_and_marks_the_step
         # The version before knows no step that waits for a word: it fails with what was known of it.
         step = conn.execute(sa.text("SELECT status, error FROM run_steps WHERE id = 'calling'")).one()
         assert tuple(step) == ("failed", "The worker stopped while this ran: outcome unknown")
+
+
+def test_migration_0054_adds_the_tables_of_the_indicators_found_and_reads_no_incident(tmp_path, monkeypatch):
+    from app.core.models import FOUND_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO incidents (id, doc) VALUES ('i1', '{\"name\": \"evil-site.com\"}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0053_jobs")
+    command.upgrade(cfg, "0054_indicators_found")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(FOUND_TABLES) <= set(inspector.get_table_names())
+        found = {column["name"] for column in inspector.get_columns("found_indicators")}
+        assert found == {"incident_id", "type", "value", "path", "door", "found_at", "removed_at", "removed_by"}
+        assert {column["name"] for column in inspector.get_columns("found_scans")} == {
+            "incident_id",
+            "at",
+            "door",
+            "summary",
+        }
+        # The incidents there are were never read, and the migration reads none.
+        assert conn.execute(sa.text("SELECT count(*) FROM found_indicators")).scalar() == 0
+        assert conn.execute(sa.text("SELECT count(*) FROM found_scans")).scalar() == 0
+    command.stamp(cfg, "0053_jobs")
+    command.upgrade(cfg, "0054_indicators_found")  # again: the tables are there, nothing to do
+    command.downgrade(cfg, "0053_jobs")
+    with engine.connect() as conn:
+        assert not set(FOUND_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1
+
+
+def test_migration_0055_adds_the_tables_of_the_bulk_jobs(tmp_path, monkeypatch):
+    from app.core.models import BULK_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO incidents (id, doc) VALUES ('i1', '{}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0054_indicators_found")
+    command.upgrade(cfg, "0055_bulk")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert set(BULK_TABLES) <= set(inspector.get_table_names())
+        assert {column["name"] for column in inspector.get_columns("bulk_items")} == {
+            "job_id",
+            "seq",
+            "ref",
+            "name",
+            "state",
+            "note",
+        }
+        jobs = {column["name"] for column in inspector.get_columns("bulk_jobs")}
+        assert {"id", "list", "action", "params", "actor", "state", "cancel", "total", "done", "retry_of"} <= jobs
+        assert conn.execute(sa.text("SELECT count(*) FROM bulk_jobs")).scalar() == 0
+    command.stamp(cfg, "0054_indicators_found")
+    command.upgrade(cfg, "0055_bulk")  # again: the tables are there, nothing to do
+    command.downgrade(cfg, "0054_indicators_found")
+    with engine.connect() as conn:
+        assert not set(BULK_TABLES) & set(sa.inspect(conn).get_table_names())
+        assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1

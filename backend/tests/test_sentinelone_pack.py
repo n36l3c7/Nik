@@ -435,6 +435,30 @@ def test_the_fetch_asks_from_the_moment_itself_in_the_order_of_creation():
     assert SIEM.fetch.lookback_minutes == 5 and "detectedAt" in json.dumps(SIEM.fetch.request.model_dump(mode="json"))
 
 
+def test_the_status_of_an_incident_goes_out_as_the_status_of_an_alert_of_the_siem():
+    """The one rule of the outgoing mapper of the SIEM pack, for every status an incident has: a
+    closed incident with no close reason, as most are, is still sent."""
+    from app import mapping
+    from app.automation import expressions as ex
+
+    (rule,) = vendor.mappers()["sentinelone-sdl"]["outgoing"]
+    assert rule["to"] == "status"
+    for incident, sent in (
+        ({"status": "open"}, "NEW"),
+        ({"status": "in_progress"}, "IN_PROGRESS"),
+        ({"status": "closed"}, "RESOLVED"),
+        ({"status": "closed", "close_reason": ""}, "RESOLVED"),
+        ({"status": "closed", "close_reason": "Resolved"}, "RESOLVED"),
+        ({"status": "closed", "close_reason": "False positive"}, "FALSE_POSITIVE"),
+        ({"status": "in_progress", "close_reason": "False positive"}, "IN_PROGRESS"),
+    ):
+        scope = ex.Scope(values={"incident": incident, "context": {}, "mirror": {"id": "x"}})
+        assert mapping._value(rule["from"], scope) == (sent, None), incident
+    # What mirroring gives the command is what the command takes.
+    assert SIEM.mirror.update.args == {"id": "{{ mirror.id }}", "status": "{{ fields.status }}"}
+    assert [argument.name for argument in SIEM.command("update-alert").arguments] == ["id", "status"]
+
+
 def test_what_a_playbook_of_before_used_still_has_its_name():
     """The commands, arguments and outputs of the connectors of 6.5 are all still there."""
     before = {

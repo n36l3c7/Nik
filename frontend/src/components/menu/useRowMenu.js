@@ -8,6 +8,7 @@ import { useNavigation } from '../../context/NavigationContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { artifactTarget, indicatorTarget } from '../../domain/automation/runs.js'
 import { defang, indicatorFlaggable } from '../../domain/iocs.js'
+import { copyText } from '../../lib/download.js'
 import { formatDateTime } from '../../lib/time.js'
 import { flagItems } from './flagItems.js'
 
@@ -47,15 +48,6 @@ function plain(record) {
   return Object.fromEntries(Object.entries(record ?? {}).filter(([key]) => !INTERNAL.test(key)))
 }
 
-async function writeClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
-
 export function useItemMenu(incident) {
   const { openMenu, askText } = useContextMenu()
   const { toggleFlag, addFlagComment } = useIncidents()
@@ -75,7 +67,7 @@ export function useItemMenu(incident) {
       const canFlag = Boolean(incident?.id)
       const flaggable = spec.flaggable ?? (ioc ? indicatorFlaggable(ioc.type, ioc.value) : null)
       const notify = async (content, what) =>
-        showToast({ message: (await writeClipboard(content)) ? `${what} copied.` : 'The browser refused to copy.' })
+        showToast({ message: (await copyText(content)) ? `${what} copied.` : 'The browser refused to copy.' })
 
       const sections = [
         actions,

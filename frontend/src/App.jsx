@@ -25,6 +25,7 @@ import {
   Modal,
   Transfers,
   UnsavedDialog,
+  Wait,
 } from './components/ui/index.js'
 import Rail from './components/layout/Rail.jsx'
 import Sidebar from './components/layout/Sidebar.jsx'
@@ -120,7 +121,6 @@ const PlaygroundPage = lazy(() => import('./components/playground/PlaygroundPage
 // drag time); this is the hard floor so the incident list stays usable.
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_DEFAULT_WIDTH = 288
-const SIDEBAR_WIDTH_KEY = 'nik.sidebarWidth'
 // The side panel the rail last opened: 'artifacts' or 'iocs'; '' when the person hid it, and it
 // then stays closed until they open one; anything else when none is shown and one comes with what
 // is opened (an artifact, the Indicators page). Until 6.2 the list of incidents was a side panel
@@ -639,7 +639,6 @@ export default function App() {
     initial: SIDEBAR_DEFAULT_WIDTH,
     min: SIDEBAR_MIN_WIDTH,
     max: 560,
-    legacyKey: SIDEBAR_WIDTH_KEY,
   })
 
   // The tabs of the incident on screen: those its type shows, in the order its type gives them.
@@ -957,9 +956,9 @@ export default function App() {
       {automationShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading automations…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading automations…</Wait>
+            </div>
           }
         >
           <AutomationPage
@@ -975,9 +974,9 @@ export default function App() {
       {tasksShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading tasks…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading tasks…</Wait>
+            </div>
           }
         >
           <TasksPage
@@ -993,9 +992,9 @@ export default function App() {
       {dashboardsShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading dashboards…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading dashboards…</Wait>
+            </div>
           }
         >
           <DashboardsPage
@@ -1011,9 +1010,9 @@ export default function App() {
       {playgroundShown && (
         <Suspense
           fallback={
-            <p role="status" className="flex-1 p-6 font-mono text-sm text-fg-muted">
-              Loading the playground…
-            </p>
+            <div className="flex-1 p-6">
+              <Wait>Loading the playground…</Wait>
+            </div>
           }
         >
           <PlaygroundPage key={fresh.playground ?? 0} onClose={closePlayground} />

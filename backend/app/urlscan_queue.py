@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from typing import Any
 
 from sqlalchemy import select, update
@@ -26,6 +25,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import artifacts, urlscan, work
+from .core import leases
 from .core.models import UrlScan
 from .core.security import now_iso
 
@@ -75,6 +75,9 @@ def run_due(limit: int = 20) -> int:
     from .automation import triggers
     from .core.db import SessionLocal
 
+    with SessionLocal() as db:
+        if not leases.may_work(db):
+            return 0  # a standby, or a server its standby replaced: its database takes no claim
     done = 0
     while done < limit and not work.stopping():
         with SessionLocal() as db:
@@ -97,13 +100,13 @@ def run_due(limit: int = 20) -> int:
 
 
 def _loop() -> None:
-    time.sleep(15)  # let the API start
-    while not work.stopping():
+    leases.wait(15)  # let the API start
+    while not leases.stopping():
         try:
             run_due()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("Looking for the scans playbooks asked for failed")
-        time.sleep(LOOK_EVERY)
+        leases.wait(LOOK_EVERY)
 
 
 def start() -> None:

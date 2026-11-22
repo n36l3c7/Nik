@@ -169,21 +169,3 @@ def test_settings_allowlist_round_trip(admin: TestClient):
     # A client that does not send the list keeps it.
     body.pop("iocAllowlist")
     assert admin.put("/api/settings", json=body).json()["iocAllowlist"] == ["x.org"]
-
-
-def test_backfill_indexes_existing_incidents(admin: TestClient):
-    from sqlalchemy import delete, func, select
-
-    from app.core.db import SessionLocal
-    from app.core.models import IocEntry
-    from app.iocs import backfill
-
-    key = make_key(admin, roles=["analyst"])
-    admin.post("/api/incidents", headers=key, json=incident_doc("old", commands=COMMANDS))
-    with SessionLocal() as db:
-        db.execute(delete(IocEntry))
-        db.commit()
-    assert backfill(SessionLocal) > 0
-    with SessionLocal() as db:
-        assert db.scalar(select(func.count()).select_from(IocEntry)) > 0
-    assert backfill(SessionLocal) == 0  # only once

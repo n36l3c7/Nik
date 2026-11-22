@@ -7,7 +7,7 @@ import { api } from '../../services/api.js'
 import { answerLines, answerOf, dueText, emptyForm, isOpen, missing, statusBadge } from '../../domain/tasks.js'
 import { authorLabel, entryLine } from '../../domain/warRoom.js'
 import FieldInput from '../fields/FieldInput.jsx'
-import { Badge, Button } from '../ui/index.js'
+import { Badge, Button, Wait } from '../ui/index.js'
 import Markdown from './Markdown.jsx'
 import { numberedName } from '../../domain/incidentName.js'
 import { useUnsavedChanges } from '../../lib/unsaved.js'
@@ -248,11 +248,7 @@ export default function TaskCard({ taskId, onChanged, onOpenIncident, guard }) {
     )
   }
   if (!task || task.id !== taskId) {
-    return (
-      <p role="status" className="font-mono text-sm text-fg-muted">
-        Loading the task…
-      </p>
-    )
+    return <Wait>Loading the task…</Wait>
   }
   const badge = statusBadge(task)
   const due = dueText(task)

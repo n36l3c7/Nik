@@ -25,12 +25,9 @@ from ..automation import connector_actions, credentials, engine, instance_keys
 from ..core import audit, vault
 from ..core.db import get_db
 from ..core.models import Connection, Credential
-from ..core.permissions import CONNECTORS_MANAGE
-from ..core.security import Principal, now_iso, require
+from ..core.security import Principal, manager_principal, now_iso
 
 router = APIRouter(prefix="/automation", tags=["automation"])
-
-manager_principal = require(CONNECTORS_MANAGE)
 
 
 class CredentialIn(BaseModel):

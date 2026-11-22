@@ -18,7 +18,6 @@ run leaves by ``timeout``; reminders are sent at their interval.
 from __future__ import annotations
 
 import re
-import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,6 +28,7 @@ from . import fields as registry
 from . import war_room
 from .automation import graph
 from .core import audit
+from .core.ids import new_id
 from .core.models import Incident, Notification, Run, RunStep, Task, User
 from .core.permissions import ADMIN, ROLE_PERMISSIONS, SYSTEM_ROLE, WRITE, clean_roles
 from .core.security import Principal, now_iso
@@ -47,10 +47,6 @@ class TaskError(ValueError):
         super().__init__(message)
         self.message = message
         self.status = status
-
-
-def new_id() -> str:
-    return uuid.uuid4().hex
 
 
 def due_at(value: Any, now: float) -> float:

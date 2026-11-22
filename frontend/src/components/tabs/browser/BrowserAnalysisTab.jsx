@@ -155,7 +155,7 @@ export default function BrowserAnalysisTab({ incident }) {
     take('browser')
     const source = browser.sources.find((s) => s.key === request.params?.source) ?? browser.sources[0]
     handleFile(source, request.file)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for a new dropped file, and again once its browser is the active one
   }, [requests.browser, activeBrowserId])
 
   /* ---- Remove a single file ---- */
@@ -198,7 +198,7 @@ export default function BrowserAnalysisTab({ incident }) {
               {count > 0 && (
                 <span
                   className={[
-                    'rounded-full px-1.5 text-xs tabular-nums',
+                    'px-1.5 text-xs tabular-nums',
                     isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                   ].join(' ')}
                 >
@@ -310,10 +310,10 @@ export default function BrowserAnalysisTab({ incident }) {
               aria-pressed={isActive}
               onClick={() => setActiveSection(section.id)}
               className={[
-                'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors',
+                'inline-flex items-center gap-2 border px-3 py-1.5 text-sm font-medium transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
-                  ? 'border-accent-strong bg-accent text-white'
+                  ? 'border-accent-strong bg-accent-soft text-accent'
                   : 'border-line bg-panel text-fg-muted hover:bg-canvas',
               ].join(' ')}
             >
@@ -321,8 +321,8 @@ export default function BrowserAnalysisTab({ incident }) {
               {section.label}
               <span
                 className={[
-                  'rounded-full px-1.5 py-0.5 text-xs tabular-nums',
-                  isActive ? 'bg-panel/20 text-white' : 'bg-canvas text-fg-muted',
+                  'px-1.5 text-xs tabular-nums',
+                  isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
                 ].join(' ')}
               >
                 {(sectionCount[section.id] ?? 0).toLocaleString('en-US')}

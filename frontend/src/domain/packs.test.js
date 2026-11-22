@@ -8,7 +8,6 @@ import {
   idFromName,
   importable,
   initialSkips,
-  packLine,
   packProblem,
   planSummary,
   plural,
@@ -84,14 +83,6 @@ test('items by kind, and a pack in a line', () => {
   )
   assert.equal(plural('Incident type', 2), 'Incident types')
   assert.equal(plural('Field', 1), 'Field')
-  assert.equal(
-    packLine({ items: [{ there: true }, { there: false }], builtin: true }),
-    '2 items · 1 no longer here · part of Nik',
-  )
-  assert.equal(
-    packLine({ items: [{ there: true }], updatedBy: 'admin', updatedAt: '2026-11-19T08:00:00+00:00' }),
-    '1 item · installed by admin on 2026-11-19',
-  )
 })
 
 test('the catalogue and what is installed make one list of cards', async () => {
@@ -313,7 +304,7 @@ test('a selection of packs says what can be done with it', async () => {
 })
 
 test('several packs at once: what is asked of the server and what it answers', async () => {
-  const { bulkApplyBody, bulkCounts, bulkPlanBody, bulkPlanLine, bulkResultLine, bulkTitle } =
+  const { bulkApplyBody, bulkCounts, bulkPlanBody, bulkPlanLine, bulkResultLine, bulkTitle, mirroringKept } =
     await import('./packs.js')
   assert.deepEqual(bulkPlanBody('install', [{ id: 'b' }, { id: 'a' }]), {
     action: 'install',
@@ -366,6 +357,18 @@ test('several packs at once: what is asked of the server and what it answers', a
   assert.equal(bulkResultLine('install', { ok: true, added: 3, updated: 0, same: 1 }), 'installed: 3 added, 1 the same')
   assert.equal(bulkResultLine('update', { ok: true, added: 0, updated: 2, same: 0 }), 'updated: 2 updated')
   assert.equal(bulkResultLine('uninstall', { ok: true, removed: 4, kept: 1 }), 'uninstalled: 4 removed, 1 kept')
+  // An update whose mapper stops naming the direction of mirroring says which instances were told it.
+  const kept = [{ connector: 'jira-cloud', direction: 'in', instances: ['Jira prod', 'Jira test'] }]
+  assert.equal(
+    mirroringKept(kept),
+    'Mirroring was set to In in Jira prod, Jira test: the mapper said so until now, and the instance says it from now on.',
+  )
+  assert.equal(mirroringKept([]), '')
+  assert.equal(mirroringKept(undefined), '')
+  assert.equal(
+    bulkResultLine('update', { ok: true, added: 0, updated: 2, same: 1, mirroring: kept }),
+    `updated: 2 updated, 1 the same. ${mirroringKept(kept)}`,
+  )
   assert.equal(bulkResultLine('uninstall', { ok: false, why: 'It is in use' }), 'not uninstalled: it is in use')
   assert.equal(
     bulkResultLine('install', { ok: false, why: 'It requires the pack "base", which is not installed' }),

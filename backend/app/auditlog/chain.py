@@ -76,6 +76,9 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified, set_committed_value
 
+from ..core import leases
+from ..core.clock import iso_or_none as _iso
+from ..core.clock import stamp as _stamp
 from ..core.models import AuditChain, AuditEntry, Setting
 from . import key as signing
 from . import verifier
@@ -88,8 +91,6 @@ LEASE = "audit-verify"
 VERIFY_EVERY = 300
 FULL_EVERY = 86400
 BATCH = 2000
-# An entry without a number for longer than this did not come through a session of the server.
-STRAY_AFTER = 60
 HEADS_FILE = "audit-heads.jsonl"
 HEADS_KEPT = 500
 ACTOR = "nik"
@@ -242,10 +243,6 @@ def _keep(db: OrmSession, doc: dict[str, Any]) -> None:
     flag_modified(row, "doc")
 
 
-def _iso(at: float | None) -> str | None:
-    return datetime.fromtimestamp(float(at), timezone.utc).isoformat() if at else None
-
-
 def head(db: OrmSession) -> tuple[int, str]:
     """The number and the hash of the last entry linked (0 and zeros for an empty chain)."""
     row = db.execute(select(_H.c.seq, _H.c.hash).where(_H.c.id == 1)).first()
@@ -312,13 +309,6 @@ def file_head(since: float = 0.0) -> dict[str, Any] | None:
         if float(found.get("at") or 0) > since and (best is None or found["seq"] >= best["seq"]):
             best = found
     return best
-
-
-def _stamp(text: str | None) -> float:
-    try:
-        return datetime.fromisoformat(str(text)).timestamp()
-    except (TypeError, ValueError):
-        return 0.0
 
 
 # --------------------------------------------------------------------------- #
@@ -472,13 +462,13 @@ def check(now: float | None = None, holder: str | None = None) -> dict[str, Any]
 
 
 def _loop() -> None:
-    time.sleep(25)  # let the server start
-    while True:
+    leases.wait(25)  # let the server start
+    while not leases.stopping():
         try:
             check()
         except Exception:  # noqa: BLE001 - the loop must survive a bad pass
             logger.exception("The check of the audit log failed")
-        time.sleep(VERIFY_EVERY)
+        leases.wait(VERIFY_EVERY)
 
 
 def start() -> None:

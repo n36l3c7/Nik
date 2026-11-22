@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button, Modal } from '../components/ui/index.js'
 import IocDetail from '../components/ioc/IocDetail.jsx'
+import { copyText } from '../lib/download.js'
 import { onLocationChange, setPath } from '../lib/location.js'
 import { ANALYSABLE, analysisActions, iocFromLocation, iocPath } from '../domain/enrichment.js'
 import { settingsPath } from '../domain/settingsNav.js'
@@ -214,15 +215,6 @@ function AllowlistDialog({ target, onClose }) {
       </div>
     </Modal>
   )
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
 }
 
 const iocInUrl = () => (typeof window === 'undefined' ? null : iocFromLocation(window.location))

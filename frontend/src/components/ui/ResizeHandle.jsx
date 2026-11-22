@@ -22,12 +22,12 @@ import { clampWidth, paneKey, readWidth, stepWidth } from '../../domain/panes.js
 
 /**
  * @param {string} name   which panel (the key its width is remembered under)
- * @param {{ initial: number, min?: number, max?: number, edge?: 'left' | 'right', legacyKey?: string }} options
+ * @param {{ initial: number, min?: number, max?: number, edge?: 'left' | 'right' }} options
  */
-export function useResizablePane(name, { initial, min = 180, max = 640, edge = 'right', legacyKey = null }) {
+export function useResizablePane(name, { initial, min = 180, max = 640, edge = 'right' }) {
   const limits = useCallback(() => ({ min, max, viewport: window.innerWidth }), [min, max])
   const [width, setWidth] = useState(() =>
-    clampWidth(readWidth(localStorage, name, legacyKey) ?? initial, { min, max, viewport: window.innerWidth }),
+    clampWidth(readWidth(localStorage, name) ?? initial, { min, max, viewport: window.innerWidth }),
   )
 
   const set = useCallback(
@@ -46,11 +46,10 @@ export function useResizablePane(name, { initial, min = 180, max = 640, edge = '
     setWidth(clampWidth(initial, limits()))
     try {
       localStorage.removeItem(paneKey(name))
-      if (legacyKey) localStorage.removeItem(legacyKey)
     } catch {
       // Nothing was remembered.
     }
-  }, [name, initial, legacyKey, limits])
+  }, [name, initial, limits])
 
   // A window made smaller takes the panel with it.
   useEffect(() => {

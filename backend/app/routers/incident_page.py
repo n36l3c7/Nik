@@ -26,7 +26,7 @@ from .settings import read_settings
 
 router = APIRouter(tags=["incident page"])
 # Who arranges the pages of a type chooses the script of a button; who runs scripts sees what one takes.
-chooser_principal = require(INCIDENTS_CONFIGURE, AUTOMATION_RUN)
+script_chooser_principal = require(INCIDENTS_CONFIGURE, AUTOMATION_RUN)
 
 
 class PressIn(BaseModel):
@@ -71,7 +71,7 @@ def _planned(db: OrmSession, incident: Incident, body: PressIn) -> buttons.Plan:
 
 
 @router.get("/script-buttons/scripts")
-def button_scripts(_caller: Principal = Depends(chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
+def button_scripts(_caller: Principal = Depends(script_chooser_principal), db: OrmSession = Depends(get_db)) -> dict:
     """The scripts a button can run: those with a saved version, each with its arguments.
     ``sandbox`` says whether there is a sandbox to run them in."""
     return {"scripts": buttons.library(db), "sandbox": bool(app_settings.SANDBOX_URL)}

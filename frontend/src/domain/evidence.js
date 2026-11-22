@@ -136,9 +136,6 @@ export function evidenceGroups(kinds, incident, query = '') {
   return groups
 }
 
-/** How much evidence the groups hold, for the head of the list. */
-export const evidenceTotal = (groups) => list(groups).reduce((sum, group) => sum + (group.count > 0 ? 1 : 0), 0)
-
 /** The first file there is: what the tab opens on when nothing was chosen. */
 export function firstFile(groups) {
   for (const group of list(groups)) if (group.items.length > 0) return { kind: group.id, key: group.items[0].key }

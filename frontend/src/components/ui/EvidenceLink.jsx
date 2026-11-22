@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Copy, ExternalLink, ShieldAlert } from 'lucide-react'
 import { evidenceAddress } from '../../domain/links.js'
+import { copyText } from '../../lib/download.js'
 import Button from './Button.jsx'
 import Modal from './Modal.jsx'
 
@@ -20,14 +21,7 @@ export default function EvidenceLink({ url, children, className = '', title, 'ar
   if (!url) return null
   const address = evidenceAddress(url)
 
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(address.defanged)
-      setCopied(true)
-    } catch {
-      setCopied(false)
-    }
-  }
+  const copy = async () => setCopied(await copyText(address.defanged))
   const visit = () => {
     window.open(address.href, '_blank', 'noopener,noreferrer')
     setOpen(false)

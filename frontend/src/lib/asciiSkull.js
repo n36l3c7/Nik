@@ -160,11 +160,6 @@ function eyeCell(eyes, dr, offsets, pupil) {
   return [' ', false]
 }
 
-/** The skull as plain text (one line per row), e.g. for tests or logs. */
-export function skullToText(rows) {
-  return rows.map((segments) => segments.map((s) => s.text).join('')).join('\n')
-}
-
 /**
  * Animation frame for a tick counter: the skull looks left, centre, right,
  * centre, then blinks. Returns the `{ eyes, gaze }` options for renderSkull.

@@ -14,11 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core import vault
-from . import egress, guard, state
+from . import egress, guard, mail_runtime, state
 from .actions import ActionError, Call, Result, action
 
 TEXT_SHOWN = 100_000
-MAX_RECIPIENTS = 50
+MAX_RECIPIENTS = mail_runtime.MAX_RECIPIENTS
 
 
 def policy_for(db: OrmSession, playbook: Any, extra_hosts: tuple[str, ...] = ()) -> egress.Policy:

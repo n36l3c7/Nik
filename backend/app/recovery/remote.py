@@ -25,13 +25,13 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from ..backups import offsite
+from ..backups import container, offsite
 from ..backups.offsite import OffsiteError
 from . import layout
 from .envelope import Hashing
 
 BLOCK = offsite.BLOCK
-PARTIAL = ".partial"
+PARTIAL = container.PARTIAL
 
 
 def _missing(error: OSError) -> bool:

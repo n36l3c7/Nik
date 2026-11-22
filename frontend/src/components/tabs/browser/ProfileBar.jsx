@@ -64,7 +64,7 @@ export default function ProfileBar({ browser, slot, activeProfileId, onSelect, o
               aria-selected={isActive}
               onClick={() => onSelect(profile.id)}
               className={[
-                'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                'inline-flex items-center gap-1.5 border px-3 py-1 text-xs font-medium transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                 isActive
                   ? 'border-accent-strong bg-accent-soft text-accent'

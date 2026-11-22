@@ -7,6 +7,7 @@ import { SettingsProvider } from './context/SettingsContext.jsx'
 import { IncidentProvider } from './context/IncidentContext.jsx'
 import { ArtifactProvider } from './context/ArtifactContext.jsx'
 import { IocLookupProvider } from './context/IocLookupContext.jsx'
+import { BulkProvider } from './context/BulkContext.jsx'
 import { IocLibraryProvider } from './context/IocLibraryContext.jsx'
 import { ContextMenuProvider } from './context/ContextMenuContext.jsx'
 import { NavigationProvider } from './context/NavigationContext.jsx'
@@ -40,7 +41,9 @@ createRoot(document.getElementById('root')).render(
                         <IocLibraryProvider>
                           <FieldsProvider>
                             <TasksProvider>
-                              <App />
+                              <BulkProvider>
+                                <App />
+                              </BulkProvider>
                             </TasksProvider>
                           </FieldsProvider>
                         </IocLibraryProvider>

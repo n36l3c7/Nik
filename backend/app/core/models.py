@@ -47,9 +47,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     # What the account may do: a list of role names (core/permissions.py).
     roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    # Raised each time the roles change. The roles themselves are read on every
-    # request; the counter is for whatever keeps a copy of them (a long-lived
-    # worker, a client) to notice that its copy is old.
+    # Raised each time the roles change. Nothing reads it: the roles themselves
+    # are read on every request, so no copy of them can be old.
     session_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -277,6 +276,40 @@ class IocEntry(Base):
     count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     first_seen: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     last_seen: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class FoundIndicator(Base):
+    """An indicator found by itself in what an incident was made of (``indicators_found.py``).
+
+    One row per incident and indicator: where in the fields or the context it was read
+    (``path``, as a playbook writes it), by which door the incident came in, and when. A row a
+    person removed stays, with who removed it: that is how the same value is not found again at
+    the next update of the incident.
+    """
+
+    __tablename__ = "found_indicators"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    value: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    path: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+    door: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    found_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    removed_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    removed_by: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+
+class FoundScan(Base):
+    """The last time an incident was read for indicators, and what came of it: ``{found, kept,
+    leftOut: {private, benign…}, over, removed, unread}``. An incident with no row was never
+    read: it came in before 6.10, or finding was off."""
+
+    __tablename__ = "found_scans"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    at: Mapped[str] = mapped_column(String(40), nullable=False)
+    door: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
 class AuditEntry(Base):
@@ -555,7 +588,7 @@ class EnrichmentHistory(Base):
 
 
 class Lease(Base):
-    """A lease held by one API process at a time (the enrichment worker)."""
+    """A lease: what one process at a time holds to run a loop that must run once (core/leases.py)."""
 
     __tablename__ = "leases"
 
@@ -794,7 +827,8 @@ class YaraRule(Base):
 
 
 class Setting(Base):
-    """Global shared settings (keywords + business hours). Single row, id=1."""
+    """Settings documents, one row each: the id says whose it is. Row 1 is the keywords and the
+    business hours; the module that owns another row names it ``SETTINGS_ID``."""
 
     __tablename__ = "settings"
 
@@ -1338,7 +1372,9 @@ class Connection(Base):
     fetch_state: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     fetch_status: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # How this instance fetches where it differs from its connector (6.4): {intervalSeconds,
-    # firstFetch, lookbackMinutes}. A value left out is the connector's (fetch.settings_of).
+    # firstFetch, lookbackMinutes}. A value left out is the connector's (fetch.settings_of). Beside
+    # them (6.10), the direction the incidents it fetches are mirrored in and the classes of data
+    # their mirrors may send: {mirror, mirrorAllow}; left out, none (mirror.choice_of).
     fetch_settings: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # More keys than one (6.1): the credentials beside the first, encrypted like ``secrets``, and how
     # the keys take turns: {mode, perMinute, perDay, whenExhausted, cacheHours, mainName}
@@ -1643,7 +1679,8 @@ class FetchedItem(Base):
     connection_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     item_id: Mapped[str] = mapped_column(String(300), primary_key=True)
     incident_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    # created | incomplete (created with fields missing) | dropped | linked | duplicate
+    # created | incomplete (created with fields missing) | dropped | linked | duplicate |
+    # mirrored (a line of an incident there was: a reply to a message, 6.10)
     outcome: Mapped[str] = mapped_column(String(12), nullable=False, default="created")
     note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     fetched_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -1948,7 +1985,6 @@ SAVED_FILTER_TABLES = ("saved_filters", "saved_filter_defaults")
 
 # Created by migration 0040_instance_keys where missing.
 INSTANCE_KEY_TABLES = ("instance_key_uses", "command_answers")
-INSTANCE_KEY_COLUMNS = {"connections": ("extra_keys", "key_policy")}
 
 # Created by migration 0038_incident_page where missing.
 INCIDENT_PAGE_TABLES = ("playground_entries",)
@@ -2020,3 +2056,65 @@ AUDIT_CHAIN_TABLES = ("audit_chain",)
 # The entries of the audit log are numbered and linked when their transaction commits: the
 # listeners live with the chain, and are there for every session that can hold an entry.
 from ..auditlog import chain as _audit_chain  # noqa: E402, F401
+
+# Created by migration 0054_indicators_found where missing.
+FOUND_TABLES = ("found_indicators", "found_scans")
+
+
+class BulkJob(Base):
+    """One action asked of many incidents, artifacts or indicators at once (``bulk.py``).
+
+    The row is written with its items in the transaction of the request, and is what a person
+    reads afterwards: who asked, what, of how many, and how it went. ``state`` is ``running``,
+    then ``done``, ``cancelled`` or ``failed`` (it was interrupted too many times: what was done
+    stays). The four counts are of its items, kept with them commit by commit.
+    """
+
+    __tablename__ = "bulk_jobs"
+    __table_args__ = (Index("ix_bulk_jobs_actor", "actor", "state"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # incidents | artifacts | indicators
+    list: Mapped[str] = mapped_column(String(12), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # What it says of itself: "Set the status to closed on 1284 incidents".
+    label: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    actor: Mapped[str] = mapped_column(String(200), nullable=False)
+    # The selection as it was asked: {"ids": n} or {"query": …}; the items are what it came to.
+    selection: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="running")
+    cancel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    refused: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # The job this one tries again, when it was made by "Try again on those that failed".
+    retry_of: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    finished_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+
+
+class BulkItem(Base):
+    """One item of a bulk job, and what was done to it: ``pending`` until its turn, then ``done``,
+    ``skipped`` (it was so already, or the action is not for it), ``refused`` (a permission, a
+    rule: ``note`` is the sentence) or ``failed``. Its state is written in the commit of its own
+    change, which is what makes a job that starts again after a restart do nothing twice."""
+
+    __tablename__ = "bulk_items"
+    __table_args__ = (Index("ix_bulk_items_state", "job_id", "state", "seq"),)
+
+    job_id: Mapped[str] = mapped_column(String(32), ForeignKey("bulk_jobs.id", ondelete="CASCADE"), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ref: Mapped[str] = mapped_column(String(1100), nullable=False)
+    # What a person calls it (the name of the incident, of the artifact), for the result.
+    name: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(8), nullable=False, default="pending")
+    note: Mapped[str] = mapped_column(String(400), nullable=False, default="")
+
+
+# Created by migration 0055_bulk where missing, in this order.
+BULK_TABLES = ("bulk_jobs", "bulk_items")

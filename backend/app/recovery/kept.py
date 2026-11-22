@@ -41,13 +41,14 @@ import shutil
 import time
 from pathlib import Path
 
+from ..backups import store as backup_store
 from ..core.config import settings
 
 logger = logging.getLogger("nik.recovery")
 
 KEPT = ".kept"
 NOT_KEPT = ("_previews/", "_transfer/")
-LEFTOVERS = (".part", ".sealing")
+LEFTOVERS = backup_store.LEFTOVERS
 
 
 def enabled() -> bool:
