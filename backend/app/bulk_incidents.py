@@ -129,19 +129,24 @@ def _set(db: OrmSession, ref: str, params: dict[str, Any], caller: Principal) ->
     return ""
 
 
-def mirrored_out(db: OrmSession, refs: list[str]) -> int:
-    """How many of these incidents are mirrored towards another system."""
+def mirrored_out(db: OrmSession, refs: list[str], changes: dict[str, Any], caller: Principal) -> int:
+    """How many of these incidents a change of these fields would send to another system: the rule
+    a single change follows (``mirror.sends``), whether the direction came from the instance, its
+    mapper or a person. Only the incidents mirrored Out or In-out are loaded."""
+    changed = list(changes)
     count = 0
     for start in range(0, len(refs), 500):
-        for held in db.scalars(select(Incident.mirror).where(Incident.id.in_(refs[start : start + 500]))):
-            if isinstance(held, dict) and held.get("connection") and held.get("direction") in ("out", "both"):
-                count += 1
+        held = db.execute(select(Incident.id, Incident.mirror).where(Incident.id.in_(refs[start : start + 500])))
+        sending = [ref for ref, state in held if isinstance(state, dict) and state.get("direction") in ("out", "both")]
+        for row in db.scalars(select(Incident).where(Incident.id.in_(sending))) if sending else []:
+            count += mirror.sends(db, row, changed, f"user:{caller.actor}")
+            db.expunge(row)  # a plan of thousands keeps none of them in the session
     return count
 
 
-def _plan_set(db: OrmSession, refs: list[str], params: dict[str, Any], _caller: Principal) -> dict[str, Any]:
+def _plan_set(db: OrmSession, refs: list[str], params: dict[str, Any], caller: Principal) -> dict[str, Any]:
     notes = []
-    out = mirrored_out(db, refs)
+    out = mirrored_out(db, refs, params["changes"], caller)
     if out:
         are = "is mirrored" if out == 1 else "are mirrored"
         notes.append(f"{out} of these {are} Out: their tickets will be updated, one update for each")

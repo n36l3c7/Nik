@@ -4,6 +4,13 @@ It is paramiko's own server side with a folder of ``tmp_path`` behind it, so
 the code under test speaks real SSH (the host key, the sign-in, the SFTP
 requests) and nothing leaves the machine. ``drop_after`` cuts the connection
 once that many bytes of a file were written, to try a resumed upload.
+
+A cut is what a network that fails does: what arrived before it is written, in
+order, and nothing after it. paramiko's server goes on with the requests it had
+already received when its connection is closed, so a write the cut refused
+would be followed by the next ones, leaving a hole in the file that the resumed
+upload would then take for data. Every file opened before a cut is therefore
+refused any write after it.
 """
 
 from __future__ import annotations
@@ -21,9 +28,12 @@ class _Handle(SFTPHandle):
     def __init__(self, server: SftpDouble, flags: int = 0) -> None:
         super().__init__(flags)
         self._server = server
+        self._cuts = server.cuts
 
     def write(self, offset, data):
         server = self._server
+        if self._cuts != server.cuts:
+            return SFTP_FAILURE  # the connection of this file was cut: nothing more arrives
         if server.drop_after is not None:
             server.written += len(data)
             if server.written >= server.drop_after:
@@ -153,6 +163,7 @@ class SftpDouble:
         self.drop_after: int | None = None
         self.written = 0
         self.connections = 0
+        self.cuts = 0
 
         def pem() -> str:
             key = ed25519.Ed25519PrivateKey.generate()
@@ -195,6 +206,7 @@ class SftpDouble:
 
     def cut(self) -> None:
         """Drop every connection, as a network that fails does."""
+        self.cuts += 1
         for transport in self._transports:
             transport.close()
         self._transports.clear()

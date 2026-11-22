@@ -944,9 +944,11 @@ def _enqueue(db: OrmSession, incident: Incident, state: dict, kind: str, payload
     )
 
 
-def on_fields_changed(db: OrmSession, incident: Incident, changed: list[str], source: str, now: float) -> bool:
-    """A field of a mirrored incident changed in Nik: queue it for the other side when the
-    outgoing mapper reads it (the caller commits). What the mirror's own connector wrote is never sent back."""
+def sends(db: OrmSession, incident: Incident, changed: list[str], source: str) -> bool:
+    """Whether a change of these fields of the incident, made by ``source``, is sent to the other
+    side: the incident is mirrored Out or In-out, from the instance or not, the object is not gone,
+    the outgoing mapper reads one of the fields and the connector can write them. What the mirror's
+    own connector wrote is never sent back."""
     state = state_of(incident)
     if state is None or state["direction"] not in ("out", "both") or not changed:
         return False
@@ -959,8 +961,20 @@ def on_fields_changed(db: OrmSession, incident: Incident, changed: list[str], so
     if mapper is None or not (_reads(mapper.rules) & set(changed)):
         return False
     connector = _connector(db, connection)
-    if connector is None or connector.mirror is None or connector.mirror.of(state["id"])[2].update is None:
-        return False  # it sends comments and no fields
+    # A connector that sends comments and no fields sends nothing for a field.
+    return (
+        connector is not None
+        and connector.mirror is not None
+        and connector.mirror.of(state["id"])[2].update is not None
+    )
+
+
+def on_fields_changed(db: OrmSession, incident: Incident, changed: list[str], source: str, now: float) -> bool:
+    """A field of a mirrored incident changed in Nik: queue it for the other side when it is sent
+    (``sends``; the caller commits)."""
+    if not sends(db, incident, changed, source):
+        return False
+    state = state_of(incident)
     db.flush()
     waiting = db.scalars(
         select(MirrorJob).where(

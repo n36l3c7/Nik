@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import re
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import bulk, bulk_incidents, work
+from app import bulk, bulk_incidents, mirror, work
 from app.auditlog import chain
 from app.automation import triggers, worker
 from app.core import leases
@@ -27,7 +30,9 @@ from app.core.models import (
     AutomationEvent,
     BulkItem,
     BulkJob,
+    Connection,
     FoundIndicator,
+    Incident,
     IocCheck,
     IocEntry,
     Lease,
@@ -48,6 +53,8 @@ from tests.test_fields import field
 from tests.test_mail import no_dns, phishing_message  # noqa: F401 - no_dns is a fixture
 from tests.test_malware import STRINGS_PAYLOAD, fake_pe
 from tests.test_mirror import desk
+from tests.test_mirror_instance import push_all
+from tests.test_shipped_connectors import DATA
 from tests.test_tasks import person
 
 
@@ -284,8 +291,14 @@ def test_mirroring_changes_where_it_applies_and_a_change_is_sent_once_for_each(a
 
 
 def test_incidents_are_read_for_indicators_each_once(admin: TestClient):
-    ids = incidents(admin, 2, host="files.evil-site.com")
+    field(admin, "seen", "long_text")
+    ids = incidents(admin, 2)
+    # A field a person sets is not read by itself (an incident is read when it is made): the job reads it.
+    for incident_id in ids:
+        written = {"changes": {"seen": f"Beacon to files-{incident_id}.evil-site.com"}}
+        assert admin.patch(f"/api/incidents/{incident_id}/fields", json=written).status_code == 200
     with SessionLocal() as db:
+        assert db.scalars(select(FoundIndicator)).all() == []
         before = {event.id for event in db.scalars(select(AutomationEvent))}
     job = done(admin, "incidents", "find_indicators", ids=ids)
     assert counts(job) == (2, 0, 0, 0)
@@ -296,7 +309,136 @@ def test_incidents_are_read_for_indicators_each_once(admin: TestClient):
     # Whatever a reading writes for the playbooks says that the job wrote it: it is held to the pace
     # of the engine as every event of a job is (the action is one that writes events).
     assert all(event.payload.get("bulk") == job["id"] for event in events)
+    assert sorted(event.object_id for event in events if event.kind == "indicators.found") == ids
     assert bulk.listings()["incidents"].actions["find_indicators"].events is True
+
+
+def test_a_playbook_on_what_a_job_found_runs_once_for_each_incident_that_found_something(
+    admin: TestClient,
+    monkeypatch,
+    test_actions,  # noqa: F811
+):
+    """ "Find indicators now" on four incidents, three of which hold something to find, with a playbook
+    that waits for ``indicators.found`` and makes an incident that holds an indicator too. The job keeps
+    to the pace of the engine; the playbook runs once for each of the three; the incidents its runs make
+    are read, their events name the run and start nothing; and no step of it starts a bulk job."""
+    field(admin, "seen", "long_text")
+    ids = incidents(admin, 4)
+    # What a person writes in a field is not read by itself: the job is the reading.
+    for incident_id in ids[:3]:
+        written = admin.patch(
+            f"/api/incidents/{incident_id}/fields",
+            json={"changes": {"seen": f"Beacon to c2-{incident_id}.evil-site.com"}},
+        )
+        assert written.status_code == 200
+    make = {
+        "id": "make",
+        "kind": "action",
+        "name": "make",
+        "config": {"action": "nik.create-incident", "args": {"title": "Seen with other-site.org"}},
+    }
+    book = playbook(
+        admin, "On found", [make], [edge("start", "make")], trigger={"event": "indicators.found"}, enabled=True
+    )
+    worker.drain()
+    with SessionLocal() as db:
+        before = {event.id for event in db.scalars(select(AutomationEvent))}
+    monkeypatch.setattr(bulk, "EVENTS_AHEAD", 1)
+    monkeypatch.setattr(bulk, "engine_reads", lambda db, now: True)
+    high = {"ahead": 0, "pauses": 0}
+
+    def the_worker_turns(_seconds: float) -> bool:
+        # The pause of the job is the turn of the worker. Bounded by the items.
+        high["pauses"] += 1
+        assert high["pauses"] < 20
+        with SessionLocal() as db:
+            waiting = db.scalars(select(AutomationEvent).where(AutomationEvent.done.is_(False))).all()
+            high["ahead"] = max(high["ahead"], len([event for event in waiting if event.payload.get("bulk")]))
+        worker.drain()
+        return False
+
+    job = _made(admin, "incidents", "find_indicators", {}, ids)
+    assert bulk.run(job, pause=the_worker_turns) == "done"
+    assert counts(admin.get(f"/api/bulk/{job}").json()) == (4, 0, 0, 0)
+    assert high["pauses"] >= 2 and high["ahead"] == 1  # never more of the job's events waiting than it may hold
+    for _turn in range(3):
+        worker.drain()
+    with SessionLocal() as db:
+        found = [
+            event
+            for event in db.scalars(select(AutomationEvent).where(AutomationEvent.kind == "indicators.found"))
+            if event.id not in before
+        ]
+        made = [event for event in found if event.object_id not in ids]
+        # One event for each incident the job found something in, and none for the fourth.
+        assert sorted(event.object_id for event in found if event.payload.get("bulk") == job) == ids[:3]
+        runs = runs_of(admin, book)
+        assert sorted(run["incidentId"] for run in runs) == ids[:3] and {run["status"] for run in runs} == {"done"}
+        # The incidents the runs made were read: their events name the run, are not the job's, start nothing.
+        assert len(made) == 3 and all(event.payload["caused_by_run"] and "bulk" not in event.payload for event in made)
+        assert {event.payload["caused_by_run"] for event in made} == {run["id"] for run in runs}
+        assert len(db.scalars(select(BulkJob)).all()) == 1
+    # No step of a playbook starts a bulk job: only the route of the lists makes one.
+    app = Path(bulk.__file__).parent
+    makers = sorted(
+        path.relative_to(app).as_posix()
+        for path in app.rglob("*.py")
+        if re.search(r"bulk\.start\(|(?<!class )BulkJob\(", path.read_text(encoding="utf-8"))
+    )
+    assert makers == ["bulk.py", "routers/bulk.py"]
+
+
+def test_closing_many_alerts_of_the_siem_mirrored_from_the_instance_sends_one_status_to_each(
+    admin: TestClient, outside
+):
+    """SentinelOne SIEM mirrors in the direction of its instance since 6.10. Closing many of its
+    incidents at once is counted in the confirmation and sends one status to each alert mirrored Out or
+    In-out, and nothing to one mirrored In; a field the pack does not send is not counted."""
+    held = json.loads((DATA / "sentinelone-sdl" / "connection.json").read_text(encoding="utf-8"))
+    with SessionLocal() as db:
+        vendor.install_pack(db, "sentinelone-sdl")
+        db.commit()
+    made = admin.post(
+        "/api/automation/instances",
+        json={"name": "SIEM", "connector": "sentinelone-sdl", "config": held["config"], "secrets": held["secrets"]},
+    )
+    assert made.status_code == 201, made.text
+    ids = incidents(admin, 4)
+    alerts = {"i1": ("0195-a001", "both"), "i2": ("0195-a002", "out"), "i3": ("0195-a003", "in")}
+    with SessionLocal() as db:
+        connection = db.get(Connection, made.json()["id"])
+        for incident_id, (alert, direction) in alerts.items():
+            mirror.start(
+                db, db.get(Incident, incident_id), connection, alert, direction, "connector:sentinelone-sdl",
+                time.time(), origin="instance",
+            )  # fmt: skip
+        db.commit()
+    assert {admin.get(f"/api/incidents/{ref}/mirror").json()["origin"] for ref in alerts} == {"instance"}
+
+    other = {"action": "set", "params": {"changes": {"severity": "high"}}, "ids": ids}
+    assert admin.post("/api/incidents/bulk/plan", json=other).json()["notes"] == []  # the pack sends the status alone
+    changes = {"status": "closed", "close_reason": "False positive"}
+    plan = admin.post("/api/incidents/bulk/plan", json={"action": "set", "params": {"changes": changes}, "ids": ids})
+    assert plan.json()["notes"][0] == "2 of these are mirrored Out: their tickets will be updated, one update for each"
+    closed = done(admin, "incidents", "set", {"changes": changes}, ids=ids)
+    assert counts(closed) == (4, 0, 0, 0)
+    with SessionLocal() as db:
+        queued = [
+            (job.incident_id, job.kind) for job in db.scalars(select(MirrorJob).where(MirrorJob.status == "pending"))
+        ]
+    assert sorted(queued) == [("i1", "update"), ("i2", "update")]
+
+    outside.host("acme.sentinelone.net")
+    answer = {"data": {"alertTriggerActions": {"actions": [{"actionId": "S1/alert/statusUpdate", "alertCount": 1}]}}}
+    outside.answer("acme.sentinelone.net", json=answer, path="/web/api/v2.1/unifiedalerts/graphql")
+    push_all(time.time())
+    sent = sorted(
+        (json.loads(request["body"])["variables"]["id"], json.loads(request["body"])["variables"]["status"])
+        for request in outside.requests
+    )
+    assert sent == [("0195-a001", "FALSE_POSITIVE"), ("0195-a002", "FALSE_POSITIVE")]
+    with SessionLocal() as db:
+        assert {job.status for job in db.scalars(select(MirrorJob))} == {"done"}
 
 
 # --------------------------------------------------------------------------- #
@@ -795,13 +937,14 @@ def test_removing_a_found_indicator_leaves_the_rest_of_the_index_as_it_is(admin:
 
 @pytest.mark.parametrize("many", [500, 1000])
 def test_an_incident_that_found_hundreds_of_indicators_has_them_all_checked_exported_and_removed(
-    admin: TestClient, monkeypatch, many: int
+    admin: TestClient, many: int
 ):
     from app import indicators_found
 
-    # An incident is given up to 1000 found indicators (500 unless the setting says more).
-    monkeypatch.setattr(indicators_found, "CAP_MAX", 1000)
-    assert admin.put("/api/iocs/found/settings", json={"cap": many}).status_code == 200
+    # An incident is given 500 found indicators when nobody set the number, and up to 1000 when it is set.
+    assert (indicators_found.CAP_DEFAULT, indicators_found.CAP_MAX) == (500, 1000)
+    if many != indicators_found.CAP_DEFAULT:
+        assert admin.put("/api/iocs/found/settings", json={"cap": many}).status_code == 200
     with SessionLocal() as db:
         vendor.source(db, "shodan")
         vendor.source(db, "greynoise")
@@ -832,8 +975,15 @@ def test_an_incident_that_found_hundreds_of_indicators_has_them_all_checked_expo
     assert exported.status_code == 200 and exported.headers["x-nik-count"] == str(many)
     assert len(list(csv.reader(io.StringIO(exported.text)))) == many + 1
 
-    # All that the incident holds, removed: each remembered, none found again.
+    # Tagged, all that the incident holds, as its tab selects them all.
     selected = {"incident": "i1"}
+    tagged = ask(admin, "iocs", "tags", {"add": ["found-many"]}, query=selected, confirm={"count": many})
+    assert tagged.status_code == 202, tagged.text
+    read = admin.get(f"/api/bulk/{tagged.json()['id']}").json()
+    assert read["state"] == "done" and counts(read) == (many, 0, 0, 0)
+    assert admin.get("/api/iocs", params={"q": "tag:found-many"}).json()["total"] == many
+
+    # All that the incident holds, removed: each remembered, none found again.
     plan = admin.post(
         "/api/iocs/bulk/plan", json={"action": "incident_remove", "params": selected, "query": selected}
     ).json()

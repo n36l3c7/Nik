@@ -587,7 +587,7 @@
               <td>
                 How incidents are read for indicators (<code>PUT</code>: admin; a key left out keeps what it had):
                 <code>enabled</code>, <code>types</code>, <code>leaveOutPrivate</code>, <code>leaveOutBenign</code>,
-                <code>cap</code> (1 to 1000; 500 when never set), <code>skip</code> (the paths never read),
+                <code>cap</code> (500 until it is set, from 1 to 1000), <code>skip</code> (the paths never read),
                 <code>lookUps</code> (whether the automatic look-ups ask about what was only found). The answer adds
                 <code>instances</code> (the instances told apart), <code>allTypes</code>, <code>skipDefault</code>,
                 <code>capMax</code> and <code>limits</code>.
@@ -2792,7 +2792,8 @@ labels:vip due:&lt;today sender_domain:""</code></pre>
                 <code>tags</code> (<code>add</code>, <code>remove</code>) · <code>delete</code> ·
                 <code>playbook</code> (<code>playbook</code>: its id; <code>automation.run</code>) ·
                 <code>mirror</code> (<code>direction</code>: <code>in</code>, <code>out</code>, <code>both</code>,
-                <code>none</code> to stop) · <code>find_indicators</code>
+                <code>none</code> to stop; <code>out</code> and <code>both</code> want <code>automation.run</code> too)
+                · <code>find_indicators</code>
               </td>
             </tr>
             <tr>

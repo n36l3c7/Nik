@@ -12,7 +12,6 @@ later whether it belongs to a case.
   so the documents stay the single source of truth.
 - ``relate`` records where an artifact comes from (an attachment of an e-mail,
   an object extracted from a capture).
-- ``backfill`` writes the entries of what was stored before 2.19.0.
 """
 
 from __future__ import annotations

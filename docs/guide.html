@@ -262,8 +262,8 @@
                 incidents are all of one type, the reasons of that type and the fields it wants filled to close); set
                 the severity, the owner (you, somebody, nobody), the type, the TLP; add and remove tags; set any other
                 field that holds one plain value; find indicators now; change the direction of the mirror, or stop it,
-                where there is one; run a playbook on each; export each as JSON (25 at a time); copy their links;
-                delete.
+                where there is one (Out and In-out only for who may run playbooks, as on one incident); run a playbook
+                on each; export each as JSON (25 at a time); copy their links; delete.
               </td>
             </tr>
             <tr>
@@ -305,6 +305,13 @@
         more than 100 incidents at once, wait for a few words to be typed (<code>delete 12</code>). A job takes 5,000
         rows at most: beyond that the dialog says to narrow the filter. When the selection is everything a filter keeps
         and it changed while the dialog was open, nothing is done and the dialog shows the new count.
+      </p>
+      <p>
+        The incidents counted as mirrored Out are those the change will be sent for, by the rule a single change
+        follows: mirrored Out or In-out, whether the direction came from the instance that fetched them or was set on
+        the incident, the object still there on the other side, and a field changed that the outgoing mapper of the
+        instance sends. A SentinelOne SIEM alert, for one, is sent its status and nothing else: closing many of them
+        sends one status to each, setting their owner sends nothing.
       </p>
       <p>
         <strong>How it runs.</strong> Each row goes through exactly what changing it alone goes through: the same
@@ -1001,7 +1008,7 @@
       <p id="found-settings">
         <strong>Settings → Indicators found</strong> (administrators) holds all of it: whether incidents are read at all
         (on, unless turned off), the types that are kept, the two kinds of things left out, the number an incident may
-        be given (1 to 1000; 500 until someone sets it), the paths that are never read, and whether the automatic
+        be given (500 until it is set, from 1 to 1000), the paths that are never read, and whether the automatic
         look-ups ask about what was found. A path is written one a line: a word alone is the name of a key wherever it
         is (<code>*uuid</code>, <code>console*</code>), and with dots it is a whole path as the Context tab shows it,
         without the numbers of a list (<code>context.ext.sentinelone.*Url</code>); <code>*</code> stands for anything.

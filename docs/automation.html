@@ -2081,6 +2081,13 @@ confidence {{ response.score }} %, {{ response.reports | plural("report") }} in 
         changes, or have it leave them out.
       </p>
       <p>
+        <strong>Find indicators now</strong>, on many incidents, reads each as the button of one does: it writes one
+        <a href="#indicators-found-playbook"><code>indicators.found</code></a> for each incident whose reading kept
+        something new, and none for the others. A playbook that waits for it runs once for each of those incidents, at
+        the pace above, and what such a run does is held by the rules of that event: an incident the run makes is read
+        and its event names the run, so the same playbook does not start on it.
+      </p>
+      <p>
         <strong>Run a playbook on each</strong>, from the selection of the incidents, starts the runs as
         <em>Run a playbook…</em> does on one, 20 unfinished at a time at most: the next ones wait for those to end. An
         incident the playbook cannot run on now (its runs an hour are used up, a run of it is in progress on that

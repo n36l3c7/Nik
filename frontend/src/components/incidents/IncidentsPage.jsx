@@ -90,6 +90,7 @@ const DIRECTIONS = [
   { value: 'both', label: 'In-out' },
   { value: 'none', label: 'None (stop mirroring)' },
 ]
+const SENDING = ['out', 'both']
 // How many incidents one click exports, each to its own file.
 const EXPORT_MAX = 25
 
@@ -215,7 +216,13 @@ function incidentActions({
       label: 'Change mirroring…',
       onSelect: () =>
         ask('mirror', 'Change mirroring', {
-          form: { kind: 'choice', label: 'Direction', options: DIRECTIONS, params: (value) => ({ direction: value }) },
+          form: {
+            kind: 'choice',
+            label: 'Direction',
+            // Out and In-out send to another system: as on one incident, only who may run playbooks.
+            options: canAutomate ? DIRECTIONS : DIRECTIONS.filter((choice) => !SENDING.includes(choice.value)),
+            params: (value) => ({ direction: value }),
+          },
         }),
     },
   ]
