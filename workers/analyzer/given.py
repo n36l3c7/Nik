@@ -95,8 +95,11 @@ class Given:
 
     def _find(self, name: str) -> str | None:
         for folder in self._folders():
-            path = os.path.join(folder, "files", name)
-            if os.path.isfile(path):
+            root = os.path.realpath(os.path.join(folder, "files"))
+            path = os.path.realpath(os.path.join(root, name))
+            # The name was matched against the allowed patterns; the file must also be inside the
+            # folder once links are followed, so nothing outside it is ever handed to a parser.
+            if path.startswith(root + os.sep) and os.path.isfile(path):
                 return path
         return None
 

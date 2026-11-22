@@ -2765,7 +2765,8 @@ test('an admin manages accounts; the audit log is written by the server', async 
   await theirs.locator('#own-new-password').fill('third-secret')
   await theirs.locator('#own-confirm-password').fill('third-secret')
   await theirs.getByRole('button', { name: 'Change password' }).click()
-  await expect(theirs.getByRole('status')).toContainText('Password changed')
+  // The sections of the account announce their loading as status too: look for the answer itself.
+  await expect(theirs.getByRole('status').filter({ hasText: 'Password changed' })).toBeVisible()
 
   // Disabled by the admin: the open session is over at its next request.
   await renamed.getByRole('button', { name: 'Edit user anna.b' }).click()

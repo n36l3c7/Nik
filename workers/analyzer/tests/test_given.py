@@ -77,6 +77,17 @@ def test_a_file_that_was_given_is_held_and_one_that_was_not_is_missing(held):
     held.drop(name)
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt", reason="needs symbolic links")
+def test_a_link_in_the_folder_that_leads_outside_it_is_never_handed_out(held, tmp_path):
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"not given")
+    name = named(b"not given")
+    files = Path(held.folder, "files")
+    files.mkdir(parents=True)
+    (files / name).symlink_to(outside)
+    assert held.path(name) is None and held.missing([name]) == [name]
+
+
 @pytest.mark.parametrize(
     "name",
     ["../etc/passwd", "/etc/passwd", "a.bin", "A" * 64 + ".bin", "a" * 64 + ".bin\n", "a" * 64 + ".exe",
