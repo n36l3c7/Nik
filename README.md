@@ -206,7 +206,9 @@ data, and ask for a second factor at sign-in; 6.8 encrypted the store on
 the disk, took the keys out of `.env`, made the audit log a signed chain
 sent to syslog, and added a page that says whether the server is well;
 6.9 brought recovery to a moment, a standby host that takes the
-server's place by one command, and work that survives a restart.
+server's place by one command, and work that survives a restart;
+6.10 lets many incidents, artifacts or indicators be acted on at once,
+finds indicators in what comes in, and mirrors everything that fetches.
 
 Not planned yet: scripts for playbooks written in JavaScript, engines that
 run scripts on another host, and custom fields on indicators.

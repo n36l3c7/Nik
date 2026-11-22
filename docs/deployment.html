@@ -58,6 +58,7 @@
           <li><a href="#upgrades">Updates, and the snapshot before each</a></li>
           <li><a href="#upgrade-went-wrong">An upgrade went wrong</a></li>
           <li><a href="#upgrading-to-43">Upgrading to 4.3</a></li>
+          <li><a href="#upgrading-to-610">Upgrading to 6.10</a></li>
           <li><a href="#upgrading-to-69">Upgrading to 6.9</a></li>
           <li><a href="#upgrading-to-68">Upgrading to 6.8</a></li>
           <li><a href="#upgrading-to-67">Upgrading to 6.7</a></li>
@@ -1552,6 +1553,32 @@ deploy/rollback.sh nik-upgrade-20261120-101500
           the connectors <em>ServiceNow</em> and <em>Jira</em> are replaced by version 2 of their files, which also
           write the ticket they open to the context of the incident. A connector you changed and installed with a higher
           version is left as it is.
+        </li>
+      </ul>
+      <h4 id="upgrading-to-610">Upgrading to 6.10</h4>
+      <p>
+        An installation older than 6.0.0 updates to 6.9.0 first and starts it once. Then <code>git pull</code> and
+        <code>docker compose up -d --build</code>: migrations <code>0054_indicators_found</code> and
+        <code>0055_bulk</code> run after the snapshot and the rehearsal.
+      </p>
+      <ul>
+        <li>
+          <strong>update Nik first, then the packs</strong> Jira Cloud, Jira Data Center, ServiceNow, SentinelOne and
+          SentinelOne SIEM from <em>Settings → Content packs</em>: they need 6.10. Updating Jira or ServiceNow sets
+          their instances that said None to In, so their tickets go on being mirrored as before;
+        </li>
+        <li>
+          every other instance starts at mirroring None and existing mirrors go on as they were. The mail connector is
+          brought to version 4 at start and mirrors nothing until an instance is set to In;
+        </li>
+        <li>
+          indicators are found in the incidents that come in after the upgrade, up to 500 each; older incidents are read
+          only when someone presses <em>Find indicators now</em>;
+        </li>
+        <li>choosing Out or In-out now needs the permission to run playbooks as well as to manage connectors;</li>
+        <li>
+          an installation without containers sets the mailbox location of its nginx to <code>4200m</code>, as the block
+          of this guide does.
         </li>
       </ul>
       <h4 id="upgrading-to-69">Upgrading to 6.9</h4>
