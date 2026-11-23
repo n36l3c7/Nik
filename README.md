@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/n36l3c7/Nik/actions/workflows/ci.yml/badge.svg)](https://github.com/n36l3c7/Nik/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/n36l3c7/Nik)](https://github.com/n36l3c7/Nik/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-green)](LICENSE)
 
 A self-hosted web platform for incident response teams: open an incident, drop
 the evidence, read it on one timeline and hand over a report.
@@ -227,4 +227,6 @@ vulnerability privately: see [SECURITY.md](SECURITY.md).
 
 ## Licence
 
-[MIT](LICENSE).
+[PolyForm Shield 1.0.0](LICENSE): you may use, change and share Nik for free, in a company too,
+but not to offer a product or service that competes with it. Releases up to 6.10.0
+were published under the MIT licence and stay so.
