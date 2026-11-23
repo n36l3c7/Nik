@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A list chosen for a feature, or a list's items, could show the old
+  value for a few seconds after it was saved, when another request read
+  it while the change was being written.
+
 ## [6.10.0] - 2026-11-22
 
 Many at once, and nothing missed: incidents, artifacts and indicators are

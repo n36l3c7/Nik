@@ -234,6 +234,30 @@ def test_a_feature_reads_the_list_that_is_chosen_for_it(admin: TestClient):
         assert state.read(db)["hosts"] == ["soar.corp:8443"]
 
 
+def test_a_read_made_while_a_choice_is_being_saved_does_not_keep_the_old_one(admin: TestClient):
+    """Another request of the process reads between the write and its commit: what it caches then is
+    the old choice, and it must not be served once the choice is saved."""
+    seed()
+    make(admin, "strict_allowlist")
+    with SessionLocal() as writing:
+        lists.point(writing, "iocAllowlist", "strict_allowlist")
+        with SessionLocal() as reading:
+            assert lists.pointers_of(reading)["iocAllowlist"] == "ioc_allowlist"  # not committed yet
+        writing.commit()
+    with SessionLocal() as db:
+        assert lists.pointers_of(db)["iocAllowlist"] == "strict_allowlist"
+    assert by_name(admin)["strict_allowlist"]["usedBy"] == ["Settings → Indicators → Allowlist"]
+    # And the same for what a list holds.
+    with SessionLocal() as writing:
+        row = lists.find(writing, "strict_allowlist")
+        lists.set_items(writing, row, [{"key": "late.example"}], "admin")
+        with SessionLocal() as reading:
+            assert lists.values(reading, "strict_allowlist") == []
+        writing.commit()
+    with SessionLocal() as db:
+        assert lists.values(db, "strict_allowlist") == ["late.example"]
+
+
 def test_what_is_in_a_list(admin: TestClient):
     make(admin, "nets", itemType="cidr")
     admin.put("/api/lists/nets/items", json={"entries": ["10.0.0.0/8", "2001:db8::/32", "Evil.Example", "not/a/net"]})

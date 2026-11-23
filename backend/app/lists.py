@@ -15,8 +15,9 @@ that was moved holds ``{"list": "<name>"}``: which list a feature reads can
 be changed, and the default is the one that was moved. The settings API goes
 on giving and taking the old arrays (``settings_value``, ``apply_setting``).
 
-Reads go through a short cache, dropped whenever this process writes a list;
-another process sees a change a few seconds later at most.
+Reads go through a short cache, dropped whenever this process writes a list
+and again when that write is committed; another process sees a change a few
+seconds later at most.
 """
 
 from __future__ import annotations
@@ -30,8 +31,9 @@ import time
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, event, func, select
 from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import object_session
 from sqlalchemy.orm.attributes import flag_modified
 
 from .core.models import IocList, IocListItem, NamedList, NamedListItem, Playbook, PlaybookVersion, Setting
@@ -128,6 +130,22 @@ _cache: dict[str, tuple[float, Any]] = {}
 
 def clear_cache() -> None:
     _cache.clear()
+
+
+def _forget(db: OrmSession | None, name: str | None = None) -> None:
+    """Drop what the cache holds of a list being written (``None``: everything), now and again when
+    the write is committed: a read made in between, by another request of this process, would
+    otherwise keep the old value for ``CACHE_SECONDS``."""
+
+    def drop(*_args: Any) -> None:
+        if name is None:
+            _cache.clear()
+        else:
+            _cache.pop(name, None)
+
+    drop()
+    if db is not None:
+        event.listen(db, "after_commit", drop, once=True)
 
 
 def _cached(key: str, make) -> Any:
@@ -361,7 +379,7 @@ def used_by(db: OrmSession, name: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 def _touch(row: NamedList, actor: str) -> None:
     row.updated_at, row.updated_by = now_iso(), actor[:200]
-    _cache.pop(row.name, None)
+    _forget(object_session(row), row.name)
 
 
 def _key(raw: Any, item_type: str = "text", check: bool = True) -> str:
@@ -435,7 +453,7 @@ def remove(db: OrmSession, row: NamedList) -> None:
         raise ListError("This list is used by: " + "; ".join(used), 409)
     db.execute(delete(NamedListItem).where(NamedListItem.list_id == row.id))
     db.delete(row)
-    _cache.pop(row.name, None)
+    _forget(db, row.name)
 
 
 def add_item(
@@ -552,7 +570,7 @@ def prune(db: OrmSession, now: float) -> int:
         db.delete(item)
         count += 1
     if count:
-        clear_cache()
+        _forget(db)
     return count
 
 
@@ -733,7 +751,7 @@ def point(db: OrmSession, setting: str, name: str) -> None:
         doc[key] = {"list": name}
     target.doc = doc
     flag_modified(target, "doc")
-    clear_cache()
+    _forget(db)
 
 
 def _make_builtin(db: OrmSession, name: str, actor: str = "nik") -> NamedList:
@@ -794,7 +812,7 @@ def seed(db: OrmSession) -> int:
             flag_modified(target, "doc")
         added += 1
     if added:
-        clear_cache()
+        _forget(db)
     return added
 
 
@@ -815,4 +833,4 @@ def unseed(db: OrmSession) -> None:
             doc[key] = value
         target.doc = doc
         flag_modified(target, "doc")
-    clear_cache()
+    _forget(db)
