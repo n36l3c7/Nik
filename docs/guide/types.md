@@ -25,7 +25,7 @@ Seven types ship, and are yours to change: **Unclassified**, **Phishing**, **Mal
 3. Choose a **Colour** and write **What it is for**.
 4. Press **Save the type**. Incidents of the type follow at once.
 
-![The builder of a type: fields on the left, sections on the right](../img/guide/types-1-builder.png)
+![The builder of the Data leak type: fields on the left, sections on the right](../img/guide/types-1-builder.png)
 
 ### Fields and sections
 

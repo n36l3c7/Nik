@@ -28,7 +28,7 @@ A pack never carries an instance, a credential, the hosts a playbook may reach o
 4. Choose the items. What they need comes with them (*Comes with them, because they need it*): the playbook brings its script and its connector. Tick **Lists go with what they hold** only when the items of a list are yours to share.
 5. Download: `example-alerts-1.0.0.nikpack`.
 
-![Make a pack: the items chosen and what comes with them](../../img/guide/build-pack-1-make.png)
+![Make a pack: the playbook Tag urgent incidents and the Example Alerts connector chosen](../../img/guide/build-pack-1-make.png)
 
 A `.nikpack` is a zip: unzip it into a folder to keep it in a repository, and go on with Way 2 for the next versions.
 
@@ -237,7 +237,7 @@ cd example-alerts && zip -r ../example-alerts-1.0.0.nikpack . -x '.*'
 2. Nothing changes yet. Each item is listed with **add**, **update**, **same** or **conflict**. Read the difference of the script: it is code that will run in the sandbox.
 3. Press **Install**. Everything is applied in one transaction: all of it, or nothing.
 
-![The items of the uploaded pack before installing](../../img/guide/build-pack-2-inspect.png)
+![The items of a pack before installing: here the Shodan pack, opened from the catalogue](../../img/guide/build-pack-2-inspect.png)
 
 | The pack is refused, or an item says | Fix |
 | --- | --- |

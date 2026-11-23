@@ -13,10 +13,10 @@ An **incident** is one case: one machine or one user under investigation, and ev
 
     | Field | What to write |
     |---|---|
-    | **Ticket ID** | Its id in your tracker: `INC-2041` |
-    | **Short title** | Replaces host and user in the name: `Invoice phishing, finance` |
-    | **Host** | The machine: `WKS-FINANCE-01` |
-    | **User** | The account: `m.rossi` |
+    | **Ticket ID** | Its id in your tracker: `HL-SEC-1091` |
+    | **Short title** | Replaces host and user in the name: `Lateral movement from VPN` |
+    | **Host** | The machine: `HL-FIN-WS021` |
+    | **User** | The account: `k.osei` |
 
 3. Pick the **Severity**. It is a tag, never part of the name.
 4. If the case is about a machine, pick its operating system. It decides the artifact paths, shells and collection scripts Nik suggests. You can leave it out: the pages that need it ask the first time.
@@ -26,11 +26,11 @@ Other ways an incident is born: a file dropped with **Create incident and import
 
 ### Its name and its number
 
-- **The name** is built from the fields: the ticket in brackets, then the title, or `host - user` without a title. `[INC-2041] Invoice phishing, finance`. Two incidents may have the same name.
-- **The number** is given at creation, in order, and never reused: `#00042`. Use it to find the incident:
-    - type `#42` in the search (++ctrl+k++);
-    - write `number:42` in a query;
-    - open `/incident/42`.
+- **The name** is built from the fields: the ticket in brackets, then the title, or `host - user` without a title. `[HL-SEC-1042] Payroll phishing, credentials and a payslip viewer`. Two incidents may have the same name.
+- **The number** is given at creation, in order, and never reused: `#00061`. Use it to find the incident:
+    - type `#61` in the search (++ctrl+k++);
+    - write `number:61` in a query;
+    - open `/incident/61`.
 
 ## Status, severity, owner
 
@@ -38,7 +38,7 @@ Other ways an incident is born: a file dropped with **Create incident and import
 |---|---|---|
 | **Status** | open, in progress, closed | **Edit the incident**, the right-click menu (**Mark as in progress**, **Mark as closed**…), the quick view, `/close` |
 | **Severity** | low, medium, high, critical | **Edit the incident**, the facts column |
-| **Owner** | an analyst, or nobody | **Assign to me** (right-click or quick view), **Edit the incident**, `/assign @anna` in the War Room |
+| **Owner** | an analyst, or nobody | **Assign to me** (right-click or quick view), **Edit the incident**, `/assign @elena.ricci` in the War Room |
 
 1. On the **Summary**, click **Edit the incident**.
 2. Change **Status**, **Severity**, **Assigned to**, and the **Suspicious activity · start** / **end** if you know them.
@@ -69,7 +69,7 @@ The **TLP** field (clear, green, amber, amber+strict, red) says how far what is 
 
 ## Tags
 
-![Tags under the name of an incident](../img/guide/incidents-2-tags.png)
+![Tags under the name of an incident, the input open after +](../img/guide/incidents-2-tags.png)
 
 Tags are short words that say what an incident belongs to: a campaign, a customer, a kind of case. They are chips under the incident's name, in the list and in the quick view.
 
@@ -83,7 +83,7 @@ Each change is saved at once and written to the audit log.
 !!! info "How a tag is written"
     Lower case (`Phish` is kept as `phish`); a letter or a digit, then letters, digits and `. _ : -`; 40 characters at most. A leading `#` is dropped; spaces become `-` (`data leak` is `data-leak`). Twelve tags per incident at most. In types, mappers, playbooks and the API the field is named `labels`.
 
-Filter by tag with the **Tag** chip, or `tag:phish` in a query: see [Search, filters and saved views](search.md).
+Filter by tag with the **Tag** chip, or `tag:finance` in a query: see [Search, filters and saved views](search.md).
 
 ## Fields
 
@@ -102,7 +102,7 @@ Fields are defined under **Platform settings › Incidents › All fields**: see
 
 When the type of the incident times it, **SLA** in the facts column shows what is left of the time to assign, to contain and to close, or by how much it is over.
 
-![SLA timers in the facts column](../img/guide/incidents-3-sla.png)
+![SLA timers in the facts column: running, paused and done](../img/guide/incidents-3-sla.png)
 
 - Each timer has **Pause**, **Start** and **Stop** for whoever may change incidents.
 - Past its time the incident is marked and its owner is told by the bell.

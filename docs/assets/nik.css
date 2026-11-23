@@ -1,5 +1,5 @@
 /* Nik's colours and type on Material's dark scheme: the same tokens as frontend/src/index.css. */
-[data-md-color-scheme="slate"] {
+[data-md-color-scheme='slate'] {
   --md-hue: 215;
   --md-default-bg-color: #0d1117;
   --md-default-fg-color: #e6edf3;

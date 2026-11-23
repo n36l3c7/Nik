@@ -82,7 +82,7 @@ Open **Platform settings** at the foot of the rail. These are the sections an ad
 
 **Platform settings › Access › Sign-in and sessions** holds the sign-in policy. How each rule works for users is in [Accounts, roles and sign-in](../guide/accounts.md).
 
-![Sign-in and sessions: second factor, sessions, failed sign-ins and administrators' networks](../img/admin/configuration-1-signin.png)
+![Sign-in and sessions on Docker Desktop: the second factor off, the defaults, and the warning that the server cannot know the address](../img/admin/configuration-1-signin.png)
 
 | Setting | Default |
 | --- | --- |
@@ -95,7 +95,7 @@ Open **Platform settings** at the foot of the rail. These are the sections an ad
 
 1. Set up your own second factor first (**My account**), and keep its recovery codes.
 2. Turn on **Administrators must have a second factor** <span class="step">1</span>. From that moment an administrator without one can only set one up.
-3. Before listing **Administrators' networks** <span class="step">2</span>, read **Your address as the server sees it** <span class="step">3</span> from another machine. If it is an address of the container network, the server cannot see client addresses: leave the list empty.
+3. Before listing **Administrators' networks** <span class="step">2</span>, read the line **The server sees you at …** under it from another machine. If it is an address of the container network, the server cannot see client addresses: leave the list empty. The page then says so in a warning, as in the picture, taken on Docker Desktop.
 
 ### The client's address
 

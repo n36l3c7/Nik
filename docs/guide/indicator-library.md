@@ -18,7 +18,7 @@ Press **Indicators** in the rail (`/iocs`). The library holds every indicator, w
 
 **The head of the table** <span class="step">2</span>: **Check all N** (or **Check N selected**), **Export** (or **Export N selected**), **Add**.
 
-**The filters** <span class="step">3</span>:
+**The filters**:
 
 | Filter | Choices |
 |---|---|
@@ -44,7 +44,7 @@ Press **Indicators** in the rail (`/iocs`). The library holds every indicator, w
 5. **For all of them**: tags, a note, **Expires on**. Tick **Check them when saved** to check them at once.
 6. Press **Save N indicators**.
 
-![The Add indicators dialog](../img/guide/indicator-library-2-add.png)
+![The Add indicators dialog, saving the values one by one, with no list](../img/guide/indicator-library-2-add.png)
 
 An indicator the library already has is kept as it is, and joins the list too.
 
@@ -66,7 +66,7 @@ Press the pencil at the end of a row (**Edit <value>**):
 3. The dialog counts: **To ask**, **Still fresh, reused**, **Never sent out**, **Takes about**, and **Per source** the requests against what is left of today's quota. Values held by the data guard are counted apart and not asked.
 4. Choose **Only missing or expired answers** or **Ask everything again**, and press **Start**.
 
-![The dialog of a bulk check](../img/guide/indicator-library-3-check.png)
+![The dialog of a bulk check, for the rows of one page ticked](../img/guide/indicator-library-3-check.png)
 
 The check runs in the background, with its progress at the top of the library and **Stop**. When a source's quota is used up the check says **Check waiting** and goes on by itself when the quota resets. Held values read *held* in the table.
 
@@ -117,11 +117,11 @@ The form asks **Name**, **Description** (source, campaign, ticket…), **Classif
 
 ### The page of a list
 
-![The page of a watched list](../img/guide/indicator-library-5-list.png)
+![The page of the watched list Emotet Q4](../img/guide/indicator-library-5-list.png)
 
 - <span class="step">1</span> Its name, **watched**, its **TLP**, its description and author.
-- <span class="step">2</span> **Copy link**, **Feed**, the pencil (**Edit the list**), the bin (**Remove the list**).
-- <span class="step">3</span> The counters: **Indicators**, **Malicious**, **Suspicious**, **Harmless**, **Not checked**, **In incidents**.
+- **Copy link**, **Feed**, the pencil (**Edit the list**), the bin (**Remove the list**).
+- <span class="step">2</span> The counters: **Indicators**, **Malicious**, **Suspicious**, **Harmless**, **Not checked**, **In incidents**.
 - <span class="step">4</span> The history of its checks.
 
 | Action | What it does |

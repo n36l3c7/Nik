@@ -29,8 +29,8 @@ def main(args):
 ![The page of a script: code, test and versions](../img/guide/scripts-1-editor.png)
 
 - <span class="step">1</span> The code, Python 3.12.
-- <span class="step">2</span> Arguments and outputs.
-- <span class="step">3</span> The test and its result.
+- Arguments and outputs, on the right.
+- <span class="step">2</span> The test: the arguments it is given and what it must return. <span class="step">3</span> **Run the test** shows its result.
 - <span class="step">4</span> **Versions** and **Used by**.
 
 ??? info "Versions, updates and the context"

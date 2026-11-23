@@ -17,7 +17,7 @@ Most connectors come in [content packs](packs.md). The **Mail listener / sender*
 4. Press **Create** (later changes: **Save**), then **Test**: Nik sends the connector's test request and says what came back.
 5. The switch beside the instance turns it on or off. Off, it runs no command, fetches nothing and is not offered for mirroring.
 
-![The list of connectors with an instance opened](../img/guide/connectors-1-list.png)
+![The list of connectors, the ServiceNow instance (turned off) opened beside it](../img/guide/connectors-1-list.png)
 
 - <span class="step">1</span> A connector and its instances; *not verified* means nobody ran it against a real system yet.
 - <span class="step">2</span> **Add instance**.
@@ -40,7 +40,7 @@ A **credential** is a secret kept once under a name, for several instances. Chan
 2. Give a **Name** (`vt_key`: a lower-case letter, then lower-case letters, digits, `_` or `-`), a **Description**, and the **Kind**: a secret (an API key, a token) or a pair (a user name and a password; a client id and secret).
 3. In the form of an instance, a secret field offers **From a credential** or **Typed here**. Choose the credential.
 
-![An instance field set From a credential](../img/guide/connectors-2-credential.png)
+![The API key of the VirusTotal instance set From a credential: vt_key](../img/guide/connectors-2-credential.png)
 
 - The value is never shown. **Edit…** replaces it; left empty, it stays. The list says where each credential is used.
 - A credential an instance names is not deleted: give those instances another one first.
@@ -72,7 +72,7 @@ An instance whose connector has a `fetch` brings alerts in as incidents. Set it 
 | **Mirroring** | The direction for the incidents it fetches ([below](#mirroring)) |
 | **Indicators found** | Whether its incidents are read for indicators; saved at once ([Threat intelligence](threat-intel.md#indicators-found)) |
 
-![The Fetch tab of an instance](../img/guide/connectors-3-fetch.png)
+![The Fetch tab of the ServiceNow instance, turned off: how often, first fetch, look-back and mirroring](../img/guide/connectors-3-fetch.png)
 
 One cycle: send the request (200 items at most), skip any item already fetched (by its id), classify and map each new item, make the incident with a War Room line that holds the item as it came, publish `incident.created`.
 
@@ -96,7 +96,7 @@ They live in the instance, on two wide tabs.
     - Outgoing: each **Name of the product** gets a template over `incident` and `context`.
 - **Try on the sample**: paste an item, or **Use the last item it fetched**, and see what each field would get. Trying never writes to an incident.
 
-![The incoming mapper tried on a sample](../img/guide/connectors-4-mapper.png)
+![The incoming mapper of the Example Alerts connector, tried on a sample](../img/guide/connectors-4-mapper.png)
 
 The mappers belong to the connector: every instance of it uses the same ones. Changes are kept across tabs until **Save**; **Put back what is saved** gives them up.
 
@@ -124,7 +124,7 @@ A new instance says **None**: nothing changes until someone chooses.
 
 Saving changes nothing for incidents already there. **Apply mirroring to open incidents…**, in the same part, counts the open incidents the instance fetched and, once confirmed, gives them the saved direction. **None** stops their mirrors. An incident someone mirrored with another instance is left alone. It is in the audit log with the counts.
 
-![Apply mirroring to open incidents, with its counts](../img/guide/connectors-5-apply.png)
+![Apply mirroring to open incidents with None saved: 0 of the 3 open incidents are mirrored, so nothing stops](../img/guide/connectors-5-apply.png)
 
 ### On one incident
 
@@ -135,7 +135,7 @@ The **Mirror** panel beside the tabs of an incident shows the direction, where i
 - **Read now** reads the other side at once.
 - A note tagged `mirror` is sent as a comment.
 
-![The Mirror panel of an incident](../img/guide/connectors-6-panel.png)
+![The facts column of an incident fetched by Example Alerts and not mirrored: only Mirror with… is offered](../img/guide/connectors-6-panel.png)
 
 ??? info "How In and Out work"
     - **In**: the worker reads the object at the connector's interval; the incoming mapper turns it into fields. A field a person set is kept unless the mapper marks it **Wins over edits**. New comments become War Room lines. A closed incident is read for a day more. An object deleted on the other side is said once, then read no more until **Read now**.

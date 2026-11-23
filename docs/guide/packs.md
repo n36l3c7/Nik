@@ -9,10 +9,10 @@ Nothing of a vendor is inside Nik until its pack is installed. A vendor has a pa
 
 ## The catalogue
 
-![The catalogue of content packs](../img/guide/packs-1-catalogue.png)
+![The catalogue of content packs, with no update waiting](../img/guide/packs-1-catalogue.png)
 
 - <span class="step">1</span> **Search the packs**: a name, a vendor, a category, a tag, a connector. Every word must be found in the card (`atlassian wiki`).
-- <span class="step">2</span> **All**, **Installed**, **Updates**, and **Hide the installed ones** (remembered in this browser).
+- **All**, **Installed**, **Updates**, and **Hide the installed ones** (remembered in this browser).
 - <span class="step">3</span> **Tags**: what the product is (`ticketing`, `edr`, `siem`, `firewall`, `threat-intelligence`…) and what it works on (`ip`, `domain`, `url`, `file`). A pack must have every tag chosen.
 - <span class="step">4</span> A card: what the pack holds (*connector (17 commands) · 1 mapper · 1 playbook*) and its state: *installed*, *update*, *later Nik*.
 
@@ -40,7 +40,7 @@ The cards are grouped by vendor.
 3. Leave out any item you do not want. A conflict must be left out or settled first.
 4. Press **Install**. The rest is applied in one transaction: all of it, or nothing.
 
-![The items of a pack before installing, one in conflict](../img/guide/packs-2-inspect.png)
+![The items of a pack before installing](../img/guide/packs-2-inspect.png)
 
 !!! warning "A script is code"
     A script in a pack runs in the sandbox. Read its difference before installing it, as you would read a script someone sends you.

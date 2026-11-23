@@ -69,7 +69,7 @@ For an account with a second factor, the right password opens no session: the an
 
 | Topic | Rule |
 | --- | --- |
-| Ids | `{id}` of an incident is its uuid. Its `number` (`#00042`) is given by the server; `GET /api/incidents/by-number/{number}` finds it |
+| Ids | `{id}` of an incident is its uuid. Its `number` (`#00061`) is given by the server; `GET /api/incidents/by-number/{number}` finds it |
 | Pagination | `limit` / `offset`; the total in `X-Total-Count` (incidents) or in the body |
 | Lists at scale | `GET /api/incidents?view=summary` gives light rows; fetch one incident for its full document |
 | Concurrency | `GET` returns an `ETag` (the incident's revision). Send it back as `If-Match` on `PATCH`: a stale write gets 412; read again, apply, retry |
@@ -193,7 +193,7 @@ The incidents, artifacts and indicators have the same two routes: `POST /api/inc
 {
   "action": "set",
   "params": { "changes": { "status": "closed", "close_reason": "Duplicate" } },
-  "query": { "q": "status:open tag:campaign-q4" },
+  "query": { "q": "status:open tag:finance" },
   "confirm": { "count": 1284, "typed": "close 1284" }
 }
 ```

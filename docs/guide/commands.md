@@ -18,20 +18,20 @@ The line at the bottom of the **War Room** tab takes three kinds of line:
 ```text
 Called the user, who confirms the click.
 /note The laptop is in the safe.
-/assign @anna
-/task Call the user @anna due=2h
+/assign @elena.ricci
+/task Call the user @elena.ricci due=2h
 /close
-!ip 185.220.101.47
+!ip 203.0.113.66
 !servicenow-get-incident number=INC0012345
 !sentinelone-isolate-agent agent_id=${context.Host[0].AgentID} using="SentinelOne EU"
 !ExtractDomains text={{ context.Mail[0].Subject }}
 !nik-make-indicators hxxp://update-cdn[.]net/gate.php
 ```
 
-![The command line with the completion list open](../img/guide/commands-1-completion.png)
+![The command line with !nik-ma typed and the completion list open](../img/guide/commands-1-completion.png)
 
 1. Type `!`. The commands that match are listed: <span class="step">1</span>. Move with the arrows, take one with ++tab++ or ++enter++.
-2. Once the name is written, the arguments still to give are shown, the required ones marked: <span class="step">2</span>.
+2. Once the name is written, the arguments still to give are shown, the required ones marked.
 3. Press ++enter++. A command that changes something outside Nik opens a dialog that shows the line: confirm it.
 4. The result is under the line. Choose the line to open it beside the stream: <span class="step">3</span>.
 
@@ -43,7 +43,7 @@ Called the user, who confirms the click.
 | --- | --- |
 | `/note text` | Writes a note |
 | `/assign @user` | Gives the incident to someone; alone, takes it from whoever has it |
-| `/task Call the user @anna due=2h` | Adds a task to the work plan; with nobody named, for the owner of the incident |
+| `/task Call the user @elena.ricci due=2h` | Adds a task to the work plan; with nobody named, for the owner of the incident |
 | `/close` | Opens the form of closing |
 
 ## Syntax of a command
@@ -55,7 +55,7 @@ Called the user, who confirms the click.
 | `name=word` | A bare word |
 | `name="two words"` | A quoted value |
 | ``name=`["a","b"]` `` | JSON between backticks: an object or a list |
-| `!ip 185.220.101.47` | A value alone, with no name, is the first argument |
+| `!ip 203.0.113.66` | A value alone, with no name, is the first argument |
 | `tags=phishing,urgent` | An argument that is a list takes words separated by commas |
 | `limit=10` · `force=true` | Numbers and `true`/`false` are read as such |
 | `host=${context.Host[0].Name}` | `${path}` or `{{ … }}` reads the incident and its context |
@@ -121,7 +121,7 @@ Turns a value written anywhere (a ticket, a mail, the output of a command) into 
 
 ```text
 !nik-make-indicators hxxps://login-portal[.]top/a?id=7
-!nik-make-indicators text="C2 at 185.220.101[.]47 and update-cdn[.]net, dropper 44d88612fea8a8f36de82e1278abb02f"
+!nik-make-indicators text="C2 at 203.0.113[.]66 and cdn-update[.]example[.]net, dropper 44d88612fea8a8f36de82e1278abb02f"
 !nik-make-indicators text=${context.ext.proofpoint.clicked} tags=phishing
 !nik-make-indicators text=update.pl type=domain
 ```

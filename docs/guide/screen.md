@@ -93,9 +93,9 @@ What is on its way always says so the same way:
 - a file going up or down shows a **bar** with how much has passed;
 - anything else that takes a moment (a report being built, an export being prepared) shows the blinking skull `(o.o)` with a sentence, in or beside the button that started it.
 
-A transfer with no place of its own (a file dropped anywhere, an export started from a menu, a bulk action running in the background) is shown in the **Transfers** tray at the foot of the window until it ends. An upload cut by a restart of the server stays there with **Try again** and **Dismiss**.
+![A capture going up in Network Analysis: the skull, the bar and how much has passed](../img/guide/screen-4-tray.png)
 
-![The Transfers tray at the foot of the window](../img/guide/screen-4-tray.png)
+A transfer with no place of its own (a file dropped anywhere, an export started from a menu, a bulk action running in the background) is shown in the **Transfers** tray at the foot of the window until it ends. An upload cut by a restart of the server stays there with **Try again** and **Dismiss**.
 
 ## Right-click menus
 

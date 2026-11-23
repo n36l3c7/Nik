@@ -54,7 +54,7 @@ The query box takes plain words (`wks-finance`) or conditions:
 ```text
 status:open severity:>=high owner:""        open, high or critical, nobody has them
 host:wks-* -status:closed created:>=now-7d  this week's incidents on the workstations
-tag:phish -tag:test status:open             open incidents tagged phish, tests left out
+tag:finance -tag:test status:open           open incidents tagged finance, tests left out
 ```
 
 | Write | To find |
@@ -76,7 +76,7 @@ Every field of an incident can be asked, the ones made in Settings too, by the n
 ![The query box: suggestions and an error](../img/guide/search-2-query.png)
 
 - **Suggestions** <span class="step">1</span>: start a word and the fields are offered, each with what it is. After the colon come the values (`status:` offers open, in_progress, closed). ++up++ / ++down++ choose, ++enter++ or ++tab++ takes, ++ctrl+space++ lists every field.
-- **Errors** <span class="step">2</span>: the query is coloured, and says what is wrong: a parenthesis left open, `did you mean "status"?`, a value a field cannot take. The list stays as it was until the query can be read.
+- **Errors**: the query is coloured, and says what is wrong: a parenthesis left open, `did you mean "status"?`, a value a field cannot take. The list stays as it was until the query can be read.
 - **The builder** <span class="step">3</span>: the sliders button next to the box shows the query as rows of field, operator and value, to build one without typing. A query the rows cannot show (nested groups) is edited as text.
 
 ## Saved filters
@@ -131,7 +131,7 @@ Press ++ctrl+k++ (++cmd+k++ on a Mac) or ++"/"++ anywhere, or click the search b
 
 | Type | To |
 |---|---|
-| `#42` | Open incident number 42 |
+| `#61` | Open incident number 61 |
 | An address, a hash, a word | Find it across incidents and in the open one |
 | `>` then words | Run an action: go to a tab, new incident, export, settings, sign out |
 

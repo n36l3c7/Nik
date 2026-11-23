@@ -21,11 +21,11 @@ The example: when an incident of high or critical severity is created, ask a per
 
 ### 2. Know the screen
 
-![The editor of a playbook, with its three parts](../img/guide/playbooks-2-editor.png)
+![The editor of Tag urgent incidents, the Approval selected](../img/guide/playbooks-2-editor.png)
 
 - <span class="step">1</span> **The library**, in three tabs: **Commands** (what Nik does, then one group per connector that has an instance on), **Scripts** and **Flow** (condition, for each, wait, approval, task, question, another playbook, end). **Search nodes…** looks in all three. A node marked *changes* does something outside Nik and asks for approval by default.
 - <span class="step">2</span> **The canvas**: the nodes and their lines. Zoom buttons and the minimap are in the corners.
-- <span class="step">3</span> **The inspector**: the settings of the selected node, **Goes to**, what it **Gives**, and what is still to fix. With no node selected, it shows the playbook's **Inputs** and **Outputs**.
+- **The inspector**, on the right: the settings of the selected node, **Goes to**, what it **Gives**, and what is still to fix. With no node selected, it shows the playbook's **Inputs** and **Outputs**.
 - <span class="step">4</span> The header: **Canvas**, **Runs**, **Versions**, **Settings**, the on/off switch, **Run…**, **Debug…** and **Save as version N**.
 
 Every change saves itself a moment later (*draft saved*). Undo and redo are ++ctrl+z++ and ++ctrl+shift+z++.
@@ -58,7 +58,9 @@ Every kind of trigger is on [Triggers and events](triggers.md).
 3. To remove a line, point at it and press its **×**.
 4. Press **Tidy up** to put the nodes in order, top to bottom.
 
-![Lines drawn from the approved port](../img/guide/playbooks-4-connect.png)
+![Nodes dragged from the library and joined with lines](../img/guide/playbook-draw.gif)
+
+![A line from the approved square of the Approval to Tag the incident, with its × to remove it](../img/guide/playbooks-4-connect.png)
 
 A condition has **yes** and **no**; a for each has **for each item** and **when done**; nodes that can fail have an **on error** square on their right side. Without a mouse, draw lines in the inspector under **Goes to**; **Node list** shows the same playbook as a table.
 
@@ -104,7 +106,7 @@ The canvas always edits a draft. A version is what runs; versions are never rewr
 3. Select a step, or its node, for **Went in**, **Came out**, what was sent, the tries, the **Log** and **Restarts**.
 4. **Stop the run** skips what is still to do. A step already talking to another system finishes, and what it gives is discarded.
 
-![The page of a run, a step selected](../img/guide/playbooks-6-run.png)
+![The page of a dry run: the approval taken as given, the step Tag the incident selected with what it would have sent](../img/guide/playbooks-6-run.png)
 
 An approval shows on the run, in **Automations › Approvals**, and above the tabs of the incident. The rail counts what waits. Press **Approve** or **Refuse**, with a comment if you want.
 
@@ -168,7 +170,7 @@ Whoever started the run is told (everyone who may run playbooks, for an event or
 2. **It did not, do it again**: the step is taken again from its beginning.
 3. **Stop the run**: what was done before stays done.
 
-![An interrupted step and its three answers](../img/guide/playbooks-8-interrupted.png)
+![Automations › Runs: the list of runs, with its Status and Playbook filters (no run interrupted here)](../img/guide/playbooks-8-interrupted.png)
 
 !!! tip "Look at the other system first"
     The answer is in the audit log with your name. Time spent waiting for it does not count against the longest run. **Automations › Runs** finds these runs with the status **interrupted**.
@@ -197,7 +199,7 @@ The debugger goes through a run one node at a time. It needs the permission `aut
 | **Run this node again** | Runs a finished node once more; its new result replaces the old one. |
 | **What it gave** | Rewrite a node's output to reach a hard branch (a malicious verdict, an empty list). |
 
-![The debugger stopped before a node](../img/guide/playbooks-9-debugger.png)
+![A debug run of Tag urgent incidents, over: every step done](../img/guide/playbooks-9-debugger.png)
 
 A debug run counts for no limit, holds what goes outside as a dry run does, answers tasks and questions by itself, and is listed apart (**Automations › Runs › Debug runs**). It is deleted after a week.
 

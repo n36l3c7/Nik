@@ -60,7 +60,7 @@ commands:
   - name: get-alert
     description: Read an alert by its id.
     arguments:
-      - { name: id, type: text, required: true, description: "The id of the alert: A-1001" }
+      - { name: id, type: text, required: true, description: "The id of the alert: A-1005" }
     request: { method: GET, path: "/alerts/{{ args.id | urlencode }}" }
     error: { message: "{{ response.error.message }}" }
     outputs:
@@ -70,7 +70,7 @@ commands:
       - path: Alert(val.ID == obj.ID)
         value: { ID: "{{ response.id }}", Name: "{{ response.title }}", Severity: "{{ response.severity }}", Source: Example Alerts }
     sample:
-      alert: { id: A-1001, title: Beacon to a known C2, severity: high, status: open }
+      alert: { id: A-1005, title: Credential phishing page visited, severity: high, status: open }
       status: open
 
   - name: list-alerts
@@ -286,7 +286,7 @@ A file with `fetch` and neither `mirror` nor `no_mirror` installs, with a warnin
 ```yaml
 schema:
   incoming:
-    - { name: id, type: text, description: "The id of the alert: A-1001" }
+    - { name: id, type: text, description: "The id of the alert: A-1005" }
     - { name: title, type: text }
     - { name: description, type: text }
     - { name: severity, type: text, description: "low, medium, high or critical" }
@@ -353,7 +353,7 @@ On the canvas, the commands are in **Commands › Example Alerts**, each with an
 4. **Use the last item it fetched**, then **Try on the sample**: each row shows the value the incident would get.
 5. Direction **Outgoing**: **title** `{{ incident.name }}`, **status** `{{ incident.status }}`. **Save**.
 
-![The incoming mapper tried on the last item fetched](../../img/guide/build-connector-3-mapper.png)
+![The incoming mapper tried on a sample: the five rows and their values; the context path is not added yet in the picture](../../img/guide/build-connector-3-mapper.png)
 
 An item the mapper cannot make whole still becomes an incident, listed as *incomplete* in **What it fetched…** with what was wrong.
 
@@ -382,22 +382,22 @@ A connector in Nik's repository lives in a pack, `packs/<id>/connectors/<id>/con
 
 ```json
 {
-  "args": { "id": "A-1001" },
+  "args": { "id": "A-1005" },
   "exchanges": [
     {
       "request": {
         "method": "GET",
-        "path": "/v1/alerts/A-1001",
+        "path": "/v1/alerts/A-1005",
         "headers": { "Authorization": "Bearer ea-token-0123456789" }
       },
       "response": {
         "status": 200,
-        "json": { "id": "A-1001", "title": "Beacon to a known C2", "severity": "high", "status": "open" }
+        "json": { "id": "A-1005", "title": "Credential phishing page visited", "severity": "high", "status": "open" }
       }
     }
   ],
   "outputs": {
-    "alert": { "id": "A-1001", "title": "Beacon to a known C2", "severity": "high", "status": "open" },
+    "alert": { "id": "A-1005", "title": "Credential phishing page visited", "severity": "high", "status": "open" },
     "status": "open"
   }
 }
@@ -443,7 +443,7 @@ A connector in Nik's repository lives in a pack, `packs/<id>/connectors/<id>/con
       - name: get-alert
         description: Read an alert by its id.
         arguments:
-          - { name: id, type: text, required: true, description: "The id of the alert: A-1001" }
+          - { name: id, type: text, required: true, description: "The id of the alert: A-1005" }
         request: { method: GET, path: "/alerts/{{ args.id | urlencode }}" }
         error: { message: "{{ response.error.message }}" }
         outputs:
@@ -453,7 +453,7 @@ A connector in Nik's repository lives in a pack, `packs/<id>/connectors/<id>/con
           - path: Alert(val.ID == obj.ID)
             value: { ID: "{{ response.id }}", Name: "{{ response.title }}", Severity: "{{ response.severity }}", Source: Example Alerts }
         sample:
-          alert: { id: A-1001, title: Beacon to a known C2, severity: high, status: open }
+          alert: { id: A-1005, title: Credential phishing page visited, severity: high, status: open }
           status: open
     
       - name: list-alerts
@@ -608,7 +608,7 @@ A connector in Nik's repository lives in a pack, `packs/<id>/connectors/<id>/con
     
     schema:
       incoming:
-        - { name: id, type: text, description: "The id of the alert: A-1001" }
+        - { name: id, type: text, description: "The id of the alert: A-1005" }
         - { name: title, type: text }
         - { name: description, type: text }
         - { name: severity, type: text, description: "low, medium, high or critical" }

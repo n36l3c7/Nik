@@ -57,12 +57,12 @@ The body is drawn in a sandboxed frame: no script runs, no link is followed, no 
 
 ## Links
 
-![The Links view with a look-alike domain](../img/guide/mail-3-links.png)
+![The Links view: two links to the same target, one whose text names another host](../img/guide/mail-3-links.png)
 
 Each link of the message, with its **target**, how it was **shown as**, and its **findings**:
 
 - Links wrapped by Safe Links, Proofpoint, Google, Facebook or Barracuda are unwrapped to their real target.
-- A text that names another host than the target says *reads as …*.
+- A text that names another host than the target says *reads as …*, or **text ≠ target** as in the picture.
 - Look-alikes of well-known brands and of your own domains are found, punycode and `rn`→`m` tricks included.
 - A form of the message shows as **form**.
 - **open in isolated browser** opens the target in the [isolated browser](#the-isolated-browser-window).
@@ -71,14 +71,14 @@ Each link of the message, with its **target**, how it was **shown as**, and its 
 
 Each attachment shows its type (from its bytes, against its extension), its hashes and its findings: double extensions, right-to-left tricks, macros, archive listings (the password is looked for in the text and tried; nothing is extracted to disk), PDF actions, QR codes in images, calendar invitations.
 
-![An attachment with its buttons](../img/guide/mail-4-attachments.png)
+![The attachment Payslip_Nov2026.pdf: its type, its hash and its buttons](../img/guide/mail-4-attachments.png)
 
 | Button | What it does |
 |---|---|
 | **Preview** | The pages of a Word, Excel, PowerPoint, OpenDocument or RTF file, or an image, rendered on the server; you receive pictures only (the first 20 pages). |
 | **Open in isolated browser** | An HTML attachment, opened in the isolated browser. |
-| **Show the bytes in hex** | The hex view of the file. |
-| **Show macro source** | The VBA or XLM code of a document with macros. |
+| **Show the bytes in hex** (**Hex**) | The hex view of the file. |
+| **Show macro source** | The VBA or XLM code of a document with macros. A file with none, like the PDF in the picture, does not offer it. |
 | **Send to Malware Analysis** | Stores the attachment as a sample of the incident, for [static analysis](malware.md). |
 | **Download as a protected zip** | In the right-click menu: the file in an encrypted zip. See [Download safely](evidence.md#download-samples-safely). |
 
@@ -94,14 +94,14 @@ The page runs in a browser on the server. What you see is a picture of it; your 
     - **Allow internet for this session**: the page and its redirects load from the internet through the server, never from private addresses. The sites see the company's address. Recorded in the audit log.
 3. Press **Open**.
 
-![The isolated browser window](../img/guide/mail-5-browser.png)
+![The isolated browser window on an HTML attachment, opened with no network, the request list open](../img/guide/mail-5-browser.png)
 
 - <span class="step">1</span> **Back**, **Forward**, **Reload** and the **Address** bar.
 - <span class="step">2</span> **network** or **no network**: what this session may reach.
-- <span class="step">3</span> **Submissions held**: what the page submits (a form, a POST) is recorded, not sent. Press it and **Send submissions** to let them through for this session (audited).
+- **Submissions held**: what the page submits (a form, a POST) is recorded, not sent. Press it and **Send submissions** to let them through for this session (audited).
 - <span class="step">4</span> **Network · N** lists every request, like the browser's developer tools.
 - <span class="step">5</span> **Full screen**; ++esc++ leaves it.
-- <span class="step">6</span> A window the page opens (a sign-in pop-up, a link in a new tab) is a tab above the page; the × closes it.
+- A window the page opens (a sign-in pop-up, a link in a new tab) is a tab above the page; the × closes it.
 
 !!! warning
     Live phishing pages may log the visit and change what they serve. Never type real credentials: use invented ones.

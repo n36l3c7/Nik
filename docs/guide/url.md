@@ -15,21 +15,21 @@ Any of these starts a scan:
 - Right-click a URL or a domain anywhere: **Analyse URL**.
 - Select addresses on the Indicators page: **Analyse the addresses…**. See [The Indicators page](indicator-library.md#addresses-to-analyse).
 
-Defanged text works: `hxxps://evil[.]top`. A domain is visited as `https://<domain>/`. An address already scanned is recognised and not visited twice: **Re-scan** visits it again.
+Defanged text works: `hxxps://payroll-harbourline[.]example[.]net`. A domain is visited as `https://<domain>/`. An address already scanned is recognised and not visited twice: **Re-scan** visits it again.
 
-![URL Analysis: a credential page on a look-alike domain](../img/guide/url-1-overview.png)
+![URL Analysis of payroll-harbourline.example.net/sso/login: the test stack holds no public address, so the browser was refused and the scan reads clean](../img/guide/url-1-overview.png)
 
-The address shows **scanning…** while the browser visits it, then its verdict and score.
+The address shows **scanning…** while the browser visits it, then its verdict and score. The picture comes from an isolated test stack: the visit was blocked as *not a public address*, so it shows no phishing verdict, forms or redirects. A real look-alike page fills the parts below.
 
 ## What you get
 
 **Overview**:
 
-- <span class="step">1</span> The **screenshot** of the page, taken by the isolated browser.
-- <span class="step">2</span> The facts: **final URL**, **title**, **server** (its address), **certificate** (issuer, issued when), **requests** (how many, held, refused), **scanned** (when, by whom).
-- <span class="step">3</span> **WHY THIS VERDICT**: each finding with its points.
-- <span class="step">4</span> **HOW THE BROWSER GOT THERE**: every redirect, shorteners included.
-- <span class="step">5</span> **FORMS ON THE PAGE**: each form, where it sends, and **asks for a password** when it does.
+- The **screenshot** of the page, taken by the isolated browser.
+- The facts: **final URL**, **title**, **server** (its address), **certificate** (issuer, issued when), **requests** (how many, held, refused), **scanned** (when, by whom).
+- **WHY THIS VERDICT**: each finding with its points.
+- **HOW THE BROWSER GOT THERE**: every redirect, shorteners included.
+- **FORMS ON THE PAGE**: each form, where it sends, and **asks for a password** when it does.
 
 **Requests** lists the requests of the visit, and **Open the capture** opens them as a capture in [Network Analysis](network.md#isolated-browser-sessions).
 
@@ -59,9 +59,9 @@ An address that could not be visited says **not visited**, with the reason.
 
 ## Scripts
 
-![The Scripts view with a credential grabber](../img/guide/url-2-scripts.png)
+![The Scripts view of a scan that collected no script](../img/guide/url-2-scripts.png)
 
-The scripts the page loaded and those written in it, read as text, never run, each checked against Nik's signatures.
+The scripts the page loaded and those written in it, read as text, never run, each checked against Nik's signatures. A page with none says **No scripts**, as in the picture.
 
 1. The list is sorted worst first.
 2. Select a script: what was found (credentials sent to a Telegram bot, a password field read and sent out, a keylogger, obfuscation, a miner…), with **Show in the code** to jump to the match.

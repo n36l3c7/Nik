@@ -6,13 +6,13 @@ See every address, domain, URL, e-mail address and hash an incident holds, where
 
 Open an incident and its **Indicators** tab.
 
-![The Indicators tab of an incident](../img/guide/indicators-1-tab.png)
+![The Indicators tab of incident #00061](../img/guide/indicators-1-tab.png)
 
-- <span class="step">1</span> The counters: **Indicators**, **Seen in other incidents**, **Network (IP, domain, URL)**, **Allowlisted (hidden)**.
+- The counters: **Indicators**, **Seen in other incidents**, **Network (IP, domain, URL)**, **Allowlisted (hidden)**.
 - <span class="step">2</span> **Check all N**, **Save as a list**, and **Export** as **CSV**, **STIX 2.1** or **MISP** (allowlisted values left out).
 - <span class="step">3</span> The filters: **All types** (or one type), **All indicators** or **Seen in other incidents**, **Show allowlisted**, **Refresh**, and **Search indicators…**.
 - <span class="step">4</span> The table.
-- <span class="step">5</span> **Found by themselves**, under the table. See [Found by themselves](#found-by-themselves).
+- **Found by themselves**, under the table. See [Found by themselves](#found-by-themselves).
 
 | Column | What it says |
 |---|---|
@@ -48,7 +48,7 @@ Indicators are gathered from every kind of evidence each time the incident is sa
 Type a reputation command in the incident's **War Room**: `!ip`, `!domain`, `!url`, `!file` (a hash) or `!email`, followed by the value.
 
 ```text
-!ip 185.220.101.47
+!ip 203.0.113.66
 ```
 
 The answer comes in the War Room, and the value becomes an indicator of the incident (**War Room · looked up**). You need the **analyst** role.
@@ -56,7 +56,7 @@ The answer comes in the War Room, and the value becomes an indicator of the inci
 To make indicators of a longer text (a ticket, a line of a log, a defanged address), run `nik.make-indicators` from the War Room: it finds every indicator in the text and links them to the incident.
 
 ```text
-!nik-make-indicators text="C2 at 185.220.101[.]47 and update-cdn[.]net"
+!nik-make-indicators text="C2 at 203.0.113[.]66 and cdn-update[.]example[.]net"
 ```
 
 See [War Room commands](commands.md).
@@ -90,9 +90,9 @@ What a playbook writes to the context later is not read by itself: the playbook 
 
 ![Found by themselves, under the table](../img/guide/indicators-2-found.png)
 
-- <span class="step">1</span> **×** at the end of a row removes an indicator that is in the incident only because it was found. It does not come back when the incident is read again or updated by a mirror.
+- **×** at the end of a row removes an indicator that is in the incident only because it was found. It does not come back when the incident is read again or updated by a mirror.
 - <span class="step">2</span> **Found by themselves: N.** says what the last reading came to (kept, left out, over the limit, removed).
-- <span class="step">3</span> **Removed, and not found again: N** lists what was removed, with who removed it and **Put back**.
+- **Removed, and not found again: N** lists what was removed, with who removed it and **Put back**.
 - <span class="step">4</span> **Find indicators now** reads the incident as it is now: for an incident that came in before incidents were read, or whose context has grown.
 
 To remove many at once, tick them and choose **Remove from this incident…**. See [Act on many at once](bulk.md).
@@ -131,14 +131,14 @@ A check of many first says what it costs: how many are asked, how many answers a
 
 ### The window of an indicator
 
-![The window of an indicator](../img/guide/indicators-3-window.png)
+![The window of the domain payroll-harbourline.example.net: malicious for one source, the analysis by Nik, the sources and where it was seen](../img/guide/indicators-3-window.png)
 
-- <span class="step">1</span> The type and the value; **allowlisted** or **never sent outside** when it is.
-- <span class="step">2</span> **Add to the allowlist…** and **Check now** / **Check again**.
-- <span class="step">3</span> The overall verdict and how many sources gave each verdict. A domain registered in the last 30 days is flagged beside it.
-- <span class="step">4</span> Nik's own analysis of the value, or **Not analysed by Nik yet** and the button that has the isolated browser visit an address.
-- <span class="step">5</span> **Sources**: one line per source. Open one for what it returned (engines, reports, pulses, open ports…), its whole answer to copy or download as JSON, and **Over time**, how its verdict changed.
-- <span class="step">6</span> **Seen in**: the incidents and the artifacts that hold it.
+- The type and the value; **allowlisted** or **never sent outside** when it is.
+- **Add to the allowlist…** and **Check now** / **Check again**.
+- The overall verdict and how many sources gave each verdict. A domain registered in the last 30 days is flagged beside it (not in the picture: RDAP has no instance there).
+- Nik's own analysis of the value, or **Not analysed by Nik yet** and the button that has the isolated browser visit an address.
+- **Sources**: one line per source. Open one for what it returned (engines, reports, pulses, open ports…), its whole answer to copy or download as JSON, and **Over time**, how its verdict changed.
+- **Seen in**: the incidents and the artifacts that hold it.
 
 **Open as a page** gives it a full page; **Copy link** copies its address (`/ioc/<type>?v=<value>`) to send to a colleague.
 
@@ -164,7 +164,7 @@ Whoever asks, these never leave Nik: private and other non-public addresses, int
 
 The **data guard** reads each value before it is sent, and holds it when it carries:
 
-- an **e-mail address** (`https://portal.example.org/reset?user=anna.bianchi@example.org`);
+- an **e-mail address** (`https://portal.example.org/reset?user=elena.ricci@example.org`);
 - an **internal name or address**: a domain under your organisation's own domains, a link on one, or a link with a private address in it;
 - an **allowlisted name**: a link that names a value of the allowlist.
 

@@ -6,8 +6,6 @@ Build a playbook for a real need, test it without risk, turn it on and read what
 
 **What you will have at the end:**
 
-![The finished playbook on the canvas](../../img/guide/build-playbook-1-finished.png)
-
 ```text
 Trigger: An incident is created
   └ Condition "Phishing?" ── no ──> End (done)
@@ -18,6 +16,10 @@ Trigger: An incident is created
                       └ Approval "Block them?" ── approved ──> Add to a list "Blocked"
                                                                 └ on error ──> Add a note "Blocking failed"
 ```
+
+A finished playbook looks like this on the canvas. The pictures on this page show *Phishing containment*, a smaller playbook shipped with the examples, built the same way: a trigger, actions, a condition with **yes** and **no**, an approval.
+
+![A finished playbook on the canvas: Phishing containment, after Tidy up](../../img/guide/build-playbook-1-finished.png)
 
 !!! note "You need"
     - The **Playbooks** role, to build; **Analyst** too, to try it on an incident.
@@ -70,7 +72,7 @@ It gives `found.indicators`: a list of `{type, value, new, marks}`. It is safe t
 6. **value**: `{{ item.value }}`.
 7. **If it fails**: **Try again**, `3` times.
 
-![The For each and the node inside it](../../img/guide/build-playbook-2-loop.png)
+![A condition selected in the inspector, with its comparison and its yes and no lines (Phishing containment)](../../img/guide/build-playbook-2-loop.png)
 
 Inside the loop, `{{ item }}` is the current indicator. After the loop, `{{ each_ioc.results }}` is what `check` gave for each item, in order: each with `verdict`, `score`, `value`, `sources`.
 
@@ -102,7 +104,7 @@ Leave **incident** empty in each: it is the incident of the run.
 4. **Waits**: **For** 4 hours. **When the wait ends**: **go on as refused**.
 5. On **approved**, add **Add to a list** (the one described *Put indicators in a watch list*). **Id** `block`. **list**: `Blocked`. **indicators**: `{{ each_ioc.results | where("verdict", "eq", "malicious") | pluck("value") }}`.
 
-![The approval in the inspector](../../img/guide/build-playbook-3-approval.png)
+![An approval in the inspector: question, detail and how long it waits (Phishing containment)](../../img/guide/build-playbook-3-approval.png)
 
 The watch list *Blocked* is made if there is none. A firewall that reads a list from Nik, or a connector command placed here instead (Check Point, Zscaler…), turns it into a real block: such a command changes something outside, and asks for its own approval by default.
 
@@ -129,7 +131,7 @@ If something is wrong, nothing is saved: the nodes show *N to fix* and the inspe
 | `Nothing leads to this node` | Draw its line, or delete it |
 | `A step of a "for each" body cannot also come after the loop` | Draw the line after the loop from **when done**, not from a node of the body |
 
-![What is to fix, on the node and in the inspector](../../img/guide/build-playbook-4-to-fix.png)
+![A node of Phishing containment selected, its arguments in the inspector: where a node to fix shows what is wrong](../../img/guide/build-playbook-4-to-fix.png)
 
 ## 11. Dry run
 
@@ -147,7 +149,7 @@ If something is wrong, nothing is saved: the nodes show *N to fix* and the inspe
 3. Select the step of `each_ioc`. In **What it gave**, change one `verdict` to `malicious`, and press **Write it**.
 4. **Step**: the condition takes **yes**. Go on with **Step** and read each node. A debug run holds what would go outside, as a dry run does, and counts for no limit.
 
-![The debugger: rewriting what the loop gave](../../img/guide/build-playbook-5-debug.png)
+![The debugger on Phishing containment, paused after the condition took yes, before the approval](../../img/guide/build-playbook-5-debug.png)
 
 ## 13. Turn it on and read the runs
 
@@ -156,7 +158,7 @@ If something is wrong, nothing is saved: the nodes show *N to fix* and the inspe
 3. **Automations › Approvals** (and the top of the incident) shows *Put the malicious values on the Blocked list?*. Press **Approve**.
 4. Open **Automations › Runs**, then the run: green nodes are done; select one for **Went in**, **Came out** and the **Log**.
 
-![The run of the playbook, step block selected](../../img/guide/build-playbook-6-run.png)
+![A real run of Phishing containment after Approve: every node done, the step Watch the sender selected with what went in](../../img/guide/build-playbook-6-run.png)
 
 !!! warning "Limits"
     The playbook starts 60 runs an hour by default (**Settings › Limits and approvals**). A bulk creation of incidents beyond that starts nothing for the rest.

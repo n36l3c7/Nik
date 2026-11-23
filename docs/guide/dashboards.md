@@ -13,7 +13,7 @@ Each widget asks one question of what Nik holds and shows the answer: a number, 
 1. Pick the **Time range** <span class="step">1</span>: **Last 24 hours**, **Last 7 days**, **Last 30 days**, **Last 90 days**, **Last year** or **All time**. It applies to every widget that does not ignore it.
 2. Point at a bar, a slice or a point to read its figures.
 3. The button at the top right of a chart <span class="step">2</span> shows the same figures as a table.
-4. **Click a value** <span class="step">3</span> to see what is behind it: the query that finds those objects (with **Copy the query**) and the first of them. An incident opens from there.
+4. **Click a value** to see what is behind it: the query that finds those objects (with **Copy the query**) and the first of them. An incident opens from there.
 
 A number can show its change against the period before: the same length of time, just earlier.
 
@@ -94,7 +94,7 @@ While editing, **The filter of the dashboard** is one query for all the widgets 
 1. **Title** <span class="step">1</span>.
 2. **From** <span class="step">2</span>: what it counts. Incidents, Artifacts, Indicators, Tasks, Runs of playbooks, Approvals, Audit log, each for who may read it.
 3. **Which ones** <span class="step">3</span>: a query, written or built with the builder. Same language as the lists: see [Write a query](search.md#write-a-query).
-4. **Grouped by** <span class="step">4</span>: a field. A date is grouped by hour, day, week, month or year.
+4. **Grouped by**: a field. A date is grouped by hour, day, week, month or year.
 5. **Measure** <span class="step">5</span>: **Count**, or the **Mean**, **Median**, **90th percentile**, **Sum**, **Minimum** or **Maximum** of a number or of the time between two dates.
 6. **Time field**: what the time range of the dashboard is counted on. Tick **Ignore the time range of the dashboard** for a widget that should not follow it.
 
@@ -141,7 +141,7 @@ On the **Work plan** tab of an incident:
 3. Choose who it is **For**: **The owner of the incident**, **A user** or **A role**, and a due time if you want.
 4. Save.
 
-Or type in the War Room: `/task Call the user @anna due=2h`.
+Or type in the War Room: `/task Call the user @elena.ricci due=2h`.
 
 ## Related
 

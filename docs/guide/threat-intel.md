@@ -71,7 +71,7 @@ Two rules decide whether a value is sent to a source.
 
     | Class | Example |
     | --- | --- |
-    | An e-mail address | `https://portal.example.org/reset?user=anna.bianchi@example.org` |
+    | An e-mail address | `https://portal.example.org/reset?user=elena.ricci@example.org` |
     | An internal name or address | A domain under your organisation's domains, a link with a private address in it |
     | An allowlisted name | A link that names a domain of the allowlist |
 

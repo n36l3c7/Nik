@@ -4,14 +4,14 @@ Choose what starts a playbook: something Nik analyses, an event, a schedule, a r
 
 Every playbook has exactly one **Trigger** node. Its four ways to start can be used alone or together.
 
-![The Starts part of the trigger in the inspector](../img/guide/triggers-1-inspector.png)
+![The Starts part of the trigger in the inspector: an event with its filter, a schedule and its time zone](../img/guide/triggers-1-inspector.png)
 
 | In the inspector | Starts the playbook |
 | --- | --- |
 | <span class="step">1</span> **On an event** | when something happens in Nik ([below](#what-nik-analyses)) |
 | <span class="step">2</span> **On a schedule** | at the times of a cron line ([below](#schedules)) |
-| <span class="step">3</span> **Starts from outside** | when another system sends a request to its address ([below](#requests-from-outside)) |
-| <span class="step">4</span> **Can be run by hand** | when a person runs it ([below](#a-person)) |
+| **Starts from outside** | when another system sends a request to its address ([below](#requests-from-outside)) |
+| **Can be run by hand** | when a person runs it ([below](#a-person)) |
 
 A run reads what started it under `{{ trigger.… }}`. Every field of every event is in [Events](../reference/events.md).
 
@@ -111,7 +111,7 @@ The playbook's own limits still hold: one that starts 60 runs an hour starts 60 
 ## Schedules
 
 1. In **On a schedule**, write five fields as in cron: minute hour day month weekday. `0 8 * * 1-5` is 08:00 from Monday to Friday.
-2. In **Time zone of the schedule**, name the zone. Empty is UTC.
+2. In **Time zone of the schedule** (<span class="step">4</span> in the picture at the top), name the zone: `Europe/Rome`. Empty is UTC.
 
 - A schedule fires every five minutes at most.
 - A firing that finds the run of the last one still going is skipped.

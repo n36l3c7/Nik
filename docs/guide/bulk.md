@@ -6,12 +6,12 @@ The three lists work the same way: the list of incidents, the artifacts panel, a
 
 ## Select rows
 
-![The list of incidents with rows ticked and the bulk bar](../img/guide/bulk-1-select.png)
+![The list of incidents: the heading checkbox ticks the 91 rows of the page, and the bulk bar shows 91 selected](../img/guide/bulk-1-select.png)
 
 - **Tick a row**: click its checkbox <span class="step">1</span>. A click anywhere else on the row still opens it as usual.
 - **Tick a range**: ++shift++ and click another checkbox. Every row between the last ticked one and this one is ticked.
 - **Tick the rows on screen**: the checkbox in the heading <span class="step">2</span>. It is half ticked when only some are.
-- **Tick everything the filter keeps**: when every row on screen is ticked and the filter keeps more, the bar offers **Select all 1,284 that match** <span class="step">3</span>. The server then works out which they are from the filter, not from what your browser has loaded.
+- **Tick everything the filter keeps**: when every row on screen is ticked and the filter keeps more, the bar offers **Select all 1,284 that match**. The server then works out which they are from the filter, not from what your browser has loaded. In the picture all 91 rows fit on the page, so the bar does not offer it.
 
 With the keyboard, on a row:
 
@@ -24,6 +24,8 @@ With the keyboard, on a row:
 
 !!! note "The selection lives inside one filter"
     It survives another order of the rows and the next page. It is emptied when the filter changes (the list says **The filter changed: the selection was cleared.**), once an action on it has started, and when you leave the page. Nothing selected in one list is ever acted on from another.
+
+![Ticking a range of rows with Shift, then the whole page from the heading](../img/guide/bulk-select.gif)
 
 ## The bar
 
@@ -78,14 +80,14 @@ As soon as a row is ticked, a bar appears over the list:
 
 ## Confirm
 
-![The confirmation dialog of a bulk close](../img/guide/bulk-2-confirm.png)
+![The confirmation dialog of a bulk close of 36 incidents, with what it will do](../img/guide/bulk-2-confirm.png)
 
 1. Choose an action in **Actions…**.
-2. Fill in what it needs <span class="step">1</span>: the tags, the reason, the list, the playbook…
+2. Fill in what it needs: the tags, the reason, the list, the playbook…
 3. Read what it will do, under the form <span class="step">2</span>:
     - how many it applies to (`It applies to 9 of 12`);
     - what it sets in motion: `38 of these are mirrored Out: their tickets will be updated, one update for each`; for a check, the requests it costs each source against today's quota.
-4. For a delete, or a close of more than 100 incidents, type the words the dialog shows (`delete 12`) <span class="step">3</span>.
+4. For a delete, or a close of more than 100 incidents, type the words the dialog shows (`delete 12`). Below 100, as in the picture, there is no such field.
 5. Click **Confirm**.
 
 !!! warning
@@ -100,17 +102,17 @@ As soon as a row is ticked, a bar appears over the list:
 
 ## What it did
 
-![The result of a bulk action with rows not done](../img/guide/bulk-3-result.png)
+![The result of a bulk close where every row was refused, each with its reason](../img/guide/bulk-3-result.png)
 
 When every row was done, a notice says so. Otherwise **What it did** opens:
 
 - how many were **done**, **skipped** (already so, or not for them), **refused** (a rule of a field, a type that wants something filled to close, a permission: with the sentence) and **failed**;
 - the rows not done, with the reason for each <span class="step">1</span>;
-- **Download the result (CSV)** <span class="step">2</span> for all of them.
+- **Download the result (CSV)** for all of them.
 
 Nothing is undone when some rows fail: the others stay changed.
 
-- **Try again on the N not done** <span class="step">3</span> makes a new job of the rows that failed or were never reached.
+- **Try again on the N not done** makes a new job of the rows that failed or were never reached. When every row was refused, as in the picture, there is nothing to try again and the button is not shown.
 - **Stop it**, on a running job, ends it after the row it is on. What was done stays.
 
 ### Every job of the last month

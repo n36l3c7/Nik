@@ -28,7 +28,7 @@ Nik never runs what you give it. Files are stored read-only on the server and an
 5. Check **Tab** <span class="step">4</span>, and the source when the tab needs one (**Browser** and **File**, **Shell**, **Category** and **Source**, or **Format**).
 6. Press **Start analysis**, **Import**, or **Create incident and import**.
 
-![The Add a file dialog after a drop](../img/guide/evidence-1-add-file.png)
+![The Add a file dialog after dropping PayslipViewer.pdf.exe, a file already analysed](../img/guide/evidence-1-add-file.png)
 
 A file Nik cannot place says *not recognised: choose where it goes*: pick the **Tab** yourself.
 
@@ -100,9 +100,9 @@ Right-click a file for **Open**, **Open in the list of …**, **Copy the name** 
 
 Nothing is opened until you choose. ++esc++ or the × closes the panel.
 
-![The panel shown for a pasted defanged address](../img/guide/evidence-3-paste.png)
+![The panel shown for a pasted defanged address, read as https://payroll-harbourline.example.net/sso/login](../img/guide/evidence-3-paste.png)
 
-- **Defanged text** is read as meant: `hxxps://evil[.]top/x`, `185.220.101[.]47`, `user[at]evil.top`. The panel says *Read as …*.
+- **Defanged text** is read as meant: `hxxps://payroll-harbourline[.]example[.]net/sso/login`, `203.0.113[.]66`, `payroll[at]payroll-harbourline.example.net`. The panel says *Read as …*.
 - A **file** on the clipboard is handled like a dropped file.
 - **Several values** open **Add indicators** with them.
 - Sentences and longer text are ignored.
@@ -224,13 +224,13 @@ A file of many e-mails is an artifact of its own.
 
 Each message becomes an e-mail artifact with its verdict, as if you had dropped its `.eml`. At most 500 go at a time, the newest first; when more match, the page says how many were left and **Import the next 500** goes on.
 
-![A mailbox with its graph of conversations](../img/guide/evidence-7-mailbox.png)
+![The mailbox finance-export.mbox: 89 of 220 messages imported, and the graph of conversations](../img/guide/evidence-7-mailbox.png)
 
 ### The graph of conversations
 
-- <span class="step">1</span> A row per message, newest first, joined to the message it answers. A colour is a conversation; two lines leaving one message are two answers, or an answer and a forward.
-- <span class="step">2</span> A **hollow node** is a message of the file not imported: select it and **Import this message**.
-- <span class="step">3</span> Selecting a row shows the message below: **From**, **To**, **Date**, **Answers**, **Answered by**. **Open the e-mail** opens its analysis; **Show only this conversation** narrows the graph to one thread.
+- A row per message, newest first, joined to the message it answers. A colour is a conversation; two lines leaving one message are two answers, or an answer and a forward.
+- A **hollow node** is a message of the file not imported: select it and **Import this message**.
+- Selecting a row shows the message below: **From**, **To**, **Date**, **Answers**, **Answered by**. **Open the e-mail** opens its analysis; **Show only this conversation** narrows the graph to one thread.
 - **Only phishing and suspicious** and **Whole file** (every message, imported or not) change what is listed.
 
 ### Put the messages in an incident

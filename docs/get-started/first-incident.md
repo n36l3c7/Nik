@@ -11,14 +11,14 @@ Work one case from start to end in about ten minutes: a user reported a suspicio
 
 1. In **Incidents**, click **New incident**.
 2. Fill in what you know. At least one of **Ticket ID**, **Short title**, **Host** or **User** is needed:
-    - **Ticket ID**: `INC-2041`
-    - **Short title**: `Invoice phishing, finance`
+    - **Ticket ID**: `HL-SEC-1090`
+    - **Short title**: `Payroll phishing, second wave`
     - **Severity**: `high`
-    - **User**: the person who reported it.
+    - **User**: the person who reported it, `k.osei` here.
 3. Pick the host's operating system if the case is about a machine. You can leave it out.
 4. Click **Create incident**.
 
-The incident opens on its **Summary** tab. Its name is built from the fields: `[INC-2041] Invoice phishing, finance`. Its number, `#00042` for example, is how you find it again: type `#42` in the search.
+The incident opens on its **Summary** tab. Its name is built from the fields: `[HL-SEC-1090] Payroll phishing, second wave`. Its number, `#00061` for example, is how you find it again: type `#61` in the search.
 
 More: [Work an incident](../guide/incidents.md#create-an-incident).
 
@@ -39,7 +39,7 @@ More: [Add evidence](../guide/evidence.md).
 
 ![The analysis of the e-mail, with its verdict](../img/get-started/first-incident-3-verdict.png)
 
-1. Look at the badge next to the subject <span class="step">1</span>: **phishing**, **suspicious** or **no strong signs**, with a score out of 100.
+1. Look at the verdict <span class="step">1</span>, in the badge next to the subject and in the **Verdict** card: **phishing**, **suspicious** or **no strong signs**, with a score out of 100.
 2. Read **Why this verdict** <span class="step">2</span>: each reason, such as a failed DMARC or a link that hides another address.
 3. Check the sender <span class="step">3</span>: **Reply-To** and **Return-Path** are marked when they differ from the sender.
 4. Look at the links and attachments further down. Nothing is opened on your machine.
@@ -72,11 +72,11 @@ More: [Find your way around](../guide/screen.md#right-click-menus).
 
 ## 6. Write in the War Room
 
-![A note in the War Room](../img/get-started/first-incident-5-war-room.png)
+![The War Room, with /assign @el typed in the line](../img/get-started/first-incident-5-war-room.png)
 
 1. Open the **War Room** tab.
 2. Type a note in the line at the bottom: `Reported by the user at 09:12, link not clicked.` Press ++enter++.
-3. Type `/assign @` and your username to take the incident.
+3. Type `/assign @` and the start of your username, `/assign @el` for elena.ricci. Pick the name in the list to take the incident.
 
 Everything said and done on the incident appears here, in order: your notes, commands, what playbooks did.
 

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   may still be used, changed and shared for free, in a company too, but
   not to offer a product or service that competes with it. Releases up
   to 6.10.0 stay under MIT.
+- **Documentation**: the site is written again as a searchable MkDocs
+  site, one short page per topic, with new screenshots: a user guide,
+  a guide to building playbooks, scripts, connectors and packs, a part
+  for whoever runs the server, and a reference. The README is shorter.
 
 ### Fixed
 

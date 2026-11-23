@@ -21,10 +21,10 @@ For a short introduction with screenshots, see [Search, filters and saved views]
 ```text
 status:open severity:>=high owner:""                 open, high or critical, nobody has it
 host:wks-* -status:closed created:>=now-7d          this week's incidents on workstations
-tag:phish -tag:test status:open                     open, tagged phish, tests left out
+tag:finance -tag:test status:open                   open, tagged finance, tests left out
 type:Phishing closeReason:"False positive" closed:>=now-30d
 severity IN (high, critical) slaBreached:true       serious ones that ran over their SLA
-number:42                                           incident #00042
+number:61                                           incident #00061
 kind:mail verdict:phishing tag:campaign             phishing e-mails of a campaign
 verdict:>=suspicious (type:ip or type:domain)       flagged addresses and domains
 list:"Watched C2" expired:false                     indicators of a watch list, still current

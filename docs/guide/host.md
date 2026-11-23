@@ -33,9 +33,9 @@ The four kinds show the paths and the collection commands of one operating syste
 1. Drop the file anywhere in the window: Nik proposes the kind and the source. See [Add evidence](evidence.md#drop-a-file).
 2. Or open the kind and use its **Sources** card (**Data sources** in Browser Forensics): it says where the file lives on the host, gives a native script that collects it, and has a drop zone for each source.
 
-![The Sources card of Endpoint Artifacts](../img/guide/host-2-sources.png)
+![The Sources card of Endpoint Artifacts, Persistence on Windows](../img/guide/host-2-sources.png)
 
-<span class="step">1</span> the source, <span class="step">2</span> where it lives on the host, <span class="step">3</span> the collection script to copy, <span class="step">4</span> the drop zone.
+Each source <span class="step">1</span> shows where it lives on the host, **Collection script** to copy, and its drop zone. In the picture, Run / RunOnce keys already holds a CSV of 2 rows.
 
 ## Endpoint Artifacts
 
@@ -54,19 +54,19 @@ Each source says where it lives on the incident's system and offers a collection
 
 The page shows the totals, **With timestamp**, **SOC detections** and **Flagged**, then the records. A clock marks activity outside business hours. Flag a record with **Flag as malicious**. The range can be set to the incident's suspicious window.
 
-![Endpoint Artifacts: program execution](../img/guide/host-3-endpoint.png)
+![Endpoint Artifacts: program execution read from a BAM export, four rows](../img/guide/host-3-endpoint.png)
 
 ## Event Logs
 
 1. In **Sources — Windows event logs**, drop the `.evtx` files under **Raw logs (.evtx)**, or the JSON of the script under **Live host (collection script)**.
 2. Nik keeps about fifty event IDs that matter: logons, process creation, services, scheduled tasks, accounts, PowerShell, RDP, Defender, Sysmon. Records left in the file after a log was cleared are recovered and marked.
 
-![Event Logs: coverage and logon sessions](../img/guide/host-4-eventlogs.png)
+![Event Logs read from the JSON of the collection script: the logs, their coverage and the start of the logon sessions](../img/guide/host-4-eventlogs.png)
 
-- <span class="step">1</span> The table of logs: **Channel**, **Source**, **Covers**. A badge marks records recovered after a clear.
-- <span class="step">2</span> **Log coverage**: each log's span, its silences and clears, against the suspicious window.
-- <span class="step">3</span> **Logon sessions**: logons paired with their logoffs, with user, type, source and duration. A badge marks special privileges (4672).
-- <span class="step">4</span> **Events**: filter by **Only flagged by SOC**, **High severity**, **Outside hours**, by category and by channel.
+- The table of logs: **Channel**, **Source**, **Covers**. A badge marks records recovered after a clear.
+- **Log coverage**: each log's span, its silences and clears, against the suspicious window.
+- **Logon sessions**: logons paired with their logoffs, with user, type, source and duration. A badge marks special privileges (4672).
+- **Events**, further down: filter by **Only flagged by SOC**, **High severity**, **Outside hours**, by category and by channel.
 
 A ruleset flags log clearing, brute force, RDP outside business hours and more. See [Detection and rules](detection.md).
 

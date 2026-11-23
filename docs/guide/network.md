@@ -10,14 +10,14 @@ Read a packet capture in the browser with Wireshark's own engine: packets, filte
 
 A capture stays **stored, not analysed** when the server has no packet capture worker (`PCAP_URL`). Nothing is ever captured on the server: Nik only reads files.
 
-![A capture in Network Analysis: the Packets view](../img/guide/network-1-packets.png)
+![The Packets view of hl-fin-ws014-0745.pcap: the POST requests to 203.0.113.66 kept by the filter, one open in the tree and the bytes](../img/guide/network-1-packets.png)
 
-The head of the capture holds <span class="step">1</span> its state and badges, <span class="step">2</span> **Add TLS keys**, **Capture** (download), **Re-analyse** and **Remove**, and <span class="step">3</span> the views: **Packets**, **Objects**, **Summary** (and **Requests** for a session of the isolated browser).
+The head of the capture holds its state and badges, **Add TLS keys**, **Capture** (download), **Re-analyse** and **Remove**, and the views: **Packets**, **Objects**, **Summary** (and **Requests** for a session of the isolated browser).
 
 ## Packets
 
-- <span class="step">4</span> **Display filter**: type a filter in Wireshark's syntax (`http.request.method == "POST"`) and press ++enter++. The × clears it.
-- <span class="step">5</span> The packet list, with Wireshark's colours. Click a column header to sort the packets loaded so far; again for the reverse; a third time for the capture's order.
+- <span class="step">3</span> **Display filter**: type a filter in Wireshark's syntax (`http.request.method == "POST"`) and press ++enter++. The × clears it.
+- <span class="step">5</span> The packet list, with Wireshark's colours. Click a column header <span class="step">4</span> to sort the packets loaded so far; again for the reverse; a third time for the capture's order.
 - <span class="step">6</span> The protocol tree and the bytes of the selected packet. Selecting a field highlights its bytes.
 - **Time format**: **Seconds since start**, **Date and time (UTC)** or **Since previous packet**.
 

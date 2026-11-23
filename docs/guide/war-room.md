@@ -16,16 +16,17 @@ An incident has these tabs. Its type can reorder them, hide some and add pages o
 
 ## The Summary
 
-![The Summary of an incident](../img/guide/war-room-1-summary.png)
+![The Summary of incident #00061](../img/guide/war-room-1-summary.png)
 
-The Summary is a grid of widgets, arranged for the type as a dashboard is. Out of the box:
+The Summary is a grid of widgets, arranged for the type as a dashboard is. The picture shows the Phishing type of incident #00061:
 
 - **Incident details** <span class="step">1</span>: name, ticket, severity, status, owner, host, user, system and the suspicious window. **Edit the incident** changes them.
-- **Numbers of the evidence** <span class="step">2</span>: counters per kind of evidence, flags and notes.
+- **Script buttons** <span class="step">2</span>, here titled **Response**: buttons that run a script on the incident (see below).
 - **The sections of its type** <span class="step">3</span>, each with its fields and an **Edit** button.
-- **Flags and notes** <span class="step">4</span>: what was flagged and written, in order of time.
+- **Numbers of the evidence** <span class="step">4</span>: counters per kind of evidence, flags and notes.
+- **Flags and notes**, at the foot: what was flagged and written, in order of time.
 
-A type can add more widgets: **Timers** (SLA), **Evidence**, **War Room**, **Work plan**, **Indicators**, **Script buttons**, **Chart of a dashboard**, **Linked incidents**, a text of its own. Administrators arrange them: see [Types, fields and pages](types.md).
+Incident details, Numbers of the evidence, the sections and Flags and notes come out of the box. A type can add more widgets: **Timers** (SLA), **Evidence**, **War Room**, **Work plan**, **Indicators**, **Script buttons**, **Chart of a dashboard**, **Linked incidents**, a text of its own. Administrators arrange them: see [Types, fields and pages](types.md).
 
 - **Chart of a dashboard** shows one widget of a dashboard narrowed to what this incident holds for one field: a chart of incidents by day becomes the incidents **on this host** by day. An incident with nothing in that field shows no chart, and says so.
 - **Linked incidents** lists up to ten incidents linked to this one: those named in its **Related incidents** field (and those that name it), then those that share indicators with it, most shared first. Allowlisted values link nothing.
@@ -44,7 +45,7 @@ A flagged sample, e-mail, capture or address shows a small flag in its list. On 
 
 ## Script buttons
 
-![A Script buttons widget and its run dialog](../img/guide/war-room-2-script-buttons.png)
+![The Within business hours? button pressed: its run dialog, one argument read from the Created field and four to fill](../img/guide/war-room-2-script-buttons.png)
 
 A **Script buttons** widget holds up to eight buttons, each running a script on the incident.
 
@@ -93,11 +94,11 @@ The log of the incident: notes, commands and their results, each step a playbook
 |---|---|
 | Plain text | A note of the incident. The same note shows on the Summary and in the report. |
 | `/note text` | The same. |
-| `/assign @anna` | Gives the incident to anna. `/assign` alone: to nobody. |
+| `/assign @elena.ricci` | Gives the incident to elena.ricci. `/assign` alone: to nobody. |
 | `/close` | Opens the form that closes the incident. |
-| `/task Call the user @anna due=2h` | Adds a task to the work plan, for anna, due in two hours. |
-| `!ip 185.220.101.47` | Runs a command: what is known of an address. |
-| `@anna` in a note | Tells anna by the bell. |
+| `/task Call the user @elena.ricci due=2h` | Adds a task to the work plan, for elena.ricci, due in two hours. |
+| `!ip 203.0.113.66` | Runs a command: what is known of an address. |
+| `@elena.ricci` in a note | Tells elena.ricci by the bell. |
 
 The name of a command is completed while you type and its arguments are hinted. A command that changes something outside asks **Run this command?** first. Commands need the right to run playbooks; see [War Room commands](commands.md).
 

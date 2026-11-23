@@ -47,7 +47,7 @@ If administrators must have a second factor and you have none yet, Nik asks you 
 3. Type the **Code the app shows** and click **Turn it on**.
 4. **Copy** or **Download** the ten recovery codes. They are shown only once. Keep them away from your password.
 
-![Setting up the second factor](../img/get-started/first-sign-in-3-second-factor.png)
+![Setting up the second factor for the account tom.becker: the QR code, the secret and the code field](../img/get-started/first-sign-in-3-second-factor.png)
 
 Any account can set up a second factor later, under **Platform settings › Access › My account › Set up a second factor…**. See [Accounts, roles and sign-in](../guide/accounts.md).
 
@@ -62,10 +62,10 @@ Nik opens on the list of incidents.
 | <span class="step">1</span> | **The rail** | One icon per section: Dashboards, Incidents, My tasks, Artifacts, Indicators, Automations, Playground. |
 | <span class="step">2</span> | **Search** | The bar in the middle of the header. ++ctrl+k++ or ++"/"++ opens it from anywhere. |
 | <span class="step">3</span> | **The query box** | Filters the list as you type: `status:open severity:>=high`. |
-| <span class="step">4</span> | **New incident** | Opens the form of a new incident. **Import incident** is beside it. |
+| <span class="step">4</span> | **Save filter…** | Keeps the query as a view of your own. **New incident** and **Import incident** are above it. |
 | <span class="step">5</span> | **Notifications** | Tasks given to you, approvals that wait, mentions, timers past their time. |
 | <span class="step">6</span> | **Platform settings** | Every setting, in sections. |
-| <span class="step">7</span> | **Your account** | Who is signed in, **My account**, **Sign out**. |
+| | **Your account** | The last icon of the rail: who is signed in, **My account**, **Sign out**. |
 
 An entry of the rail is shown only when your roles let you use it. [Find your way around](../guide/screen.md) explains each part.
 

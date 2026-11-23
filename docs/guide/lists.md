@@ -17,7 +17,7 @@ Keep the values that features and playbooks read by a name (the allowlist, your 
 - <span class="step">3</span> The chosen list: its label, its kind, **shipped with Nik** or **read here only**, its name, what it holds, who changed it last.
 - <span class="step">4</span> **Where it is used**: the features and playbooks that read it.
 - <span class="step">5</span> Its items, and **Save the items**.
-- <span class="step">6</span> **Export JSON**, **Export CSV**, **Import a file…**, **Delete the list**.
+- **Export JSON**, **Export CSV**, **Import a file…**, **Delete the list**.
 
 The address of the section is `/settings/lists/all`; `?open=<name>` opens one list.
 

@@ -26,7 +26,7 @@ See at a glance whether the server is well, get told when it is not, scrape it w
 
 1. Read **What needs attention** <span class="step">1</span> at the top.
 2. Open a row <span class="step">2</span> to go to its page.
-3. Change the limits under **Thresholds** <span class="step">3</span> at the foot, then **Save the thresholds**.
+3. Change the limits under **Thresholds** at the foot (below the picture), then **Save the thresholds**.
 
 ### Warnings
 

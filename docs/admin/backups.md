@@ -25,14 +25,14 @@ A backup is read with its passphrase alone: the store key is not needed to resto
 Nik takes no backup until a passphrase is set. Do this on the first day.
 
 1. Open **Platform settings › System › Backup**.
-2. In **Backup settings**, type the **Passphrase** <span class="step">1</span> and **The same passphrase again**.
+2. Under **Passphrase**, type the **Passphrase** and **The same passphrase again**. Once one is set, they are behind **Change the passphrase…** <span class="step">1</span>.
 3. Check the **Schedule** <span class="step">2</span>: every few hours, every day at a time, or every week, in the **Time zone** you name.
 4. Check **What is kept** <span class="step">3</span>.
 5. Decide on **Include SECRET_KEY inside the encrypted backup** <span class="step">4</span> (off by default). On: a backup and its passphrase bring everything back, and are also enough for whoever holds both to read every stored secret.
 6. Press **Save the settings**, then **Back up now** to take the first one.
 7. Set up [the copy off the server](#the-copy-off-the-server).
 
-![Backup settings: passphrase, schedule and what is kept](../img/admin/backups-2-settings.png)
+![The settings of the Backup page with a passphrase set: Change the passphrase…, the schedule, what is kept and the copy off the server](../img/admin/backups-2-settings.png)
 
 | Setting | Default |
 | --- | --- |
@@ -46,11 +46,11 @@ What a lost server loses is what was written since the last backup: up to six ho
 
 ## The Backup page
 
-![The Backup page: state of the backups and the list](../img/admin/backups-1-page.png)
+![The top of the Backup page: the state of the backups and Back up now](../img/admin/backups-1-page.png)
 
 - **State of the backups** <span class="step">1</span>: the last good one, the next run, the directory and its free room, what the kept backups take.
 - **Back up now** <span class="step">2</span> takes one at once (the same as `deploy/backup.sh` on the host, which exits 0 when the backup passed its test).
-- Each row <span class="step">3</span>: **Verify now** runs the restore test again, **Download the encrypted file**, **Copy the restore command**, **Delete…** (deleting the last good backup is asked twice).
+- Each row of the **Backups** list, further down: **Verify now** runs the restore test again, **Download the encrypted file**, **Copy the restore command**, **Delete…** (deleting the last good backup is asked twice).
 
 Never two at once, and none while a release is migrating the database. A file is written as `….nikbak.partial` and renamed when complete.
 
