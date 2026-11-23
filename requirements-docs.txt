@@ -1,0 +1,4 @@
+# The documentation site (mkdocs.yml). Exact versions: the site is built the same way every time.
+mkdocs==1.6.1
+mkdocs-material==9.8.0
+mkdocs-glightbox==0.5.3

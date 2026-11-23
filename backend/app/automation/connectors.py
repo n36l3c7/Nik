@@ -21,7 +21,7 @@ becomes an action of the canvas, ``<connector id>.<command>``.
 This module only reads and validates (``load``): a file is refused with every
 problem and the **line** each is on, because these files are written by hand.
 Running a command is ``connector_runtime.py``; the format is documented key by
-key in ``docs/automation.html``.
+key in ``docs/reference/connector-format.md``.
 
 Templates may read ``config`` (the connection's values), ``args``,
 ``steps`` (the answers of earlier steps of the same command), ``now`` (the

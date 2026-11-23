@@ -72,7 +72,7 @@ The server takes its own backups (`app/backups/`, routes under `/api/backups`):
 the database and the store of files in one encrypted file, on a schedule, each
 tested by restoring it into a scratch database, with a copy sent over SFTP.
 Restoring is done from the command line (`deploy/restore.sh`). See "Backups" in
-the deployment guide (`docs/deployment.html`).
+the administration guide (`docs/admin/backups.md`).
 
 `GET /api/backup/export` (admin only) returns a single JSON envelope with every
 user (password hashes included), incident, audit entry and the shared settings.
@@ -104,7 +104,7 @@ gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 127.0.0.1:8000
 ```
 
 Set `DATABASE_URL` to your PostgreSQL instance and `COOKIE_SECURE=true` (served
-over HTTPS). See `docs/deployment.html` for the full RHEL deployment guide
+over HTTPS). See `docs/admin/manual-install.md` for the full RHEL deployment guide
 (PostgreSQL setup, systemd unit, SELinux, nginx).
 
 ## Migrations, tests and ops
@@ -117,7 +117,7 @@ over HTTPS). See `docs/deployment.html` for the full RHEL deployment guide
   a copy, and only then runs them. The dev flow keeps `create_all` for zero
   setup. A migration does not touch the files of the store (the snapshot holds
   the database alone); the rule and what to do if one must is in
-  `docs/developer.html`.
+  `docs/reference/developer.md`.
 - **Backups.** `app/backups/`: the file format (`container.py`, which also
   runs alone), the database and the store inside it, the runner and its
   restore test, the schedule and retention (`policy.py`), the notices
