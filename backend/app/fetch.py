@@ -36,7 +36,8 @@ where it stopped, without the look-back, until one cycle reads everything.
 *reached* is kept in ``fetch_state`` under ``_since``, beside what the
 connector keeps there. Resetting the last run empties ``fetch_state``: the
 next cycle starts from the first fetch again, and ``fetched_items`` stays, so
-nothing is made twice.
+nothing is made twice; only the items whose incident was deleted are forgotten,
+and made again.
 
 A connector that can give what an item was made of gives it once the item has
 an incident, and it is kept as evidence of that incident: the Mail connector
@@ -68,7 +69,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -276,12 +277,29 @@ def since_of(connection: Connection, settings: Settings, now: float) -> float:
     return float(reached) - (0 if part.get("cut") else settings.lookback * 60)
 
 
-def reset(db: OrmSession, connection: Connection) -> None:
+def reset(db: OrmSession, connection: Connection) -> int:
     """Forget where the last run stopped (the caller commits): the next cycle starts from the first
-    fetch. What was fetched before stays in ``fetched_items``, so none of it is made twice."""
+    fetch. What was fetched before stays in ``fetched_items``, so none of it is made twice; but an
+    item whose incident was deleted since is forgotten too, and the next cycle makes it again.
+    Returns how many were forgotten so."""
     connection.fetch_state = None
     flag_modified(connection, "fetch_state")
     _keep_status(connection, truncated=False)
+    gone = (
+        select(FetchedItem.item_id)
+        .where(
+            FetchedItem.connection_id == connection.id,
+            FetchedItem.incident_id.is_not(None),
+            ~select(Incident.id).where(Incident.id == FetchedItem.incident_id).exists(),
+        )
+        .scalar_subquery()
+    )
+    forgotten = db.execute(
+        delete(FetchedItem)
+        .where(FetchedItem.connection_id == connection.id, FetchedItem.item_id.in_(gone))
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    return int(forgotten or 0)
 
 
 def enable(db: OrmSession, connection: Connection, enabled: bool, now: float) -> None:

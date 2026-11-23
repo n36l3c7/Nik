@@ -17,6 +17,7 @@ import {
   lookbackHint,
   nextText,
   outcomeBadge,
+  resetDone,
   resetText,
   stateBadge,
 } from '../../../domain/fetch.js'
@@ -222,7 +223,7 @@ export default function InstanceFetch({ connector, instance, form, onForm, statu
       (answer) => {
         onStatus(answer)
         setResetting(false)
-        setSaid(`The last run of ${instance.name} was reset: its next cycle starts from the first fetch.`)
+        setSaid(resetDone(instance.name, answer.forgotten))
       },
     )
 

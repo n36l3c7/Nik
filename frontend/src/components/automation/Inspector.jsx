@@ -1094,10 +1094,10 @@ function KindSettings({
           {entry.needsConnection && (
             <Field
               label="Instance"
-              required
+              required={(connections[entry.connector] ?? []).length > 1}
               hint={
                 (connections[entry.connector] ?? []).length === 0
-                  ? `No instance of ${entry.group} is on yet: add one in Settings → Automation → Connectors.`
+                  ? `No instance of ${entry.group} is on yet: add one in Settings → Automation → Connectors. Left empty, the node uses the one that is on when it runs.`
                   : 'The system this node talks to. The playbook may reach its host.'
               }
               problem={problemAt('connection')}
@@ -1112,7 +1112,9 @@ function KindSettings({
                     {
                       value: '',
                       label:
-                        (connections[entry.connector] ?? []).length === 1 ? '(the only one)' : '(choose an instance)',
+                        (connections[entry.connector] ?? []).length > 1
+                          ? '(choose an instance)'
+                          : '(the only one that is on)',
                     },
                     ...(connections[entry.connector] ?? []).map((connection) => ({
                       value: connection.name,

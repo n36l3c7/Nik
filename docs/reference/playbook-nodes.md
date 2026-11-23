@@ -175,7 +175,7 @@ A file is as large as an upload at most (`SAMPLE_MAX_MB`). **Download a file** i
 
 Each command of an installed connector is a node `<connector>.<command>`, with the arguments and outputs its file declares, and an **Instance**. A command marked *changes* asks first and is never sent in a dry run (the step gives its `sample`). See [Connector and pack format](connector-format.md).
 
-The node **Send an e-mail** (`email.send`) is kept in the playbooks that have it and is not offered for new ones: use the commands of the Mail connector.
+The node **Send an e-mail** (`email.send`) is kept in the playbooks that have it and is not offered for new ones: use the commands of the Mail connector. The playbooks Nik ships use `mail.send` since 6.10.2; a copy added by an earlier release keeps its node, which still works.
 
 ## Expressions
 

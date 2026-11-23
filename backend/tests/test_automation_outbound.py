@@ -549,7 +549,7 @@ def test_the_email_node_of_before_sends_through_an_instance_of_the_mail_connecto
     pb = playbook(admin, "Off", [new], [edge("start", "mail")])
     admin.put(f"/api/automation/playbooks/{pb}/egress", json={"mode": "listed", "hosts": ["corp.example"]})
     # It names no instance and none is on: it has nowhere to send. Named, it is told that it is off.
-    assert "Choose an instance" in go(admin, pb)["error"]
+    assert "No instance of Mail listener / sender is on: add one in Settings, Connectors" in go(admin, pb)["error"]
     named = dict(new, config={**new["config"], "connection": "Mail (from Settings)"})
     pb = playbook(admin, "Off, named", [named], [edge("start", "mail")])
     assert "is off: turn it on in Settings, Connectors" in go(admin, pb)["error"]

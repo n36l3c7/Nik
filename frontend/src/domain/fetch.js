@@ -165,7 +165,15 @@ export function fetchChanged(form, connector, instance) {
 /** What resetting the last run will do, said before it is done. */
 export function resetText(status) {
   const first = status?.firstFetch || 'the first fetch'
-  return `The next cycle reads again from ${first} ago. What was already imported is skipped: no incident is made twice.`
+  return `The next cycle reads again from ${first} ago. What was already imported is skipped: no incident is made twice. An alert whose incident was deleted is imported again.`
+}
+
+/** What is said once the last run was reset (`forgotten`: the items whose incident was deleted). */
+export function resetDone(name, forgotten = 0) {
+  const again = forgotten
+    ? ` ${forgotten} alert${forgotten === 1 ? '' : 's'} whose incident was deleted ${forgotten === 1 ? 'is' : 'are'} imported again.`
+    : ''
+  return `The last run of ${name} was reset: its next cycle starts from the first fetch.${again}`
 }
 
 /** What the look-back does, under its field. */

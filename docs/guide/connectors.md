@@ -24,7 +24,7 @@ Most connectors come in [content packs](packs.md). The **Mail listener / sender*
 - <span class="step">3</span> The form of the instance and its tabs: **Connection**, **Keys**, **Fetch**, **Classifier**, **Mappers**.
 - <span class="step">4</span> The one **Save** for every tab (**Create** for a new instance).
 
-A connector is *enabled* while one of its instances is on; only then are its commands in the library. A node names its instance in its **Instance** field; a node that names none takes the only instance that is on.
+A connector is *enabled* while one of its instances is on; only then are its commands in the library. A node names its instance in its **Instance** field; a node that names none takes the only instance that is on when it runs. With two instances or more, a node must name one: the playbook is not saved until it does. With none yet, the node is saved and its step says, when it runs, that one is to be added.
 
 !!! warning "Credentials are never shown again"
     They are stored encrypted, here and in the API. To change one, type it again. Every playbook that uses the instance may reach its host.
@@ -82,7 +82,7 @@ One cycle: send the request (200 items at most), skip any item already fetched (
     - An item the mapper cannot make whole still becomes an incident: **What it fetched…** lists it as incomplete, with what was wrong. Fix the mapper.
     - A request that fails marks the instance *failing* and is tried again later, an hour apart at most.
     - More than 500 incidents in an hour pauses the instance, losing nothing. **Resume** goes on.
-    - **Reset last run…** reads again from the first fetch. Items already imported are skipped by id.
+    - **Reset last run…** reads again from the first fetch. Items already imported are skipped by id, except those whose incident was deleted: they are imported again. Deleting an incident alone does not bring it back.
 
 Before an item becomes an incident, the [pre-processing rules](types.md#pre-processing-rules) may drop it, link it to an open incident or close it as a duplicate.
 

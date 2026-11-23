@@ -5702,7 +5702,7 @@ test('fetching is set in the instance: how often, the look-back, why it fails, R
   await goes.getByRole('button', { name: 'Reset last run…' }).click()
   const confirm = page.getByRole('dialog', { name: 'Reset the last run?' })
   await expect(confirm).toContainText(
-    'The next cycle reads again from 1 days ago. What was already imported is skipped: no incident is made twice.',
+    'The next cycle reads again from 1 days ago. What was already imported is skipped: no incident is made twice. An alert whose incident was deleted is imported again.',
   )
   await confirm.getByRole('button', { name: 'Cancel' }).click()
   await goes.getByRole('button', { name: 'Reset last run…' }).click()
