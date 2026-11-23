@@ -267,6 +267,9 @@ def test_the_report_of_a_recheck_says_what_changed(admin: TestClient, library, s
         vendor.source(db, "shodan")  # a source that is on: there is someone to ask
     outside.host("smtp.example.org", "93.184.215.25")
     assert admin.put("/api/automation/settings", json={"smtp": SMTP}).status_code == 200
+    with SessionLocal() as db:  # the server of the settings becomes the instance of Mail it sends through
+        assert connector_actions.adopt_smtp(db) is True
+        db.commit()
     admin.post("/api/iocs", json={"text": f"{IP}\nevil.example", "list": {"name": "AsyncRAT C2", "watch": True}})
     pb = by_name(admin)["Weekly re-check of the watched lists"]["id"]
     assert (
