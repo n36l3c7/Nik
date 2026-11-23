@@ -110,20 +110,23 @@ def reset_last_run(
 ) -> dict:
     """Forget where the last run of a connection stopped: its next cycle reads again from as far
     back as its first fetch says. What it fetched before is still known by its id and is skipped,
-    so no incident is made twice."""
+    so no incident is made twice; an item whose incident was deleted is made again
+    (``forgotten``: how many)."""
     connection = _connection(db, connection_id)
     if not fetch.out(db, connection)["canFetch"]:
         raise HTTPException(status_code=400, detail="The connector of this instance does not say how to fetch")
-    fetch.reset(db, connection)
+    forgotten = fetch.reset(db, connection)
+    again = f"; {forgotten} item{'s' if forgotten != 1 else ''} whose incident was deleted will be made again"
     audit.record(
         db,
         caller.actor,
         "fetch.reset",
-        f'Reset the last run of "{connection.name}": its next cycle starts from the first fetch',
+        f'Reset the last run of "{connection.name}": its next cycle starts from the first fetch'
+        + (again if forgotten else ""),
         target=connection.name,
     )
     db.commit()
-    return fetch.out(db, connection)
+    return {**fetch.out(db, connection), "forgotten": forgotten}
 
 
 @router.get("/{connection_id}/items")

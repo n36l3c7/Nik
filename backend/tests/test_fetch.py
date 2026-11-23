@@ -521,6 +521,21 @@ def test_resetting_the_last_run_starts_from_the_first_fetch_and_makes_nothing_tw
     assert abs(asked - (before - 3 * 86400)) < 30
     assert (again["fetched"], again["new"], again["created"]) == (3, 0, 0) and len(incidents(admin)) == 3
     assert len(admin.get(f"/api/fetch/{connection['id']}/items").json()["items"]) == 3
+    assert reset.json()["forgotten"] == 0
+
+    # An incident deleted since: the next cycle alone does not bring it back (deleting it was meant),
+    # a reset does, and only that one.
+    (name, gone), *_ = incidents(admin).items()
+    assert admin.delete(f"/api/incidents/{gone['id']}").status_code == 204
+    assert run(admin, connection)["result"]["created"] == 0 and len(incidents(admin)) == 2
+    reset = admin.post(f"/api/fetch/{connection['id']}/reset")
+    assert reset.status_code == 200 and reset.json()["forgotten"] == 1
+    assert admin.get("/api/audit").json()["entries"][0]["details"].endswith(
+        "; 1 item whose incident was deleted will be made again"
+    )
+    back = run(admin, connection)["result"]
+    assert (back["fetched"], back["new"], back["created"]) == (3, 1, 1)
+    assert len(incidents(admin)) == 3 and name in incidents(admin)
 
 
 def test_a_state_an_older_release_left_starts_from_the_first_fetch_once(admin: TestClient, outside):

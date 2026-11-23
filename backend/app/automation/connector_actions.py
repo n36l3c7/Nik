@@ -460,7 +460,15 @@ def run_command(connector_id: str, command_name: str, call: actions.Call) -> act
         raise actions.ActionError("This command is not in the connector any more", retry=False)
     connection = find_connection(db, connector_id, call.connection)
     if connection is None:
-        what = f'The instance "{call.connection}" does not exist' if call.connection else "Choose an instance"
+        if call.connection:
+            what = f'The instance "{call.connection}" does not exist'
+        elif any(row.enabled for row in db.scalars(select(Connection).where(Connection.connector_id == connector_id))):
+            what = "Choose an instance"  # several are on: the node names none
+        else:
+            raise actions.ActionError(
+                f"No instance of {connector.name} is on: add one in Settings, Connectors, for this node to send",
+                retry=False,
+            )
         raise actions.ActionError(f"{what}: {connector.name} needs one to know where to send", retry=False)
     if not connection.enabled:
         raise actions.ActionError(

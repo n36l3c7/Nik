@@ -116,7 +116,7 @@ A standby runs the same stack with a database that replays the log the first hos
 
     ```sh
     git clone https://github.com/n36l3c7/Nik.git /opt/Nik && cd /opt/Nik
-    git checkout v6.10.1                                   # the version the first host runs
+    git checkout v6.10.2                                   # the version the first host runs
     deploy/init-env.sh
     $EDITOR .env                                           # TLS_HOSTNAME, ports
     deploy/standby.sh secrets import nik-keys.txt
@@ -173,7 +173,7 @@ Any host that can read the directory of the copies can bring the server back, wi
 
     ```sh
     git clone https://github.com/n36l3c7/Nik.git /opt/Nik && cd /opt/Nik
-    git checkout v6.10.1
+    git checkout v6.10.2
     deploy/init-env.sh
     $EDITOR .env                   # TLS_HOSTNAME, ports
     ```
@@ -203,7 +203,7 @@ You need: Docker or Podman and git, the backups received (`/srv/nik-backups/inco
     ```sh
     git clone https://github.com/n36l3c7/Nik.git /opt/Nik && cd /opt/Nik
     grep '"nik"' /srv/nik-backups/incoming/nik-20261120-023000.json
-    git checkout v6.10.1
+    git checkout v6.10.2
     ```
 
 2. Make this host's settings, then put the old keys in (skip if the backup holds the key):

@@ -109,7 +109,10 @@
             "y": 820
           },
           "config": {
-            "action": "email.send",
+            "action": "mail.send",
+            "approval": {
+              "ask": false
+            },
             "args": {
               "to": [
                 "soc@example.org"

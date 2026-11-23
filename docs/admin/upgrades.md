@@ -86,6 +86,13 @@ A snapshot taken while no passphrase was set is read with this server's `SECRET_
 
 What each release asks of an administrator. The full list of changes is in the [Changelog](../changelog.md). An [install without containers](manual-install.md#update-to-a-new-version) has its own steps.
 
+### Upgrading to 6.10.2 {#upgrading-to-6102}
+
+`git pull`, then `docker compose up -d --build`. No migration, nothing to set.
+
+- The playbooks Nik ships that send e-mail use the Mail connector's `send` command. A server that has them already keeps its copies, with the older node, which still works (a shipped playbook is added once, and is not added again once deleted). To take the new one, change the node by hand, or **Import** the file from `backend/app/automation/seed/playbooks/` on the list of playbooks: it arrives as a draft, with " (2)" after its name while the old one is there.
+- A node of a connector left with no instance named now sends through the only instance that is on. A playbook whose node names none, on a connector with two instances or more, still has to name one.
+
 ### Upgrading to 6.10.1 {#upgrading-to-6101}
 
 `git pull`, then `docker compose up -d --build`. No migration, nothing to set.

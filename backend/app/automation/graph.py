@@ -433,12 +433,15 @@ def _check_node(node: dict, library: Library, problems: list[Problem]) -> None:
         else:
             _check_arguments(node, entry["arguments"], problems)
             if entry.get("needsConnection"):
-                # A command of a connector is sent through a connection: the one named, or the only one.
+                # A command of a connector is sent through a connection: the one named, or else the only
+                # one that is on when it runs. Named none, with several there is no knowing which: one is
+                # chosen. With none yet (a playbook Nik ships, a fresh install), the step says when it
+                # runs that one is to be added.
                 known = getattr(library, "connections", lambda _connector: [])(entry.get("connector"))
                 wanted = str(config.get("connection") or "")
                 if wanted and not any(wanted in pair for pair in known):
                     problems.append(Problem("This connection does not exist", node_id, "connection"))
-                elif not wanted and len(known) != 1:
+                elif not wanted and len(known) > 1:
                     problems.append(Problem("Choose the connection to send through", node_id, "connection"))
         _check_on_error(node, problems)
         if "safe_to_repeat" in config:

@@ -118,21 +118,23 @@ def test_they_are_added_once_and_off_and_are_the_teams_from_then_on(admin: TestC
     own = {source["name"] for _key, source in shipped.files()}
     assert len(own) == 4
     assert all(listed[name]["builtin"] == (name in own) and not listed[name]["enabled"] for name in NAMES.values())
-    # What needs nothing chosen has a version and can be turned on; the others are drafts that say what is missing.
+    # What needs nothing chosen has a version and can be turned on; the other is a draft that says what
+    # is missing. A node of a connector with no instance yet is not something to choose: it sends through
+    # the one that is on when it runs.
     ready = {name for name in NAMES.values() if listed[name]["version"] == 1}
     assert ready == {
         "Phishing triage",
         "Weekly re-check of the watched lists",
         "Disk almost full notice",
         "Analyse the attachments of an e-mail",
+        "Incident to ticketing",
     }
-    for name in ("Malicious indicator to a block list", "Incident to ticketing"):
-        row = listed[name]
-        assert row["version"] is None and row["hasDraft"] is True
-        refused = admin.put(f"/api/automation/playbooks/{row['id']}/enabled", json={"enabled": True})
-        assert refused.status_code == 400
-        problems = admin.post(f"/api/automation/playbooks/{row['id']}/versions", json={}).json()["problems"]
-        assert "Choose the connection to send through" in {problem["message"] for problem in problems}
+    row = listed["Malicious indicator to a block list"]
+    assert row["version"] is None and row["hasDraft"] is True
+    refused = admin.put(f"/api/automation/playbooks/{row['id']}/enabled", json={"enabled": True})
+    assert refused.status_code == 400
+    problems = admin.post(f"/api/automation/playbooks/{row['id']}/versions", json={}).json()["problems"]
+    assert '"repository" is required' in {problem["message"] for problem in problems}
     # A schedule that is off fires nothing.
     worker.drain(T0 + 14 * 86400)
     with SessionLocal() as db:
@@ -184,8 +186,8 @@ def test_each_file_is_imported_by_hand_like_any_other(admin: TestClient):
             if item["kind"] == "script":
                 assert isinstance(item["config"]["script_version"], int), (key, item["id"])
         messages = {problem["message"] for problem in body["problems"]}
-        if key in ("block-malicious-indicator", "incident-to-ticket"):
-            assert "Choose the connection to send through" in messages, key
+        if key == "block-malicious-indicator":
+            assert '"repository" is required' in messages, key
         else:
             assert messages == set(), key
 
@@ -391,7 +393,7 @@ def test_incident_to_ticketing_in_a_dry_run(admin: TestClient, library, outside)
         {"username": "nik", "password": "a-password"},
     )
     row = by_name(admin)["Incident to ticketing"]
-    shape = detail(admin, row["name"])["draft"]
+    shape = detail(admin, row["name"])["graph"]
     next(n for n in shape["nodes"] if n["id"] == "ticket")["config"]["connection"] = "ServiceNow"
     saved = admin.post(f"/api/automation/playbooks/{row['id']}/versions", json={"graph": shape})
     assert saved.status_code == 201, saved.text
@@ -425,9 +427,17 @@ def test_incident_to_ticketing_in_a_dry_run(admin: TestClient, library, outside)
 
 def test_the_disk_notice_in_a_dry_run(admin: TestClient, library, outside):
     pb = by_name(admin)["Disk almost full notice"]["id"]
-    # As shipped the recipient is a placeholder nobody listed: the step says what to do.
+    # As shipped there is no instance of the Mail connector: the step says to add one.
     refused = dry(admin, pb)
     assert refused["status"] == "failed"
+    assert steps(refused)["notice"]["error"].startswith("No instance of Mail listener / sender is on: add one")
+    # One instance, named by nobody: the node sends through it. Its recipient is a placeholder nobody listed.
+    outside.host("smtp.example.org", "93.184.215.25")
+    assert admin.put("/api/automation/settings", json={"smtp": SMTP}).status_code == 200
+    with SessionLocal() as db:
+        assert connector_actions.adopt_smtp(db) is True
+        db.commit()
+    refused = dry(admin, pb)
     assert steps(refused)["notice"]["error"].startswith("example.org is not among the hosts this playbook may reach")
     assert (
         admin.put(
@@ -437,13 +447,9 @@ def test_the_disk_notice_in_a_dry_run(admin: TestClient, library, outside):
     )
     run = dry(admin, pb)
     assert run["status"] == "done", errors(run)
-    notice = steps(run)["notice"]
-    assert notice["request"]["method"] == "SMTP" and notice["request"]["host"] == "(not configured)"
-    assert notice["output"] == {"sent": False, "recipients": 1}
+    assert steps(run)["notice"]["request"]["connection"] == "Mail (from Settings)"
 
-    # Started by the event, with an SMTP server set, the message says how much is left.
-    outside.host("smtp.example.org", "93.184.215.25")
-    assert admin.put("/api/automation/settings", json={"smtp": SMTP}).status_code == 200
+    # Started by the event, the message says how much is left.
     assert admin.put(f"/api/automation/playbooks/{pb}/enabled", json={"enabled": True}).status_code == 200
     from collections import namedtuple
 

@@ -19,6 +19,7 @@ import {
   intervalText,
   jobText,
   lookbackHint,
+  resetDone,
   resetText,
   lastText,
   limitText,
@@ -178,8 +179,11 @@ test('what the look-back and the reset do is said before they are used', () => {
   assert.match(lookbackHint({ lookback: '5' }, { byTime: false }), /does not apply/)
   assert.equal(
     resetText({ firstFetch: '3 days' }),
-    'The next cycle reads again from 3 days ago. What was already imported is skipped: no incident is made twice.',
+    'The next cycle reads again from 3 days ago. What was already imported is skipped: no incident is made twice. An alert whose incident was deleted is imported again.',
   )
+  assert.equal(resetDone('Radar', 0), 'The last run of Radar was reset: its next cycle starts from the first fetch.')
+  assert.match(resetDone('Radar', 1), /fetch\. 1 alert whose incident was deleted is imported again\.$/)
+  assert.match(resetDone('Radar', 3), / 3 alerts whose incident was deleted are imported again\.$/)
 })
 
 test('the direction an instance gives its incidents: what is offered, and what each does', () => {
