@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { asTable, authorLabel, cell, contextWrites, entryLine, threaded } from './warRoom.js'
+import { asTable, authorLabel, cell, contextWrites, entryByline, entryLine, threaded } from './warRoom.js'
 
 test('a line of the stream says what happened', () => {
   assert.deepEqual(entryLine({ kind: 'note', body: { text: 'Called the user.' } }), {
@@ -96,4 +96,31 @@ test('what a command gave is shown under the command', () => {
     ],
   )
   assert.deepEqual(threaded(null), [])
+})
+
+test('a comment of the other side is a note by who wrote it there, when it was written', () => {
+  const entry = {
+    kind: 'mirror',
+    author: 'connector:sentinelone',
+    at: '2026-11-23T14:03:54Z',
+    body: {
+      text: 'Not malicious.',
+      from: 'analyst@example.com',
+      at: '2026-11-22T18:11:38Z',
+      direction: 'in',
+      connection: 'S1',
+    },
+  }
+  assert.deepEqual(entryLine(entry), { title: '', text: 'Not malicious.', tone: 'note' })
+  assert.deepEqual(entryByline(entry), {
+    author: 'analyst@example.com · via S1',
+    at: Date.parse('2026-11-22T18:11:38Z'),
+  })
+  // Without an author or a time of its own, the instance and the time it came.
+  const bare = { ...entry, body: { text: 'x', direction: 'in', connection: 'S1' } }
+  assert.deepEqual(entryByline(bare), { author: 'S1', at: Date.parse('2026-11-23T14:03:54Z') })
+  // What was sent there is said by Nik; any other entry keeps its author and time.
+  const sent = { ...entry, body: { text: 'Sent as a comment', direction: 'out', connection: 'S1' } }
+  assert.equal(entryLine(sent).tone, 'system')
+  assert.deepEqual(entryByline(sent), { author: 'sentinelone', at: Date.parse('2026-11-23T14:03:54Z') })
 })

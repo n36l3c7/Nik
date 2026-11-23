@@ -1,0 +1,33 @@
+title: "[Feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Blunt is fine. "I opened this file and didn't understand why it's done this way" is a perfectly good piece of feedback.
+  - type: dropdown
+    id: tried
+    attributes:
+      label: How far did you get?
+      options:
+        - Read the README / docs only
+        - Installed it
+        - Worked a test incident
+        - Using it for real work
+    validations:
+      required: true
+  - type: textarea
+    id: good
+    attributes:
+      label: What worked
+  - type: textarea
+    id: bad
+    attributes:
+      label: What didn't, or what made you stop
+    validations:
+      required: true
+  - type: textarea
+    id: compare
+    attributes:
+      label: What you use today instead
+      description: DFIR-IRIS, TheHive, a SOAR, spreadsheets… and what it does better.

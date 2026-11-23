@@ -26,6 +26,23 @@ export function authorLabel(author) {
 }
 
 /**
+ * Who wrote an entry and when, as its line shows them: a comment that came from the other side
+ * of a mirror is by the person who wrote it there, at the time it was written, through the
+ * instance it came by. `{ author, at }`, `at` a time in milliseconds (NaN when unknown).
+ */
+export function entryByline(entry) {
+  const body = entry?.body ?? {}
+  const at = Date.parse(entry?.at)
+  if (entry?.kind === 'mirror' && body.direction === 'in') {
+    const written = Date.parse(body.at)
+    const via = String(body.connection ?? '') || authorLabel(entry.author)
+    const from = String(body.from ?? '').trim()
+    return { author: from ? `${from} · via ${via}` : via, at: Number.isNaN(written) ? at : written }
+  }
+  return { author: authorLabel(entry?.author), at }
+}
+
+/**
  * What a line of the stream says: `{ title, text, tone }`. `tone` is
  * 'note' | 'ok' | 'error' | 'ask' | 'command' | 'system'.
  */
@@ -34,6 +51,9 @@ export function entryLine(entry) {
   switch (entry?.kind) {
     case 'note':
       return { title: '', text: String(body.text ?? ''), tone: 'note' }
+    case 'mirror':
+      // A comment of the other side, or what was sent there.
+      return { title: '', text: String(body.text ?? ''), tone: body.direction === 'out' ? 'system' : 'note' }
     case 'command':
       return {
         title: String(body.line ?? ''),

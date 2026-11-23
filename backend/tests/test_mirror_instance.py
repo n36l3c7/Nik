@@ -447,6 +447,62 @@ def test_in_only_reads_and_out_only_writes(admin: TestClient, outside):
     assert world.updates() == [{"title": "Phone lost", "state": "work"}]
 
 
+CLOSING_DESK = HELPDESK.replace(
+    "  - { name: token, type: bearer }\n",
+    '  - { name: token, type: bearer }\n  - { name: robots, type: text, default: "Workflow bot" }\n',
+).replace(
+    '    at: "{{ item.at }}"\n    add:',
+    '    at: "{{ item.at }}"\n    close_notes: true\n    automations: "{{ config.robots }}"\n    add:',
+)
+assert "close_notes: true" in CLOSING_DESK and "name: robots" in CLOSING_DESK
+
+
+def test_a_closed_incident_takes_as_close_notes_the_last_comment_a_person_wrote(admin: TestClient, outside):
+    """A product that keeps the note of resolving as one more comment (SentinelOne): the last comment
+    of a person there is the close notes, the authors the instance names as automations are skipped,
+    and close notes a person wrote in Nik stay."""
+    connection, world = helpdesk(admin, outside, source=CLOSING_DESK)
+    assert choose(admin, connection, mirror="in").status_code == 200
+    world.tickets.pop("T-102")
+    world.tickets["T-101"]["state"] = "work"
+    world.comments["T-101"] = [
+        {"id": "c1", "body": "User called.", "by": "anna", "at": "2026-11-21T09:00:00Z"},
+        {"id": "c2", "body": "Enriched: the user is in finance.", "by": "workflow BOT", "at": "2026-11-21T09:05:00Z"},
+    ]
+    fetch_now(admin, connection)
+    one = fetched("101")
+
+    def closing() -> tuple[str, str]:
+        held = admin.get(f"/api/incidents/{one}/fields").json()["fields"]
+        return held["status"], held.get("close_notes", "")
+
+    # Open: nothing of closing is written; the comments are notes of the War Room.
+    assert sync(admin, one)["comments"] == 2 and closing() == ("in_progress", "")
+    notes = admin.get(f"/api/incidents/{one}/war-room", params={"show": "notes"}).json()["entries"]
+    said = [(entry["kind"], entry["body"]["from"]) for entry in notes]
+    assert said == [("mirror", "anna"), ("mirror", "workflow BOT")]
+    automation = admin.get(f"/api/incidents/{one}/war-room", params={"show": "automation"}).json()["entries"]
+    assert all(entry["kind"] != "mirror" for entry in automation)
+
+    # Resolved there: the last comment of a person, not the automation's, is the close notes.
+    world.tickets["T-101"]["state"] = "closed"
+    assert "close_notes" in sync(admin, one)["changed"]
+    assert closing() == ("closed", "User called.")
+    assert sync(admin, one)["changed"] == []  # read again, nothing changes
+
+    # A later comment of a person replaces it.
+    world.comments["T-101"].append({"id": "c3", "body": "Wiped, closed.", "by": "bruno", "at": "2026-11-21T11:00:00Z"})
+    sync(admin, one)
+    assert closing() == ("closed", "Wiped, closed.")
+
+    # What a person writes in Nik stays.
+    written = admin.patch(f"/api/incidents/{one}/fields", json={"changes": {"close_notes": "Laptop replaced."}})
+    assert written.status_code == 200, written.text
+    world.comments["T-101"].append({"id": "c4", "body": "One more thing.", "by": "anna", "at": "2026-11-21T12:00:00Z"})
+    assert "close_notes" in sync(admin, one)["kept"]
+    assert closing() == ("closed", "Laptop replaced.")
+
+
 def test_a_mapper_that_names_the_object_and_the_direction_wins_over_the_instance(admin: TestClient, outside):
     connection, world = helpdesk(admin, outside)
     rules = [*INCOMING, {"to": "mirror_id", "from": "{{ item.key }}"}, {"to": "mirror_direction", "from": "in"}]

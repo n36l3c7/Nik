@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.11.0] - 2026-11-23
+
+A closed incident says how it was closed, and the notes of a mirrored
+SentinelOne threat are notes, with the analyst's last one as close notes.
+
+### Added
+
+- The facts column of a closed incident shows its close reason, closing time
+  and close notes, under **Closed**, whatever its type's layout shows.
+- `close_notes` and `automations` in the `comments` of a mirror: the last
+  comment a person wrote on the other side becomes the close notes of a
+  closed incident. Close notes written in Nik are kept.
+- SentinelOne EDR 1.3.0: a closed incident takes as close notes the last
+  note of the threat that a person wrote. **Note authors that are
+  automations** on the instance names whose notes are skipped
+  (Hyperautomation by default).
+- Issue forms for bugs, features and connector requests, and a feedback form
+  for Discussions.
+
+### Changed
+
+- The comments a mirror brings in are under the **Notes** chip of the War
+  Room, not **Automation**. Each is signed by who wrote it on the other side,
+  through which instance, and dated when it was written there.
+
 ## [6.10.2] - 2026-11-23
 
 A reset of the last run brings back what was deleted, and the playbooks Nik
@@ -3984,7 +4009,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.10.2...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.11.0...HEAD
+[6.11.0]: https://github.com/n36l3c7/Nik/compare/v6.10.2...v6.11.0
 [6.10.2]: https://github.com/n36l3c7/Nik/compare/v6.10.1...v6.10.2
 [6.10.1]: https://github.com/n36l3c7/Nik/compare/v6.10.0...v6.10.1
 [6.10.0]: https://github.com/n36l3c7/Nik/compare/v6.9.0...v6.10.0

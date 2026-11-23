@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   addSection,
   byName,
+  closingFields,
   formatValue,
   fromInput,
   indicatorKind,
@@ -243,4 +244,24 @@ test('the page of an incident follows the layout of its type', async () => {
   })
   assert.deepEqual(changesOf(TYPE, form, { campaign: 'Q4', site: 'Milan', root_cause: '' }, values), {})
   assert.throws(() => changesOf(TYPE, form, { campaign: ' ', site: 'Milan' }, values), /Campaign is required/)
+})
+
+test('a closed incident says how it was closed, and an open one says nothing of it', () => {
+  const known = {
+    close_reason: { name: 'close_reason', label: 'Close reason' },
+    closed: { name: 'closed', label: 'Closed' },
+    close_notes: { name: 'close_notes', label: 'Close notes' },
+  }
+  const values = { status: 'closed', close_reason: 'False positive', close_notes: 'SkyGo, not malicious.' }
+  assert.deepEqual(
+    closingFields(values, known).map((field) => field.name),
+    ['close_reason', 'close_notes'],
+  )
+  // What the panel shows already is not said twice; an open incident has nothing of closing.
+  assert.deepEqual(
+    closingFields(values, known, ['close_reason']).map((field) => field.name),
+    ['close_notes'],
+  )
+  assert.deepEqual(closingFields({ ...values, status: 'open' }, known), [])
+  assert.deepEqual(closingFields({ status: 'closed' }, known), [])
 })

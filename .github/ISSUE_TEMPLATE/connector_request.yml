@@ -1,0 +1,45 @@
+name: Connector request
+description: A product or threat intel source Nik should talk to.
+labels: ["connector", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Connectors are YAML in a content pack: [Build a connector](https://n36l3c7.github.io/Nik/guide/build/connector/) explains how to write one. Requests that come with a draft pack get merged much sooner.
+  - type: input
+    id: product
+    attributes:
+      label: Product or service
+      placeholder: "Pulsedive"
+    validations:
+      required: true
+  - type: input
+    id: api
+    attributes:
+      label: API documentation
+      placeholder: "https://..."
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: What Nik should do with it
+      description: Look-ups (reputation of an IP, a hash…), fetching incidents, mirroring, actions such as blocking.
+    validations:
+      required: true
+  - type: dropdown
+    id: access
+    attributes:
+      label: Access
+      options:
+        - Free API key
+        - Free tier with limits
+        - Paid only
+        - No key needed
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I can test it against a real account
+        - label: I would like to write the pack myself

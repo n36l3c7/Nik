@@ -145,7 +145,7 @@ The first three are what an instance starts with; each is changed in the instanc
 | `get` | `{command, args}`: read the object |
 | `item` | Where the object is in what `get` gave (`"{{ result.ticket }}"`); empty, or an answer of 404/410, means it is gone |
 | `update` | `{command, args}`: change it (its command says `changes_outside: true`) |
-| `comments` | `list` and `add` (`{command, args}`), `items`, and what a comment is: `id`, `text`, `author`, `at` (over `item`) |
+| `comments` | `list` and `add` (`{command, args}`), `items`, and what a comment is: `id`, `text`, `author`, `at` (over `item`). `close_notes: true` makes the last comment a person wrote the close notes of a closed incident; `automations` (a template over `config`: a list, or names separated by commas) names the authors that are not people |
 | `interval_seconds` | How often the other side is read (120) |
 | `id` | Where the id of the object is in a fetched item; default the fetch's `item_id` |
 | `kinds` | Several kinds of object, each with its own `get`, `item`, `update`, `comments`. An incident's mirror id is then `<kind>:<id>`; calls read `mirror.kind` |

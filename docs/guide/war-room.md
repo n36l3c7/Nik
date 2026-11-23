@@ -83,7 +83,7 @@ The Timeline is the forensic timeline of the evidence. What people did is in the
 
 The log of the incident: notes, commands and their results, each step a playbook ran on it, approvals answered, in the order they happened.
 
-- **The chips** <span class="step">1</span>: **All**, **Notes**, **Commands**, **Automation**, **Evidence** keep one kind.
+- **The chips** <span class="step">1</span>: **All**, **Notes**, **Commands**, **Automation**, **Evidence** keep one kind. **Notes** also holds the comments a mirror brought from the other side, signed by who wrote them there and dated when they wrote them.
 - **The line** <span class="step">2</span> at the bottom: write a note, or a command.
 - **An entry** <span class="step">3</span>: click it to open it beside the stream: a result as a table when it is one, what a step was given and sent, what was **Written to the context**, and for a fetched alert **The item as it came**. Each box has a button that copies it whole.
 - **Mark as evidence** <span class="step">4</span>, in an open entry, tags it `evidence`; the **Evidence** chip shows those.

@@ -735,7 +735,10 @@ def pull(db: OrmSession, incident: Incident, now: float) -> dict[str, Any]:
             except incident_context.ContextError as error:
                 problems.append(f"Context: {error.message}")
         if spec.comments is not None:
-            comments = _comments_in(db, incident, connection, connector, spec.comments, state, values)
+            comments, closing = _comments_in(db, incident, connection, connector, spec.comments, state, values)
+            # The status as this read left it: the fields above may have just closed it.
+            if spec.comments.close_notes and closing and registry.read(db, incident).get("status") == "closed":
+                _close_notes(db, incident, closing, source, changed, kept, problems)
     stamp = now_iso()
     state.update(
         lastSync=stamp,
@@ -757,7 +760,10 @@ def _comments_in(
     spec,
     state: dict,
     values: dict,
-) -> int:
+) -> tuple[int, str]:
+    """The comments of the other side not seen before, as lines of the War Room. Gives how many
+    came, and the last one a person wrote there (any, seen before or not; "" when there is none):
+    what a connector whose product keeps the note of closing as a comment makes the close notes."""
     result = _run(db, connection, connector, spec.list, values)
     try:
         found = ex.render_text(spec.items, ex.Scope(values={"result": result})).data
@@ -765,27 +771,32 @@ def _comments_in(
         found = []
     seen = list(state.get("seen") or [])
     sent = set(state.get("sent") or [])
+    machines = _automations(connection, connector, spec) if spec.close_notes else set()
     added = 0
     latest = str(state.get("lastCommentAt") or "")
+    closing, closing_at = "", ""
     for item in found if isinstance(found, list) else []:
         scope = ex.Scope(values={"item": item})
         comment_id, text = _read(spec.id, scope), _read(spec.text, scope)
         if not text:
             continue
+        at, author = _read(spec.at, scope), _read(spec.author, scope)
+        mine = _digest(text) in sent
+        if spec.close_notes and not mine and author.casefold() not in machines and at >= closing_at:
+            closing, closing_at = text[:COMMENT_MAX], at
         key = comment_id or _digest(text)
         if key in seen:
             continue
         seen.append(key)
-        if _digest(text) in sent:
+        if mine:
             continue  # Nik sent it: it is not said twice
-        at = _read(spec.at, scope)
         war_room.add(
             db,
             incident.id,
             "mirror",
             {
                 "text": text[:COMMENT_MAX],
-                "from": _read(spec.author, scope),
+                "from": author,
                 "at": at,
                 "direction": "in",
                 "connection": connection.name,
@@ -799,7 +810,41 @@ def _comments_in(
     state["seen"] = seen[-SEEN_MAX:]
     if latest:
         state["lastCommentAt"] = latest
-    return added
+    return added, closing
+
+
+def _automations(connection: Connection, connector: ConnectorFile, spec) -> set[str]:
+    """The authors of comments that are not people, as the instance names them (lower case)."""
+    config: dict[str, Any] = {}
+    given = connection.config if isinstance(connection.config, dict) else {}
+    for param in connector.configuration:
+        if param.is_auth or param.type == "secret":
+            continue
+        value = given.get(param.name)
+        config[param.name] = param.default if value in (None, "") else value
+    try:
+        named = ex.render_text(spec.automations, ex.Scope(values={"config": config})).data if spec.automations else ""
+    except ex.ExpressionError:
+        named = ""
+    items = named if isinstance(named, list) else str(named or "").split(",")
+    return {str(item).strip().casefold() for item in items if str(item).strip()}
+
+
+def _close_notes(
+    db: OrmSession, incident: Incident, text: str, source: str, changed: list, kept: list, problems: list
+) -> None:
+    """The close notes of a closed incident become what a person last wrote on the other side,
+    unless a person wrote them in Nik."""
+    if str(registry.read(db, incident).get("close_notes") or "").strip() == text.strip():
+        return
+    if not incident_context.may_overwrite(registry.source_of(db, incident, "close_notes"), source, False):
+        kept.append("close_notes")
+        return
+    try:
+        if registry.update(db, incident, {"close_notes": text}, source, source):
+            changed.append("close_notes")
+    except registry.FieldError as error:
+        problems.append(error.message)
 
 
 def _read(template: str, scope: ex.Scope) -> str:

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or feedback
+    url: https://github.com/n36l3c7/Nik/discussions
+    about: How do I…?, "why is this done this way?", first impressions. Discussions is the place.
+  - name: Security vulnerability
+    url: https://github.com/n36l3c7/Nik/security/policy
+    about: Please report vulnerabilities privately, not as an issue.
+  - name: Documentation
+    url: https://n36l3c7.github.io/Nik/
+    about: Install, user guide, building connectors and packs.

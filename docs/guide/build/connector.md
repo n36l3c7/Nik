@@ -269,6 +269,7 @@ mirror:
 - `get` reads the object; `item` says where it is in the result (it must have the shape of a fetched item: the same mapper reads both). With no `args`, the id goes to the command's first argument.
 - `update` sends what the outgoing mapper gives (`fields`).
 - `comments` reads and adds comments: a note tagged `mirror` in Nik is sent with `add`.
+- `close_notes: true`, in `comments`, is for a product that keeps the note written on resolving as one more comment (SentinelOne): while the incident is closed, the last comment a person wrote there is its close notes. `automations` names the authors that are not people, usually from a field of the instance: `automations: "{{ config.automation_authors }}"`. Close notes a person wrote in Nik are kept.
 - The object's id is the fetch's `item_id` unless `id:` says where it is (`id: "{{ item.key }}"`).
 
 Variants, when the product needs them:

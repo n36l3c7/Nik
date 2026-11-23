@@ -76,9 +76,8 @@ def test_every_pack_of_the_repository_is_a_pack_a_new_nik_installs_whole(admin: 
         pack = packs.read(data)
         manifest = pack.manifest
         assert manifest["id"] == folder.name
-        assert (
-            manifest["vendor"] and manifest["category"] and manifest["nik"] in (">=6.0", ">=6.5", ">=6.6", ">=6.10")
-        ), folder.name
+        ranges = (">=6.0", ">=6.5", ">=6.6", ">=6.10", ">=6.11")
+        assert manifest["vendor"] and manifest["category"] and manifest["nik"] in ranges, folder.name
         assert 40 < len(manifest["description"]) <= 2000, folder.name
         connectors = [item for item in pack.items if item.kind == "connectors"]
         assert connectors, folder.name
