@@ -4,22 +4,40 @@ How Nik is built: what runs where, the services, the data model, and how each an
 
 ## The design
 
-```text
-      Analyst's browser                        Server (the Compose stack)
-┌──────────────────────────┐     ┌────────────────────────────────────────────────┐
-│ React app (Vite build)   │     │ web: nginx                                     │
-│ ├─ parses small evidence │────▶│ ├─ static files, security headers              │
-│ │  (text, SQLite: WASM)  │ TLS │ └─ /api/ ──▶ api: FastAPI                      │
-│ ├─ detection engine      │     │       ├─▶ db: PostgreSQL ◀─ recovery (no net)  │
-│ └─ REST client (/api)    │     │       ├─▶ the store of files (sealed volume)   │
-└──────────────────────────┘     │       ├─▶ analyzer, capa, docview, pcap        │
-                                 │       │     (no route outside)                 │
-                                 │       ├─▶ browser ──▶ internet, filtered       │
-                                 │       └─▶ sandbox (scripts; no route out)      │
-                                 │ automation: playbooks, fetch, mirroring        │
-                                 │       ├─▶ db, sandbox, api (for files)         │
-                                 │       └─▶ the hosts playbooks may reach        │
-                                 └────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph browser["Analyst's browser"]
+    app["React app<br/>parses small evidence<br/>detection engine<br/>REST client"]
+  end
+  subgraph server["Server: the Compose stack"]
+    web["web<br/>nginx"]
+    api["api<br/>FastAPI"]
+    db[("db<br/>PostgreSQL")]
+    store[("store of files<br/>sealed volume")]
+    recovery["recovery<br/>no network"]
+    automation["automation<br/>playbooks, fetch, mirroring"]
+    subgraph analysis["analysis network: no route outside"]
+      workers["analyzer · capa<br/>docview · pcap"]
+    end
+    sandbox["sandbox<br/>scripts, no route out"]
+    browserw["browser<br/>isolated"]
+  end
+  internet(("internet<br/>filtered"))
+  hosts(("hosts playbooks<br/>may reach"))
+
+  app -- "HTTPS" --> web
+  web -- "/api/" --> api
+  api --> db
+  api --> store
+  api --> workers
+  api --> sandbox
+  api --> browserw
+  browserw --> internet
+  recovery --> db
+  automation --> db
+  automation --> sandbox
+  automation -- "files" --> api
+  automation --> hosts
 ```
 
 - **Small evidence is parsed in the browser.** Browser databases, shell histories and the output of collection tools (SQLite, JSON, CSV, property lists) are read client-side; only the normalised entries reach the API. The raw file of these kinds never leaves the analyst's machine. The same files can be sent to `POST /api/incidents/{id}/upload` instead: the server parses them with a Python port of the same parsers (`backend/app/parsing/`).
