@@ -1,0 +1,98 @@
+/* Nik's colours and type on Material's dark scheme: the same tokens as frontend/src/index.css. */
+[data-md-color-scheme="slate"] {
+  --md-hue: 215;
+  --md-default-bg-color: #0d1117;
+  --md-default-fg-color: #e6edf3;
+  --md-default-fg-color--light: #9da7b3;
+  --md-default-fg-color--lighter: #6e7681;
+  --md-default-fg-color--lightest: #30363d;
+  --md-primary-fg-color: #161b22;
+  --md-primary-fg-color--light: #1c2128;
+  --md-primary-fg-color--dark: #0d1117;
+  --md-primary-bg-color: #e6edf3;
+  --md-accent-fg-color: #3fb950;
+  --md-typeset-a-color: #58a6ff;
+  --md-code-bg-color: #161b22;
+  --md-code-fg-color: #e6edf3;
+  --md-footer-bg-color: #161b22;
+  --md-footer-bg-color--dark: #0d1117;
+}
+
+.md-header,
+.md-tabs {
+  border-bottom: 1px solid #30363d;
+}
+.md-tabs__link--active,
+.md-nav__link--active {
+  color: #7ee787;
+}
+.md-typeset a:hover {
+  color: #a5d6ff;
+}
+
+/* Square, as the product. */
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset pre > code,
+.md-typeset .md-button,
+.md-search__form,
+.md-typeset .grid.cards > ul > li {
+  border-radius: 0;
+}
+.md-typeset .md-button--primary {
+  background: #2ea043;
+  border-color: #2ea043;
+  color: #ffffff;
+}
+
+/* Screenshots: framed like a window of the product. */
+.md-typeset img.shot,
+.md-typeset p > img {
+  border: 1px solid #30363d;
+  background: #161b22;
+}
+
+/* The numbered steps that point at the markers of a screenshot. */
+.md-typeset .step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 50%;
+  background: #3fb950;
+  color: #0d1117;
+  font-weight: 700;
+  font-size: 0.85em;
+  margin-right: 0.35em;
+}
+
+/* The home page. */
+.md-typeset .hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  align-items: center;
+  margin: 1rem 0 2rem;
+}
+.md-typeset .hero > div {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+.md-typeset .hero h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 1rem;
+  color: #e6edf3;
+}
+.md-typeset .hero .lead {
+  font-size: 1.05rem;
+  color: #9da7b3;
+}
+.md-typeset .hero .kicker {
+  font-family: var(--md-code-font-family);
+  color: #7ee787;
+  font-size: 0.8rem;
+  margin: 0;
+}

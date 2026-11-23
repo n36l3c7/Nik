@@ -1,0 +1,145 @@
+# The documentation site: https://n36l3c7.github.io/Nik/
+# Built by .github/workflows/docs.yml with the versions in requirements-docs.txt.
+# Locally: pip install -r requirements-docs.txt && mkdocs serve
+site_name: Nik
+site_description: A self-hosted platform for incident response teams.
+site_url: https://n36l3c7.github.io/Nik/
+repo_url: https://github.com/n36l3c7/Nik
+repo_name: n36l3c7/Nik
+edit_uri: edit/main/docs/
+copyright: Nik · PolyForm Shield 1.0.0
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  language: en
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    scheme: slate
+    primary: custom
+    accent: custom
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+
+extra_css:
+  - assets/nik.css
+
+plugins:
+  - search
+  - glightbox:
+      zoomable: true
+      skip_classes:
+        - no-zoom
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Get started:
+      - get-started/index.md
+      - Install: get-started/install.md
+      - First sign-in: get-started/first-sign-in.md
+      - Your first incident: get-started/first-incident.md
+  - User guide:
+      - guide/index.md
+      - Basics:
+          - Find your way around: guide/screen.md
+          - Search, filters and saved views: guide/search.md
+          - Dashboards and My tasks: guide/dashboards.md
+      - Incidents:
+          - Work an incident: guide/incidents.md
+          - Summary, timeline and War Room: guide/war-room.md
+          - Act on many at once: guide/bulk.md
+          - Reports and exports: guide/reports.md
+      - Evidence:
+          - Add evidence: guide/evidence.md
+          - E-mail: guide/mail.md
+          - Malware: guide/malware.md
+          - Network capture: guide/network.md
+          - Links: guide/url.md
+          - Host evidence: guide/host.md
+      - Indicators:
+          - Indicators of an incident: guide/indicators.md
+          - The Indicators page: guide/indicator-library.md
+          - Lists and the allowlist: guide/lists.md
+      - Automation:
+          - Playbooks: guide/playbooks.md
+          - Triggers and events: guide/triggers.md
+          - Scripts and the Playground: guide/scripts.md
+          - War Room commands: guide/commands.md
+          - Connectors and mirroring: guide/connectors.md
+          - Content packs: guide/packs.md
+      - Build your own:
+          - guide/build/index.md
+          - A playbook from scratch: guide/build/playbook.md
+          - A script: guide/build/script.md
+          - An integration (connector): guide/build/connector.md
+          - A content pack: guide/build/pack.md
+      - Set up Nik:
+          - Types, fields and pages: guide/types.md
+          - Detection and rules: guide/detection.md
+          - Threat intelligence: guide/threat-intel.md
+          - Accounts, roles and sign-in: guide/accounts.md
+  - Run the server:
+      - admin/index.md
+      - Install in production: admin/install.md
+      - Configuration: admin/configuration.md
+      - Keys and secrets: admin/secrets.md
+      - Backups and restore: admin/backups.md
+      - Recovery and standby: admin/recovery.md
+      - Upgrades: admin/upgrades.md
+      - Health and audit: admin/health.md
+      - Install without containers: admin/manual-install.md
+  - Reference:
+      - reference/index.md
+      - Environment variables: reference/configuration.md
+      - Query language: reference/query-language.md
+      - Playbook nodes and expressions: reference/playbook-nodes.md
+      - Events: reference/events.md
+      - Connector and pack format: reference/connector-format.md
+      - API: reference/api.md
+      - Security: reference/security.md
+      - Architecture: reference/architecture.md
+      - Developer guide: reference/developer.md
+  - Changelog: changelog.md

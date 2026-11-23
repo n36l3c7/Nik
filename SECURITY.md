@@ -36,7 +36,7 @@ with `git pull` and `compose up -d --build`.
 - A secret that ends up in a log, a response or the repository.
 
 How Nik contains hostile content, and its known limits, are described in the
-[Security page](https://n36l3c7.github.io/Nik/security.html) of the
+[Security page](https://n36l3c7.github.io/Nik/reference/security/) of the
 documentation. Something listed there under "Known limits" is known; a way
 to turn one of them into an actual compromise is still a welcome report.
 

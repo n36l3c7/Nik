@@ -19,8 +19,6 @@ const E2E_BACKUPS = '.e2e-backups'
 
 export default defineConfig({
   testDir: 'e2e',
-  // The documentation screenshots have their own config (playwright.docs.config.js).
-  testIgnore: 'docs/**',
   timeout: 60_000,
   // The smoke flow is one story (first run → sign in → incident → data), so
   // the specs run in order on a single worker.

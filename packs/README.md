@@ -3,7 +3,7 @@
 One folder for each product of a vendor: `pack.yml` and a folder for each
 kind of item (connectors, mappers, playbooks, incident types, dashboards…).
 The format is in the
-[automation guide](https://n36l3c7.github.io/Nik/automation.html#pack-format).
+[pack format](https://n36l3c7.github.io/Nik/reference/connector-format/#the-pack-format).
 
 The workflow *Packs* publishes these folders as the catalogue a Nik reads
 (the release `packs`: one `.nikpack` file for each pack, an index and its

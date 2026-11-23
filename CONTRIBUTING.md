@@ -10,7 +10,7 @@ Thanks for wanting to help. This is what a change needs to be merged.
 
 ## Setting up
 
-The [developer guide](https://n36l3c7.github.io/Nik/developer.html) has the
+The [developer guide](https://n36l3c7.github.io/Nik/reference/developer/) has the
 details. In short:
 
 ```bash
@@ -48,11 +48,13 @@ inside their images, and the end-to-end suite against the real workers.
 - **Tests** for the behaviour it adds or fixes. A fix comes with the test
   that failed before it.
 - **Documentation in the same change**: the README and the pages under
-  `docs/` (plain HTML, no generator) describe the behaviour, so a change of
-  behaviour changes them too.
+  `docs/` describe the behaviour, so a change of behaviour changes them too.
+  The site is Markdown built by MkDocs Material (`mkdocs.yml`; locally
+  `pip install -r requirements-docs.txt && mkdocs serve`); a page is added to
+  the `nav` of `mkdocs.yml`, and `mkdocs build --strict` must pass.
 - **A changelog entry** under `[Unreleased]` in `CHANGELOG.md`
-  ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), and the same
-  in short on `docs/changelog.html` when a release is cut.
+  ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)); the site's
+  Changelog page shows that file as it is.
 - **English** everywhere: identifiers, comments, messages, documentation.
 - No new dependency without a reason in the pull request: why it is needed,
   whether it is maintained, its licence.
@@ -75,11 +77,11 @@ inside their images, and the end-to-end suite against the real workers.
 the analysis containers, `deploy/` the scripts for a server, `docs/` the
 site, `packs/` the content packs of vendors' products (one folder a pack:
 `pack.yml` and a folder for each kind of item; the
-[automation guide](https://n36l3c7.github.io/Nik/automation.html#pack-format)
+[automation guide](https://n36l3c7.github.io/Nik/reference/connector-format/#the-pack-format)
 has the format). A change to a pack raises the `version` of its `pack.yml`:
 the workflow *Packs* publishes the folder as the catalogue when `main`
 moves, and a Nik offers the update only for a higher version. A connector
 of a pack comes with recorded exchanges for each of its commands
 (`backend/tests/data/connectors/<id>/`). The
-[architecture page](https://n36l3c7.github.io/Nik/architecture.html) has the
+[architecture page](https://n36l3c7.github.io/Nik/reference/architecture/) has the
 map.

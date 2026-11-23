@@ -13,7 +13,6 @@
     "preview": "vite preview",
     "test": "node --test",
     "test:e2e": "playwright test",
-    "docs:screenshots": "playwright test -c playwright.docs.config.js",
     "lint": "eslint .",
     "format": "prettier --write . ../docs ../.github ../docker-compose.yml",
     "format:check": "prettier --check . ../docs ../.github ../docker-compose.yml"
