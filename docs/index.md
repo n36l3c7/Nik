@@ -1,5 +1,5 @@
 ---
-title: Nik
+title: Home
 hide:
   - navigation
   - toc

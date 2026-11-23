@@ -6,15 +6,19 @@ Build a playbook for a real need, test it without risk, turn it on and read what
 
 **What you will have at the end:**
 
-```text
-Trigger: An incident is created
-  └ Condition "Phishing?" ── no ──> End (done)
-      └ yes: Make indicators of a text
-          └ For each indicator ── for each item ──> Reputation of an indicator
-              └ when done: Condition "Anything malicious?" ── no ──> End (done)
-                  └ yes: Tag the incident → Assign the incident → Add a note
-                      └ Approval "Block them?" ── approved ──> Add to a list "Blocked"
-                                                                └ on error ──> Add a note "Blocking failed"
+```mermaid
+flowchart TD
+  t(["Trigger: An incident is created"]) --> c1{"Phishing?"}
+  c1 -- no --> e1(["End"])
+  c1 -- yes --> mk["Make indicators of a text"]
+  mk --> each["For each indicator"]
+  each -- for each item --> rep["Reputation of an indicator"]
+  each -- when done --> c2{"Anything malicious?"}
+  c2 -- no --> e2(["End"])
+  c2 -- yes --> tag["Tag the incident"] --> as["Assign the incident"] --> note["Add a note"]
+  note --> ap{{"Approval: Block them?"}}
+  ap -- approved --> block["Add to a list: Blocked"]
+  block -- on error --> fail["Add a note: Blocking failed"]
 ```
 
 A finished playbook looks like this on the canvas. The pictures on this page show *Phishing containment*, a smaller playbook shipped with the examples, built the same way: a trigger, actions, a condition with **yes** and **no**, an approval.
