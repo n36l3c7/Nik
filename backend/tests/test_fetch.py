@@ -530,9 +530,8 @@ def test_resetting_the_last_run_starts_from_the_first_fetch_and_makes_nothing_tw
     assert run(admin, connection)["result"]["created"] == 0 and len(incidents(admin)) == 2
     reset = admin.post(f"/api/fetch/{connection['id']}/reset")
     assert reset.status_code == 200 and reset.json()["forgotten"] == 1
-    assert admin.get("/api/audit").json()["entries"][0]["details"].endswith(
-        "; 1 item whose incident was deleted will be made again"
-    )
+    said = admin.get("/api/audit").json()["entries"][0]["details"]
+    assert said.endswith("; 1 item whose incident was deleted will be made again")
     back = run(admin, connection)["result"]
     assert (back["fetched"], back["new"], back["created"]) == (3, 1, 1)
     assert len(incidents(admin)) == 3 and name in incidents(admin)
