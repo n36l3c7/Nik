@@ -305,7 +305,9 @@ def test_a_recovery_code_signs_in_once_and_says_how_many_are_left(admin: TestCli
     client = browser()
     sign_in(client)
     assert client.post("/api/auth/login/code", json={"recoveryCode": "aaaa-bbbb-cccc-dddd"}).status_code == 401
-    assert client.post("/api/auth/login/code", json={"recoveryCode": codes[0][:-1] + "x"}).status_code == 401
+    # One character off: another one than the code's own last (a code may end in "x").
+    wrong = codes[0][:-1] + ("y" if codes[0].endswith("x") else "x")
+    assert client.post("/api/auth/login/code", json={"recoveryCode": wrong}).status_code == 401
     # Typed in capitals and without the dashes: it is the same code.
     done = client.post("/api/auth/login/code", json={"recoveryCode": codes[0].replace("-", "").upper()})
     assert done.status_code == 200 and done.json()["recoveryCodesLeft"] == 9
