@@ -573,6 +573,11 @@ class MirrorComments(_Strict):
     author: str = Field(default="{{ item.author }}", max_length=500)
     at: str = Field(default="{{ item.created }}", max_length=500)
     add: MirrorCall | None = None
+    # A product that keeps the note of closing as one more comment: while the incident is closed, the
+    # last comment a person wrote there is its close notes. ``automations`` is a template over
+    # ``config`` that names the authors that are not people (a list, or names separated by commas).
+    close_notes: bool = False
+    automations: str = Field(default="", max_length=500)
 
 
 class MirrorKind(_Strict):

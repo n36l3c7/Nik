@@ -230,6 +230,20 @@ export function valuesOf(incident) {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => !isEmpty(value) || value === false))
 }
 
+const CLOSING = ['close_reason', 'closed', 'close_notes']
+
+/**
+ * How a closed incident was closed, for the side panel: the fields of closing that hold a value
+ * and that the panel does not show already (`shown`, names). None while it is open.
+ */
+export function closingFields(values, known, shown = []) {
+  if (values?.status !== 'closed') return []
+  const already = new Set(shown)
+  return CLOSING.filter((name) => !already.has(name) && !isEmpty(values[name]) && known?.[name]).map(
+    (name) => known[name],
+  )
+}
+
 // --------------------------------------------------------------------------- //
 // Editing a layout                                                            //
 // --------------------------------------------------------------------------- //

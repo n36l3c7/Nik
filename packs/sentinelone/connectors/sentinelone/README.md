@@ -436,7 +436,8 @@ Only commands of this connector are used:
 | | What | With |
 | --- | --- | --- |
 | In | the threat is read again every two minutes; its **incident status** becomes the status of the incident and its **analyst verdict** the close reason | `get-threats` by id (`GET /threats`) |
-| In | the **notes** of the threat become lines of the War Room | `get-threat-notes` (`GET /threats/{id}/notes`) |
+| In | the **notes** of the threat become notes of the War Room, signed by who wrote them | `get-threat-notes` (`GET /threats/{id}/notes`) |
+| In | while the incident is closed, the last note a **person** wrote becomes its close notes (new in 1.3, needs Nik 6.11) | the same notes |
 | Out | the status of the incident and its close reason are written as the incident status and the analyst verdict, in one request | `set-threat-incident` (`POST /threats/incident`) |
 | Out | a note tagged `mirror` becomes a note of the threat | `add-note` (`POST /threats/notes`) |
 
@@ -454,6 +455,9 @@ Things to know:
   edits. Setting the status twice leaves the threat as setting it once, so an update cut by a restart is sent
   again; a note is never sent twice.
 - A threat that is not in the console any more is said once on the incident and read no more.
+- The console keeps the note written on resolving as one more note of the threat. The instance field **Note authors
+  that are automations** (Hyperautomation when empty) names the authors whose notes are not taken as close notes;
+  separate several with commas. With only such notes, the close notes stay empty. Close notes written in Nik stay.
 - With these mappers, a threat that is already in progress or resolved when it is fetched makes an incident that
   starts in progress or closed.
 - The token needs what `set-threat-incident` and `add-note` need to mirror out; viewing is enough to mirror in.

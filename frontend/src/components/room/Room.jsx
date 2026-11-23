@@ -18,7 +18,7 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { api } from '../../services/api.js'
 import { automationPath } from '../../domain/automationNav.js'
 import { argumentHints, completions, lineKind, recall, remember } from '../../domain/commandLine.js'
-import { EVIDENCE, asTable, authorLabel, cell, contextWrites, entryLine, threaded } from '../../domain/warRoom.js'
+import { EVIDENCE, asTable, cell, contextWrites, entryByline, entryLine, threaded } from '../../domain/warRoom.js'
 import { copyText } from '../../lib/download.js'
 import { setPath } from '../../lib/location.js'
 import { formatDateTime } from '../../lib/time.js'
@@ -133,6 +133,7 @@ function Inspector({ base, pane: paneName, entry, raw, canMark, onClose, onChang
   }, [base, entry])
 
   const line = entryLine(entry)
+  const by = entryByline(entry)
   const step = detail?.step ?? null
   const evidence = entry.tags.includes(EVIDENCE)
   const wrote = contextWrites(step?.log)
@@ -163,7 +164,7 @@ function Inspector({ base, pane: paneName, entry, raw, canMark, onClose, onChang
           <div className="min-w-0 flex-1">
             <p className="break-words text-sm font-semibold text-fg">{line.title || 'A note'}</p>
             <p className="text-xs text-fg-muted">
-              {authorLabel(entry.author)} · {formatDateTime(Date.parse(entry.at))}
+              {by.author} · {formatDateTime(by.at)}
             </p>
           </div>
           <button
@@ -464,6 +465,7 @@ export default function Room({ source }) {
           )}
           {list.map((entry) => {
             const line = entryLine(entry)
+            const by = entryByline(entry)
             const tone = TONES[line.tone] ?? TONES.system
             const Icon = tone.icon
             return (
@@ -504,8 +506,8 @@ export default function Room({ source }) {
                       }}
                       className="flex flex-wrap items-baseline gap-x-2 text-left text-xs text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <span className="font-medium text-fg">{authorLabel(entry.author)}</span>
-                      <span>{formatDateTime(Date.parse(entry.at))}</span>
+                      <span className="font-medium text-fg">{by.author}</span>
+                      <span>{formatDateTime(by.at)}</span>
                       {entry.body?.automation && <Badge color="cyan">automation</Badge>}
                       {entry.tags.includes(EVIDENCE) && <Badge color="amber">evidence</Badge>}
                     </button>

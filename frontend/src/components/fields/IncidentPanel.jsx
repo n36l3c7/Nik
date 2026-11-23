@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useFields } from '../../context/FieldsContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { api } from '../../services/api.js'
-import { panelSection, typeOf, valuesOf } from '../../domain/fields.js'
+import { closingFields, panelSection, typeOf, valuesOf } from '../../domain/fields.js'
 import { Badge, Button } from '../ui/index.js'
 import EditFieldsDialog from './EditFieldsDialog.jsx'
 import FieldList from './FieldList.jsx'
@@ -53,6 +53,8 @@ export default function IncidentPanel({ incident }) {
   if (!ready || !type || !section) return null
   const fields = section.fields.map((name) => known[name]).filter(Boolean)
   const values = valuesOf(incident)
+  // How it was closed, whatever the layout of its type shows: a closed incident says why.
+  const closing = closingFields(values, known, section.fields)
 
   const changeType = async (id) => {
     setError(null)
@@ -146,6 +148,12 @@ export default function IncidentPanel({ incident }) {
           dense
           className="grid-cols-2 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-1"
         />
+        {closing.length > 0 && (
+          <section aria-label="How it was closed" className="flex flex-col gap-2 border-t border-line-soft pt-3">
+            <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Closed</h3>
+            <FieldList fields={closing} values={values} dense className="grid-cols-1" />
+          </section>
+        )}
         <Timers incident={incident} />
         <Mirror incident={incident} />
         {editing && (

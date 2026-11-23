@@ -1,0 +1,30 @@
+name: Feature request
+description: Something Nik should do that it does not do yet.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure it is a feature yet? Start a thread in [Discussions › Ideas](https://github.com/n36l3c7/Nik/discussions/categories/ideas) instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do during an investigation, and where does Nik get in the way? A real (anonymised) scenario helps more than a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+  - type: textarea
+    id: today
+    attributes:
+      label: How you handle it today
+      description: Another tool, a script, by hand?
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to work on this myself

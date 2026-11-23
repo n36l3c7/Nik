@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in Nik does not work as the documentation says it should.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. A vulnerability is **not** a bug report: see [SECURITY.md](https://github.com/n36l3c7/Nik/blob/main/SECURITY.md).
+        Please never attach real evidence (mails, samples, captures, logs) from your organisation: describe it, or reproduce it with a made-up file.
+  - type: input
+    id: version
+    attributes:
+      label: Nik version
+      description: Shown under the name on the sign-in page, or the tag you checked out.
+      placeholder: "6.11.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: How do you run it?
+      options:
+        - Docker Compose
+        - Podman (rootful)
+        - Podman (rootless)
+        - Manual install
+        - Other (say below)
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      description: OS, CPU architecture and RAM.
+      placeholder: "Debian 13, x86_64, 16 GB"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Install / upgrade / backups
+        - Incidents, War Room, timeline
+        - Mail analysis
+        - Malware analysis
+        - Network (pcap)
+        - URL / isolated browser
+        - Host artifacts / event logs
+        - Indicators / threat intel
+        - Playbooks / scripts
+        - Connectors / content packs
+        - Accounts, 2FA, audit log
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open an incident
+        2. Add a .eml with ...
+        3. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`docker compose logs <service> --tail 200` for the service involved. Remove anything sensitive."
+      render: text

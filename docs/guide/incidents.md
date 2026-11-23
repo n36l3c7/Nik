@@ -125,7 +125,7 @@ The times are set per type and severity under **Platform settings › Incidents 
 5. Write **Notes** <span class="step">3</span>.
 6. Click **Close the incident** <span class="step">4</span>.
 
-The reason and the notes are stored as `close_reason` and `close_notes`, and the time as `closed`. Query them: `closeReason:"False positive"`, `closed:>=now-30d`.
+The reason and the notes are stored as `close_reason` and `close_notes`, and the time as `closed`. A closed incident shows them in its facts column, under **Closed**, whatever its type's layout shows. Query them: `closeReason:"False positive"`, `closed:>=now-30d`.
 
 !!! note "The server checks too"
     An incident closed through the API or by a playbook is held to the same reason and required fields.

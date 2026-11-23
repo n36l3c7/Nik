@@ -86,6 +86,13 @@ A snapshot taken while no passphrase was set is read with this server's `SECRET_
 
 What each release asks of an administrator. The full list of changes is in the [Changelog](../changelog.md). An [install without containers](manual-install.md#update-to-a-new-version) has its own steps.
 
+### Upgrading to 6.11.0 {#upgrading-to-6110}
+
+`git pull`, then `docker compose up -d --build`. No migration, nothing to set.
+
+- The SentinelOne EDR pack goes to 1.3.0: update it from **Content packs**. Its instances gain **Note authors that are automations**, Hyperautomation when left empty. A closed incident mirrored in takes as close notes the last note a person wrote on the threat, at its next read: a closed incident is read for a day after closing, so older ones are not filled. Close notes written in Nik stay.
+- The comments a mirror brings in move from the **Automation** chip of the War Room to **Notes**.
+
 ### Upgrading to 6.10.2 {#upgrading-to-6102}
 
 `git pull`, then `docker compose up -d --build`. No migration, nothing to set.

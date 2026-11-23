@@ -32,9 +32,10 @@ TAG_MAX, TAGS_MAX, TEXT_MAX = 40, 12, 20_000
 # The filters of the stream: what each chip shows.
 FILTERS = {
     "all": None,
-    "notes": ("note",),
+    # A comment of the other side of a mirror is a note too: someone wrote it, there.
+    "notes": ("note", "mirror"),
     "commands": ("command",),
-    "automation": ("result", "error", "approval", "task", "system", "mirror"),
+    "automation": ("result", "error", "approval", "task", "system"),
 }
 
 
