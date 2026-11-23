@@ -407,10 +407,19 @@ test('right-click on an indicator adds it to the allowlist, with undo', async ()
   await menu.getByRole('menuitem', { name: 'Add to the allowlist…' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add to the allowlist' })
   await expect(dialog).toContainText('185.220.101.0/24')
+  const check = page.getByRole('button', { name: /^Check all \d+$/ })
+  const hidden = page.getByText(/^Show allowlisted \(\d+\)$/)
+  const number = async (locator) => Number((await locator.textContent()).match(/\d+/)[0])
+  const before = await number(check)
+  const hiddenBefore = await number(hidden)
   await dialog.getByRole('button', { name: 'Add to the allowlist' }).click()
   await expect(value).toBeHidden({ timeout: 10_000 })
+  // An allowlisted value is never checked: the button counts the others, as the card does.
+  await expect(hidden).not.toHaveText(`Show allowlisted (${hiddenBefore})`)
+  await expect(check).toHaveText(`Check all ${before - ((await number(hidden)) - hiddenBefore)}`)
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(value).toBeVisible({ timeout: 10_000 })
+  await expect(check).toHaveText(`Check all ${before}`)
 })
 
 test('a file dropped anywhere goes to the right tab', async () => {
@@ -7766,8 +7775,14 @@ test('a side panel is made wider and narrower with its handle, and remembers its
 
 test('the keyboard: Escape closes the dialog on top, Tab stays inside it, focus comes back', async () => {
   const gear = page.getByRole('button', { name: 'Platform settings' })
-  await gear.click()
+  await gear.focus()
+  await page.keyboard.press('Enter')
   const settings = page.getByRole('region', { name: 'Settings' })
+  // Opened from the keyboard, the page itself has the focus: none of its controls looks chosen.
+  await expect(settings).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(gear).toBeFocused()
+  await gear.click()
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Accounts').click()
   await settings.getByRole('button', { name: `Edit user ${ADMIN.username}` }).click()
   const edit = page.getByRole('dialog', { name: `Account: ${ADMIN.username}` })
@@ -8341,6 +8356,26 @@ test('incidents are selected with a click and a shift-click, tagged at once; all
   await expect(list.getByText('The filter changed: the selection was cleared.')).toBeVisible()
   await expect(rows).toHaveCount(200)
   await expect(list.getByRole('status', { name: 'Incidents listed' })).toHaveText(/^205 of \d+$/)
+
+  // Ticked while the answer to another filter is on its way: those rows are the old filter's, and
+  // once the answer comes none of them is acted on. Nothing is selected that the screen does not show.
+  let release
+  const held = new Promise((resolve) => (release = resolve))
+  await page.route(/\/api\/incidents\?.*q=host%3Abulk-/, async (route) => {
+    await held
+    await route.continue()
+  })
+  await filter.fill('host:bulk-*')
+  await expect(rows).toHaveCount(200)
+  await list.getByRole('checkbox', { name: 'Select the incidents on screen' }).click()
+  await expect(bar).toContainText('200 selected')
+  release()
+  await expect(rows).toHaveCount(4)
+  await expect(list.getByText('The filter changed: the selection was cleared.')).toBeVisible()
+  await expect(bar).toHaveCount(0)
+  await page.unroute(/\/api\/incidents\?.*q=host%3Abulk-/)
+  await filter.fill('host:mass-*')
+  await expect(rows).toHaveCount(200)
 
   // The page, then everything that matches: the server selects by the query.
   await list.getByRole('checkbox', { name: 'Select the incidents on screen' }).click()

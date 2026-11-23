@@ -32,6 +32,8 @@ export function ArtifactProvider({ children }) {
   const [artifacts, setArtifacts] = useState([])
   const [counts, setCounts] = useState(NO_COUNTS)
   const [filters, setFilters] = useState(EMPTY_FILTERS)
+  // The filters `artifacts` is the answer to: while new ones are asked, the old ones.
+  const [shown, setShown] = useState(EMPTY_FILTERS)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   // What the server said of the query in `filters.q`, when it could not read it.
@@ -49,6 +51,7 @@ export function ArtifactProvider({ children }) {
     if (!isAuthenticated) {
       setArtifacts([])
       setCounts(NO_COUNTS)
+      setShown(EMPTY_FILTERS)
       return undefined
     }
     const request = ++requestRef.current
@@ -64,6 +67,7 @@ export function ArtifactProvider({ children }) {
             if (request !== requestRef.current) return
             setArtifacts(res.artifacts)
             setCounts(res.counts)
+            setShown(filters)
             setError(null)
             setQueryError(null)
           })
@@ -230,6 +234,7 @@ export function ArtifactProvider({ children }) {
       artifacts,
       counts,
       filters,
+      shown,
       setFilters,
       loading,
       error,
@@ -255,6 +260,7 @@ export function ArtifactProvider({ children }) {
       artifacts,
       counts,
       filters,
+      shown,
       loading,
       error,
       queryError,

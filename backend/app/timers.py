@@ -5,7 +5,8 @@ A timer is a field of type ``timer`` whose value is
     {"state": "running" | "paused" | "stopped", "started_at": <epoch of the
      stretch that runs>, "accumulated_s": <what ran before it>, "due_s": <the
      time allowed, or null>, "breached_at": <ISO, once past it>,
-     "business": <counts only inside business hours>}
+     "business": <counts only inside business hours>, "own_due": <the time
+     allowed was given when it was started, by hand or by a playbook>}
 
 It is never written like another field: it is started, paused and stopped, by
 the rules of the type of the incident (``sla``), by the nodes ``timer.start``,
@@ -149,9 +150,11 @@ def start(
     due_s: int | None = None,
     business: bool | None = None,
     restart: bool = False,
+    by_rule: bool = False,
 ) -> dict[str, Any]:
     """Start a timer, or let it go on from where it was paused or stopped (the caller commits).
-    ``restart`` counts again from nothing."""
+    ``restart`` counts again from nothing. A time allowed given by a person or a playbook
+    (``by_rule`` false) is the timer's own: the rules of the type do not change it afterwards."""
     _known(db, name)
     stored = _held(incident)
     hours = business_hours(db)
@@ -160,6 +163,7 @@ def start(
     timer.update({"state": "running", "started_at": now, "accumulated_s": counted})
     if due_s is not None:
         timer["due_s"] = int(due_s) or None
+        timer["own_due"] = not by_rule
     timer.setdefault("due_s", None)
     if business is not None:
         timer["business"] = bool(business)
@@ -287,13 +291,23 @@ def sync(db: OrmSession, incident: Incident, now: float, known: dict[str, str] |
         over = closed or (name == "time_to_assign" and owned)
         if timer is None:
             if not over:
-                start(db, incident, name, now, due_s=_due(rule, incident), business=bool(rule.get("business_hours")))
+                start(
+                    db,
+                    incident,
+                    name,
+                    now,
+                    due_s=_due(rule, incident),
+                    business=bool(rule.get("business_hours")),
+                    by_rule=True,
+                )
                 changed = True
         elif timer.get("state") == "running":
-            due = _due(rule, incident)
+            # A time given when it was started stays; the rule's follows the severity.
+            own = bool(timer.get("own_due"))
+            due = timer.get("due_s") if own else _due(rule, incident)
             if timer.get("due_s") != due or bool(timer.get("business")) != bool(rule.get("business_hours")):
                 # The severity changed, or the rule did: the time allowed follows.
-                start(db, incident, name, now, due_s=due, business=bool(rule.get("business_hours")))
+                start(db, incident, name, now, due_s=due, business=bool(rule.get("business_hours")), by_rule=not own)
                 changed = True
         elif timer.get("state") == "stopped" and timer.get("stopped_by_rule") and not over:
             # Opened again, or left without an owner: the clock goes on.

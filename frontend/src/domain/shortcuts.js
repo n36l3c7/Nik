@@ -25,6 +25,12 @@ export const SHORTCUTS = [
     keys: ['Click', '↑', '↓', 'Enter'],
     does: 'In the list of incidents: open the quick view of a row, move it from row to row, open the incident',
   },
+  // The selection of the lists of incidents, artifacts and indicators (domain/selection.js).
+  { keys: ['Space'], does: 'In a list that selects: tick or untick the row that has the focus' },
+  { keys: ['Shift click'], does: 'Tick every row from the last one ticked to this one' },
+  { keys: ['Shift ↑', 'Shift ↓'], does: 'Tick the next row too, and move there' },
+  { keys: ['Ctrl A'], does: 'Tick the rows on screen' },
+  { keys: ['Esc'], does: 'Untick everything, when something is ticked' },
   { keys: ['?'], does: 'This list' },
 ]
 

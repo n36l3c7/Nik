@@ -332,6 +332,24 @@ def extract(
     return out.items
 
 
+def _named_host(name: Any) -> tuple[str, str] | None:
+    """What a host named in a capture is: a domain, or an address when it is one (an HTTP
+    ``Host:`` may hold ``203.0.113.66:8080`` or ``[2001:db8::1]``). An address that is not public
+    is no indicator, as for the hosts of the capture."""
+    text = str(name or "").strip()
+    if not text:
+        return None
+    if text.startswith("["):
+        text = text[1:].split("]", 1)[0]
+    elif text.count(":") == 1:
+        text = text.split(":", 1)[0]
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        return ("domain", text) if text else None
+    return ("ip", str(address)) if address.is_global else None
+
+
 def capture_iocs(summary: dict[str, Any]) -> list[tuple[str, str, int | None]]:
     """Indicators of a capture's analysis: ``(type, value, time ms)``."""
     first = int(summary["first"] * 1000) if summary.get("first") else None
@@ -339,14 +357,14 @@ def capture_iocs(summary: dict[str, Any]) -> list[tuple[str, str, int | None]]:
     for host in summary.get("hosts") or []:
         if host.get("public"):
             found.append(("ip", host["address"], first))
-    for item in summary.get("dns") or []:
-        found.append(("domain", item["name"], first))
-    for item in summary.get("tlsServerNames") or []:
-        found.append(("domain", item["name"], first))
+    named = [item.get("name") for item in summary.get("dns") or []]
+    named += [item.get("name") for item in summary.get("tlsServerNames") or []]
     for item in summary.get("http") or []:
         found.append(("url", item["url"], first))
-        if item.get("host"):
-            found.append(("domain", str(item["host"]).split(":")[0], first))
+        named.append(item.get("host"))
+    for name in named:
+        if (host := _named_host(name)) is not None:
+            found.append((*host, first))
     for item in summary.get("posts") or []:
         found.append(("url", item["url"], int(item["time"] * 1000) if item.get("time") else first))
     for beacon in summary.get("beacons") or []:

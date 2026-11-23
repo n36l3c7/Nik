@@ -195,7 +195,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [sort, setSort] = useState(null)
   const [offset, setOffset] = useState(0)
-  const [data, setData] = useState(null) // { iocs, total }
+  const [data, setData] = useState(null) // { iocs, total, asked }: `asked` is what the rows answer
   const [detail, setDetail] = useState(null) // the list's counts
   const [error, setError] = useState(null)
   // What the server said of the query in `filters.q`, when it could not read it.
@@ -235,7 +235,11 @@ export default function IocLibraryPage({ onOpenIncident }) {
       () => {
         api
           .get(`/iocs?${libraryQuery({ filters: effective, list: listId, sort, offset, limit: PAGE })}`)
-          .then((res) => id === requestRef.current && (setData(res), setError(null), setQueryError(null)))
+          .then(
+            (res) =>
+              id === requestRef.current &&
+              (setData({ ...res, asked: { listId, quick, effective } }), setError(null), setQueryError(null)),
+          )
           .catch((err) => {
             if (id !== requestRef.current) return
             // A query that cannot be read is said next to the input; the table stays.
@@ -246,7 +250,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
       filters.q ? 250 : 0,
     )
     return () => clearTimeout(timer)
-  }, [view, effective, listId, sort, offset, version, filters.q])
+  }, [view, effective, listId, quick, sort, offset, version, filters.q])
 
   useEffect(() => {
     if (!listId) {
@@ -282,17 +286,21 @@ export default function IocLibraryPage({ onOpenIncident }) {
   const total = data?.total ?? 0
   // Something typed or chosen narrows the table: an empty one then says so, in other words.
   const narrowed = Object.keys(EMPTY_FILTERS).some((key) => (filters[key] ?? null) !== (EMPTY_FILTERS[key] ?? null))
-  // The selection lives inside one view and one filter, across its pages and whatever the order.
-  const filterKey = useMemo(() => JSON.stringify([listId, quick, effective]), [listId, quick, effective])
+  // The selection lives inside one view and one filter, across its pages and whatever the order:
+  // the one the rows on screen answer. While another is asked, nothing is acted on in its name.
+  const asked = data?.asked ?? null
+  const filterKey = useMemo(() => JSON.stringify(asked ? [asked.listId, asked.quick, asked.effective] : null), [asked])
   const pageIds = useMemo(() => rows.map(key), [rows])
   const picked = useSelection({ filter: filterKey, pageIds, total })
   const count = picked.count
+  const askedList = asked?.listId ?? listId
+  const askedFilters = asked?.effective ?? effective
   const everything = useCallback(
     () =>
-      listId && !Object.keys(scopeFilters(effective)).length
-        ? { list: listId }
-        : { filters: scopeFilters(effective, listId) },
-    [listId, effective],
+      askedList && !Object.keys(scopeFilters(askedFilters)).length
+        ? { list: askedList }
+        : { filters: scopeFilters(askedFilters, askedList) },
+    [askedList, askedFilters],
   )
   // What the dialogs of the check, the export and a new list are told the selection is.
   const scope = useCallback(
@@ -306,7 +314,7 @@ export default function IocLibraryPage({ onOpenIncident }) {
       list: 'indicators',
       action,
       title: heading,
-      selection: picked.body(scopeFilters(effective, listId)),
+      selection: picked.body(scopeFilters(askedFilters, askedList)),
       onStarted: picked.reset,
       onDone: refresh,
       ...more,

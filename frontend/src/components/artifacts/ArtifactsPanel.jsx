@@ -77,6 +77,7 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
     artifacts,
     counts,
     filters,
+    shown,
     setFilters,
     loading,
     error,
@@ -95,16 +96,19 @@ export default function ArtifactsPanel({ width, onNewAnalysis, onHide }) {
   const [transfer, setTransfer] = useState(null) // { mode: 'export', ids, label } | { mode: 'import' }
   const { askBulk } = useBulk()
   const canWrite = can('write')
-  const total = filters.kind
-    ? (counts[filters.kind] ?? 0)
+  // How many the rows on screen are of: the counts came with them.
+  const total = shown.kind
+    ? (counts[shown.kind] ?? 0)
     : ARTIFACT_KINDS.reduce((sum, kind) => sum + (counts[kind.id] ?? 0), 0)
-  // What the server is told the filter is, when everything it keeps is selected.
+  // What the server is told the filter is, when everything it keeps is selected: the one the rows
+  // on screen answer, not one still being asked.
   const query = useMemo(
-    () => ({ ...(filters.q.trim() ? { q: filters.q.trim() } : {}), ...(filters.kind ? { kind: filters.kind } : {}) }),
-    [filters],
+    () => ({ ...(shown.q.trim() ? { q: shown.q.trim() } : {}), ...(shown.kind ? { kind: shown.kind } : {}) }),
+    [shown],
   )
   const pageIds = useMemo(() => artifacts.map((artifact) => artifact.id), [artifacts])
-  const picked = useSelection({ filter: JSON.stringify(query), pageIds, total })
+  const known = useMemo(() => new Set(pageIds), [pageIds])
+  const picked = useSelection({ filter: JSON.stringify(query), pageIds, total, known })
   const ask = (action, title, more = {}) =>
     askBulk({
       list: 'artifacts',
