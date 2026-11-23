@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.10.1] - 2026-11-23
+
+A new licence, a new documentation site, and the defects found while it
+was photographed: the serious one is a bulk action that could reach rows
+the list did not show.
+
 ### Changed
 
 - **Licence**: Nik is now under PolyForm Shield 1.0.0 instead of MIT. It
@@ -23,6 +29,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A list chosen for a feature, or a list's items, could show the old
   value for a few seconds after it was saved, when another request read
   it while the change was being written.
+- **A bulk action could reach rows the list did not show.** Rows ticked
+  while the answer to a new filter was on its way stayed selected once
+  it came, and "Select all that match" named the filter being typed, not
+  the one on screen. The lists of incidents, artifacts and indicators now
+  tie the selection to the rows on screen: the answer to another filter
+  empties it, and a row that leaves the list is never acted on.
+- An HTTP `Host:` header that holds an address (`203.0.113.66:8080`,
+  `[2001:db8::1]`) is an IP indicator of the capture, not a domain; a
+  private one is no indicator, as for the hosts of the capture.
+- A timer started with a time of its own, by hand or by a playbook, kept
+  it: the rules of the type put the SLA's time back at the next change.
+- The facts of an incident, as a column beside the tabs, are one under
+  the other again (they were in three narrow columns, cut mid-word), and
+  the status reads "in progress", as in the list.
+- The list of incidents fits the window: the title takes the room the
+  other columns leave and is cut short, instead of pushing the last
+  columns out of sight at 1440 pixels.
+- "Check all" on the Indicators tab counts what is checked: the
+  allowlisted values are left out, as the card above it says.
+- Settings, Automations and the Playground take the focus themselves
+  when they open, instead of giving it to the search box of their header.
+- The War Room offers `/task` with `/note`, `/assign` and `/close`, and
+  the list of shortcuts has the keys that select rows.
 
 ## [6.10.0] - 2026-11-22
 
@@ -3931,7 +3960,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.10.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.10.1...HEAD
+[6.10.1]: https://github.com/n36l3c7/Nik/compare/v6.10.0...v6.10.1
 [6.10.0]: https://github.com/n36l3c7/Nik/compare/v6.9.0...v6.10.0
 [6.9.0]: https://github.com/n36l3c7/Nik/compare/v6.8.0...v6.9.0
 [6.8.0]: https://github.com/n36l3c7/Nik/compare/v6.7.1...v6.8.0

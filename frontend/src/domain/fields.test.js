@@ -68,6 +68,9 @@ test('a value is shown and typed as its type says', () => {
   assert.equal(formatValue(field('tags'), ['a', 'b']), 'a, b')
   assert.equal(formatValue(field('indicator'), { type: 'domain', value: 'evil.example' }), 'evil.example (domain)')
   assert.equal(formatValue(field('list'), [{ a: 1 }]), '1 row')
+  // The status is shown as the list shows it; any other choice as it was written.
+  assert.equal(formatValue({ name: 'status', type: 'choice' }, 'in_progress'), 'in progress')
+  assert.equal(formatValue(field('choice'), 'needs_review'), 'needs_review')
   assert.equal(formatValue(field('text'), ''), '')
   assert.equal(formatValue(field('text'), undefined), '')
 

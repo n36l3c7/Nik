@@ -368,12 +368,13 @@ export default function IocsTab({ incident }) {
         icon={Crosshair}
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
+            {/* The allowlisted ones are not checked (the server skips them): the count is of the others. */}
             <Button
               size="xs"
-              disabled={state.iocs.length === 0}
+              disabled={stats.total === 0}
               onClick={() => openCheck({ incident: incident.id }, incident.name)}
             >
-              Check all {state.iocs.length}
+              Check all {stats.total}
             </Button>
             <Button
               size="xs"

@@ -10,6 +10,7 @@
  * leaves the one it was given as it was.
  */
 import { DETAIL_FIELDS } from './layoutGrid.js'
+import { statusLabel } from './incidentName.js'
 import { layoutForSaving } from './typePages.js'
 import { storedTimer } from './timers.js'
 
@@ -71,6 +72,9 @@ export function formatValue(field, value) {
   switch (field?.type) {
     case 'bool':
       return value ? 'yes' : 'no'
+    case 'choice':
+      // The status is stored as a word of the program (in_progress): it is shown as the list shows it.
+      return field.name === 'status' ? statusLabel(value) : String(value)
     case 'timer':
       // Started and stopped, never typed: what it holds in a few words (the side panel reads the clock).
       return storedTimer(value)

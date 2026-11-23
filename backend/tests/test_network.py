@@ -330,3 +330,24 @@ def test_session_without_incident_keeps_no_log(admin: TestClient, workers):
     assert "captureId" not in state
     with SessionLocal() as db:
         assert db.get(NetworkCapture, state["id"]) is None
+
+
+def test_a_host_header_that_is_an_address_is_an_address_not_a_domain():
+    from app.iocs import capture_iocs
+
+    summary = {
+        "http": [
+            {"url": "http://8.8.8.8:8080/a", "host": "8.8.8.8:8080"},
+            {"url": "http://[2606:4700::1111]/b", "host": "[2606:4700::1111]"},
+            {"url": "http://10.0.0.5/c", "host": "10.0.0.5"},
+            {"url": "http://cdn.evil.example:81/d", "host": "cdn.evil.example:81"},
+        ],
+        "dns": [{"name": "login.evil.example"}],
+        "tlsServerNames": [{"name": "1.1.1.1"}],
+    }
+    found = {(kind, value) for kind, value, _ in capture_iocs(summary)}
+    assert {("ip", "8.8.8.8"), ("ip", "2606:4700::1111"), ("ip", "1.1.1.1")} <= found
+    assert {("domain", "cdn.evil.example"), ("domain", "login.evil.example")} <= found
+    # No address is a domain; a private one is no indicator at all, as for the hosts of the capture.
+    assert not [value for kind, value in found if kind == "domain" and value[0].isdigit()]
+    assert ("domain", "[2606:4700::1111]") not in found and ("ip", "10.0.0.5") not in found

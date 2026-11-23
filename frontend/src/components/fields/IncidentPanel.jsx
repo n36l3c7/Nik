@@ -138,12 +138,13 @@ export default function IncidentPanel({ incident }) {
             {error}
           </p>
         )}
-        {/* As a band above the tabs the facts are side by side; as a column, one under the other. */}
+        {/* As a band above the tabs the facts are side by side; as a column, one under the other.
+            Both widths in px: Tailwind orders variants of one unit by their value, so the column wins. */}
         <FieldList
           fields={fields}
           values={values}
           dense
-          className="grid-cols-2 sm:grid-cols-3 min-[1100px]:grid-cols-1"
+          className="grid-cols-2 min-[640px]:grid-cols-3 min-[1100px]:grid-cols-1"
         />
         <Timers incident={incident} />
         <Mirror incident={incident} />

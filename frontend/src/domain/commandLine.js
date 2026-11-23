@@ -3,7 +3,7 @@
  * completes it, and the lines typed before.
  *
  *   plain text            a note
- *   /note /assign /close  a slash command
+ *   /note /assign /close /task  a slash command
  *   !name arg=value …     a command (GET /api/automation/catalog → commands)
  *
  * The server reads the line again and is the one that decides; this only
@@ -14,6 +14,11 @@ export const SLASH = [
   { name: '/note', hint: 'text', description: 'Write a note' },
   { name: '/assign', hint: '@user', description: 'Give the incident to someone (alone: to nobody)' },
   { name: '/close', hint: '', description: 'Close the incident: opens the form of closing' },
+  {
+    name: '/task',
+    hint: 'title @user due=2h',
+    description: 'Add a task to the work plan (with nobody named: for the owner)',
+  },
 ]
 
 const HISTORY_MAX = 50

@@ -55,7 +55,7 @@ test('the name of a command is completed while it is typed', () => {
   assert.deepEqual(completions(COMMANDS, 'a note'), [])
   assert.deepEqual(
     completions(COMMANDS, '/').map((item) => item.label),
-    ['/note text', '/assign @user', '/close'],
+    ['/note text', '/assign @user', '/close', '/task title @user due=2h'],
   )
   assert.deepEqual(
     completions(COMMANDS, '/a').map((item) => item.value),
@@ -112,8 +112,12 @@ test('the Playground has an address, its own chips, and only the / line that nee
     PLAYGROUND_FILTERS.map((filter) => filter.id),
     ['all', 'notes', 'commands'],
   )
-  // On an incident `/` offers three lines; in the Playground, the note alone.
-  assert.equal(completions([], '/').length, 3)
+  // On an incident `/` offers every slash command the server reads (backend/app/commands.py SLASH);
+  // in the Playground, the note alone.
+  assert.deepEqual(
+    completions([], '/').map((item) => item.value.trim()),
+    ['/note', '/assign', '/close', '/task'],
+  )
   assert.deepEqual(
     completions([], '/', 8, PLAYGROUND_SLASH).map((item) => item.value),
     ['/note '],

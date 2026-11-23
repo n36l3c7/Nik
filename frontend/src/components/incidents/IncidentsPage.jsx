@@ -354,14 +354,15 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   }
 
   // ---- the incidents the query keeps, and the fields the columns need: asked of the server ----
-  const [match, setMatch] = useState({ ids: null, fields: null, error: null })
+  // `query`: what the rows on screen are the answer to (while a new query is asked, the old one).
+  const [match, setMatch] = useState({ ids: null, fields: null, error: null, query: '' })
   const wanted = fieldNames(chosenKeys, columns).join(',')
   // Asked again when the list changes or a change reaches the server, so an edit shows in the filter.
   const stamp = `${incidents.length}:${incidents.reduce((latest, row) => (row.updatedAt > latest ? row.updatedAt : latest), '')}:${unsavedChanges}`
   useEffect(() => {
     const text = view.query.trim()
     if (!text && !wanted) {
-      setMatch({ ids: null, fields: null, error: null })
+      setMatch({ ids: null, fields: null, error: null, query: '' })
       return undefined
     }
     // What cannot be read is said by the input; the list stays as it was.
@@ -382,6 +383,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
             ids: text ? new Set(found.map((row) => row.id)) : null,
             fields: wanted ? new Map(found.map((row) => [row.id, row.fields ?? {}])) : null,
             error: null,
+            query: text,
           })
         })
         .catch((failure) => {
@@ -405,8 +407,10 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
 
   // ---- the selection, and what is done to it ----
   const drawnIds = useMemo(() => drawn.map((row) => row.id), [drawn])
-  const query = view.query.trim()
-  const picked = useSelection({ filter: query, pageIds: drawnIds, total: rows.length })
+  // A bulk action names the query the rows on screen answer, never one still being asked.
+  const query = match.query
+  const keptIds = useMemo(() => new Set(rows.map((row) => row.id)), [rows])
+  const picked = useSelection({ filter: query, pageIds: drawnIds, total: rows.length, known: keptIds })
   const bulkActions = incidentActions({
     picked,
     rows,

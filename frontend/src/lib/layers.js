@@ -93,8 +93,12 @@ export function useLayer(ref, { open, onClose, trap = true, page = false }) {
     // Capture: before the page's own shortcuts see the key.
     if (stack.length === 1) window.addEventListener('keydown', onKeyDown, true)
     const node = ref.current
-    // Unless a field inside asked for the focus itself (autoFocus).
-    if (node && !node.contains(document.activeElement)) (focusables(node)[0] ?? node).focus({ preventScroll: true })
+    // Unless a field inside asked for the focus itself (autoFocus). A page takes the focus itself
+    // (it has tabindex -1): no control of it looks chosen before anyone chose it, and Tab starts there.
+    const holds = page && node?.hasAttribute('tabindex')
+    if (node && !node.contains(document.activeElement)) {
+      ;(holds ? node : (focusables(node)[0] ?? node)).focus({ preventScroll: true })
+    }
     return () => {
       stack.splice(stack.indexOf(layer), 1)
       if (stack.length === 0) window.removeEventListener('keydown', onKeyDown, true)

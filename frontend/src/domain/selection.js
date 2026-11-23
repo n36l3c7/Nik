@@ -97,6 +97,18 @@ export function forFilter(selection, filter) {
   return { ...emptySelection(filter), cleared: had }
 }
 
+/**
+ * The selection without the rows the list does not hold any more (`known`: the ids it holds, all
+ * of them, not only the page; null when the list does not know them all). A row that left the
+ * list, because it was changed elsewhere or the answer to the filter came, is never acted on.
+ */
+export function within(selection, known) {
+  if (!known || selection.all) return selection
+  const ids = [...selection.ids].filter((id) => known.has(id))
+  if (ids.length === selection.ids.size) return selection
+  return { ...selection, ids: new Set(ids), anchor: known.has(selection.anchor) ? selection.anchor : null }
+}
+
 /** What is said when a change of the filter emptied the selection. */
 export const CLEARED = 'The filter changed: the selection was cleared.'
 

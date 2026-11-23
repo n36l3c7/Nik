@@ -162,6 +162,23 @@ def test_the_type_starts_the_timers_of_an_incident_and_what_happens_stops_them(a
     assert shown(admin)["time_to_contain"]["state"] == "stopped"
 
 
+def test_a_time_given_when_a_timer_is_started_is_kept_by_the_rules_of_the_type(admin: TestClient):
+    sla(admin, [{"field": "time_to_close", "minutes": 1440, "bySeverity": {"critical": 240}}])
+    incident(admin, severity="high")
+    assert shown(admin)["time_to_close"]["dueS"] == 1440 * 60
+    # One minute of its own, by hand: the next change of the incident, and the next read, keep it.
+    assert admin.post("/api/incidents/i1/timers/time_to_close/start", json={"minutes": 1}).status_code == 200
+    assert shown(admin)["time_to_close"]["dueS"] == 60
+    assert admin.patch("/api/incidents/i1/fields", json={"changes": {"name": "Renamed"}}).status_code == 200
+    assert admin.patch("/api/incidents/i1/fields", json={"changes": {"severity": "critical"}}).status_code == 200
+    assert shown(admin)["time_to_close"]["dueS"] == 60
+    # Counted again from nothing, with no time given: the rule's time, by the severity, again.
+    started = admin.post("/api/incidents/i1/timers/time_to_close/start", json={"restart": True})
+    assert started.status_code == 200, started.text
+    assert admin.patch("/api/incidents/i1/fields", json={"changes": {"severity": "high"}}).status_code == 200
+    assert shown(admin)["time_to_close"]["dueS"] == 1440 * 60
+
+
 def test_a_timer_past_its_time_is_breached_once_and_everyone_concerned_is_told(admin: TestClient):
     person(admin, "anna", ["analyst"])
     sla(admin, [{"field": "time_to_contain", "minutes": 60}])

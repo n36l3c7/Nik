@@ -23,4 +23,6 @@ test('the toast names what was flagged; the list covers every shortcut', () => {
   assert.ok(shortcutMessage('flag', 'Flag as malicious', 'a'.repeat(200)).length < 80)
   const keys = SHORTCUTS.flatMap((row) => row.keys)
   for (const key of ['F', 'C', '?']) assert.ok(keys.includes(key), key)
+  // The keys of the selection are in the list too.
+  for (const key of ['Space', 'Shift click', 'Shift ↓', 'Ctrl A']) assert.ok(keys.includes(key), key)
 })

@@ -86,6 +86,13 @@ A snapshot taken while no passphrase was set is read with this server's `SECRET_
 
 What each release asks of an administrator. The full list of changes is in the [Changelog](../changelog.md). An [install without containers](manual-install.md#update-to-a-new-version) has its own steps.
 
+### Upgrading to 6.10.1 {#upgrading-to-6101}
+
+`git pull`, then `docker compose up -d --build`. No migration, nothing to set.
+
+- Nik is under [PolyForm Shield 1.0.0](https://github.com/n36l3c7/Nik/blob/main/LICENSE) from this release: free to use, change and share, in a company too, but not to offer a product or service that competes with it. 6.10.0 and before stay under MIT.
+- An install without containers that followed the old page of the manual install may have no `STORE_KEY` in its `.env`: its store is then sealed with the public key of development, which anyone can read in the source. Look in `.env`. The rotation of [Keys and secrets](secrets.md#change-a-key) puts the store under a key of its own; its script is written for the containers, so on such a server keep a backup and a copy of the store volume before you try it.
+
 ### Upgrading to 6.10 {#upgrading-to-610}
 
 `git pull`, then `docker compose up -d --build`. Migrations `0054_indicators_found` and `0055_bulk` run after the snapshot and the rehearsal.

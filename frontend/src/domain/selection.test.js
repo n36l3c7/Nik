@@ -17,6 +17,7 @@ import {
   selectionText,
   toggle,
   togglePage,
+  within,
 } from './selection.js'
 
 const PAGE = ['a', 'b', 'c', 'd', 'e']
@@ -153,4 +154,19 @@ test("keys that are not the selection's are left to the list", () => {
   assert.equal(onKey(selection, PAGE, null, key(' ')), null)
   assert.equal(onKey(selection, PAGE, 'a', key('a', { ctrlKey: true, altKey: true })), null)
   assert.equal(onKey(selection, PAGE, 'a', key('c', { ctrlKey: true })), null)
+})
+
+test('a ticked row the list does not hold any more is not selected, nor acted on', () => {
+  // The heading ticked the rows of the old filter; the answer to the new one keeps only two.
+  let selection = togglePage(emptySelection('type:malware'), PAGE)
+  selection = within(selection, new Set(['b', 'd']))
+  assert.deepEqual(ids(selection), ['b', 'd'])
+  assert.equal(selection.anchor, null)
+  assert.deepEqual(selectionBody(selection, { q: 'type:malware' }), { ids: ['b', 'd'] })
+  // The same list: the very same selection, so nothing is drawn again for it.
+  assert.equal(within(selection, new Set(PAGE)), selection)
+  // A list that does not know all its rows, and everything that matches, are left as they are.
+  assert.equal(within(selection, null), selection)
+  const all = selectAll(selection)
+  assert.equal(within(all, new Set()), all)
 })

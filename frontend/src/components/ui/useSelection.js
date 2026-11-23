@@ -13,6 +13,7 @@ import {
   selectedCount,
   selectionBody,
   togglePage,
+  within,
 } from '../../domain/selection.js'
 
 /*
@@ -27,27 +28,31 @@ import {
  * `filter` is a string that changes when what the list keeps changes (the
  * query, the list that is open): the selection lives inside one filter, and
  * is emptied when it changes. `pageIds` are the rows on screen, in their
- * order; `total` is how many the filter keeps in all.
+ * order; `total` is how many the filter keeps in all. `known`, when the list
+ * holds every row the filter keeps (not only a page), is the Set of their ids:
+ * a ticked row that is not among them any more is not selected.
+ *
+ * `filter` must name what the rows on screen are the answer to, not what is
+ * being typed: while a new filter is asked, the rows are still the old one's.
  *
  * The selection is the state of the component that holds it: leaving the
  * page forgets it, and it is never carried to another list.
  */
-export function useSelection({ filter = '', pageIds, total }) {
+export function useSelection({ filter = '', pageIds, total, known = null }) {
   const [held, setHeld] = useState(() => emptySelection(filter))
   // The filter changed: nothing of the old selection is acted on, even before the effect below runs.
-  const selection = useMemo(() => forFilter(held, filter), [held, filter])
-  useEffect(() => setHeld((current) => forFilter(current, filter)), [filter])
+  // Nor is a row the list does not hold any more.
+  const fresh = useCallback((current) => within(forFilter(current, filter), known), [filter, known])
+  const selection = useMemo(() => fresh(held), [held, fresh])
+  useEffect(() => setHeld(fresh), [fresh])
 
   const has = useCallback((id) => isSelected(selection, id), [selection])
   const pick = useCallback(
-    (id, event) => setHeld((current) => click(forFilter(current, filter), pageIds, id, Boolean(event?.shiftKey))),
-    [filter, pageIds],
+    (id, event) => setHeld((current) => click(fresh(current), pageIds, id, Boolean(event?.shiftKey))),
+    [fresh, pageIds],
   )
-  const pickPage = useCallback(
-    () => setHeld((current) => togglePage(forFilter(current, filter), pageIds)),
-    [filter, pageIds],
-  )
-  const pickAll = useCallback(() => setHeld((current) => selectAll(forFilter(current, filter))), [filter])
+  const pickPage = useCallback(() => setHeld((current) => togglePage(fresh(current), pageIds)), [fresh, pageIds])
+  const pickAll = useCallback(() => setHeld((current) => selectAll(fresh(current))), [fresh])
   const reset = useCallback(() => setHeld((current) => clear(current)), [])
   /**
    * A key pressed on a row (`focused`: its id) or on the list (`focused` null). Returns the id of

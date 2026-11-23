@@ -47,6 +47,11 @@ function RowAction({ icon: Icon, label, danger = false, busy = false, onClick })
   )
 }
 
+// The title takes the room the other columns leave and is cut short with an ellipsis, down to 16rem:
+// every column stays in the window as long as that much is left for it. The other cells do not wrap,
+// so the table is never narrower than they are: in a narrow window it scrolls sideways.
+const TITLE_CELL = 'w-full max-w-0 min-w-[16rem]'
+
 function Cell({ row, column, types, onTag }) {
   const text = cellText(row, column, { types })
   switch (column.key) {
@@ -86,7 +91,7 @@ function Cell({ row, column, types, onTag }) {
           {OsIcon && <OsIcon className={`h-3.5 w-3.5 shrink-0 ${os.accent}`} aria-label={os.label} />}
           {row.hasMail && <Mail className="h-3.5 w-3.5 shrink-0 text-accent" aria-label="Holds e-mails" />}
           <ConnectorLogo source={row.source} />
-          <span className="max-w-[32rem] truncate" title={row.name}>
+          <span className="min-w-0 truncate" title={row.name}>
             {row.name}
           </span>
         </span>
@@ -188,7 +193,7 @@ export default function IncidentTable({
   }
 
   return (
-    <table aria-label="Incidents" className="w-full min-w-max border-collapse text-left text-[13px]">
+    <table aria-label="Incidents" className="w-full border-collapse text-left text-[13px]">
       <thead className="sticky top-0 z-10 bg-canvas">
         <tr>
           <th scope="col" className="w-px border-b border-line pl-3">
@@ -262,7 +267,10 @@ export default function IncidentTable({
                 />
               </td>
               {columns.map((column) => (
-                <td key={column.key} className="whitespace-nowrap px-3 py-2 align-middle text-fg">
+                <td
+                  key={column.key}
+                  className={`whitespace-nowrap px-3 py-2 align-middle text-fg ${column.key === 'name' ? TITLE_CELL : ''}`}
+                >
                   <Cell row={row} column={column} types={types} onTag={onTag} />
                 </td>
               ))}
