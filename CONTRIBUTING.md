@@ -83,3 +83,11 @@ of a pack comes with recorded exchanges for each of its commands
 (`backend/tests/data/connectors/<id>/`). The
 [architecture page](https://n36l3c7.github.io/Nik/architecture.html) has the
 map.
+
+## Licence
+
+Nik is under [PolyForm Shield 1.0.0](LICENSE). By sending a contribution
+(a pull request, a patch or code in an issue) you confirm that you wrote it
+or may give it, you license it under the same terms, and you also grant the
+maintainer the right to publish it under other licences, including
+commercial ones, as part of Nik.

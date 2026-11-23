@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Licence**: Nik is now under PolyForm Shield 1.0.0 instead of MIT. It
+  may still be used, changed and shared for free, in a company too, but
+  not to offer a product or service that competes with it. Releases up
+  to 6.10.0 stay under MIT.
+
 ### Fixed
 
 - A list chosen for a feature, or a list's items, could show the old
