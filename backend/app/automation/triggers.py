@@ -282,6 +282,10 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
     data, classes = payload.get("data") or {}, payload.get("classes") or {}
     cause, depth = payload.get("caused_by_run"), int(payload.get("depth") or 0)
     started: list[Run] = []
+    from ..core import copy
+
+    if copy.is_copy():
+        return started  # on a copy no playbook starts by itself (core/copy.py)
     if depth > MAX_DEPTH:
         logger.info("Event %s dropped: more than %d runs deep", event.kind, MAX_DEPTH)
         return started
@@ -364,6 +368,10 @@ def sync_schedule(db: OrmSession, playbook: Playbook, now: float) -> None:
 def fire_schedules(db: OrmSession, now: float) -> list[Run]:
     """Start the runs of the schedules that are due (the caller commits)."""
     started: list[Run] = []
+    from ..core import copy
+
+    if copy.is_copy():
+        return started  # on a copy no schedule fires: the times stay as they are, nothing is missed for good
     for row in db.scalars(select(AutomationSchedule).where(AutomationSchedule.next_at <= now)):
         playbook = db.get(Playbook, row.playbook_id)
         # Once, however many of its times passed while the worker was stopped (schedules.py); the

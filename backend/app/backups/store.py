@@ -39,10 +39,12 @@ import json
 import os
 import stat
 import tarfile
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
 from ..core import store as sealed_store
+from . import pool
 from .container import CHUNK, BackupError, Part, Writer
 
 TAR_PART = "store.tar"
@@ -78,16 +80,53 @@ def _walk(root: Path):
             yield (relative / name).as_posix(), Path(folder, name), False
 
 
-def pack(writer: Writer, root: str | os.PathLike) -> dict[str, Any]:
-    """Write the store at ``root`` as parts of a backup. Returns ``{"files", "bytes"}``."""
+def _pool_pass(root: Path, target: pool.Target) -> list[dict[str, Any]]:
+    """Put into the pool the files of the store it takes and does not hold yet. Returns one entry
+    for each file of the store that is in the pool when this ends: ``path``, ``size``, ``sha256``."""
+    held: list[dict[str, Any]] = []
+    for name, path, is_folder in _walk(root):
+        sha256 = None if is_folder else pool.sha_of(name)
+        if sha256 is None:
+            continue
+        try:
+            if not stat.S_ISREG(os.lstat(path).st_mode):
+                continue
+            if not target.has(sha256):
+                # Decrypted as it is read: the pool holds the content, under the key of the pool.
+                with sealed_store.open(path, name) as handle:
+                    if not target.put(sha256, handle):
+                        continue  # not what its name says: it goes into the backup like any other file
+            held.append({"path": name, "size": sealed_store.size(path), "sha256": sha256})
+            target.named[sha256] = held[-1]["size"]
+        except FileNotFoundError:
+            continue
+        except sealed_store.SealError as error:
+            raise BackupError(f"A file of the store cannot be read: {error}") from None
+    return held
+
+
+def pack(writer: Writer, root: str | os.PathLike, target: pool.Target | None = None) -> dict[str, Any]:
+    """Write the store at ``root`` as parts of a backup. Returns ``{"files", "bytes"}`` and, with a
+    pool (``target``), how much of that is in the pool and not in the backup: ``pooled``,
+    ``pooledBytes``, ``pool`` (its generation)."""
     root = Path(root)
     index: list[dict[str, Any]] = []
     total = 0
+    pooled = _pool_pass(root, target) if target is not None and root.is_dir() else []
+    in_pool = {entry["path"] for entry in pooled}
+    if pooled:
+        with writer.part(pool.KEY_PART) as part:
+            part.write(target.key.encode("ascii"))
+        with writer.part(pool.LIST_PART) as part:
+            for entry in pooled:
+                part.write(json.dumps(entry, sort_keys=True).encode("utf-8") + b"\n")
     with writer.part(TAR_PART) as part:
         with tarfile.open(fileobj=part, mode="w|", format=tarfile.PAX_FORMAT, bufsize=CHUNK) as tar:
             for name, path, is_folder in _walk(root) if root.is_dir() else ():
                 if name == KEPT or name.startswith(KEPT + "/"):
                     continue  # deleted files kept for a recovery to a moment (app/recovery/kept.py): not the store
+                if name in in_pool:
+                    continue  # in the pool: the backup names it and does not hold it again
                 try:
                     found = os.lstat(path)
                 except OSError:
@@ -101,8 +140,8 @@ def pack(writer: Writer, root: str | os.PathLike) -> dict[str, Any]:
                     continue
                 if not stat.S_ISREG(found.st_mode):
                     continue
-                if name.endswith(LEFTOVERS) or name.startswith("_transfer/"):
-                    continue  # what an interrupted write left: never a file of the store
+                if name.endswith(LEFTOVERS) or name.startswith(("_transfer/", "_uploads/")):
+                    continue  # what an interrupted write left, or the parts of a file still being sent
                 try:
                     # Decrypted as it is read: the content, whatever it sits under on the disk.
                     handle = sealed_store.open(path, name)
@@ -124,9 +163,12 @@ def pack(writer: Writer, root: str | os.PathLike) -> dict[str, Any]:
                 index.append({"path": name, "size": info.size, "sha256": reader.digest.hexdigest()})
                 total += info.size
     with writer.part(INDEX_PART) as part:
-        for entry in index:
+        for entry in [*index, *({**entry, "pool": True} for entry in pooled)]:
             part.write(json.dumps(entry, sort_keys=True).encode("utf-8") + b"\n")
-    return {"files": len(index), "bytes": total}
+    held: dict[str, Any] = {"files": len(index) + len(pooled), "bytes": total + sum(e["size"] for e in pooled)}
+    if pooled:
+        held |= {"pooled": len(pooled), "pooledBytes": sum(e["size"] for e in pooled), "pool": target.gen}
+    return held
 
 
 def _inside(name: str) -> PurePosixPath:
@@ -149,16 +191,43 @@ class Unpacker:
     has written files: the caller writes into an empty place and says so.
     """
 
-    def __init__(self, target: str | os.PathLike | None = None) -> None:
+    def __init__(
+        self,
+        target: str | os.PathLike | None = None,
+        pool_base: str | os.PathLike | None = None,
+        read_pool: Callable[[str], bool] = lambda _sha256: False,
+    ) -> None:
+        """``pool_base``: the folder the pool of the backup sits in (the folder of the backup). The
+        files the backup names in the pool are read from there at ``finish``: every one of them when
+        there is a target (they are written), and when there is none the ones ``read_pool(sha256)``
+        asks for (the others are only looked for)."""
         self.target = Path(target) if target is not None else None
         self.seen: dict[str, tuple[int, str]] = {}
         self._index: dict[str, tuple[int, str]] | None = None
         self._tar_seen = False
+        self._pool_base = Path(pool_base) if pool_base is not None else None
+        self._read_pool = read_pool
+        self._pool_key = ""
+        self._in_pool: set[str] = set()
+        # What the backup names in the pool ({"path", "size", "sha256"}), and the pool's generation.
+        self.pooled: list[dict[str, Any]] = []
+        self.pool_gen = ""
+        self.pool_read = 0
 
     def take(self, part: Part) -> bool:
         if part.name == TAR_PART:
             self._tar_seen = True
             self._read_tar(part)
+            return True
+        if part.name == pool.KEY_PART:
+            self._pool_key = part.read(200).decode("ascii", errors="replace")
+            try:
+                self.pool_gen = pool.generation(self._pool_key)
+            except ValueError:
+                raise BackupError("The key of the pool in the backup cannot be read") from None
+            return True
+        if part.name == pool.LIST_PART:
+            self.pooled = pool.entries(part)
             return True
         if part.name == INDEX_PART:
             self._index = {}
@@ -176,6 +245,8 @@ class Unpacker:
         try:
             entry = json.loads(line)
             self._index[str(entry["path"])] = (int(entry["size"]), str(entry["sha256"]))
+            if entry.get("pool") is True:
+                self._in_pool.add(str(entry["path"]))
         except (ValueError, KeyError, TypeError):
             raise BackupError("The index of the store in the backup cannot be read") from None
 
@@ -220,19 +291,53 @@ class Unpacker:
     def finish(self, manifest: dict[str, Any]) -> list[str]:
         if not self._tar_seen or self._index is None:
             raise BackupError("The backup does not hold the store of files")
-        if self.seen != self._index:
-            wrong = sorted(
-                path for path in set(self.seen) | set(self._index) if self.seen.get(path) != self._index.get(path)
-            )
+        named = {entry["path"]: (entry["size"], entry["sha256"]) for entry in self.pooled}
+        if set(named) != self._in_pool or set(named) & set(self.seen):
+            raise BackupError("The files the backup names in the pool are not the ones its index says")
+        held = {**self.seen, **named}
+        if held != self._index:
+            wrong = sorted(path for path in set(held) | set(self._index) if held.get(path) != self._index.get(path))
             raise BackupError(
                 f"{len(wrong)} file(s) of the store are not what was read when the backup was taken: "
                 + ", ".join(wrong[:5])
             )
         described = manifest.get("store") if isinstance(manifest.get("store"), dict) else {}
-        total = sum(size for size, _digest in self.seen.values())
-        if described.get("files") != len(self.seen) or described.get("bytes") != total:
+        total = sum(size for size, _digest in held.values())
+        if described.get("files") != len(held) or described.get("bytes") != total:
             raise BackupError("The store in the backup does not hold what its manifest says")
-        return [f"{len(self.seen)} files of the store ({total} bytes), each compared with its checksum"]
+        checks = [f"{len(self.seen)} files of the store in the backup, each compared with its checksum"]
+        if named:
+            checks.append(self._from_pool())
+        return checks
+
+    def _from_pool(self) -> str:
+        """The files the backup names in the pool: written under the target when there is one, each
+        hashed as it goes by; else read whole or only looked for, as ``read_pool`` says."""
+        if not self._pool_key or self._pool_base is None:
+            raise BackupError("The backup names files of the pool, and the pool was not given")
+        for entry in self.pooled:
+            name, size, sha256 = entry["path"], entry["size"], entry["sha256"]
+            path = pool.blob_path(self._pool_base, self.pool_gen, sha256)
+            if self.target is not None:
+                relative = _inside(name)
+                place = self.target.joinpath(*relative.parts)
+                place.parent.mkdir(parents=True, exist_ok=True)
+                # Sealed as it arrives, like the files of the tar; a file that is not what its name
+                # says raises before the block ends, and nothing takes the place.
+                with sealed_store.writing(place, name=relative.as_posix()) as out:
+                    for piece in pool.read(path, sha256, size, self._pool_key):
+                        out.write(piece)
+                self.pool_read += 1
+            elif self._read_pool(sha256):
+                pool.check(path, sha256, size, self._pool_key)
+                self.pool_read += 1
+            else:
+                pool.present(path)
+        total = sum(entry["size"] for entry in self.pooled)
+        return (
+            f"{len(self.pooled)} files of the store in the pool ({total} bytes): {self.pool_read} read whole and "
+            f"compared with their checksum, the others found there"
+        )
 
 
 def is_empty(root: str | os.PathLike) -> bool:
@@ -240,12 +345,17 @@ def is_empty(root: str | os.PathLike) -> bool:
     return not root.exists() or not any(root.iterdir())
 
 
-def measure(root: str | os.PathLike) -> int:
-    """How many bytes the store holds (for the room a backup needs). As they are on the disk: a
-    sealed file is a fifth of a thousandth larger than what it holds."""
+def measure(root: str | os.PathLike, target: pool.Target | None = None) -> int:
+    """How many bytes of the store a backup would write (for the room it needs): all of it, less
+    the files the pool (``target``) already holds. As they are on the disk: a sealed file is a
+    fifth of a thousandth larger than what it holds."""
     total = 0
     for folder, _folders, names in os.walk(root, onerror=lambda _error: None):
         for name in names:
+            if target is not None:
+                sha256 = pool.sha_of(Path(folder, name).relative_to(root).as_posix())
+                if sha256 is not None and target.has(sha256):
+                    continue
             try:
                 total += os.lstat(os.path.join(folder, name)).st_size
             except OSError:

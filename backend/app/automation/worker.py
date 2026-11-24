@@ -315,6 +315,12 @@ def tick(now: float | None = None, *, pool: ThreadPoolExecutor | None = None, ho
         # Mirrored incidents to read, and what waits to be sent to the other side.
         reading = [found for found in mirror.due(db, now) if f"in:{found}" not in _fetching]
         sending = [found for found in mirror.jobs_due(db, now) if f"out:{found}" not in _fetching]
+        from ..core import copy
+
+        if copy.is_copy():
+            # A copy fetches nothing and mirrors nothing: the systems are the real server's. What is due
+            # stays due, untouched, so the copy's screens show it as the real server left it.
+            fetching, reading, sending = [], [], []
     done["steps"] = len(claimed)
     if pool is None:
         for step_id in claimed:

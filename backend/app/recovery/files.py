@@ -35,10 +35,10 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..core import sealed
 from ..core.config import settings
-from ..core.models import FlirtSignature, Mail, Mailbox, NetworkCapture, Sample, StoreCopy, UrlScan
+from ..core.models import EvidenceSource, FlirtSignature, Mail, Mailbox, NetworkCapture, Sample, StoreCopy, UrlScan
 from . import kept
 
-SKIPPED = ("_previews/", "_transfer/", kept.KEPT + "/")
+SKIPPED = ("_previews/", "_transfer/", "_uploads/", kept.KEPT + "/")
 BATCH = 500
 
 
@@ -56,6 +56,9 @@ def named(db: OrmSession) -> Iterator[tuple[str, bool]]:
         yield f"_mailboxes/{mailbox}", False
     for signature, kind in db.execute(select(FlirtSignature.id, FlirtSignature.kind)):
         yield f"_flirt/{signature}.{kind}", False
+    # The originals of host evidence (7.0): one file for every distinct SHA-256 an incident holds.
+    for (sha256,) in db.execute(select(EvidenceSource.sha256).where(EvidenceSource.sha256 != "").distinct()):
+        yield f"_evidence/{sha256}.bin", True
     for (scan,) in db.execute(select(UrlScan.id)):
         yield f"_urls/{scan}.jpg", False
         yield f"_urls/{scan}.scripts.json", False

@@ -29,6 +29,7 @@ import re
 import shutil
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,7 @@ from ..core import audit
 from ..core.clock import iso, stamp
 from ..core.config import settings
 from ..core.models import Backup, Lease
-from . import config, database, policy, store
+from . import config, database, policy, pool, pooled, store
 from .container import PARTIAL, PASSPHRASE, SECRET_KEY, SUFFIX, BackupError, Key, Reader, Secrets, Writer, peek
 
 logger = logging.getLogger("nik.backups")
@@ -190,8 +191,12 @@ def write_file(
     upgrade: dict[str, Any] | None = None,
     folder: Path | None = None,
     now: float | None = None,
+    pooling: pool.Target | None = None,
 ) -> dict[str, Any]:
     """Write one backup into the directory and its note beside it. Returns the note.
+
+    With ``pooling`` the files of the store named by their SHA-256 go to the pool (``pool.py``),
+    once, and the backup names them instead of holding them.
 
     A ``full`` backup holds the database and the store; an ``upgrade`` one
     the database alone (migrations do not touch the files).
@@ -210,7 +215,7 @@ def write_file(
         with open(partial, "wb") as out:
             writer = Writer(out, key, about)
             described = database.dump(writer, migrating=migrating)
-            held = store.pack(writer, settings.SAMPLE_STORE) if kind == "full" else None
+            held = store.pack(writer, settings.SAMPLE_STORE, pooling) if kind == "full" else None
             audit_keys = _audit_keys() if include_key else []
             if include_key:
                 with writer.part("secret-key") as part:
@@ -263,6 +268,10 @@ def write_file(
             "tables": len(rows),
             "files": (held or {}).get("files"),
             "storeBytes": (held or {}).get("bytes"),
+            # How much of the store this backup names in the pool instead of holding it.
+            "pooled": (held or {}).get("pooled", 0),
+            "pooledBytes": (held or {}).get("pooledBytes", 0),
+            "pool": (held or {}).get("pool", ""),
             "includesKey": include_key,
             "parts": len(manifest["parts"]),
             "seconds": round(time.monotonic() - clock, 1),
@@ -296,11 +305,13 @@ def _audit_keys() -> list[str]:
 # --------------------------------------------------------------------------- #
 # The restore test                                                            #
 # --------------------------------------------------------------------------- #
-def check_file(path: Path, secrets: Secrets) -> dict[str, Any]:
+def check_file(path: Path, secrets: Secrets, read_pool: Callable[[str], bool] = lambda _sha256: True) -> dict[str, Any]:
     """Restore the backup at ``path`` into a scratch database and compare everything it holds.
 
     Returns ``{"passed", "checks" | "error", "seconds"}``. The scratch
     database is dropped whatever happens; nothing else is written anywhere.
+    The files it names in the pool beside it are read whole when ``read_pool``
+    says so (all of them unless told otherwise), and looked for when not.
     """
     clock = time.monotonic()
     loader = None
@@ -308,7 +319,7 @@ def check_file(path: Path, secrets: Secrets) -> dict[str, Any]:
         database.sweep("scratch")
         with database.Scratch("scratch") as scratch:
             loader = database.Loader(scratch.url)
-            unpacker = store.Unpacker(None)
+            unpacker = store.Unpacker(None, pool_base=path.parent, read_pool=read_pool)
             try:
                 with open(path, "rb") as source:
                     reader = Reader(source, secrets)
@@ -339,13 +350,17 @@ def verify(name: str, by: str = SYSTEM, now: float | None = None) -> bool:
             return False
         row.verify_state = "running"
         secrets = config.secrets(db)
+        gen = str((row.summary or {}).get("pool") or "")
+        read_pool, read = pooled.reader(db, gen, now)
         db.commit()
-    result = check_file(file_of(name), secrets)
+    result = check_file(file_of(name), secrets, read_pool)
     at = iso(time.time() if now is None else now)
     with SessionLocal() as db:
         row = db.get(Backup, name)
         if row is None:
             return False
+        if result["passed"]:
+            pooled.verified(db, gen, read, now)
         row.verify_state = "passed" if result["passed"] else "failed"
         row.verified_at = at
         row.verify = result
@@ -450,6 +465,8 @@ def sync(db: OrmSession, now: float | None = None, holder: str = HOLDER) -> None
             row.offsite_state = "delete"
         elif not here and row.offsite_state not in ("copied", "delete"):
             db.delete(row)
+    db.flush()
+    pooled.sync(db, folder, config.secrets(db), file_of)
 
 
 def start_row(db: OrmSession, kind: str, by: str, now: float | None = None, state: str = "queued") -> Backup:
@@ -486,6 +503,10 @@ def apply_retention(db: OrmSession, now: float | None = None) -> list[str]:
         row = db.get(Backup, name)
         if row is not None:
             remove(db, row, SYSTEM, "the retention")
+    # Every time, not only when a backup just went: the copy of one off the server is removed later,
+    # by another process, and what only that backup named in the pool goes after it.
+    db.flush()
+    pooled.collect(db, directory())
     return gone
 
 
@@ -513,8 +534,9 @@ def last_good(db: OrmSession) -> Backup | None:
 # --------------------------------------------------------------------------- #
 # One backup, from start to end                                               #
 # --------------------------------------------------------------------------- #
-def needed_room() -> int:
-    return database.about()["bytes"] + store.measure(settings.SAMPLE_STORE)
+def needed_room(target: pool.Target | None = None) -> int:
+    """What a backup may write: the database and the store, less what the pool already holds."""
+    return database.about()["bytes"] + store.measure(settings.SAMPLE_STORE, target)
 
 
 def take(name: str | None = None, by: str = SYSTEM, now: float | None = None) -> str:
@@ -532,14 +554,15 @@ def take(name: str | None = None, by: str = SYSTEM, now: float | None = None) ->
         phrase = config.passphrase(db)
         include_key = bool(config.read(db)["includeKey"])
         wants_copy = config.ready(config.read(db).get("destination") or {})
+        target = pool.Target(config.pool_key(db), directory())
         db.commit()
     try:
         if not phrase:
             raise NotReady("No backup passphrase is set: set one in Settings → Backup")
         clear_partials()
         directory().mkdir(parents=True, exist_ok=True)
-        room(directory(), needed_room())
-        note = write_file(name, Key.new(PASSPHRASE, phrase), include_key=include_key, now=now)
+        room(directory(), needed_room(target))
+        note = write_file(name, Key.new(PASSPHRASE, phrase), include_key=include_key, now=now, pooling=target)
     except Exception as error:  # noqa: BLE001 - whatever stopped it, the row says so and the administrators are told
         message = str(error) if isinstance(error, BackupError | OSError) else f"{type(error).__name__}: {error}"
         if not isinstance(error, BackupError | OSError):
@@ -558,12 +581,19 @@ def take(name: str | None = None, by: str = SYSTEM, now: float | None = None) ->
         row.revision, row.summary = note["revision"], {**note["summary"], "keyFrom": note["keyFrom"]}
         row.verify_state = "queued"
         row.offsite_state = "pending" if wants_copy else ""
+        pooled.record(db, name, target, wants_copy, note["createdAt"])
         audit.record(
             db,
             by,
             "backup.run",
-            f"Took the backup {name}: {note['summary']['rows']} rows, {note['summary']['files']} files, "
-            f"{note['size']} bytes" + (", SECRET_KEY included" if include_key else ""),
+            f"Took the backup {name}: {note['summary']['rows']} rows, {note['summary']['files']} files"
+            + (
+                f" ({len(target.written)} new in the pool, {len(target.named) - len(target.written)} already there)"
+                if target.named
+                else ""
+            )
+            + f", {note['size']} bytes"
+            + (", SECRET_KEY included" if include_key else ""),
             target=name,
         )
         db.commit()

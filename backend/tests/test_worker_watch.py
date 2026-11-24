@@ -112,7 +112,16 @@ def test_a_worker_that_is_not_configured_is_not_watched(admin: TestClient, confi
     assert _record({"pcap": False}, T0) == [] and _record({"pcap": False}, T0 + 500) == []
     assert _told() == []
     rows = admin.get("/api/workers").json()["workers"]
-    assert [row["id"] for row in rows] == ["automation", "analyzer", "capa", "docview", "browser", "pcap", "sandbox"]
+    assert [row["id"] for row in rows] == [
+        "automation",
+        "analyzer",
+        "capa",
+        "docview",
+        "browser",
+        "pcap",
+        "forensics",
+        "sandbox",
+    ]
     assert all(row["configured"] is False and row["state"] == "" and row["since"] is None for row in rows)
 
     # One that was down and is taken out of the configuration is forgotten: no "back" for it later.

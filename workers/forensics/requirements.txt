@@ -1,0 +1,5 @@
+# Nik forensics worker: the libraries that read the formats of host evidence.
+# Every one is permissive or LGPL (imported, never changed): no GPL or AGPL here.
+
+# Windows event logs (.evtx): a Rust parser with Python bindings (abi3 wheels). MIT / Apache-2.0.
+evtx>=0.15,<0.16

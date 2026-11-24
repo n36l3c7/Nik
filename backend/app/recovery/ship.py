@@ -262,7 +262,11 @@ def ship(
 ) -> list[str]:
     """One pass of the process that has a way out. Returns what it did. ``stopping`` says that
     the process was asked to stop: the file being sent is finished, and no other is started."""
+    from ..core import copy
     from ..core.db import SessionLocal
+
+    if copy.is_copy():
+        return []  # a copy ships nothing to the destination nor to the standby of the real server
 
     clock = time.time() if now is None else now
     did: list[str] = []

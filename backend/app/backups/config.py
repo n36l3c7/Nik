@@ -121,7 +121,26 @@ def set_passphrase(db: OrmSession, value: Any, now: float | None = None) -> None
         doc["previous"] = [current, *(doc.get("previous") or [])][:PREVIOUS_KEPT]
     doc["passphrase"] = vault.encrypt(value)
     doc["passphraseSetAt"] = time.time() if now is None else now
+    # Another passphrase, another pool: the one given up must not open what is written from now on
+    # (pool.py). The next backup makes the key of the new one, and writes every file again.
+    doc.pop("pool", None)
     _keep(db, doc)
+
+
+def pool_key(db: OrmSession) -> str:
+    """The key of the pool of the backups (``pool.py``), made when there is none (the caller
+    commits). Kept as the passphrase is, encrypted with the vault key; a key that cannot be read
+    any more (``SECRET_KEY`` changed) is replaced, which starts another pool."""
+    from . import pool
+
+    doc = read(db)
+    token = (doc.get("pool") or {}).get("key")
+    key = vault.decrypt(token) if token else None
+    if not key:
+        key = pool.new_key()
+        doc["pool"] = {"key": vault.encrypt(key)}
+        _keep(db, doc)
+    return key
 
 
 # --------------------------------------------------------------------------- #

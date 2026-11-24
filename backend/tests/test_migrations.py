@@ -1586,3 +1586,64 @@ def test_migration_0055_adds_the_tables_of_the_bulk_jobs(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert not set(BULK_TABLES) & set(sa.inspect(conn).get_table_names())
         assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1
+
+
+def test_migration_0056_adds_the_tables_of_host_evidence_and_the_time_zone(tmp_path, monkeypatch):
+    from app.core.models import EVIDENCE_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO incidents (id, doc) VALUES ('i1', '{}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0055_bulk")
+    command.upgrade(cfg, "0056_evidence")
+    with engine.begin() as conn:
+        inspector = sa.inspect(conn)
+        assert set(EVIDENCE_TABLES) <= set(inspector.get_table_names())
+        assert {"tz", "archived_at", "archived_by"} <= {column["name"] for column in inspector.get_columns("incidents")}
+        assert {index["name"] for index in inspector.get_indexes("evidence_records")} >= {
+            "uq_evidence_records_key",
+            "ix_evidence_records_time",
+        }
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_sources (id, incident_id, kind, source, sha256, file_name, file_path, size,"
+                " host, username, profile, parser, parser_version, state, legacy, read, read_count, kept, duplicates,"
+                " skipped, notes, truncated, indicators, report, seen_note, created_at, created_by)"
+                " VALUES ('s1', 'i1', 'eventlog', 'evtx', '', 'Security.evtx', '', 0, '', '', '', 'evtx', '1',"
+                " 'done', 0, 'complete', 1, 1, 0, 0, 0, 0, 0, '{}', '', 'now', '')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_records (incident_id, source_id, kind, type, key, seq, host, username, channel,"
+                " summary, data, truncated, locator) VALUES ('i1', 's1', 'eventlog', 'event',"
+                " 'evtx:WS1:Security:1', 0, '', '', 'Security', '', '{}', 0, '{}')"
+            )
+        )
+        # The database numbers the records itself, on SQLite as on PostgreSQL.
+        assert conn.execute(sa.text("SELECT id FROM evidence_records")).scalar() == 1
+        with pytest.raises(sa.exc.IntegrityError):
+            with conn.begin_nested():
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO evidence_records (incident_id, source_id, kind, type, key, seq, host, username,"
+                        " channel, summary, data, truncated, locator) VALUES ('i1', 's1', 'eventlog', 'event',"
+                        " 'evtx:WS1:Security:1', 1, '', '', 'Security', '', '{}', 0, '{}')"
+                    )
+                )
+        conn.execute(sa.text("DELETE FROM evidence_records"))
+        conn.execute(sa.text("DELETE FROM evidence_sources"))
+    command.stamp(cfg, "0055_bulk")
+    command.upgrade(cfg, "0056_evidence")  # again: the tables and the column are there, nothing to do
+    command.downgrade(cfg, "0055_bulk")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(EVIDENCE_TABLES) & set(inspector.get_table_names())
+        assert "tz" not in {column["name"] for column in inspector.get_columns("incidents")}
+        assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1

@@ -72,7 +72,14 @@ def _source_links(db: OrmSession, incident_ids: list[str]) -> dict[str, dict[str
         .join(Artifact, Artifact.id == ArtifactLink.artifact_id)
         .where(ArtifactLink.incident_id.in_(incident_ids))
     ).all()
-    prefixes = {"file": "sample", "mail": "mail", "pcap": "network", "url": "url", "mailbox": "mailbox"}
+    prefixes = {
+        "file": "sample",
+        "mail": "mail",
+        "pcap": "network",
+        "url": "url",
+        "mailbox": "mailbox",
+        "hostfile": "evidence",
+    }
     for incident_id, artifact in rows:
         names = {artifact.name, artifact.ref[:12], artifact.ref}
         if artifact.kind == "url":

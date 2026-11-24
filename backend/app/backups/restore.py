@@ -47,7 +47,7 @@ from typing import Any
 
 from ..core import store as sealed_store
 from ..core.config import settings
-from . import database, runner, store
+from . import database, pool, pooled, runner, store
 from .container import PASSPHRASE, SUFFIX, BackupError, Reader, Secrets, peek, walk
 
 
@@ -93,6 +93,12 @@ def describe(manifest: dict[str, Any]) -> list[str]:
         f"  database   {base.get('engine')} {base.get('serverVersion')}, revision {base.get('revision') or 'none'}, "
         f"{sum((base.get('rows') or {}).values())} rows in {len(base.get('rows') or {})} tables",
         f"  store      {held['files']} files, {_size(held['bytes'])}"
+        + (
+            f"; {held['pooled']} of them ({_size(held['pooledBytes'])}) are named, not held: they are in the "
+            f"folder pool-{held.get('pool')} beside the backup"
+            if held.get("pooled")
+            else ""
+        )
         if held
         else "  store      not in this backup (a snapshot taken before an upgrade holds the database alone)",
         "  SECRET_KEY "
@@ -184,6 +190,24 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
             "The upgrade this snapshot was taken before changed files of the store, and the snapshot does not "
             "hold them: the database alone cannot be put back. Nothing was changed. Restore the last full backup"
         )
+    if with_store and (manifest.get("store") or {}).get("pooled"):
+        # The files the backup names in the pool are not in it: they are looked for before anything
+        # is changed, in the folder of the pool beside the backup.
+        found = pooled.names_of(path, secrets)
+        gen, entries = found if found is not None else ("", [])
+        missing = []
+        for entry in entries:
+            try:
+                pool.present(pool.blob_path(path.parent, gen, entry["sha256"]))
+            except BackupError:
+                missing.append(entry["sha256"])
+        if missing or found is None:
+            raise BackupError(
+                f"The backup names {len(entries)} file(s) of the store in the pool, and {len(missing)} of them are "
+                f"not in the folder pool-{gen} beside it ({path.parent}): " + ", ".join(missing[:5]) + ". Nothing "
+                "was changed. Copy that folder from where the backups are kept, beside the backup, and run this again"
+            )
+        _say(f"The {len(entries)} files it names in the pool are there (pool-{gen}).")
     root = Path(settings.SAMPLE_STORE)
     if not replace:
         if not database.about(url)["empty"]:
@@ -207,7 +231,7 @@ def restore(path: Path, *, replace: bool = False, database_only: bool = False) -
     # it is being replaced, in a transaction that is open until the end.
     asked_before, sealed_store.clear_allowed = sealed_store.clear_allowed, lambda: True
     loader = database.Loader(url, replace=replace)
-    unpacker = store.Unpacker(root) if with_store else None
+    unpacker = store.Unpacker(root, pool_base=path.parent) if with_store else None
     try:
         with open(path, "rb") as source:
             reader = Reader(source, secrets)

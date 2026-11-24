@@ -136,6 +136,8 @@ class SignedIn(UserEnvelope):
     session: Optional[SessionState] = None
     notice: Optional[str] = None
     recoveryCodesLeft: Optional[int] = None
+    # What the screens say of the server itself: {"copy", "copyOf"} on a copy of another (7.0).
+    server: Optional[dict] = None
 
 
 class LoginOut(BaseModel):

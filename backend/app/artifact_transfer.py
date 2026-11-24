@@ -20,6 +20,9 @@ A mailbox travels with its file or not at all: its index says where each
 message is in that file, so without it there is nothing to read. Its file is
 copied in pieces, never held in memory, and its index must fit it.
 
+The original of host evidence is not exported in 7.0: it is left out, and the manifest says so
+(``leftOut``). An archive cannot hold one: an import skips it with the same reason.
+
 **What protects an export.** Nothing but who holds it: it is made for another
 server to read, so it is not sealed under the store key of this one, and the
 password of ``files.zip`` is the one everybody knows. While it is being put
@@ -135,6 +138,9 @@ _MODELS = {
     "mailbox": (Mailbox, _MAILBOX),
 }
 MAILBOX_FILE = "mailbox.mbox"
+# What an export leaves out, and says so in its manifest (``leftOut``): the original of host evidence
+# is not exported in 7.0, and an archive cannot hold one.
+LEFT_OUT = {"hostfile": "the original of host evidence is not part of an export"}
 CHUNK = 1024 * 1024
 
 
@@ -246,7 +252,11 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
                                 for piece in store.pieces(source):
                                     packed_file.write(piece)
                             packed.add(target)
+            left_out = []
             for row in rows:
+                if row.kind in LEFT_OUT:
+                    left_out.append({"id": row.id, "name": row.name, "reason": LEFT_OUT[row.kind]})
+                    continue
                 if row.kind not in _MODELS:
                     continue
                 model, columns = _MODELS[row.kind]
@@ -269,6 +279,7 @@ def export_archive(db: OrmSession, rows: list[Artifact], with_files: bool, now: 
                 "files": bool(with_files),
                 "password": PASSWORD if with_files else None,
                 "artifacts": entries,
+                "leftOut": left_out,
                 "relations": relations,
             }
             archive.writestr("manifest.json", json.dumps(manifest, indent=2))
@@ -538,6 +549,9 @@ def import_archive(db: OrmSession, path: Path, actor: str) -> dict[str, Any]:
                 continue
             kind, ref, name = entry.get("kind"), str(entry.get("ref") or ""), str(entry.get("name") or "")[:255]
             artifact_id = f"{kind}-{ref}"
+            if kind in LEFT_OUT:
+                skipped.append({"name": name or artifact_id[:40], "reason": LEFT_OUT[kind]})
+                continue
             if kind not in _MODELS or not artifacts.is_artifact_id(artifact_id) or entry.get("id") != artifact_id:
                 skipped.append({"name": name or artifact_id[:40], "reason": "not a valid artifact id"})
                 continue

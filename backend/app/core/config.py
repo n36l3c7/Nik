@@ -154,6 +154,14 @@ class Settings:
         # Largest evidence file (browser database, event log, shell history,
         # tool output) accepted by POST /incidents/{id}/upload.
         self.ARTIFACT_MAX_MB: int = _get_int("ARTIFACT_MAX_MB", 500)
+        # Files of host evidence sent in parts (/api/uploads, 7.0): a $MFT, a $J, a large log; and
+        # a collection (a KAPE or Velociraptor zip), which holds many of them.
+        self.EVIDENCE_MAX_MB: int = _get_int("EVIDENCE_MAX_MB", 8192)
+        self.COLLECTION_MAX_MB: int = _get_int("COLLECTION_MAX_MB", 20480)
+        # Forensics worker (workers/forensics/): reads the files of host evidence. Empty URL = the
+        # originals are kept and wait to be read.
+        self.FORENSICS_URL: str = os.getenv("FORENSICS_URL", "").rstrip("/")
+        self.FORENSICS_TOKEN: str = keys.value("FORENSICS_TOKEN")
         # A mailbox (mbox, Maildir archive) can be much larger than any other upload;
         # a PST is converted by the document worker, on its work volume, so it has a limit of its own.
         self.MAILBOX_MAX_MB: int = _get_int("MAILBOX_MAX_MB", 2048)
@@ -229,6 +237,10 @@ class Settings:
         self.STANDBY_INBOX: str = os.getenv("STANDBY_INBOX", "").strip()
         # The name this server gives itself to the other host of a pair.
         self.SERVER_NAME: str = os.getenv("NIK_SERVER_NAME", "").strip()[:120]
+        # A copy of another server, restored from its backup to try a release (core/copy.py): it
+        # reaches nothing outside itself. NIK_COPY_OF is the name the banner gives the original.
+        self.NIK_COPY: bool = _get_bool("NIK_COPY", False)
+        self.NIK_COPY_OF: str = os.getenv("NIK_COPY_OF", "").strip()[:120]
 
     @property
     def is_sqlite(self) -> bool:

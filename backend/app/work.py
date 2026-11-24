@@ -115,6 +115,9 @@ class Kind:
 
 
 _KINDS: dict[str, Kind] = {}
+# What the sweeper also does once an hour, in the API process (it is the one that holds the store):
+# ``hook(db, now)``, each in a session of its own, which it commits.
+hourly: list[Callable[[OrmSession, float], Any]] = []
 
 
 def register(kind: Kind) -> None:
@@ -638,6 +641,13 @@ def _loop() -> None:
 
                 with SessionLocal() as db:
                     prune(db, pruned)
+                for hook in hourly:
+                    try:
+                        with SessionLocal() as db:
+                            hook(db, pruned)
+                            db.commit()
+                    except Exception:  # noqa: BLE001 - one piece of housekeeping must not stop the others
+                        logger.exception("An hourly piece of housekeeping failed")
         except Exception:  # noqa: BLE001 - the sweeper must survive a bad pass
             logger.exception("A pass of the sweeper of the work in progress failed")
         _stopping.wait(SWEEP_EVERY)

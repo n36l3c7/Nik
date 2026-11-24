@@ -359,3 +359,44 @@ def test_without_a_destination_nothing_is_sent_and_nothing_is_wrong(backups):  #
     with SessionLocal() as db:
         assert "offsite" not in watch.problems(db, T0 + 86400 * 3, roomy)
         assert db.scalars(select(Backup.offsite_state)).all() == [""]
+
+
+def test_the_files_of_the_pool_go_before_the_backup_that_names_them_and_leave_after_it(second_host):
+    import hashlib
+
+    from app.backups import pool
+    from app.core.models import BackupBlob
+
+    client, server = second_host
+    client.put("/api/backups/settings", json={"retention": {"last": 1, "weeks": 0}})
+    data = b"an original of host evidence, named by its hash\n" * 4000
+    sha256 = hashlib.sha256(data).hexdigest()
+    place = Path(settings.SAMPLE_STORE) / "_evidence"
+    place.mkdir()
+    (place / f"{sha256}.bin").write_bytes(data)
+
+    first = runner.take(now=T0)
+    gen = row_of(first).summary["pool"]
+    there = server.root / "nik-backups" / f"pool-{gen}" / sha256[:2] / f"{sha256}{pool.SUFFIX}"
+    assert offsite.ship(now=T0 + 10) == [f"copied:{first}"]
+    assert there.read_bytes() == pool.blob_path(runner.directory(), gen, sha256).read_bytes()
+    assert "after 1 file(s) of the pool it names" in audit_lines("backup.offsite")[-1]
+
+    # The next backup names the same file: it is not sent again.
+    sent_at = there.stat().st_mtime_ns
+    second = runner.take(now=T0 + 3600)
+    assert offsite.ship(now=T0 + 3700) == [f"removed:{first}", f"copied:{second}"]
+    assert there.stat().st_mtime_ns == sent_at and "of the pool" not in audit_lines("backup.offsite")[-1]
+
+    # The original is deleted: once no backup names its file of the pool, the copy there goes too.
+    (place / f"{sha256}.bin").unlink()
+    third = runner.take(now=T0 + 7200)
+    assert offsite.ship(now=T0 + 7300) == [f"removed:{second}", f"copied:{third}"]
+    with SessionLocal() as db:
+        runner.apply_retention(db, T0 + 7400)
+        db.commit()
+        assert db.get(BackupBlob, (gen, sha256)).offsite_state == "delete"
+    assert offsite.ship(now=T0 + 7500) == [f"removed:pool:{sha256[:12]}"]
+    assert not there.exists()
+    with SessionLocal() as db:
+        assert db.get(BackupBlob, (gen, sha256)) is None

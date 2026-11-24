@@ -29,7 +29,7 @@ from .parser import Value
 
 SEVERITIES = registry.SEVERITIES
 STATUSES = registry.STATUSES
-ARTIFACT_KINDS = ("file", "mail", "pcap", "url", "mailbox")
+ARTIFACT_KINDS = ("file", "mail", "pcap", "url", "mailbox", "hostfile")
 INDICATOR_TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
 VERDICTS = ("unknown", "harmless", "suspicious", "malicious")
 ORIGINS = ("incident", "manual", "import", "artifact")

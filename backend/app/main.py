@@ -53,6 +53,7 @@ from .routers import (
     credentials,
     dashboards,
     enrichment,
+    evidence,
     fetch,
     fields,
     filters,
@@ -85,6 +86,7 @@ from .routers import (
     storage,
     system_keys,
     tasks,
+    uploads,
     urls,
     users,
     war_room,
@@ -423,6 +425,8 @@ app.include_router(keys.router, prefix="/api")
 # Before the incidents: /incidents/bulk is not an incident.
 app.include_router(bulk.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
+app.include_router(uploads.router, prefix="/api")
+app.include_router(evidence.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
 app.include_router(indicators_found.router, prefix="/api")
 app.include_router(mailboxes.router, prefix="/api")

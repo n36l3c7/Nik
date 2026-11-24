@@ -26,6 +26,11 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
     ("captures", "Packet captures", "The pcap files and their logs."),
     ("samples", "Files", "The files analysed, as they were uploaded."),
     ("mails", "E-mails", "The .eml and .msg analysed, and the messages imported from mailboxes."),
+    (
+        "evidence",
+        "Host evidence",
+        "The original files of host evidence (event logs, hives, a $MFT), kept as they came.",
+    ),
     ("previews", "Document previews", "Pages rendered from attachments: made again when needed."),
     ("urls", "URL screenshots", "The pictures of the pages visited."),
     ("rules", "Rules and signatures", "capa rules and FLIRT signatures added by admins."),
@@ -37,13 +42,14 @@ _FOLDERS = {
     "_captures": "captures",
     "_previews": "previews",
     "_urls": "urls",
+    "_evidence": "evidence",
     "_flirt": "rules",
     "_capa_rules": "rules",
     ".kept": "kept",
 }
 _SUFFIXES = {".bin": "samples", ".mail": "mails"}
 # The kind of artifact behind an object of a group, to name and open it.
-_KINDS = {"mailboxes": "mailbox", "captures": "pcap", "samples": "file", "mails": "mail"}
+_KINDS = {"mailboxes": "mailbox", "captures": "pcap", "samples": "file", "mails": "mail", "evidence": "hostfile"}
 LARGEST = 10
 
 
@@ -102,6 +108,13 @@ def usage(db: OrmSession) -> dict[str, Any]:
                                     add(group, *_tree_size(child.path), ref=child.name)
                                 else:
                                     add(group, child.stat(follow_symlinks=False).st_size, 1)
+                    elif group == "evidence":
+                        # One file per original, named by its SHA-256.
+                        with os.scandir(entry.path) as children:
+                            for child in children:
+                                if child.is_file(follow_symlinks=False):
+                                    stem, _suffix = os.path.splitext(child.name)
+                                    add(group, child.stat(follow_symlinks=False).st_size, 1, ref=stem)
                     else:
                         add(group, *_tree_size(entry.path))
                 else:

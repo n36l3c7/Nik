@@ -79,6 +79,7 @@ WORKERS: tuple[Worker, ...] = (
     Worker("docview", "document worker", "documents and PST files cannot be opened", "DOCVIEW_URL"),
     Worker("browser", "isolated browser", "addresses cannot be scanned and pages cannot be opened", "BROWSER_URL"),
     Worker("pcap", "packet capture worker", "captures cannot be analysed", "PCAP_URL"),
+    Worker("forensics", "forensics worker", "files of host evidence cannot be read", "FORENSICS_URL"),
     Worker("sandbox", "script sandbox", "scripts cannot run", "SANDBOX_URL"),
 )
 BY_ID = {worker.id: worker for worker in WORKERS}

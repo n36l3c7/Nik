@@ -54,6 +54,16 @@ METADATA = ipaddress.ip_network("169.254.169.254/32")
 SHARED = ipaddress.ip_network("100.64.0.0/10")
 
 
+def _not_on_a_copy(what: str) -> None:
+    """A copy of a server (``core/copy.py``) sends nothing out: refused, so trying again cannot help."""
+    from ..core import copy
+
+    try:
+        copy.refuse(what)
+    except copy.CopyRefused as refused:
+        raise EgressError(str(refused), refused=True) from None
+
+
 class EgressError(Exception):
     """A request that was not sent, or got no usable answer: a sentence safe to show.
 
@@ -350,6 +360,7 @@ def request(
 
     ``secret_headers`` names headers that carry a credential beside the usual ones (a connector's own
     ``x-apikey``): like those, they are not sent on when a redirect leads to another host."""
+    _not_on_a_copy("send a request to another system")
     method = str(method or "GET").upper()
     if method not in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"):
         raise EgressError("Unknown HTTP method", refused=True)
@@ -431,6 +442,7 @@ def imap_client(host: str, port: int, security: str, ca_pem: str | None = None, 
     """A connection to an IMAP server, encrypted as asked (``tls``, ``starttls`` or ``none``) and not
     logged in yet. The server is the one written in an instance of the Mail connector: it is
     reached wherever it is. Raises what ``imaplib`` and ``ssl`` raise."""
+    _not_on_a_copy("read a mailbox")
     context = _context(ca_pem or None)
     if security == "tls":
         return imaplib.IMAP4_SSL(host, port, ssl_context=context, timeout=timeout)
@@ -443,6 +455,7 @@ def imap_client(host: str, port: int, security: str, ca_pem: str | None = None, 
 def smtp_client(host: str, port: int, security: str, ca_pem: str | None = None, timeout: float = 30):
     """A connection to an SMTP server (``starttls``, ``tls`` or ``none``), to be used in a ``with``
     block; with ``starttls`` the caller starts it. Raises what ``smtplib`` and ``ssl`` raise."""
+    _not_on_a_copy("send mail")
     context = _context(ca_pem or None)
     if security == "tls":
         return smtplib.SMTP_SSL(host, port, timeout=timeout, context=context), context
@@ -460,6 +473,7 @@ def send_mail(
     """Send a message through the SMTP server an admin configured
     (``{host, port, security: starttls|tls|none, username, password, sender, ca_pem}``).
     The server is the one written in the settings: it is reached wherever it is."""
+    _not_on_a_copy("send mail")
     host = clean_host(str(server.get("host") or ""))
     if not host or not server.get("sender"):
         raise EgressError("No SMTP server is configured: an admin sets it in Settings", refused=True)

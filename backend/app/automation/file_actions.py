@@ -84,7 +84,7 @@ ARTIFACT_ARG = {
 # An artifact as these nodes give it: each key with its type and what it is.
 _ARTIFACT = (
     ("artifact", "text", "Its id: what an argument called artifact takes"),
-    ("kind", "text", "file, mail, pcap, url or mailbox"),
+    ("kind", "text", "file, mail, pcap, url, mailbox or hostfile"),
     ("name", "text", "Its name: the file name, the subject of an e-mail, the address"),
     ("type", "text", "What the file is, as Nik detected it; e-mail, capture or address for the others"),
     ("size", "number", "Its size in bytes"),
@@ -95,7 +95,13 @@ _ARTIFACT = (
     ("page", "text", "Its address in Nik"),
 )
 ARTIFACT_OUT = [{"name": name, "type": kind, "description": said} for name, kind, said in _ARTIFACT]
-_TYPES = {"mail": "e-mail", "pcap": "capture", "url": "address", "mailbox": "mailbox"}
+_TYPES = {
+    "mail": "e-mail",
+    "pcap": "capture",
+    "url": "address",
+    "mailbox": "mailbox",
+    "hostfile": "original of host evidence",
+}
 
 
 def _shape(fields: tuple, prefix: str = "") -> list[dict[str, str]]:
@@ -130,7 +136,7 @@ def _artifact(call: Call) -> Artifact:
 
 
 def _sha256_of(db, row: Artifact) -> str:
-    if row.kind in ("file", "mail"):
+    if row.kind in ("file", "mail", "hostfile"):
         return row.ref
     if row.kind == "pcap":
         capture = db.get(NetworkCapture, row.ref)
@@ -884,6 +890,11 @@ def add_evidence(call: Call) -> Result:
 def link_artifact(call: Call) -> Result:
     row = _artifact(call)
     if row.kind not in ("file", "mail", "url", "pcap"):
+        if row.kind == "hostfile":
+            raise ActionError(
+                "The original of host evidence is given to an incident when it is imported there, not linked",
+                retry=False,
+            )
         raise ActionError("Only a file, an e-mail, a capture or an address can be linked by a playbook", retry=False)
     if call.dry_run:
         return Result(output={"linked": False}, request={"would": "link the artifact", "artifact": row.id})
@@ -910,6 +921,11 @@ def unlink_artifact(call: Call) -> Result:
 
     row = _artifact(call)
     if row.kind not in ("file", "mail", "url", "pcap"):
+        if row.kind == "hostfile":
+            raise ActionError(
+                "The original of host evidence is taken out of an incident from its evidence, not unlinked",
+                retry=False,
+            )
         raise ActionError("Only a file, an e-mail, a capture or an address is in an incident", retry=False)
     if call.dry_run:
         would = {"would": "take the artifact out of the incident", "artifact": row.id}
@@ -1417,6 +1433,10 @@ def analyse_artifact(call: Call) -> Result:
         raise ActionError("The artifact does not exist" if wanted else "No artifact was given", retry=False)
     if row.kind == "url":
         raise ActionError("An address is visited again with Scan an address, which the data guard judges", retry=False)
+    if row.kind == "hostfile":
+        raise ActionError(
+            "The original of host evidence is read again from its incident, not by a playbook", retry=False
+        )
     if row.kind not in ("file", "mail", "pcap"):
         raise ActionError("Only a file, an e-mail or a capture is analysed again", retry=False)
     if which and row.kind != "file":
@@ -1668,7 +1688,7 @@ def _summary(row: Artifact, found: dict[str, Any], status: str) -> str:
 ANALYSIS_OUT = [
     {"name": "found", "type": "bool", "description": "Nik holds the artifact (false only in a dry run)"},
     {"name": "artifact", "type": "text", "description": "The artifact"},
-    {"name": "kind", "type": "text", "description": "file, mail, pcap, url or mailbox"},
+    {"name": "kind", "type": "text", "description": "file, mail, pcap, url, mailbox or hostfile"},
     {"name": "name", "type": "text", "description": "Its name"},
     {"name": "status", "type": "text", "description": "Where its analysis is: done, running, error or none"},
     {"name": "verdict", "type": "text", "description": "The verdict, when the analysis gives one"},

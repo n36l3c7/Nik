@@ -888,6 +888,12 @@ def start_by_hand(
     bulk action does for each incident."""
     if not row.current_version:
         raise HTTPException(status_code=400, detail="The playbook has no saved version")
+    from ..core import copy
+
+    if copy.is_copy() and not dry_run:
+        raise HTTPException(
+            status_code=409, detail="This server is a copy: a playbook runs here only as a dry run, which sends nothing"
+        )
     config = triggers.trigger_config(db, row)
     if not dry_run and not config.get("manual"):
         raise HTTPException(status_code=400, detail="This playbook is not meant to be run by hand")
@@ -1019,8 +1025,11 @@ async def inbound_hook(token: str, request: Request, response: Response, db: Orm
         if len(raw) > HOOK_MAX_BYTES:
             raise HTTPException(status_code=413, detail="The body is larger than 256 kB")
     row = db.scalars(select(Playbook).where(Playbook.hook_hash == _hook_hash(token))).first()
-    # One answer for every reason a token starts nothing, so that it says nothing of what exists.
-    if row is None or not row.enabled or not row.current_version or not state.enabled(db):
+    from ..core import copy
+
+    # One answer for every reason a token starts nothing, so that it says nothing of what exists. A
+    # copy of a server starts no playbook by itself, and a hook is one of those (core/copy.py).
+    if row is None or not row.enabled or not row.current_version or not state.enabled(db) or copy.is_copy():
         raise missing
     if not triggers.trigger_config(db, row).get("webhook"):
         raise missing

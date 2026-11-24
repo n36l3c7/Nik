@@ -57,6 +57,16 @@ store of files, a POSIX tar), ``store.index`` (one JSON line for each file:
 path, size, SHA-256) and, only when the administrator asked for it,
 ``secret-key``. The manifest repeats the size and checksum of every part.
 
+From 7.0 the files of the store that are named by their SHA-256 (samples,
+e-mails, originals of host evidence) are not in ``store.tar``: each is written
+once, in a folder ``pool-<id>`` beside the backups, as a file in this same
+format with one part, ``blob``. A backup that names some holds two more parts
+before ``store.tar``: ``pool-key`` (the key of that folder) and ``store.pool``
+(one JSON line for each: path in the store, size, SHA-256); ``store.index``
+lists them with ``"pool": true``. To read one alone: ``python container.py
+extract BACKUP DIR``, then ``python container.py extract
+pool-<id>/<xx>/<sha256>.nikblob OUT --pool-key DIR/pool-key``.
+
 The size and the checksum of a part are those of its content as it was before
 compression. A ``Z`` record never holds more than one megabyte once expanded.
 Content that does not shrink (most samples are packed already) is written as
@@ -90,6 +100,9 @@ MAX_HEADER = 64 * 1024
 MAX_MANIFEST = 64 * 1024 * 1024
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**15, 8, 1
 PASSPHRASE, SECRET_KEY = "passphrase", "secret-key"
+# The key of a file of the pool (``pool.py``): derived from the key of the pool, which the backups
+# that use the pool carry.
+POOL = "pool"
 SUFFIX = ".nikbak"
 PARTIAL = ".partial"
 
@@ -134,6 +147,12 @@ def _derive(spec: dict[str, Any], secret: str) -> bytes:
         return Scrypt(salt=salt, length=32, n=n, r=r, p=p).derive(secret.encode("utf-8"))
     if spec.get("from") == SECRET_KEY and spec.get("kdf") == "hkdf-sha256":
         return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=b"nik backup").derive(secret.encode("utf-8"))
+    if spec.get("from") == POOL and spec.get("kdf") == "hkdf-sha256":
+        try:
+            held = bytes.fromhex(secret)
+        except ValueError:
+            raise Damaged("The key of the pool cannot be read") from None
+        return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=b"nik backup pool").derive(held)
     raise Damaged("The backup was encrypted in a way this version of Nik does not know")
 
 
@@ -164,16 +183,20 @@ class Secrets:
 
     passphrases: tuple[str, ...] = ()
     secret_keys: tuple[str, ...] = ()
+    # The keys of the pool the backups in hand carry (hex): what a file of the pool opens with.
+    pool_keys: tuple[str, ...] = ()
 
     def key_for(self, spec: dict[str, Any]) -> bytes:
         source = spec.get("from")
-        candidates = self.passphrases if source == PASSPHRASE else self.secret_keys
+        candidates = {PASSPHRASE: self.passphrases, POOL: self.pool_keys}.get(source, self.secret_keys)
         for secret in candidates:
             if not secret:
                 continue
             key = _derive(spec, secret)
             if key_id(key) == spec.get("id"):
                 return key
+        if source == POOL:
+            raise WrongKey("This file of the pool was not written under the key the backup carries")
         if source == PASSPHRASE:
             raise WrongKey(
                 "This is not the passphrase the backup was made with"
@@ -634,6 +657,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="also write the SECRET_KEY and the keys of the audit log the backup holds, if it holds them",
     )
+    parser.add_argument(
+        "--pool-key",
+        metavar="FILE",
+        help="to read a file of the pool (pool-*/…/<sha256>.nikblob): the file pool-key that extract wrote "
+        "out of a backup that names it. The file of the store it holds is written as the part blob",
+    )
     args = parser.parse_args(argv)
     if args.command == "extract" and not args.directory:
         parser.error("extract needs the directory to write to")
@@ -641,6 +670,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with open(args.file, "rb") as source:
             header, _start = read_header(source)
+        if header["key"].get("from") == POOL:
+            if not args.pool_key:
+                parser.error("a file of the pool needs --pool-key: the file pool-key extracted from a backup")
+            with open(args.pool_key, encoding="ascii") as handle:
+                secrets = Secrets(pool_keys=(handle.read().strip(),))
         if header["key"].get("from") == PASSPHRASE and not secrets.passphrases:
             secrets = Secrets(passphrases=(getpass.getpass("Backup passphrase: "),), secret_keys=secrets.secret_keys)
 

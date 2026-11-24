@@ -60,6 +60,11 @@ def sign(secret: str, body: bytes) -> str:
 
 
 def _deliver(url: str, secret: str, event: str, data: dict) -> None:
+    from .core import copy
+
+    if copy.is_copy():
+        logger.info("Webhook %s to %s not sent: this server is a copy", event, url)
+        return
     body = json.dumps({"event": event, "at": now_iso(), "data": data}).encode("utf-8")
     req = urllib.request.Request(
         url,
