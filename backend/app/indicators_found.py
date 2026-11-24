@@ -67,7 +67,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -394,6 +394,45 @@ def scan(
     material = material_of(db, incident)
     material["said"] = list(said or [])[:SAID_MAX]
     return keep(db, incident, door, read(material, cfg, known_of(db)), cfg)
+
+
+def texts(values: Iterable[tuple[str, str]], cfg: dict[str, Any], known: recognise.Known) -> dict[str, Any]:
+    """What ``read`` gives, for texts that are not the incident's fields or context: ``(path, text)``
+    of something the incident holds (host evidence kept in its document before 7.0). Bounded like
+    a reading of the incident: what is past the bounds is counted as unread."""
+    wanted = set(cfg["types"])
+    found: dict[tuple[str, str], tuple[recognise.Found, str]] = {}
+    left: dict[tuple[str, str], str] = {}
+    unread = count = size = 0
+    for path, text in values:
+        if not isinstance(text, str) or not text:
+            continue
+        count += 1
+        size += min(len(text), STRING_MAX)
+        if count > STRINGS_MAX or size > BYTES_MAX:
+            unread += 1
+            continue
+        for item in recognise.find(text[:STRING_MAX], known):
+            key = (item.type, item.value)
+            if item.type not in wanted or key in found:
+                continue
+            marks = set(item.marks)
+            why = (
+                "private"
+                if cfg["leaveOutPrivate"] and "private" in marks
+                else "benign"
+                if cfg["leaveOutBenign"] and marks & {"benign", "own", "allowlisted"}
+                else ""
+            )
+            if why:
+                left.setdefault(key, why)
+            else:
+                found[key] = (item, path[:PATH_MAX])
+    counts: dict[str, int] = {}
+    for key, why in left.items():
+        if key not in found:
+            counts[why] = counts.get(why, 0) + 1
+    return {"found": list(found.values()), "leftOut": counts, "unread": unread}
 
 
 def given(values: list[tuple[str, str, str]], cfg: dict[str, Any], known: recognise.Known) -> dict[str, Any]:

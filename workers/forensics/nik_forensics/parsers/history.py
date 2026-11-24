@@ -22,6 +22,8 @@ import hashlib
 import os
 import re
 
+from nik_forensics import viewing
+
 NAME = "history"
 VERSION = "1"
 KIND = "commands"
@@ -177,3 +179,10 @@ def parse(path: str, ctx, source: str) -> None:
     if source == "powershell" and ctx.read:
         ctx.note("no time", count=ctx.read, detail="a PowerShell history keeps none: the commands are in file order")
     ctx.end()
+
+
+def view(path: str, source: str, loc: dict) -> dict:
+    """The lines of the command (``loc`` has its line, offset and length), with five lines before and after."""
+    return viewing.text_around(
+        path, viewing.loc_int(loc, "offset"), viewing.loc_int(loc, "length"), viewing.loc_int(loc, "line")
+    )

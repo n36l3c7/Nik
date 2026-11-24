@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts
+from ..archive import guard as guard_archived
 from ..automation import triggers as automation_triggers
 from ..core import audit, store
 from ..core.config import settings
@@ -236,6 +237,7 @@ async def store_mail(
 
 def attach_mail(db: OrmSession, incident: Incident, row: Mail, file_name: str, actor: str) -> dict[str, Any]:
     """Reference the message from the incident (kept once); returns the reference."""
+    guard_archived(incident)
     doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     ref = next((item for item in refs if item.get("sha256") == row.sha256), None)
@@ -294,6 +296,7 @@ async def upload_mail(
     same message again reuses its analysis.
     """
     incident = _incident_or_404(db, incident_id)
+    guard_archived(incident)
     data = await read_upload(file, settings.SAMPLE_MAX_MB, "message")
     _row, ref = await store_mail(db, incident, data, file.filename or "", caller, background_tasks)
     return {"message": ref}
@@ -321,6 +324,8 @@ def analysed_again(db: OrmSession, row: Mail, result: dict[str, Any]) -> None:
     artifacts.register_mail(db, row)
     automation_triggers.mail_analysed(db, row)
     for incident in _incidents_referencing(db, row.sha256):
+        if incident.archived_at:  # an archived incident is not written to: it keeps the analysis it had
+            continue
         doc = dict(relock(db, incident).doc or {})
         for ref in _refs(doc):
             if ref.get("sha256") == row.sha256:
@@ -414,6 +419,7 @@ def attachment_to_sample(
 ) -> dict:
     """Send an attachment to Malware Analysis as a sample of the incident."""
     incident = _incident_or_404(db, incident_id)
+    guard_archived(incident)
     row = _mail_or_404(db, sha256)
     item = _attachment(_parsed(sha256), path)
     origin = f"e-mail “{row.subject[:80]}”" if row.subject else f"e-mail {sha256[:12]}…"
@@ -440,6 +446,7 @@ def remove_mail(
     """Detach the message from the incident. It stays as an artifact
     (`DELETE /api/artifacts/mail-<sha256>` deletes it)."""
     incident = _incident_or_404(db, incident_id)
+    guard_archived(incident)
     _mail_or_404(db, sha256)
     if not detach_mail(db, incident, sha256):
         raise HTTPException(status_code=404, detail="The incident does not reference this message")

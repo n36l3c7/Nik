@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import buttons, page_widgets
+from .. import archive, buttons, page_widgets
 from ..automation import state as automation_state
 from ..core.config import settings as app_settings
 from ..core.db import get_db
@@ -55,6 +55,8 @@ def _incident(db: OrmSession, incident_id: str, *, lock: bool = False) -> Incide
     row = lock_incident(db, incident_id) if lock else db.get(Incident, incident_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    if lock:  # a lock is taken to write: an archived incident is read-only
+        archive.guard(row)
     return row
 
 

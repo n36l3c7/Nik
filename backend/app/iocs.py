@@ -9,11 +9,9 @@ every analyst without opening any other incident.
 Types: ``ip``, ``domain``, ``url``, ``email``, ``md5``, ``sha1``, ``sha256``.
 
 Sources:
-- browser history: the visited hosts (not every URL: thousands, mostly noise);
-- browser downloads: the download URL, its referrer and their hosts;
-- shell commands, endpoint records: indicators in the text;
-- Windows event logs: address and host fields, and indicators in command
-  lines, script blocks and service paths;
+- host evidence (browser, commands, endpoint, event logs): not read here. From 7.0 it is in
+  tables, and what a parser declares of it reaches the index as found indicators
+  (``indicators_found.add_to``);
 - malware samples: the sample's hashes and the indicators in its strings;
 - e-mails (Mail Analysis): sender addresses and domain, sending IP, link
   targets and hosts, attachment hashes, QR-code and invitation links;
@@ -58,11 +56,6 @@ _TEXT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("md5", re.compile(r"\b[a-fA-F0-9]{32}\b")),
 ]
 _HASH_FIELD = re.compile(r"\b(MD5|SHA1|SHA256)=([A-Fa-f0-9]{32,64})")
-
-# Event-log fields that hold an address or a host name.
-_EVENT_IP_FIELDS = ("IpAddress", "ClientAddress", "Address", "Param3", "SourceIp", "DestinationIp")
-_EVENT_HOST_FIELDS = ("DestinationHostname", "QueryName")
-_EVENT_TEXT_FIELDS = ("CommandLine", "ScriptBlockText", "Payload", "ImagePath", "ServiceFileName", "Image")
 
 DEFAULT_ALLOWLIST: list[str] = [
     # Private, loopback, link-local and other non-routable addresses.
@@ -213,12 +206,6 @@ class _Collector:
             self.add(host[0], host[1], source, time_ms)
 
 
-def _dicts(value: Any) -> Iterable[dict]:
-    if isinstance(value, dict):
-        return (v for v in value.values() if isinstance(v, dict))
-    return ()
-
-
 def extract(
     doc: dict,
     samples: dict[str, Sample] | None = None,
@@ -238,52 +225,6 @@ def extract(
             out.add_url(entry.get("value"), source, entry.get("time"))
         elif kind in MANUAL_KINDS:
             out.add(kind, entry.get("value"), source, entry.get("time"))
-
-    for browser_id, slot in ((k, v) for k, v in (data.get("browser", {}).get("browsers") or {}).items()):
-        source = f"browser:{browser_id}"
-        for profile in _dicts((slot or {}).get("profiles")):
-            for entry in profile.get("history") or []:
-                host = _host(str(entry.get("url") or "")) if isinstance(entry, dict) else None
-                if host:
-                    out.add(host[0], host[1], source, entry.get("visitTime"))
-            for entry in profile.get("downloads") or []:
-                if not isinstance(entry, dict):
-                    continue
-                out.add_url(entry.get("url"), source, entry.get("startTime"))
-                out.add_url(entry.get("referrer"), source, entry.get("startTime"))
-
-    for shell_id, slot in (data.get("commands", {}).get("shells") or {}).items():
-        for entry in (slot or {}).get("commands") or []:
-            if isinstance(entry, dict):
-                out.add_text(entry.get("command"), f"commands:{shell_id}", entry.get("time"))
-
-    for category_id, category in (data.get("endpoint", {}).get("categories") or {}).items():
-        for source_slot in _dicts((category or {}).get("sources")):
-            for record in source_slot.get("records") or []:
-                if isinstance(record, dict):
-                    fields = record.get("fields") or {}
-                    text = " ".join(str(v) for v in fields.values() if v)
-                    out.add_text(text, f"endpoint:{category_id}", record.get("time"))
-
-    for channel, slot in (data.get("eventlogs", {}).get("channels") or {}).items():
-        source = f"eventlog:{channel}"
-        for event in (slot or {}).get("events") or []:
-            if not isinstance(event, dict):
-                continue
-            fields = event.get("data") or {}
-            when = event.get("time")
-            for name in _EVENT_IP_FIELDS:
-                value = str(fields.get(name) or "")
-                if re.match(r"^[\d.]+$|^[0-9a-fA-F:]+$", value) and value not in ("LOCAL", "0", "::"):
-                    out.add("ip", value, source, when)
-            for name in _EVENT_HOST_FIELDS:
-                if fields.get(name):
-                    out.add("domain", fields[name], source, when)
-            if fields.get("Hashes"):
-                out.add_text(fields["Hashes"], source, when)
-            for name in _EVENT_TEXT_FIELDS:
-                if fields.get(name):
-                    out.add_text(fields[name], source, when)
 
     for ref in (data.get("malware") or {}).get("samples") or []:
         if not isinstance(ref, dict):

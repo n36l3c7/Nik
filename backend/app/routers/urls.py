@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import artifacts, urlscan, work
+from .. import archive, artifacts, urlscan, work
 from ..core import store
 from ..core.db import get_db
 from ..core.files import attachment_headers, safe_name, stored_response
@@ -118,6 +118,7 @@ def analyse_url(
         incident = db.get(Incident, body.incident)
         if incident is None:
             raise HTTPException(status_code=404, detail="Incident not found")
+        archive.guard(incident)
     try:
         url = urlscan.normalise(body.url)
     except urlscan.UrlError as exc:

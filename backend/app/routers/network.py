@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifacts, work
+from .. import archive, artifacts, work
 from ..core import store as sealed_store
 from ..core import vault
 from ..core.config import settings
@@ -126,6 +126,7 @@ async def store_capture(
     background_tasks: BackgroundTasks | None,
 ) -> NetworkCapture:
     """Store an uploaded capture, in the incident or on its own, and queue its analysis."""
+    archive.guard(incident)
     head = await file.read(CHUNK)
     ext = store.capture_format(head)
     if ext is None:
@@ -182,6 +183,7 @@ def keep_capture(
     Raises ``HTTPException`` for what is not a capture or is too large. ``capture_id`` is the id
     the capture gets when the caller has to find it again (a conversion cut by a restart is done
     again, and must not make a second capture)."""
+    archive.guard(incident)
     ext = store.capture_format(data[:CHUNK])
     if ext is None:
         raise HTTPException(status_code=422, detail="Not a pcap or pcapng file.")
@@ -320,6 +322,7 @@ async def object_to_sample(
 ) -> dict:
     """Send an exported object to Malware Analysis as a sample of the incident."""
     incident = _incident_or_404(db, incident_id)
+    archive.guard(incident)
     row = _capture_or_404(db, capture_id, incident_id)
     _needs_file(row)
     try:
@@ -482,6 +485,7 @@ def remove_capture(
     (`DELETE /api/artifacts/pcap-<id>` deletes it). A browser session that is
     still open is closed and deleted."""
     incident = _incident_or_404(db, incident_id)
+    archive.guard(incident)
     row = _capture_or_404(db, capture_id, incident_id)
     _audit(db, caller, "capture.delete", f"Removed capture {row.file_name} from the incident", incident)
     if row.status == "live":

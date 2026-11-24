@@ -87,6 +87,22 @@ def condition(field: str, value: str, op: str = "=") -> Term:
     return Term(field=field, op=op, value=literal(value))
 
 
+def mentions(query: str | None, field: str) -> bool:
+    """Whether a query asks about a field (``archived:true``, ``!archived:true``, ...), wherever it stands in it."""
+    tree = parse(query) if query and query.strip() else None
+
+    def walk(node) -> bool:
+        if isinstance(node, (Term, Range)):
+            return node.field.lower() == field.lower()
+        if isinstance(node, Not):
+            return walk(node.node)
+        if isinstance(node, (And, Or)):
+            return any(walk(item) for item in node.nodes)
+        return False
+
+    return walk(tree)
+
+
 # What looks like ``field:value`` and is not: an address, a path, an IPv6 or MAC address.
 def _reads_as_text(term: Term) -> bool:
     value = term.raw.split(":", 1)[1] if ":" in term.raw else term.value.text

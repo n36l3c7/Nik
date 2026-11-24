@@ -32,7 +32,8 @@ import re
 from collections.abc import Iterator
 from typing import Any
 
-from nik_forensics.parsers import evtx
+from nik_forensics import viewing
+from nik_forensics.parsers import ViewError, evtx
 
 NAME = "eventlog-json"
 VERSION = "1"
@@ -347,3 +348,29 @@ def parse(path: str, ctx, source: str) -> None:
     if failure is not None:
         raise ValueError(f"nik-eventlogs.json is not JSON after {count} events: {str(failure)[:200]}") from failure
     ctx.end(in_file=count)
+
+
+def view(path: str, source: str, loc: dict) -> dict:
+    """The element at ``loc["index"]`` of the array of events, found with the stream the parse reads with:
+    the file is never held whole, only the element that is being read."""
+    index = viewing.loc_int(loc, "index")
+    if os.path.getsize(path) > MAX_FILE:
+        raise ViewError("The file is too large to be read for a view")
+    found: Any = None
+    seen = 0
+    with open(path, "rb") as handle:
+        try:
+            for seen, element in enumerate(_elements(_Stream(handle), {}), start=1):
+                if seen == index + 1:
+                    found = element
+                    break
+        except (ValueError, RecursionError) as error:
+            raise ViewError(f"The file stops being JSON before the element {index}: {str(error)[:200]}") from None
+    if seen < index + 1:
+        raise ViewError(f"The file holds no element {index} (it holds {seen})")
+    return {
+        "kind": "json",
+        "title": f"Element {index} of the array of events",
+        "where": {"index": index},
+        "text": viewing.pretty(found),
+    }

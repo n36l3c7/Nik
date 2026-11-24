@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifact_jobs, key_rotation, store_seal, urlscan_queue, worker_watch
+from . import archive, artifact_jobs, key_rotation, store_seal, urlscan_queue, worker_watch
 
 # Import models so their tables are registered on the shared metadata before
 # create_all runs. (The routers already import the models, but importing here
@@ -54,6 +54,7 @@ from .routers import (
     dashboards,
     enrichment,
     evidence,
+    evidence_views,
     fetch,
     fields,
     filters,
@@ -92,6 +93,9 @@ from .routers import (
     war_room,
     webhooks,
     yara_rules,
+)
+from .routers import (
+    archive as archive_routes,
 )
 from .routers import (
     health as health_details,
@@ -293,6 +297,11 @@ def on_startup() -> None:
     automation_loop._stopping.clear()
     if app_settings.API_BACKGROUND:
         work.start()
+        # The host evidence incidents kept in their documents before 7.0 is moved to its tables,
+        # once, in the background.
+        from .evidence import legacy as evidence_legacy
+
+        evidence_legacy.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -413,6 +422,12 @@ def _damaged_file(_request: Request, error: SealError) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": str(error), "code": "file_damaged"})
 
 
+@app.exception_handler(archive.Archived)
+def _archived(_request: Request, error: archive.Archived) -> JSONResponse:
+    """A write to an archived incident: the sentence says to take it out of the archive first."""
+    return JSONResponse(status_code=409, content={"detail": error.message, "archived": True})
+
+
 @app.exception_handler(QueryForbidden)
 def _query_forbidden(_request: Request, _error: QueryForbidden) -> JSONResponse:
     return JSONResponse(status_code=403, content={"detail": "You do not have the permission this needs"})
@@ -425,8 +440,10 @@ app.include_router(keys.router, prefix="/api")
 # Before the incidents: /incidents/bulk is not an incident.
 app.include_router(bulk.router, prefix="/api")
 app.include_router(incidents.router, prefix="/api")
+app.include_router(archive_routes.router, prefix="/api")
 app.include_router(uploads.router, prefix="/api")
 app.include_router(evidence.router, prefix="/api")
+app.include_router(evidence_views.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
 app.include_router(indicators_found.router, prefix="/api")
 app.include_router(mailboxes.router, prefix="/api")

@@ -624,21 +624,32 @@ export function IncidentProvider({ children }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [queue])
 
+  /** Read the light list again and put it in place of the one held (rejects when it cannot be read). */
+  const readList = useCallback(async () => {
+    const res = await api.get('/incidents?view=summary')
+    const list = Array.isArray(res?.incidents) ? res.incidents : []
+    setIncidents(list.filter((row) => row && row.id).map(normalizeSummary))
+  }, [])
+
   /**
    * Read the incident list and the assignable accounts again, and check the
    * open incident: an account was renamed, disabled or deleted.
    */
   const refreshIncidents = useCallback(() => {
     setAccountsToken((token) => token + 1)
-    api
-      .get('/incidents?view=summary')
-      .then((res) => {
-        const list = Array.isArray(res?.incidents) ? res.incidents : []
-        setIncidents(list.filter((row) => row && row.id).map(normalizeSummary))
-      })
-      .catch((err) => setStorageError(err?.message || 'Unable to load incidents.'))
+    readList().catch((err) => setStorageError(err?.message || 'Unable to load incidents.'))
     if (activeIncidentIdRef.current) queue.refresh(activeIncidentIdRef.current)
-  }, [queue])
+  }, [queue, readList])
+
+  /**
+   * The same, for a screen that refreshes itself (the list's refresh button and timer): resolves once the
+   * list is read and rejects with why it could not be; no banner is raised, the screen says it itself.
+   */
+  const reloadIncidents = useCallback(async () => {
+    setAccountsToken((token) => token + 1)
+    await readList()
+    if (activeIncidentIdRef.current) queue.refresh(activeIncidentIdRef.current)
+  }, [queue, readList])
 
   const retryActiveIncident = useCallback(() => {
     setActiveLoadError(null)
@@ -1553,6 +1564,7 @@ export function IncidentProvider({ children }) {
     activeLoadProgress,
     retryActiveIncident,
     refreshIncidents,
+    reloadIncidents,
     closeRequest,
     askClose,
     endClose,

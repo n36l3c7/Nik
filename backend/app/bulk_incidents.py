@@ -28,12 +28,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from . import bulk, incident_tags, indicators_found, mirror
+from . import archive, bulk, incident_tags, indicators_found, mirror
 from . import fields as registry
 from .core import audit
 from .core.locking import lock_incident
 from .core.models import Incident, Playbook, Run
-from .core.permissions import AUTOMATION_RUN, WRITE
+from .core.permissions import AUTOMATION_RUN, INCIDENTS_ARCHIVE, WRITE
 from .core.security import Principal
 from .events import emit_detached
 
@@ -81,6 +81,8 @@ def _locked(db: OrmSession, ref: str) -> Incident:
     row = lock_incident(db, ref)
     if row is None:
         raise bulk.Refused("There is no such incident any more")
+    if row.archived_at:  # what is done to an incident here writes to it: an archived one is read-only
+        raise bulk.Refused(archive.SENTENCE)
     return row
 
 
@@ -222,6 +224,45 @@ def _delete(db: OrmSession, ref: str, _params: dict[str, Any], caller: Principal
     name = remove_incident(db, row, caller.actor)
     emit_detached(db, "incident.deleted", {"id": ref, "name": name})
     return ""
+
+
+# --------------------------------------------------------------------------- #
+# Archive                                                                     #
+# --------------------------------------------------------------------------- #
+def _archive(db: OrmSession, ref: str, _params: dict[str, Any], caller: Principal) -> str:
+    row = lock_incident(db, ref)
+    if row is None:
+        raise bulk.Refused("There is no such incident any more")
+    if row.archived_at:
+        raise bulk.Skipped("It was archived already")
+    try:
+        done = archive.put(db, row, caller.actor)
+    except ValueError as error:
+        raise bulk.Refused(str(error)) from None
+    return f"{done['records']} records left the database"
+
+
+def _unarchive(db: OrmSession, ref: str, _params: dict[str, Any], caller: Principal) -> str:
+    from .core.db import after_commit
+    from .evidence import parse
+
+    row = lock_incident(db, ref)
+    if row is None:
+        raise bulk.Refused("There is no such incident any more")
+    if not row.archived_at:
+        raise bulk.Skipped("It was not archived")
+    reading = archive.take_out(db, row, caller.actor)
+    if reading:
+        after_commit(db, lambda: [parse.start(source_id) for source_id in reading])
+    return f"{len(reading)} files are read again"
+
+
+def _plan_archive(db: OrmSession, refs: list[str], _params: dict[str, Any], _caller: Principal) -> dict[str, Any]:
+    notes = [
+        "Only a closed incident is archived: it becomes read-only and leaves the lists. Its host evidence leaves "
+        "the database; the files, their reports and the flags and notes stay"
+    ]
+    return {"notes": notes}
 
 
 # --------------------------------------------------------------------------- #
@@ -380,3 +421,5 @@ LIST.add(
     )
 )  # fmt: skip
 LIST.add(bulk.Action("find_indicators", "Find indicators now", WRITE, apply=_find, events=True))
+LIST.add(bulk.Action("archive", "Archive", INCIDENTS_ARCHIVE, apply=_archive, plan=_plan_archive, verb="archive"))
+LIST.add(bulk.Action("unarchive", "Take out of the archive", INCIDENTS_ARCHIVE, apply=_unarchive))

@@ -44,7 +44,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import artifact_expiry, artifact_jobs, artifacts, unpack
+from .. import archive, artifact_expiry, artifact_jobs, artifacts, unpack
 from ..core import audit
 from ..core.config import settings
 from ..core.models import (
@@ -52,6 +52,7 @@ from ..core.models import (
     ArtifactJob,
     ArtifactLink,
     ArtifactRelation,
+    EvidenceSource,
     Incident,
     Mail,
     NetworkCapture,
@@ -284,8 +285,11 @@ def _target(call: Call) -> str:
     """The incident a file goes to: the one the node names, the one of the run, or none (the file
     is then kept on its own). One that is named and does not exist fails the step before anything."""
     wanted = _wanted(call, call.args.get("incident"))
-    if wanted and call.db.get(Incident, wanted) is None:
+    held = call.db.get(Incident, wanted) if wanted else None
+    if wanted and held is None:
         raise ActionError("The incident does not exist", retry=False)
+    if held is not None and held.archived_at:
+        raise ActionError(archive.SENTENCE, retry=False)
     return wanted
 
 
@@ -790,21 +794,19 @@ EVIDENCE = ("eventlogs", "browser", "commands", "endpoint")
     outputs=[
         {"name": "rows", "type": "number", "description": "How many rows were read"},
         {"name": "format", "type": "text", "description": "What the file was read as"},
-        {"name": "target", "type": "text", "description": "Where it went: eventlogs/Security, commands/bash…"},
+        {"name": "target", "type": "text", "description": "Where it went: eventlogs/evtx, commands/bash…"},
+        {"name": "sourceId", "type": "text", "description": "The source of the incident the file became"},
+        {"name": "read", "type": "text", "description": "complete, or partial when part of the file was not read"},
     ],
     timeout=300,
 )
 def add_evidence(call: Call) -> Result:
-    import copy
+    from ..evidence import intake, originals
+    from ..malware.samples import read_sample, store_writable
 
-    from sqlalchemy.orm.attributes import flag_modified
-
-    from ..core.security import now_iso
-    from ..iocs import reindex_incident
-    from ..malware.samples import read_sample
-    from ..parsing.registry import apply_upload
-    from ..routers.incidents import _UPLOAD_ACTIONS, _sync_columns
-
+    state = call.state or {}
+    if state:
+        return _wait_for_evidence(call, state)
     tab = str(call.args.get("kind") or "")
     if tab not in EVIDENCE:
         raise ActionError("The kind is eventlogs, browser, commands or endpoint", retry=False)
@@ -821,7 +823,7 @@ def add_evidence(call: Call) -> Result:
         row = call.db.get(Artifact, given) if artifacts.is_artifact_id(given) else None
         if row is None and call.dry_run and given.startswith("file-") and artifacts.is_artifact_id(given):
             would = {"would": f"add {tab} evidence", "artifact": given}
-            return Result(output={"rows": 0, "format": "", "target": ""}, request=would)
+            return Result(output=_evidence_output(), request=would)
         if row is None or row.kind != "file":
             raise ActionError("The evidence is read from a file artifact (file-…): this is not one", retry=False)
         if int(row.size or 0) > limit:
@@ -838,39 +840,136 @@ def add_evidence(call: Call) -> Result:
         name = name or "upload"
     routing = ("browser", "profile", "source", "shell", "category")
     params = {key: (str(call.args.get(key)).strip() if call.args.get(key) else None) for key in routing}
-    # A dry run reads the incident and changes nothing, so it does not lock it.
-    incident = call.db.get(Incident, wanted) if call.dry_run else _incident(call, wanted)
+    incident = call.db.get(Incident, wanted)
     if incident is None:
         raise ActionError("The incident does not exist", retry=False)
-    # The parsers write into the document they are given: a dry run gives them a copy.
-    doc = copy.deepcopy(incident.doc or {}) if call.dry_run else dict(incident.doc or {})
+    if incident.archived_at:
+        raise ActionError(archive.SENTENCE, retry=False)
     try:
-        summary = apply_upload(doc, tab, params, data, name)
+        where = intake.route(tab, params, name, incident.os or "")
     except ValueError as error:
         raise ActionError(str(error), retry=False) from None
-    output = {
-        "rows": int(summary.get("rows") or 0),
-        "format": str(summary.get("format") or ""),
-        "target": str(summary.get("target") or ""),
-    }
-    classes = {"rows": ["verdict"], "format": ["verdict"]}
     if call.dry_run:
-        would = {"would": f"add {tab} evidence", "name": name[:200], "rows": output["rows"]}
-        return Result(output=output, classes=classes, request=would)
-    doc["updatedAt"] = now_iso()
-    incident.doc = doc
-    flag_modified(incident, "doc")
-    _sync_columns(incident)
-    reindex_incident(call.db, incident)
-    audit.record(
-        call.db,
-        ACTOR,
-        _UPLOAD_ACTIONS.get(tab, "upload"),
-        f"Uploaded {name} → {output['target']} ({output['rows']} rows)" + signature(call),
-        incident,
-    )
-    triggers.incident_changed(call.db, incident, "incident.updated", ["data"])
-    return Result(output=output, classes=classes, log=f"{output['rows']} rows → {output['target']}")
+        # Nothing is kept and nothing is read: the step says where the file would go.
+        shown = _evidence_output(
+            intake.target_of(EvidenceSource(**{k: where[k] for k in ("kind", "source", "profile")}))
+        )
+        would = {"would": f"add {tab} evidence", "name": name[:200], "target": shown["target"]}
+        return Result(output={**shown, "format": where["parser"]}, classes=_EVIDENCE_CLASSES, request=would)
+    if not store_writable():
+        # This process cannot write to the store (the worker of playbooks): the API process keeps the file.
+        params = {"incident": wanted, "name": name, "tab": tab, "params": params}
+        job = artifact_jobs.ask(call.db, "evidence", params, ACTOR, call.run.id, _depth(), call.now, data)
+        waiting = {"job": job.id, "name": name, "until": call.now + EVIDENCE_WAIT, "started": True}
+        return Result(again_at=call.now + JOB_EVERY, state=waiting, log=f"Handing {name} to the server")
+    try:
+        source = intake.take(call.db, incident, data, name, tab, params, ACTOR)
+    except ValueError as error:
+        raise ActionError(str(error), retry=False) from None
+    except originals.EvidenceError as error:
+        raise ActionError(str(error), retry=False) from None
+    if source.already:
+        return _evidence_result(call, source, name, True)
+    # The reading is written down with the source: it starts at the next look, once the step is committed.
+    waiting = {"source": source.id, "name": name, "until": call.now + EVIDENCE_WAIT}
+    return Result(again_at=call.now + JOB_EVERY, state=waiting, log=f"Keeping {name} and having it read")
+
+
+EVIDENCE_WAIT = 900  # how long a file of host evidence may take to be read before the step fails
+_EVIDENCE_CLASSES = {"rows": ["verdict"], "format": ["verdict"]}
+
+
+def _evidence_output(target: str = "") -> dict[str, Any]:
+    return {"rows": 0, "format": "", "target": target, "sourceId": "", "read": ""}
+
+
+def _evidence_result(call: Call, source: EvidenceSource, name: str, already: bool) -> Result:
+    from ..evidence import intake
+
+    shown = intake.summary(source, already)
+    output = {key: shown[key] for key in ("rows", "format", "target", "sourceId", "read")}
+    incident = call.db.get(Incident, source.incident_id)
+    tab = intake.TAB_OF.get(source.kind, "")
+    from ..routers.incidents import _UPLOAD_ACTIONS
+
+    said = f"Uploaded {name} → {output['target']} ({output['rows']} rows)" + (", already imported" if already else "")
+    audit.record(call.db, ACTOR, _UPLOAD_ACTIONS.get(tab, "upload"), said + signature(call), incident)
+    return Result(output=output, classes=_EVIDENCE_CLASSES, log=f"{output['rows']} rows → {output['target']}")
+
+
+def _wait_for_evidence(call: Call, state: dict) -> Result:
+    from ..evidence import parse
+
+    name = str(state.get("name") or "")
+    if state.get("job"):
+        job = call.db.get(ArtifactJob, str(state["job"]))
+        if job is None:
+            raise ActionError("What was asked of the server about this file is no longer there", retry=False)
+        if job.status == "error":
+            raise ActionError(f"The file was not kept: {job.error}", retry=False)
+        if job.status != "done":
+            if call.now >= float(state.get("until") or 0):
+                raise ActionError(
+                    f"The file was not kept in {EVIDENCE_WAIT // 60} minutes: see {WORKERS_PAGE}", retry=False
+                )
+            return Result(again_at=call.now + JOB_EVERY, state=state, log="Waiting for the server to keep the file")
+        result = job.result or {}
+        state = {
+            **state,
+            "job": "",
+            "source": str(result.get("sourceId") or ""),
+            "already": bool(result.get("already")),
+        }
+    source = call.db.get(EvidenceSource, str(state.get("source") or ""))
+    if source is None:
+        raise ActionError("The file was removed from the incident before it was read", retry=False)
+    if source.state == "failed":
+        raise ActionError(source.error or "The file could not be read", retry=False)
+    if source.state != "done":
+        if call.now >= float(state.get("until") or 0):
+            raise ActionError(
+                f"The file was not read in {EVIDENCE_WAIT // 60} minutes: its page says how far it is", retry=False
+            )
+        if source.state == "queued" and not state.get("started"):
+            parse.start(source.id)
+            state = {**state, "started": True}
+        return Result(again_at=call.now + JOB_EVERY, state=state, log="Waiting for the file to be read")
+    return _evidence_result(call, source, name or source.file_name, bool(state.get("already")))
+
+
+def _evidence_job(db: Any, job: ArtifactJob, later: Any) -> dict[str, Any]:
+    """What the API process does for a playbook whose worker cannot write to the store: keep the file as
+    the original of a source of the incident, and start its reading once the job is committed."""
+    from ..evidence import intake, originals, parse
+
+    params = job.params
+    incident = db.get(Incident, str(params.get("incident") or ""))
+    if incident is None:
+        raise artifact_jobs.JobError("The incident does not exist")
+    if incident.archived_at:
+        raise artifact_jobs.JobError(archive.SENTENCE)
+    try:
+        data = artifact_jobs.carried(db, job.id)
+        source = intake.take(
+            db,
+            incident,
+            data,
+            str(params.get("name") or ""),
+            str(params.get("tab") or ""),
+            params.get("params") or {},
+            job.actor,
+        )
+    except (ValueError, originals.EvidenceError) as error:
+        raise artifact_jobs.JobError(str(error)) from None
+    already = bool(source.already)
+    if not already:
+        later.add_task(parse.start, source.id)
+    return {"sourceId": source.id, "already": already}
+
+
+# One more kind of what a playbook asks of the API process (it is named here, where it is defined:
+# artifact_jobs imports nothing of the actions).
+artifact_jobs.register("evidence", _evidence_job)
 
 
 # --------------------------------------------------------------------------- #

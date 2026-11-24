@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifacts, war_room, work
+from .. import archive, artifacts, war_room, work
 from ..core import audit
 from ..core.db import get_db
 from ..core.locking import lock_incident
@@ -43,6 +43,8 @@ def _incident(db: OrmSession, incident_id: str, *, lock: bool = False) -> Incide
     row = lock_incident(db, incident_id) if lock else db.get(Incident, incident_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    if lock:  # a lock is taken to write: an archived incident is read-only
+        archive.guard(row)
     return row
 
 
@@ -309,6 +311,18 @@ def put_mark(
         audit.record(db, caller.actor, "evidence.mark", f"{caller.actor} {verb} {body.key}", incident)
     db.commit()
     return {"key": body.key, "flagged": body.flagged, "note": note}
+
+
+@router.get("/export")
+def export_evidence(
+    incident_id: str, _caller: Principal = Depends(reader_principal), db: OrmSession = Depends(get_db)
+) -> dict[str, Any]:
+    """What an export of the incident says of its host evidence: the files with their SHA-256, counts
+    and parse reports, and the flags and notes on records. Put under ``evidence`` in an exported
+    document, it comes back when that document is imported (``POST /incidents``): the files are
+    listed as not here, and giving one again brings its records back with their flags."""
+    _incident(db, incident_id)
+    return browse.exported(db, incident_id)
 
 
 @router.get("/summary")

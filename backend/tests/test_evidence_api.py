@@ -467,8 +467,22 @@ def test_the_summary_counts_per_section(env):
         db.commit()
     assert get(env, f"ev-api/evidence/sources/{failed}").json()["state"] == "failed"
     summary = get(env, "ev-api/evidence/summary").json()
-    assert summary["kinds"]["eventlog"] == {"sources": 2, "records": 3, "partial": 1, "failed": 0, "parsing": 0}
-    assert summary["kinds"]["endpoint"] == {"sources": 2, "records": 1, "partial": 0, "failed": 1, "parsing": 0}
+    assert summary["kinds"]["eventlog"] == {
+        "sources": 2,
+        "records": 3,
+        "partial": 1,
+        "failed": 0,
+        "parsing": 0,
+        "absent": 0,
+    }
+    assert summary["kinds"]["endpoint"] == {
+        "sources": 2,
+        "records": 1,
+        "partial": 0,
+        "failed": 1,
+        "parsing": 0,
+        "absent": 0,
+    }
     assert summary["kinds"]["browser"]["parsing"] == 1
     assert summary["partialUnseen"] == 1
     assert get(env, "ev-other/evidence/summary").json() == {"kinds": {}, "partialUnseen": 0}

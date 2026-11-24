@@ -41,6 +41,8 @@ def test_summary_view_includes_os_without_document_body(admin: TestClient):
             "source": None,
             "createdAt": "",
             "updatedAt": "",
+            "archivedAt": None,
+            "archivedBy": None,
         }
     ]
 
@@ -52,12 +54,14 @@ def test_summary_os_follows_patches(admin: TestClient):
     assert row["os"] == "linux"
 
 
+# The subtrees are named alpha and beta: the keys of host evidence (browser, commands...) leave the document
+# on a write from 7.0 on (evidence/legacy.py), and these tests are about how a patch merges, whatever the key.
 def test_merge_patch_updates_only_the_sent_subtree(admin: TestClient):
     _create(
         admin,
         id="m1",
         data={
-            "browser": {
+            "alpha": {
                 "browsers": {
                     "chrome": {
                         "profiles": {
@@ -68,14 +72,14 @@ def test_merge_patch_updates_only_the_sent_subtree(admin: TestClient):
                     "firefox": {"profiles": {"p3": {"history": [{"id": "f1"}]}}},
                 }
             },
-            "commands": {"shells": {"bash": {"commands": [{"id": "c1"}]}}},
+            "beta": {"shells": {"bash": {"commands": [{"id": "c1"}]}}},
         },
         flags={"a": {"key": "a"}, "b": {"key": "b"}},
     )
     patch = {
         "updatedAt": "2026-11-04T10:00:00.000Z",
         "data": {
-            "browser": {
+            "alpha": {
                 "browsers": {
                     "chrome": {
                         "profiles": {
@@ -90,11 +94,11 @@ def test_merge_patch_updates_only_the_sent_subtree(admin: TestClient):
     res = admin.patch("/api/incidents/m1", headers=MERGE, content=json.dumps(patch))
     assert res.status_code == 200, res.text
     doc = admin.get("/api/incidents/m1").json()
-    browsers = doc["data"]["browser"]["browsers"]
+    browsers = doc["data"]["alpha"]["browsers"]
     assert browsers["chrome"]["profiles"]["p1"] == {"history": [{"id": "h2"}], "meta": {}}
     assert browsers["chrome"]["profiles"]["p2"] == {"history": [{"id": "h9"}]}
     assert browsers["firefox"] == {"profiles": {"p3": {"history": [{"id": "f1"}]}}}
-    assert doc["data"]["commands"]["shells"]["bash"]["commands"] == [{"id": "c1"}]
+    assert doc["data"]["beta"]["shells"]["bash"]["commands"] == [{"id": "c1"}]
     assert set(doc["flags"]) == {"b", "c"}
     assert doc["updatedAt"] == "2026-11-04T10:00:00.000Z"
 
@@ -106,9 +110,9 @@ def test_merge_patch_cannot_change_or_drop_the_id(admin: TestClient):
 
 
 def test_plain_json_patch_still_replaces_top_level_keys(admin: TestClient):
-    _create(admin, id="m3", data={"browser": {"a": 1}, "commands": {"b": 2}})
-    admin.patch("/api/incidents/m3", json={"data": {"browser": {"c": 3}}})
-    assert admin.get("/api/incidents/m3").json()["data"] == {"browser": {"c": 3}}
+    _create(admin, id="m3", data={"alpha": {"a": 1}, "beta": {"b": 2}})
+    admin.patch("/api/incidents/m3", json={"data": {"alpha": {"c": 3}}})
+    assert admin.get("/api/incidents/m3").json()["data"] == {"alpha": {"c": 3}}
 
 
 def test_merge_patch_rfc7396_examples():

@@ -7,8 +7,14 @@ here, and only here:
 * read-only and ``immutable=1``: no ``-wal``, ``-shm`` or journal is looked for or created, nothing is
   written next to the file (a database in WAL mode is read as the file stands: what is still in the
   ``-wal`` file is not in it);
-* ``query_only`` on and ``trusted_schema`` off: the views and triggers of the file cannot call functions
+* ``query_only`` on and ``trusted_schema`` off: nothing in the schema of the file can call functions
   with side effects;
+* views and triggers are turned off for the connection: a name a parser takes for a table cannot be a
+  view built to loop, and nothing of the file's own runs when it is read. Defensive mode is on;
+* ``cell_size_check`` on and no memory mapping, as SQLite asks for a file that may be damaged on
+  purpose: a bad page is an error, not a read outside the page;
+* a bound on the time one connection may run queries (``MAX_SECONDS``), whatever the caller asks:
+  the worker bounds the CPU of a job too, but hours later;
 * an authorizer that allows SELECT, READ, RECURSIVE and the functions (but ``load_extension``) and
   denies everything else: ATTACH, PRAGMA, writes, ``CREATE``;
 * ``setlimit`` on the size of a value, of a statement and of a row;
@@ -32,6 +38,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -45,6 +52,9 @@ MAX_COLUMNS = 2000
 BATCH = 1000
 # How many VM steps pass between two calls of ``stop``.
 STOP_EVERY = 20_000
+# How long the queries of one connection may run in all. A browser history of millions of rows is
+# read in a minute or two: half an hour is a query that will not end.
+MAX_SECONDS = 1800
 
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _ALLOWED = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_RECURSIVE}
@@ -85,7 +95,8 @@ def open_ro(path: str, stop: Callable[[], bool] | None = None) -> sqlite3.Connec
     """Open ``path`` read-only and locked down as the module says.
 
     ``stop``, when given, is called now and then while a query runs: when it returns true the query is
-    interrupted (``sqlite3.OperationalError: interrupted``). No time budget is set here: the caller owns it.
+    interrupted (``sqlite3.OperationalError: interrupted``). So it is when the queries of the connection
+    have run for ``MAX_SECONDS`` in all.
     """
     if not _header(path).startswith(SQLITE_MAGIC):
         raise NotSqlite("file is not a SQLite database")
@@ -95,13 +106,25 @@ def open_ro(path: str, stop: Callable[[], bool] | None = None) -> sqlite3.Connec
         conn.text_factory = _text
         if hasattr(conn, "enable_load_extension"):
             conn.enable_load_extension(False)
+        # Nothing of the file's own runs: no view is expanded, no trigger fires. A parser that asks
+        # for a table that is in truth a view gets "no such table", which it reports.
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_VIEW, False)
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_TRIGGER, False)
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_TRUSTED_SCHEMA, False)
         conn.execute("PRAGMA query_only = ON")
         conn.execute("PRAGMA trusted_schema = OFF")
+        conn.execute("PRAGMA cell_size_check = ON")
+        conn.execute("PRAGMA mmap_size = 0")
         conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MAX_LENGTH)
         conn.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, MAX_SQL_LENGTH)
         conn.setlimit(sqlite3.SQLITE_LIMIT_COLUMN, MAX_COLUMNS)
-        if stop is not None:
-            conn.set_progress_handler(lambda: 1 if stop() else 0, STOP_EVERY)
+        conn.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
+        conn.setlimit(sqlite3.SQLITE_LIMIT_WORKER_THREADS, 0)
+        deadline = time.monotonic() + MAX_SECONDS
+        conn.set_progress_handler(
+            lambda: 1 if time.monotonic() > deadline or (stop is not None and stop()) else 0, STOP_EVERY
+        )
         # Last: from here on PRAGMA and the rest are refused.
         conn.set_authorizer(_authorizer)
     except BaseException:

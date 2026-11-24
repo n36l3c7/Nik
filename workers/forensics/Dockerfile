@@ -10,7 +10,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --create-home --uid 1000 forensics \
     && mkdir /work && chown forensics:forensics /work
-COPY given.py jobs.py run_job.py server.py ./
+COPY given.py jobs.py run_job.py server.py view_job.py ./
 COPY nik_forensics ./nik_forensics
 
 ENV PYTHONUNBUFFERED=1 \

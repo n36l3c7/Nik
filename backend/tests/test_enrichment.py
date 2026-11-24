@@ -8,6 +8,7 @@ outside of ``conftest.py``.
 
 from __future__ import annotations
 
+import re
 import textwrap
 import time
 import uuid
@@ -332,11 +333,32 @@ def test_a_connector_nik_never_heard_of_is_a_source_and_premium_or_changing_comm
 # --------------------------------------------------------------------------- #
 # What may be sent                                                            #
 # --------------------------------------------------------------------------- #
+
+
+def _held_by_document(command):
+    """The indicators of a command line, as the document holds them now (data.iocs.manual):
+    host evidence is moved to tables on write, and its indicators are only found ones."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    out = []
+    for link in re.findall(r"https?://[^\s;]+", command):
+        out.append({"type": "url", "value": link, "source": "manual", "time": 1})
+        host = urlsplit(link).hostname or ""
+        try:
+            ipaddress.ip_address(host)
+            kind = "ip"
+        except ValueError:
+            kind = "domain"
+        out.append({"type": kind, "value": host, "source": "manual", "time": 1})
+    return out
+
+
 def _incident(client, headers, incident_id, command, tlp=None):
     doc = {
         "id": incident_id,
         "name": incident_id,
-        "data": {"commands": {"shells": {"bash": {"commands": [{"command": command, "time": 1}]}}}},
+        "data": {"iocs": {"manual": _held_by_document(command)}},
     }
     if tlp:
         doc["report"] = {"tlp": tlp}

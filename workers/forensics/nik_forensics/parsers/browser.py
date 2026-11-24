@@ -20,6 +20,14 @@ sum of the ``count(*)`` of the tables read, so a clean file ends with ``read == 
 The profile, the host and the user come from the import (``profile``, ``host``, ``username`` in the
 parameters) and are part of the keys: two profiles never collide. A WAL or journal file next to the database
 is not given to the worker: a database in WAL mode is said in a note. Standard library only.
+
+The place of a record in its file (``loc``): ``{"table", "rowid"}`` for a row of a database (the real name of
+the table: ``visits``, ``moz_historyvisits``, ``history_visits``, ``moz_bookmarks``, ``moz_annos``...);
+``{"row": n}`` for a row of a JSON or CSV export, counted from 1 (the first row after the header, the first
+element of the array); ``{"index": n}`` for an entry of a Safari download list (from 0); ``{"path", "index"}``
+for a bookmark of a Chromium or Safari file: its folder and its position among the bookmarks of that folder,
+from 0, in file order. A CSV row with more cells than the header is kept: the extra cells are in its data
+under ``extra``, and a note counts such rows.
 """
 
 from __future__ import annotations
@@ -36,7 +44,8 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from .. import sqlite_safe
+from .. import sqlite_safe, viewing
+from . import BadLocator, ViewError
 
 NAME = "browser"
 VERSION = "1"
@@ -256,6 +265,7 @@ class _Emit:
         self.no_time = 0
         self.no_url = 0
         self._seen: dict[str, int] = {}
+        self.extra: list | None = None  # the cells a CSV row has past its header, for the record being made
 
     def key(self, kind: str, ident: Any, dedupe: bool = False) -> str:
         key = f"web:{self.host}:{self.username}:{self.browser}:{self.profile}:{kind}:{ident}"
@@ -270,6 +280,8 @@ class _Emit:
         if ts is None:
             self.no_time += 1
         data = {**data, "browser": self.browser, "profile": self.profile}
+        if self.extra:
+            data["extra"] = list(self.extra)
         self.ctx.record(
             key=self.key(kind, ident, dedupe),
             type=kind,
@@ -491,7 +503,7 @@ def _firefox(db: _Db, out: _Emit) -> None:
                 r["from_visit"] or None,
                 visit_type,
                 visit_type in FIREFOX_REDIRECT_TYPES,
-                {"table": "visits", "rowid": r["visit_id"]},
+                {"table": "moz_historyvisits", "rowid": r["visit_id"]},
             )
 
         db.scan(
@@ -632,7 +644,7 @@ def _safari(db: _Db, out: _Emit) -> None:
             source or None,
             None,
             source is not None,
-            {"table": "visits", "rowid": r["visit_id"]},
+            {"table": "history_visits", "rowid": r["visit_id"]},
         )
 
     db.scan(
@@ -696,6 +708,7 @@ def _chrome_bookmarks(path: str, ctx, out: _Emit) -> int | None:
         ctx.skip("file cannot be read", lost=0, detail=f"not a Chromium Bookmarks file: {exc}")
         return None
     leaves = 0
+    placed: dict[str, int] = {}  # bookmarks met so far in each folder: the next one's place in it
 
     def walk(node, folder, depth, index):
         nonlocal leaves
@@ -706,6 +719,7 @@ def _chrome_bookmarks(path: str, ctx, out: _Emit) -> int | None:
             return
         if node.get("type") == "url":
             leaves += 1
+            position = placed[folder] = placed.get(folder, -1) + 1
             url = _s(node.get("url"))
             if not url:
                 ctx.skip(
@@ -719,7 +733,7 @@ def _chrome_bookmarks(path: str, ctx, out: _Emit) -> int | None:
                 name,
                 url,
                 folder or None,
-                {"path": folder},
+                {"path": folder, "index": position},
             )
         elif isinstance(node.get("children"), list):
             name = _s(node.get("name"))
@@ -787,6 +801,7 @@ def _safari_bookmarks(plist: Any, ctx, out: _Emit) -> int | None:
         ctx.skip("table missing", lost=0, detail="Children: not a Safari Bookmarks.plist (no root bookmark list)")
         return None
     leaves = 0
+    placed: dict[str, int] = {}  # bookmarks met so far in each folder: the next one's place in it
 
     def walk(node, folder, depth):
         nonlocal leaves
@@ -798,6 +813,7 @@ def _safari_bookmarks(plist: Any, ctx, out: _Emit) -> int | None:
         kind = node.get("WebBookmarkType")
         if kind == "WebBookmarkTypeLeaf":
             leaves += 1
+            position = placed[folder] = placed.get(folder, -1) + 1
             url = _s(node.get("URLString"))
             if not url:
                 ctx.skip("row cannot be read", lost=1, detail=f"bookmark without a URL in {folder}")
@@ -811,7 +827,7 @@ def _safari_bookmarks(plist: Any, ctx, out: _Emit) -> int | None:
                 name,
                 url,
                 folder or None,
-                {"path": folder},
+                {"path": folder, "index": position},
             )
         elif kind == "WebBookmarkTypeList" and isinstance(node.get("Children"), list):
             title = _s(node.get("Title"))
@@ -879,11 +895,17 @@ def _text_rows(path: str, ctx, out: _Emit, what: str) -> int | None:
         ctx.skip("file cannot be read", lost=0, detail="expected an array of objects, or a CSV with a header row")
         return None
     kind = _kind_of(rows, hint)
+    wide = 0
     for index, raw in enumerate(rows):
-        loc = {"row": index}
+        loc = {"row": index + 1}  # the key below is built from ``index``, from 0: it must not change
+        out.extra = None
         try:
             if not isinstance(raw, dict):
                 raise ValueError("not an object")
+            extra = raw.pop(None, None)  # the cells of a CSV row past its header (the reader keeps them under None)
+            if extra:
+                wide += 1
+                out.extra = list(extra)
             row = _normal(raw)
             ident = f"{index}:{_digest(json.dumps(raw, sort_keys=True, default=str))}"
             if kind == "bookmarks":
@@ -949,9 +971,12 @@ def _text_rows(path: str, ctx, out: _Emit, what: str) -> int | None:
                     loc,
                 )
         except LookupError as exc:
-            ctx.skip("row without what it is about", lost=1, detail=f"row {index}: {exc}")
+            ctx.skip("row without what it is about", lost=1, detail=f"row {index + 1}: {exc}")
         except Exception as exc:  # noqa: BLE001
-            ctx.skip("row cannot be read", lost=1, detail=f"row {index}: {exc!r}"[:300])
+            ctx.skip("row cannot be read", lost=1, detail=f"row {index + 1}: {exc!r}"[:300])
+    out.extra = None
+    if wide:
+        ctx.note("row with more cells than the header", count=wide, detail="the extra cells are in its data, as extra")
     return len(rows)
 
 
@@ -1055,3 +1080,189 @@ def parse(path: str, ctx, source: str) -> None:
         in_file = _sqlite(path, ctx, out, source)
     out.notes()
     ctx.end(in_file=in_file)
+
+
+# --------------------------------------------------------------------------- #
+# The view of a record                                                        #
+# --------------------------------------------------------------------------- #
+def _whole_for_view(path: str) -> bytes:
+    if os.path.getsize(path) > MAX_FILE:
+        raise ViewError(f"The file is larger than {MAX_FILE} bytes: it is not read for a view")
+    with open(path, "rb") as handle:
+        return handle.read(MAX_FILE + 1)
+
+
+def _bookmark_at(path: str, source: str, wanted: str, index: int) -> dict[str, Any]:
+    """The bookmark at ``index`` among those of the folder ``wanted``, found by the walk of the parse (the same
+    folder names, the same order, every bookmark of the folder counted whether it has a URL or not)."""
+    found: list[dict[str, Any]] = []
+    data = _whole_for_view(path)
+    if source.startswith("safari"):
+        try:
+            plist = plistlib.loads(data)
+        except Exception as exc:  # noqa: BLE001 - plistlib raises several unrelated types on bad input
+            raise ViewError(f"The file is not a property list: {type(exc).__name__}") from None
+
+        def walk_safari(node: Any, folder: str, depth: int) -> None:
+            if not isinstance(node, dict) or depth > MAX_DEPTH or found:
+                return
+            kind = node.get("WebBookmarkType")
+            if kind == "WebBookmarkTypeLeaf":
+                if folder == wanted:
+                    seen[0] += 1
+                    if seen[0] == index + 1:
+                        found.append(node)
+            elif kind == "WebBookmarkTypeList" and isinstance(node.get("Children"), list):
+                title = _s(node.get("Title"))
+                label = SAFARI_ROOT_LABELS.get(title, title)
+                inner = (f"{folder} > {label}" if folder else label) if label else folder
+                for child in node["Children"]:
+                    walk_safari(child, inner, depth + 1)
+
+        seen = [0]
+        for child in (plist.get("Children") or []) if isinstance(plist, dict) else []:
+            walk_safari(child, "", 0)
+        if not found:
+            raise ViewError(f"The file holds no bookmark {index} in the folder {wanted or '(top level)'}")
+        return found[0]
+    try:
+        parsed = json.loads(data.decode("utf-8-sig", "replace"))
+    except (ValueError, RecursionError) as exc:
+        raise ViewError(f"The file is not JSON: {str(exc)[:200]}") from None
+    roots = parsed.get("roots") if isinstance(parsed, dict) else None
+    if not isinstance(roots, dict):
+        raise ViewError('The file is not a Chromium Bookmarks file (no "roots")')
+
+    def walk_chrome(node: Any, folder: str, depth: int) -> None:
+        if not isinstance(node, dict) or depth > MAX_DEPTH or found:
+            return
+        if node.get("type") == "url":
+            if folder == wanted:
+                seen[0] += 1
+                if seen[0] == index + 1:
+                    found.append(node)
+        elif isinstance(node.get("children"), list):
+            name = _s(node.get("name"))
+            inner = (f"{folder} > {name}" if folder else name) if name else folder
+            for child in node["children"]:
+                walk_chrome(child, inner, depth + 1)
+
+    seen = [0]
+    for root_key, root in roots.items():
+        if isinstance(root, dict):
+            label = CHROME_ROOT_LABELS.get(root_key, _s(root.get("name")) or root_key)
+            for child in root.get("children") or []:
+                walk_chrome(child, label, 0)
+    if not found:
+        raise ViewError(f"The file holds no bookmark {index} in the folder {wanted or '(top level)'}")
+    return found[0]
+
+
+def _rows_of_json(data: bytes) -> list[Any]:
+    try:
+        parsed = json.loads(data.decode("utf-8-sig", "replace"))
+    except (ValueError, RecursionError) as exc:
+        raise ViewError(f"The file is not JSON: {str(exc)[:200]}") from None
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        for name in _CONTAINERS:
+            if isinstance(parsed.get(name), list):
+                return parsed[name]
+    raise ViewError("The file holds no array of rows")
+
+
+def _csv_row(text: str, number: int) -> dict[str, Any]:
+    """The row ``number`` (from 1, the header not counted) of a CSV, as the parse reads it, with its raw lines."""
+    seen: list[str] = []
+
+    def tap():
+        for line in io.StringIO(text):
+            seen.append(line)
+            yield line
+
+    previous = csv.field_size_limit(MAX_FILE)
+    row: dict[Any, Any] | None = None
+    try:
+        reader = csv.DictReader(tap())
+        header = reader.fieldnames  # reads the header: the lines it took are not the row's
+        seen.clear()
+        total = 0
+        for total, found in enumerate(reader, start=1):
+            if total == number:
+                row = found
+                break
+            seen.clear()
+    except csv.Error as exc:
+        raise ViewError(f"The CSV cannot be read up to the row {number}: {exc}") from None
+    finally:
+        csv.field_size_limit(previous)
+    if row is None:
+        raise ViewError(f"The file holds no row {number} (it holds {total if header else 0})")
+    lines = list(seen)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    first = reader.line_num - len(lines) + 1
+    rows = [[str(name), "" if value is None else str(value)] for name, value in row.items() if name is not None]
+    if None in row:
+        rows.append(["extra", ", ".join(map(str, row[None]))])
+    return {
+        "kind": "fields",
+        "title": f"Row {number} of the CSV, with its header",
+        "where": {"row": number, "line": first},
+        "rows": rows,
+        "text": "".join(lines).rstrip("\r\n"),
+        "first": first,
+    }
+
+
+def view(path: str, source: str, loc: dict) -> dict:
+    """The row or the bookmark the record came from, by what its locator names (the module docstring says
+    which): ``{"table", "rowid"}`` a row of a database (a visit with the row of its URL); ``{"row"}`` a row of a
+    JSON or CSV export (from 1); ``{"index"}`` an entry of a Safari download list; ``{"path", "index"}`` a
+    bookmark of a Chromium or Safari file."""
+    if "table" in loc:
+        return viewing.sqlite_row(path, str(loc.get("table") or ""), loc.get("rowid"))
+    if "row" in loc:
+        number = viewing.loc_int(loc, "row")
+        if number < 1:
+            raise ViewError("The rows are counted from 1: there is no row 0")
+        if source.endswith(".csv"):
+            return _csv_row(_whole_for_view(path).decode("utf-8-sig", "replace"), number)
+        rows = _rows_of_json(_whole_for_view(path))
+        if number > len(rows):
+            raise ViewError(f"The file holds no row {number} (it holds {len(rows)})")
+        row = rows[number - 1]
+        where = {"row": number}
+        if not isinstance(row, dict):
+            return {"kind": "json", "title": f"Row {number} of the array", "where": where, "text": viewing.pretty(row)}
+        return {"kind": "fields", "title": f"Row {number} of the array", "where": where, "rows": viewing.flatten(row)}
+    if "path" in loc:
+        folder = loc.get("path")
+        if not isinstance(folder, str):
+            raise BadLocator("The locator of the record has no folder")
+        index = viewing.loc_int(loc, "index")
+        node = _bookmark_at(path, source, folder, index)
+        shown = folder or "(top level)"
+        return {
+            "kind": "fields",
+            "title": f"Bookmark {index} of the folder {shown}",
+            "where": {"path": folder, "index": index},
+            "rows": [["folder", shown], *viewing.flatten(node)],
+        }
+    if "index" in loc:
+        index = viewing.loc_int(loc, "index")
+        try:
+            plist = plistlib.loads(_whole_for_view(path))
+        except Exception as exc:  # noqa: BLE001 - plistlib raises several unrelated types on bad input
+            raise ViewError(f"The file is not a property list: {type(exc).__name__}") from None
+        entries = plist.get("DownloadHistory") if isinstance(plist, dict) else None
+        if not isinstance(entries, list) or index >= len(entries):
+            raise ViewError(f"The file holds no download {index} in DownloadHistory")
+        return {
+            "kind": "fields",
+            "title": f"Download {index} of DownloadHistory",
+            "where": {"index": index},
+            "rows": viewing.flatten(entries[index]),
+        }
+    raise BadLocator("The locator of the record names no table, row, index or folder")

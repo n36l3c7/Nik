@@ -2060,6 +2060,34 @@ test('an incident whose system was taken away is asked for it again', async () =
   await expect(page.getByRole('article', { name: 'Incident details' })).toContainText('Windows')
 })
 
+test('the refresh button brings the incident list up to date without reloading the page', async () => {
+  const panel = page.getByRole('region', { name: 'Incidents' })
+  const rows = panel.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
+  await openIncidentList()
+  const before = await rows.count()
+  const address = page.url()
+  await page.evaluate(() => (window.__noReload = true))
+
+  // An incident made elsewhere (the API) is not in the list until the list is refreshed.
+  expect(
+    (
+      await page.request.post('/api/incidents', { data: { id: 'e2e-refresh', host: 'E2E-REFRESH', data: {} } })
+    ).status(),
+  ).toBe(201)
+  await panel.getByRole('button', { name: 'Refresh the list' }).click()
+  await expect(rows).toHaveCount(before + 1)
+  await expect(panel.getByRole('table', { name: 'Incidents' })).toContainText('E2E-REFRESH')
+  await expect(panel.getByText(/^Updated \d{2}\D\d{2}\D\d{2}$/)).toBeVisible()
+  expect(page.url()).toBe(address)
+  expect(await page.evaluate(() => window.__noReload)).toBe(true)
+
+  // The choice of the automatic refresh is kept for the account.
+  await panel.getByLabel('Auto-refresh:').selectOption('5m')
+  await expect(panel.getByLabel('Auto-refresh:')).toHaveValue('5m')
+  await panel.getByLabel('Auto-refresh:').selectOption('off')
+  expect((await page.request.delete('/api/incidents/e2e-refresh')).status()).toBe(204)
+})
+
 test('a query filters the lists: typed, completed, built from rows; the filters write it', async () => {
   // The page of the incident list: its query, its chips, its table.
   const panel = page.getByRole('region', { name: 'Incidents' })
@@ -5882,6 +5910,28 @@ test('a dashboard is built from widgets, shows real numbers, and opens what is b
   await expect(number.getByRole('button', { name: /^Incidents now: \d+\. Show them\.$/ })).toBeVisible()
   const bars = boards.getByRole('article', { name: 'By status' })
   await expect(bars.getByRole('listitem').first()).toContainText('open')
+
+  // The refresh button brings the numbers up to date without leaving the page.
+  const countOf = async () =>
+    Number(
+      (await number.getByRole('button', { name: /Show them/ }).getAttribute('aria-label'))?.match(/: (\d+)\./)?.[1],
+    )
+  const before = await countOf()
+  const address = page.url()
+  await page.evaluate(() => (window.__noReload = true))
+  expect(
+    (
+      await page.request.post('/api/incidents', {
+        data: { id: 'e2e-board-refresh', host: 'E2E-BOARD-REFRESH', data: {} },
+      })
+    ).status(),
+  ).toBe(201)
+  await boards.getByRole('button', { name: 'Refresh the dashboard' }).click()
+  await expect.poll(countOf).toBe(before + 1)
+  expect(page.url()).toBe(address)
+  expect(await page.evaluate(() => window.__noReload)).toBe(true)
+  await expect(boards.getByText(/^Updated \d{2}\D\d{2}\D\d{2}$/)).toBeVisible()
+  expect((await page.request.delete('/api/incidents/e2e-board-refresh')).status()).toBe(204)
 
   // The same figures as a table.
   await bars.getByRole('button', { name: 'Show By status as a table' }).click()

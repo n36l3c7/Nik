@@ -34,6 +34,9 @@ ATTRIBUTES = {
     "suspiciousStart": "suspicious window",
     "suspiciousEnd": "suspicious window",
 }
+# Host evidence is in tables from 7.0 and leaves the document when it is written: a patch that
+# carries it changes nothing the document keeps, so it is not described.
+HOST_EVIDENCE_KEYS = ("eventlogs", "endpoint", "browser", "commands")
 MAX_DETAILS = 500
 MAX_ENTRIES_PER_CHANGE = 20
 
@@ -125,7 +128,11 @@ def _file_names(old: Any, new: Any, depth: int = 0) -> list[str]:
 def _evidence(old: dict, new: dict, changed: Iterable[str] | None) -> list[tuple[str, str]]:
     before = old.get("data") if isinstance(old.get("data"), dict) else {}
     after = new.get("data") if isinstance(new.get("data"), dict) else {}
-    tabs = sorted(key for key in (changed if changed is not None else after.keys() | before.keys()))
+    tabs = sorted(
+        key
+        for key in (changed if changed is not None else after.keys() | before.keys())
+        if key not in HOST_EVIDENCE_KEYS
+    )
     touched = [tab for tab in tabs if before.get(tab) != after.get(tab)]
     if not touched:
         return []

@@ -36,7 +36,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import work
+from .. import archive, work
 from ..core import store
 from ..core.config import settings
 from ..core.models import Incident, UploadSession
@@ -93,8 +93,11 @@ def shown(db: OrmSession, row: UploadSession) -> dict[str, Any]:
 def open_session(
     db: OrmSession, actor: str, incident_id: str, file_name: str, size: int, sha256: str, params: dict[str, Any]
 ) -> UploadSession:
-    if db.get(Incident, incident_id) is None:
+    held = db.get(Incident, incident_id)
+    if held is None:
         raise UploadError("Incident not found", 404)
+    if held.archived_at:
+        raise UploadError(archive.SENTENCE, 409)
     if size <= 0:
         raise UploadError("The file is empty")
     if size > limit_of(params):
@@ -208,7 +211,14 @@ def finish(upload_id: str) -> None:
         row = db.get(UploadSession, upload_id)
         if row is None or row.state != "finishing":
             return
-        source = imports.accept(db, row.incident_id, sha256, row.size, row.file_name, row.params or {}, row.actor)
+        try:
+            source = imports.accept(db, row.incident_id, sha256, row.size, row.file_name, row.params or {}, row.actor)
+        except archive.Archived as refused:  # archived while the file was being sent
+            row.state = "aborted"
+            row.params = {**(row.params or {}), "error": refused.message}
+            db.commit()
+            store.remove_tree(folder_of(upload_id))
+            return
         row.state, row.sha256, row.source_id = "complete", sha256, source.id
         row.updated_epoch = time.time()
         wanted = source.state == "queued"

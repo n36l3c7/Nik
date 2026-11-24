@@ -289,6 +289,10 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
     if depth > MAX_DEPTH:
         logger.info("Event %s dropped: more than %d runs deep", event.kind, MAX_DEPTH)
         return started
+    # Nothing starts by itself for an archived incident: it is read-only.
+    held = _incident_of(event.object_kind, event.object_id, data)
+    if held and db.scalar(select(Incident.archived_at).where(Incident.id == held)):
+        return started
     caused_by = db.get(Run, cause) if cause else None
     for playbook in db.scalars(
         select(Playbook).where(Playbook.enabled.is_(True), Playbook.current_version.isnot(None))

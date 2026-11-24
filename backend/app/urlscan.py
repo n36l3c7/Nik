@@ -575,6 +575,9 @@ def _save(db: OrmSession, incident: Incident, doc: dict[str, Any]) -> None:
 
 
 def attach(db: OrmSession, incident: Incident, row: UrlScan, actor: str) -> dict[str, Any]:
+    from .archive import guard
+
+    guard(incident)
     doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     ref = next((item for item in refs if item.get("id") == row.id), None)
@@ -610,6 +613,8 @@ def incidents_referencing(db: OrmSession, scan: str) -> list[Incident]:
 def refresh_references(db: OrmSession, row: UrlScan) -> None:
     """Copy the scan's new state into the incidents that reference it."""
     for incident in incidents_referencing(db, row.id):
+        if incident.archived_at:  # an archived incident is not written to: it keeps what it had
+            continue
         doc = dict(relock(db, incident).doc or {})
         refs = _refs(doc)
         for index, ref in enumerate(refs):

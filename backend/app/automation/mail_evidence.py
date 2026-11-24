@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifact_jobs, artifacts
+from .. import archive, artifact_jobs, artifacts
 from ..core.config import settings
 from ..core.models import Artifact, Incident
 from ..core.permissions import SYSTEM_USER
@@ -58,8 +58,11 @@ def keep_attachments(
     if keeper is None:
         keeper = artifact_jobs.Keeper.of(call, SYSTEM_USER)
     incident_id = str(wanted or call.run.incident_id or "")
-    if incident_id and db.get(Incident, incident_id) is None:
+    held = db.get(Incident, incident_id) if incident_id else None
+    if incident_id and held is None:
         raise ActionError("The incident does not exist", retry=False)
+    if held is not None and held.archived_at:
+        raise ActionError(archive.SENTENCE, retry=False)
     # Taken out of an e-mail Nik holds: the page of each shows the other.
     parent = artifacts.artifact_id("mail", str(message.get("sha256") or ""))
     if db.get(Artifact, parent) is None:
@@ -113,6 +116,8 @@ def keep_message(db: OrmSession, incident: Incident, raw: bytes, name: str, acto
     and what could not be kept after all is written in the audit log of the incident."""
     from ..mail.parse import MailError, parse_mail
 
+    if incident.archived_at:
+        return ""  # an archived incident is read-only: a fetch leaves it as it is
     if not raw:
         return "The message came empty: it was not kept as evidence"
     if len(raw) > limit():

@@ -7,6 +7,13 @@
     POST /parse {"name", "fileName", "parser"?, "source"?, "params"?}
                                          -> the events of the parse, one JSON object per line, as they
                                             are found (``nik_forensics/context.py`` says which)
+    POST /view {"name", "parser", "source", "loc"}
+                                         -> the piece of the original a record came from (``view`` of the
+                                            parser: ``nik_forensics/parsers/__init__.py`` says its shape);
+                                            404 when the locator names nothing in the file, 422 for an
+                                            unknown parser or a locator of the wrong shape (also one that
+                                            lacks a member the parser needs), 504 after
+                                            ``VIEW_SECONDS``
 
 ``name`` is the name the original was given under: ``<sha256>.bin``, checked
 against what was received (``given.py``). Only the Nik backend talks to this
@@ -19,6 +26,9 @@ hold is answered ``409`` with the name that is ``missing``; the backend sends
 it and asks again. What is given sits in the work volume (``/work``), **in
 clear**, until nobody asked for it for ``FORENSICS_FILE_IDLE`` seconds, and at
 the latest until the worker starts again (it empties the place when it starts).
+
+A view is a short process of its own too (``view_job.py``), under its own small bound
+(``VIEW_SLOTS`` at once), so that it never waits behind a long parse.
 
 **Every parse is a process of its own** (``run_job.py``), with its memory and
 its CPU time bounded: a file made to crash a parser ends that process. The
@@ -55,8 +65,14 @@ STOP_GRACE = float(os.environ.get("FORENSICS_STOP_GRACE", "20"))
 JOB_SECONDS = int(os.environ.get("FORENSICS_JOB_SECONDS", "21600"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNNER = os.path.join(HERE, "run_job.py")
+VIEWER = os.path.join(HERE, "view_job.py")
+VIEW_SLOTS = 4
+VIEW_SECONDS = 30
+# What the answer of a view may weigh, whatever the child printed.
+VIEW_MAX_BYTES = 512 * 1024
 _NAME = re.compile(r"^[0-9a-f]{64}\.bin$")
 _slots = threading.BoundedSemaphore(MAX_JOBS)
+_view_slots = threading.BoundedSemaphore(VIEW_SLOTS)
 JOBS = jobs.Jobs()
 GIVEN = given.Given(
     os.environ.get("FORENSICS_WORK_DIR", "/work"),
@@ -77,6 +93,27 @@ class Refused(Exception):
 def job_command(path: str, request: dict) -> list[str]:
     asked = {key: request.get(key) for key in ("fileName", "parser", "source", "params") if request.get(key)}
     return [sys.executable, "-I", RUNNER, path, json.dumps(asked)]
+
+
+def check_view(body: dict) -> None:
+    """The shape of a ``/view`` request, before the worker looks for the file: 422 when it is not one."""
+    parser = body.get("parser")
+    if not isinstance(parser, str) or parser.replace("-", "_") not in _parser_names():
+        raise Refused(422, "parser is not the name of a parser of the worker")
+    if not isinstance(body.get("source", ""), (str, type(None))) or len(str(body.get("source") or "")) > 200:
+        raise Refused(422, "source must be a text of at most 200 characters")
+    loc = body.get("loc")
+    if not isinstance(loc, dict) or len(loc) > 20:
+        raise Refused(422, "loc must be an object of at most 20 members")
+    for key, value in loc.items():
+        if len(key) > 40 or not (value is None or isinstance(value, (bool, int, str))) or len(str(value)) > 1024:
+            raise Refused(422, "loc holds numbers and short texts only")
+
+
+def _parser_names() -> tuple[str, ...]:
+    from nik_forensics import parsers
+
+    return parsers.NAMES
 
 
 def job_env() -> dict[str, str]:
@@ -127,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:  # noqa: N802
         given.take_request(self, GIVEN, self._authorized())
 
-    def _request(self) -> tuple[dict, str]:
+    def _request(self, validate=None) -> tuple[dict, str]:
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length > 1024 * 1024:
             raise Refused(413, "Request too large")
@@ -138,18 +175,20 @@ class Handler(BaseHTTPRequestHandler):
         name = str(body.get("name") or "") if isinstance(body, dict) else ""
         if not _NAME.fullmatch(name):
             raise Refused(400, "name must be <sha256>.bin")
+        if validate is not None:
+            validate(body)
         path = GIVEN.path(name)
         if path is None:
             raise Refused(409, "The worker does not hold this file", missing=[name])
         return body, path
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in ("/parse", "/recognise"):
+        if self.path not in ("/parse", "/recognise", "/view"):
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong forensics token"})
         try:
-            body, path = self._request()
+            body, path = self._request(check_view if self.path == "/view" else None)
         except Refused as refused:
             return self._send(refused.status, refused.body)
         except (ValueError, TypeError) as error:
@@ -157,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
         name = str(body["name"])
         if self.path == "/recognise":
             return self._recognise(path, name, body)
+        if self.path == "/view":
+            return self._view(path, name, body)
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The forensics worker is busy; try again later"})
         try:
@@ -193,6 +234,65 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, IndexError):
             return self._send(422, {"detail": "The file could not be recognised"})
         self._send(200 if done.returncode == 0 else 422, said)
+
+    def _view(self, path: str, name: str, body: dict) -> None:
+        """The piece of the original a record came from: asked of a child that reads the file around the place."""
+        if not _view_slots.acquire(blocking=False):
+            return self._send(503, {"detail": "The forensics worker is busy with views; try again later"})
+        try:
+            asked = {"parser": body["parser"], "source": body.get("source") or "", "loc": body["loc"]}
+            with GIVEN.hold([name]):
+                job = subprocess.Popen(  # noqa: S603 - fixed command, the file and the request are arguments
+                    [sys.executable, "-I", VIEWER, path, json.dumps(asked)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    env=job_env(),
+                    cwd="/",
+                )
+                timed_out = threading.Event()
+
+                def stop() -> None:
+                    timed_out.set()
+                    job.kill()
+
+                clock = threading.Timer(VIEW_SECONDS, stop)
+                clock.daemon = True
+                clock.start()
+                try:
+                    out = job.stdout.read(VIEW_MAX_BYTES + 1)
+                    if len(out) > VIEW_MAX_BYTES:
+                        job.kill()
+                    code = job.wait()
+                finally:
+                    clock.cancel()
+                    if job.poll() is None:
+                        job.kill()
+                    job.wait()
+                    job.stdout.close()
+        finally:
+            _view_slots.release()
+        if timed_out.is_set():
+            return self._send(504, {"detail": f"The view took more than {VIEW_SECONDS} seconds"})
+        if len(out) > VIEW_MAX_BYTES:
+            return self._send(502, {"detail": "The view is larger than the worker sends"})
+        try:
+            said = json.loads(out.decode("utf-8", "replace"))
+        except ValueError:
+            said = None
+        if code == 0 and isinstance(said, dict):
+            return self._send(200, said)
+        if code == 5 and isinstance(said, dict):
+            return self._send(422, {"detail": str(said.get("detail") or "The locator is of the wrong shape")})
+        if code == 4 and isinstance(said, dict):
+            return self._send(404, {"detail": str(said.get("detail") or "The file holds nothing there")})
+        self._send(
+            500,
+            {
+                "detail": "The view failed"
+                + (f": {said['detail']}" if isinstance(said, dict) and said.get("detail") else "")
+            },
+        )
 
     def _chunk(self, data: bytes) -> None:
         self.wfile.write(f"{len(data):x}\r\n".encode("ascii") + data + b"\r\n")

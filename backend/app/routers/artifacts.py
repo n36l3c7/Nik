@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import analysis_links, artifact_convert, artifact_expiry, artifact_transfer, artifacts, query, urlscan
+from .. import analysis_links, archive, artifact_convert, artifact_expiry, artifact_transfer, artifacts, query, urlscan
 from ..core import audit
 from ..core.config import settings
 from ..core.db import after_commit, get_db
@@ -223,6 +223,7 @@ async def analyse_file(
     """Analyse a file on its own (or link it to an incident at once). Stored
     under its SHA-256, never executed; a file already known reuses its analysis."""
     target = _incident_or_404(db, incident)
+    archive.guard(target)
     data = await file.read()
     sample, _ref = await run_in_threadpool(
         sample_routes.store_sample, db, target, data, file.filename or "", caller, background_tasks
@@ -240,6 +241,7 @@ async def analyse_mail(
 ) -> dict:
     """Analyse an e-mail on its own (or link it to an incident at once)."""
     target = _incident_or_404(db, incident)
+    archive.guard(target)
     mail, _ref = await mail_routes.store_mail(
         db, target, await file.read(), file.filename or "", caller, background_tasks
     )
@@ -257,6 +259,7 @@ async def analyse_capture(
 ) -> dict:
     """Store a packet capture on its own (or in an incident) and analyse it in the background."""
     target = _incident_or_404(db, incident)
+    archive.guard(target)
     capture = await capture_routes.store_capture(db, target, file, keylog, caller, background_tasks)
     return _one(db, _artifact_or_404(db, artifacts.artifact_id("pcap", capture.id)))
 
@@ -390,7 +393,8 @@ def link_artifact(
 
 def link_to(db: OrmSession, row: Artifact, incident: Incident, caller: Principal) -> None:
     """Link an artifact to an incident (the caller commits). What the route does, and what a bulk
-    action does for each artifact."""
+    action does for each artifact. An archived incident is read-only: ``Archived``."""
+    archive.guard(incident)
     if row.kind == originals.KIND:
         raise HTTPException(
             status_code=422, detail="Host evidence is given to an incident when it is imported there, not linked"
@@ -429,7 +433,9 @@ def unlink_artifact(
 
 
 def unlink_from(db: OrmSession, row: Artifact, incident: Incident, caller: Principal) -> None:
-    """Take an artifact out of an incident (the caller commits); ``404`` when it is not in it."""
+    """Take an artifact out of an incident (the caller commits); ``404`` when it is not in it.
+    An archived incident is read-only: ``Archived``."""
+    archive.guard(incident)
     if row.kind == originals.KIND:
         raise HTTPException(
             status_code=422, detail="Host evidence is taken out of an incident from its evidence, not unlinked"

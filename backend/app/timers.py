@@ -353,7 +353,9 @@ def tick(db: OrmSession, now: float) -> int:
     breached = 0
     hours = business_hours(db)
     labels = timer_fields(db)
-    for incident in db.scalars(select(Incident).where(Incident.status != "closed")).all():
+    for incident in db.scalars(
+        select(Incident).where(Incident.status != "closed", Incident.archived_at.is_(None))
+    ).all():
         touched = sync(db, incident, now, labels)
         stored = _held(incident)
         for name, timer in list(stored.items()):

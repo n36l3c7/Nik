@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import archive
 from .. import ioc_library as lib
 from ..core import audit
 from ..core.locking import lock_incident
@@ -77,6 +78,9 @@ def _incident(call: Call, incident_id: Any) -> Incident:
     row = lock_incident(call.db, wanted) if wanted else None
     if row is None:
         raise ActionError("The incident does not exist" if wanted else "No incident was given", retry=False)
+    # Every action that writes to an incident takes it here: an archived one is read-only.
+    if row.archived_at:
+        raise ActionError(archive.SENTENCE, retry=False)
     return row
 
 

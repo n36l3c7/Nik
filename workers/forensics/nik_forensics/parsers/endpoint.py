@@ -30,6 +30,12 @@ of ``lost`` 0 with the header found. A time that cannot be read keeps the row wi
 Every file is hostile: line files, CSV and the XBEL are streamed, a JSON file or plist is read whole up to
 ``MAX_WHOLE`` bytes, the XBEL parser refuses a DOCTYPE and entities, the SQLite file is opened with
 ``sqlite_safe`` (read-only, immutable, locked down). Standard library only.
+
+The place of a record in its file (``loc``): ``{"row": n}`` for a row of a CSV or JSON file, counted from 1 (the
+first row after the header, the first element of the array); ``{"line", "offset", "length"}`` for a line of a line
+file; ``{"line"}`` for an XBEL bookmark or a setupapi section (the line it starts at); ``{"table", "rowid"}`` for a
+row of a database; ``{"path"}`` for the key of a plist the command was read from. A CSV row with more cells than
+the header is kept: the extra cells are in its data under ``extra``, and a note counts such rows.
 """
 
 from __future__ import annotations
@@ -47,7 +53,8 @@ from typing import Any, NamedTuple
 from urllib.parse import unquote
 from xml.parsers import expat
 
-from nik_forensics import sqlite_safe
+from nik_forensics import sqlite_safe, viewing
+from nik_forensics.parsers import BadLocator, ViewError
 
 NAME = "endpoint"
 VERSION = "1"
@@ -312,7 +319,7 @@ class _Out:
         self.empty = 0
         self.timeless = False  # the format has no time at all: one note for the file, not "unusable"
 
-    def put(self, fields: dict[str, str], ts: int | None, loc: dict[str, Any]) -> None:
+    def put(self, fields: dict[str, str], ts: int | None, loc: dict[str, Any], extra: list[str] | None = None) -> None:
         whole = {"ts": ts, **fields}
         digest = hashlib.sha256(json.dumps(whole, sort_keys=True, ensure_ascii=False).encode("utf-8", "replace"))
         base = f"ep:{self.host}:{self.source}:{digest.hexdigest()[:16]}"
@@ -330,7 +337,7 @@ class _Out:
             host=self.host,
             username=self.username,
             summary=f"{name} — {tell[:300]}" if tell else name,
-            data={**fields, "category": self.spec.category, "os": self.spec.os},
+            data={**fields, "category": self.spec.category, "os": self.spec.os, **({"extra": extra} if extra else {})},
             loc=loc,
         )
 
@@ -377,7 +384,7 @@ class _Rows:
         self.first_keys: list[str] | None = None
         self.undecodable = 0
 
-    def row(self, raw: dict[Any, Any], number: int) -> None:
+    def row(self, raw: dict[Any, Any], number: int, extra: list[str] | None = None) -> None:
         out, category = self.out, self.out.category
         row: dict[str, Any] = {}
         for key, value in raw.items():
@@ -392,7 +399,7 @@ class _Rows:
         if not any(fields.values()):
             out.empty += 1
             return
-        out.put(fields, _any_to_ms(_pick(row, category.times)), {"row": number})
+        out.put(fields, _any_to_ms(_pick(row, category.times)), {"row": number}, extra)
 
     def finish(self, ctx, header: str) -> None:
         if self.undecodable:
@@ -495,13 +502,15 @@ def _read_csv(path: str, ctx, out: _Out) -> int | None:
                 rows += 1
                 if len(cells) > len(header):
                     wide += 1
-                mapper.row(dict(zip(header, cells, strict=False)), rows)
+                mapper.row(dict(zip(header, cells, strict=False)), rows, cells[len(header) :])
     finally:
         csv.field_size_limit(previous)
     if blank:
         ctx.note("blank line", count=blank)
     if wide:
-        ctx.note("row with more cells than the header", count=wide, detail="the extra cells are not read")
+        ctx.note(
+            "row with more cells than the header", count=wide, detail="the extra cells are kept in its data, as extra"
+        )
     mapper.finish(ctx, ",".join(header or []))
     return rows
 
@@ -776,3 +785,146 @@ def parse(path: str, ctx, source: str) -> None:
     out = _Out(ctx, source, spec)
     in_file = _READERS[spec.reader](path, ctx, out)
     out.finish(in_file)
+
+
+# --------------------------------------------------------------------------- #
+# The view of a record                                                        #
+# --------------------------------------------------------------------------- #
+class _Quiet:
+    """The context ``_lines`` wants, for a read that says nothing."""
+
+    @staticmethod
+    def skip(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+def _whole_for_view(path: str) -> bytes:
+    if os.path.getsize(path) > MAX_WHOLE:
+        raise ViewError(f"The file is larger than {MAX_WHOLE} bytes: it is not read for a view")
+    with open(path, "rb") as handle:
+        return handle.read(MAX_WHOLE + 1)
+
+
+def _view_csv(path: str, number: int) -> dict[str, Any]:
+    """The row ``number`` (from 1, the header not counted) of a CSV, counted as the parse counts: a row that
+    cannot be read is one, a blank line is not."""
+    seen: list[str] = []
+
+    def tap():
+        for line in _lines(handle, _Quiet):
+            seen.append(line)
+            yield line
+
+    previous = csv.field_size_limit(MAX_LINE)
+    header: list[str] | None = None
+    rows = 0
+    try:
+        with open(path, encoding=_encoding(path), errors="replace", newline="") as handle:
+            reader = csv.reader(tap())
+            while True:
+                seen.clear()
+                try:
+                    cells = next(reader)
+                    broken = None
+                except StopIteration:
+                    raise ViewError(f"The file holds no row {number} (it holds {rows})") from None
+                except csv.Error as exc:
+                    cells, broken = [], exc
+                if broken is None and not any(cell.strip() for cell in cells):
+                    continue
+                if header is None:
+                    if broken is not None:
+                        raise ViewError(f"The header of the CSV cannot be read: {broken}")
+                    header = cells
+                    continue
+                rows += 1
+                if rows == number:
+                    break
+    finally:
+        csv.field_size_limit(previous)
+    lines = list(seen)
+    first = reader.line_num - len(lines) + 1
+    raw = "".join(lines).rstrip("\r\n")
+    where = {"row": number, "line": first}
+    if broken is not None:
+        return {
+            "kind": "text",
+            "title": f"Row {number} of the CSV, which cannot be read as CSV: {str(broken)[:100]}",
+            "where": where,
+            "text": raw,
+            "highlight": [first, reader.line_num],
+            "first": first,
+        }
+    pairs = [[name, cell] for name, cell in zip(header, cells, strict=False)]
+    pairs += [[f"(cell {at + 1}, past the header)", cell] for at, cell in enumerate(cells[len(header) :], len(header))]
+    return {
+        "kind": "fields",
+        "title": f"Row {number} of the CSV, with its header",
+        "where": where,
+        "rows": pairs,
+        "text": raw,
+        "first": first,
+    }
+
+
+def _view_delimited(path: str, loc: dict) -> dict[str, Any]:
+    number = viewing.loc_int(loc, "row")
+    with open(path, "rb") as handle:
+        head = handle.read(4096)
+    probe = head.decode(_encoding(path), "replace").lstrip("\ufeff \t\r\n")
+    if not probe or probe[0] not in "[{":
+        return _view_csv(path, number)
+    try:
+        parsed = json.loads(_whole_for_view(path).decode(_encoding(path), "replace"))
+    except (ValueError, RecursionError) as exc:
+        raise ViewError(f"The file is not JSON: {str(exc)[:200]}") from None
+    rows = parsed if isinstance(parsed, list) else None
+    if rows is None and isinstance(parsed, dict):
+        rows = next((parsed[name] for name in ("records", "rows", "data") if isinstance(parsed.get(name), list)), None)
+    if rows is None or not 1 <= number <= len(rows):
+        raise ViewError(f"The file holds no row {number}" + (f" (it holds {len(rows)})" if rows is not None else ""))
+    row = rows[number - 1]
+    where = {"row": number}
+    if not isinstance(row, dict):
+        return {"kind": "json", "title": f"Row {number} of the array", "where": where, "text": viewing.pretty(row)}
+    return {"kind": "fields", "title": f"Row {number} of the array", "where": where, "rows": viewing.flatten(row)}
+
+
+def view(path: str, source: str, loc: dict) -> dict:
+    """The piece of the file by the reader of the source: a row of a CSV or JSON file (``row``, from 1), a
+    row of a database (``table`` and ``rowid``), the lines of a line file (``line``, ``offset``, ``length``),
+    or the entry of a property list (``path`` names which)."""
+    spec = _SPECS.get(source)
+    if spec is None:
+        raise ViewError(f"The endpoint parser has no source called {source}")
+    if spec.reader == "delimited":
+        return _view_delimited(path, loc)
+    if spec.reader == "knowledgec":
+        return viewing.sqlite_row(path, str(loc.get("table") or ""), loc.get("rowid"))
+    if spec.reader == "configlines":
+        line, offset, length = (viewing.loc_int(loc, name) for name in ("line", "offset", "length"))
+        return viewing.text_around(path, offset, length, line)
+    if spec.reader in ("xbel", "setupapi"):
+        return viewing.text_by_line(path, viewing.loc_int(loc, "line"))
+    try:
+        parsed = plistlib.loads(_whole_for_view(path))
+    except ViewError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - plistlib raises several unrelated types on bad input
+        raise ViewError(f"The file is not a property list: {type(exc).__name__}") from None
+    if not isinstance(parsed, dict):
+        raise ViewError("The property list is not a dictionary")
+    key = loc.get("path")
+    if not isinstance(key, str):
+        raise BadLocator("The locator of the record has no key of the property list")
+    if key not in parsed:
+        raise ViewError(f"The property list has no key {key}")
+    rows = viewing.flatten({key: parsed[key]})
+    if key != "Label" and "Label" in parsed:
+        rows.insert(0, ["Label", viewing.as_text(parsed["Label"])])
+    return {
+        "kind": "fields",
+        "title": f"The key {key} of the property list",
+        "where": {"path": key},
+        "rows": rows,
+    }

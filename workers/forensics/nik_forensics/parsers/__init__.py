@@ -18,6 +18,22 @@ A parser module has:
         notes, then ``ctx.end``. A parser that cannot go on raises: what it said so far is kept, and
         the file is reported as read in part.
 
+    view(path, source, loc) -> dict
+        Show the piece of the file one record came from, from the ``loc`` the parser wrote for it
+        (``ctx.record(loc=...)``). Read around the place the locator names: never the whole file when the
+        format lets it be found otherwise. The answer is one of, always with a ``title`` (a short sentence
+        that says what is shown) and ``where`` (an object that echoes the place: offset and length in bytes
+        when the format has them, else what identifies it):
+
+            {"kind": "xml",    "text": "<Event ...>...</Event>"}
+            {"kind": "fields", "rows": [[name, value], ...]}      a row of a database, an entry of a list
+            {"kind": "text",   "text": "...", "highlight": [first_line, last_line], "first": n}
+            {"kind": "json",   "text": "<the element, pretty-printed>"}
+
+        Every string of an answer is cut at 256 KiB in all (``viewing.fit``): ``cut`` is true when it was.
+        A locator that names nothing in this file raises ``ViewError`` with a sentence for the analyst; one that
+        lacks a member the parser needs raises ``BadLocator`` (a ``ViewError``), which is not about the file.
+
 A parser imports what it needs inside its functions where the library is heavy
 or may be missing: ``load`` then fails for that parser alone.
 """
@@ -33,6 +49,15 @@ NAMES: tuple[str, ...] = ("evtx", "browser", "endpoint", "eventlog_json", "histo
 
 class UnknownParser(Exception):
     """No parser of that name, or none that reads the file."""
+
+
+class ViewError(Exception):
+    """The locator names nothing in this file: the message says so, in a sentence the analyst can read."""
+
+
+class BadLocator(ViewError):
+    """The locator lacks a member the parser needs, or holds one of the wrong kind: not a place in any file
+    (the server answers 422 for it, and 404 for a plain ``ViewError``)."""
 
 
 def load(name: str) -> ModuleType:

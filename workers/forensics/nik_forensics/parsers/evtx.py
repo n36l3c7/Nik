@@ -33,15 +33,19 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import io
 import itertools
 import json
+import os
 import re
+import struct
 import warnings
 from collections.abc import Callable, Iterator
 from datetime import date
 from typing import Any
 
-from nik_forensics import evtxscan
+from nik_forensics import evtxscan, viewing
+from nik_forensics.parsers import BadLocator, ViewError
 
 NAME = "evtx"
 VERSION = "1"
@@ -1152,3 +1156,105 @@ def _notes(ctx, scanner: evtxscan.Scanner, survey: _Survey, locator: _Locator, w
     unexplained = warned.unexplained(survey.quiet)
     if unexplained:
         ctx.note("parser warning", count=unexplained, detail="; ".join(warned.examples))
+
+
+# --------------------------------------------------------------------------- #
+# The view of a record                                                        #
+# --------------------------------------------------------------------------- #
+def _int_of(loc: dict, name: str) -> int | None:
+    value = loc.get(name)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def mini_log(path: str, chunk: int) -> tuple[bytes, int]:
+    """A log of one chunk, made in memory: the 4096 bytes of the file header, then the 64 KiB chunk number
+    ``chunk`` (fewer bytes when the file stops inside it). Returns it and the byte of ``path`` the chunk is at.
+
+    A log can hold millions of records: to show one, the library is given this and not the file. Nothing in it
+    is fixed. The library reads the chunks the file *holds* and not the count its header says (tried: the
+    count of the original, a count of 0 and a wrong header checksum all give the same records), so the header,
+    whose chunk count and numbers now say more than the copy holds, stays as the original has it: the XML
+    shown is the library's reading of the bytes of the file, not of bytes changed for it."""
+    with open(path, "rb") as handle:
+        head = handle.read(evtxscan.HEADER)
+        if len(head) < 128 or head[:8] != evtxscan.FILE_MAGIC:
+            raise ViewError("The file does not start with the ElfFile signature: it is not an event log")
+        start = evtxscan.HEADER + chunk * evtxscan.CHUNK
+        handle.seek(start)
+        data = handle.read(evtxscan.CHUNK)
+    if not data:
+        raise ViewError(f"The log holds no chunk {chunk}: it ends before byte {start}")
+    if data[:8] != evtxscan.CHUNK_MAGIC:
+        raise ViewError(f"The chunk {chunk} (from byte {start}) has no chunk signature: no record can be read from it")
+    return head.ljust(evtxscan.HEADER, b"\0") + data, start
+
+
+def _hex_of_record(path: str, offset: int, length: int, why: str, record: int) -> dict[str, Any]:
+    size = os.path.getsize(path)
+    if offset >= size:
+        raise ViewError(f"The file ends at byte {size}: no record at byte {offset}")
+    length = min(max(length, 24), evtxscan.CHUNK, size - offset)
+    with open(path, "rb") as handle:
+        handle.seek(offset)
+        data = handle.read(length)
+    return {
+        "kind": "text",
+        "title": f"Record {record} at byte {offset}, {length} bytes, as the bytes of the file: {why}",
+        "where": {"offset": offset, "length": length, "record": record},
+        "text": viewing.hex_dump(data, offset),
+    }
+
+
+def view(path: str, source: str, loc: dict) -> dict:
+    """The XML of the event, from the one chunk the locator names (``chunk``, or the chunk that holds
+    ``offset``) and the record number ``record``. A record that the library does not return, or that
+    sits in the unused space of its chunk and comes back from no one, is shown as the bytes it has in the file."""
+    record = _int_of(loc, "record")
+    offset, length, chunk = (_int_of(loc, name) for name in ("offset", "length", "chunk"))
+    if record is None:
+        raise BadLocator("The locator of the record has no record number")
+    if chunk is None and offset is not None and offset >= evtxscan.HEADER:
+        chunk = (offset - evtxscan.HEADER) // evtxscan.CHUNK
+    if chunk is None:
+        raise BadLocator(
+            f"The locator of the record {record} says in which chunk it is by neither a chunk nor an offset"
+        )
+    log, start = mini_log(path, chunk)
+    unused = False  # the offset is past the used area of the chunk: the record is one the log left behind
+    if offset is not None and len(log) >= evtxscan.HEADER + 52:
+        free = struct.unpack_from("<I", log, evtxscan.HEADER + 48)[0]
+        unused = offset - start >= free
+    where = {"chunk": chunk, "record": record}
+    if offset is not None:
+        where["offset"] = offset
+    if length is not None:
+        where["length"] = length
+    found: list[dict] = []
+    try:
+        import evtx  # imported here, like the parse does
+
+        library = evtx.PyEvtxParser(io.BytesIO(log), number_of_threads=0, skip_errors=True, recover_records=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter(
+                "ignore"
+            )  # the library warns of a record it skips: the parse says so, a view does not
+            found = [item for item in library.records() if item.get("event_record_id") == record]
+    except Exception as exc:  # noqa: BLE001 - whatever the library does to a hostile chunk, the bytes can be shown
+        if offset is None or length is None:
+            raise ViewError(f"The record {record} cannot be read from the chunk {chunk}: {str(exc)[:200]}") from None
+        return _hex_of_record(path, offset, length, f"the library could not read it ({str(exc)[:80]})", record)
+    if not found:
+        if offset is not None and length is not None:
+            return _hex_of_record(path, offset, length, "the library returned no such record", record)
+        raise ViewError(f"The chunk {chunk} holds no record {record}")
+    # Two records may share a number (a record left in the unused space, and the one in use): the one that is
+    # where the locator says, by whether it is in use.
+    chosen = next((item for item in found if bool(item.get("recovered")) == unused), found[0])
+    suffix = ", from the unused space of the chunk" if chosen.get("recovered") else ""
+    place = f", at byte {offset}" if offset is not None else ""
+    return {
+        "kind": "xml",
+        "title": f"Record {record} of chunk {chunk}{place}{suffix}",
+        "where": where,
+        "text": str(chosen.get("data") or ""),
+    }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   aggregateRequest,
   asks,
@@ -41,8 +41,16 @@ import { TableView } from '../charts/shared.jsx'
  * the objects behind it.
  */
 
-/** What a widget asks, and its answer: `{ data, error, loading }`. Asked again when `tick` changes. */
-function useAnswer(widget, board, range, tick) {
+/**
+ * What a widget asks, and its answer: `{ data, error, loading }`. Asked again when `tick` changes (the
+ * dashboard refreshes): the last answer stays while the new one comes, and stays when it fails.
+ * `onSettled(id, ok, tick)` tells the page each time the question is answered (or has none).
+ */
+function useAnswer(widget, board, range, tick, onSettled) {
+  const settledRef = useRef(onSettled)
+  useEffect(() => {
+    settledRef.current = onSettled
+  }, [onSettled])
   const request = useMemo(() => {
     if (widget.type === 'storage') return { method: 'GET', path: '/storage' }
     if (widget.type === 'fetch') return { method: 'GET', path: '/fetch' }
@@ -55,14 +63,29 @@ function useAnswer(widget, board, range, tick) {
   const [seen, setSeen] = useState(tick)
 
   useEffect(() => {
-    if (!request) return undefined
+    if (!request) {
+      settledRef.current?.(widget.id, true, tick)
+      return undefined
+    }
     let cancelled = false
     const fresh = tick !== seen
     ask(request.method, request.path, request.body, { fresh }).then(
-      (data) => !cancelled && setState({ key, data, error: null }),
-      (failure) =>
-        !cancelled &&
-        setState({ key, data: null, error: { message: failure.message, forbidden: failure.status === 403 } }),
+      (data) => {
+        if (cancelled) return
+        setState({ key, data, error: null })
+        settledRef.current?.(widget.id, true, tick)
+      },
+      (failure) => {
+        if (cancelled) return
+        const forbidden = failure.status === 403
+        // The same question asked again keeps its last answer; a different one has none to keep.
+        setState((old) => ({
+          key,
+          data: !forbidden && old.key === key ? old.data : null,
+          error: { message: failure.message, forbidden },
+        }))
+        settledRef.current?.(widget.id, false, tick)
+      },
     )
     setSeen(tick)
     return () => {
@@ -220,6 +243,7 @@ function Rows({ widget, data, onOpenIncident }) {
  *   board: { filter?: string, filterEntity?: string },
  *   range: string,                       // the time range of the dashboard: '7d', 'all'…
  *   tick?: number,                       // changes when the dashboard refreshes
+ *   onSettled?: ((id: string, ok: boolean, tick: number) => void) | null,  // an answer came, or failed
  *   asTable?: boolean,                   // the figures as a table instead of a picture
  *   onDrill?: ((what: { entity: string, query: string, title: string }) => void) | null,
  *   onOpenIncident?: ((id: string) => void) | null,
@@ -230,11 +254,12 @@ export default function Widget({
   board,
   range,
   tick = 0,
+  onSettled = null,
   asTable = false,
   onDrill = null,
   onOpenIncident = null,
 }) {
-  const { data, error, loading } = useAnswer(widget, board, range, tick)
+  const { data, error, loading } = useAnswer(widget, board, range, tick, onSettled)
   const format = useMemo(() => {
     const kind = formatOf(widget)
     return (value) => formatValue(value, kind)
@@ -251,7 +276,7 @@ export default function Widget({
       <Message>An empty note</Message>
     )
   }
-  if (error) {
+  if (error && !data) {
     return (
       <Message>
         {error.forbidden ? 'Your roles do not let you see this.' : `This could not be read: ${error.message}`}
@@ -379,6 +404,11 @@ export default function Widget({
       aria-busy={loading}
     >
       <div className="min-h-0 flex-1">{body}</div>
+      {error && (
+        <p className="shrink-0 pt-1 text-xs text-med" role="status">
+          Could not refresh: {error.message}
+        </p>
+      )}
       {asks(widget) && data.truncated && (
         <p className="shrink-0 pt-1 text-xs text-med">Worked out from the first 100,000 rows that match.</p>
       )}

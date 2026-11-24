@@ -472,7 +472,7 @@ def _evidence(db: OrmSession, runtime: Any, connector: ConnectorFile, item: Any,
     (the caller commits). Gives what to say when it could not be kept, or nothing."""
     give = getattr(runtime, "evidence", None)
     incident = db.get(Incident, incident_id) if give is not None else None
-    if incident is None:
+    if incident is None or incident.archived_at:  # an archived incident is read-only: a fetch skips it
         return ""
     from .automation import mail_evidence
 

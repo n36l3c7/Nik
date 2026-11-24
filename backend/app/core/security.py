@@ -44,6 +44,7 @@ from .permissions import (
     AUTOMATION_EDIT,
     AUTOMATION_RUN,
     CONNECTORS_MANAGE,
+    INCIDENTS_ARCHIVE,
     INCIDENTS_CONFIGURE,
     PERMISSIONS,
     READ,
@@ -516,6 +517,8 @@ editor_principal = require(AUTOMATION_EDIT)
 # pre-processing of incidents.
 manager_principal = require(CONNECTORS_MANAGE)
 configure_principal = require(INCIDENTS_CONFIGURE)
+# Archiving a closed incident and taking it out of the archive (7.0).
+archive_principal = require(INCIDENTS_ARCHIVE)
 
 
 # ---------------------------------------------------------------------------

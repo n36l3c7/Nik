@@ -20,13 +20,18 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import work
-from ..core.models import ArtifactLink, AuditEntry, EvidenceSource, Incident
+from .. import archive, work
+from ..core.models import ArtifactLink, AuditEntry, EvidenceMark, EvidenceSource, Incident
 from ..core.security import now_iso
 from . import originals
 
 PARSE_WORK = "evidence-parse"
+# The state of a file an imported incident lists and does not hold: its name, hash and report came
+# with the export, its original did not.
+ABSENT = "absent"
 KINDS = ("eventlog", "endpoint", "browser", "commands", "disk", "syslog", "collection")
+MAX_RESTORED = 5000
+MAX_RESTORED_MARKS = 20_000
 
 
 def accept(
@@ -34,7 +39,9 @@ def accept(
 ) -> EvidenceSource:
     """The source of an original just kept (the caller commits). ``params``: ``kind`` (the section),
     ``source`` (what it is to the section, or empty: the worker recognises it), ``host``, ``user``,
-    ``profile``, ``collectionId``, ``filePath``."""
+    ``profile``, ``collectionId``, ``filePath``. Raises ``archive.Archived`` for an incident that is
+    archived: nothing is added to it."""
+    archive.guard_id(db, incident_id)
     kind = str(params.get("kind") or "")
     if kind not in KINDS:
         raise ValueError(f"Not a section of host evidence: {kind or '(none)'}")
@@ -47,11 +54,15 @@ def accept(
             EvidenceSource.source == source,
         )
     ).first()
-    if found is not None:
+    if found is not None and found.state != ABSENT:
         return found
     incident = db.get(Incident, incident_id)
     if incident is None:
         raise ValueError("Incident not found")
+    if found is not None:
+        # Listed by an import of the incident, and not here until now: the file was given again.
+        db.delete(found)
+        db.flush()
     row = EvidenceSource(
         id=uuid.uuid4().hex,
         incident_id=incident_id,
@@ -90,3 +101,72 @@ def accept(
     )
     work.want(db, PARSE_WORK, row.id)
     return row
+
+
+def restore(db: OrmSession, incident_id: str, exported: Any, actor: str) -> dict[str, int]:
+    """Take back what an export said of an incident's host evidence (``browse.exported``), for the
+    incident an import just made (the caller commits). Each file is listed as ``absent``: its name,
+    SHA-256, counts and report as they were, no original and no record. The flags and notes come
+    back by key, so giving a file again puts them on its records. What is not in the shape of an
+    export is left out, never guessed."""
+    done = {"sources": 0, "marks": 0}
+    if not isinstance(exported, dict):
+        return done
+    for entry in [item for item in exported.get("sources") or [] if isinstance(item, dict)][:MAX_RESTORED]:
+        kind, sha256 = str(entry.get("kind") or ""), str(entry.get("sha256") or "").lower()
+        if kind not in KINDS or (sha256 and not originals.SHA256_RE.fullmatch(sha256)):
+            continue
+
+        def number(name: str, entry: dict = entry) -> int:
+            value = entry.get(name)
+            return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 else 0
+
+        report = entry.get("report") if isinstance(entry.get("report"), dict) else {}
+        db.add(
+            EvidenceSource(
+                id=uuid.uuid4().hex,
+                incident_id=incident_id,
+                kind=kind,
+                source=str(entry.get("source") or "")[:60],
+                sha256=sha256,
+                file_name=str(entry.get("fileName") or "")[:500],
+                file_path=str(entry.get("filePath") or "")[:1000],
+                size=number("size"),
+                host=str(entry.get("host") or "")[:255],
+                username=str(entry.get("username") or "")[:255],
+                profile=str(entry.get("profile") or "")[:120],
+                parser=str(entry.get("parser") or "")[:40],
+                parser_version=str(entry.get("parserVersion") or "")[:20],
+                state=ABSENT,
+                legacy=bool(entry.get("legacy")),
+                read=str(entry.get("read") or "unknown")[:10],
+                in_file=number("inFile") if entry.get("inFile") is not None else None,
+                read_count=number("readCount"),
+                kept=0,
+                duplicates=number("duplicates"),
+                skipped=number("skipped"),
+                notes=number("notes"),
+                truncated=number("truncated"),
+                # What it held where it was exported from, beside the report it had there.
+                report={**report, "exported": {"kept": number("kept"), "by": actor, "at": now_iso()}},
+                created_at=str(entry.get("createdAt") or now_iso())[:40],
+                created_by=str(entry.get("createdBy") or "")[:200],
+            )
+        )
+        done["sources"] += 1
+    for entry in [item for item in exported.get("marks") or [] if isinstance(item, dict)][:MAX_RESTORED_MARKS]:
+        key = entry.get("key")
+        if not isinstance(key, str) or not key or len(key) > 300 or db.get(EvidenceMark, (incident_id, key)):
+            continue
+        db.add(
+            EvidenceMark(
+                incident_id=incident_id,
+                key=key,
+                flagged=bool(entry.get("flagged")),
+                note=str(entry.get("note") or "")[:5000],
+                updated_by=str(entry.get("updatedBy") or actor)[:200],
+                updated_at=str(entry.get("updatedAt") or now_iso())[:40],
+            )
+        )
+        done["marks"] += 1
+    return done

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from .. import artifacts, work
+from ..archive import guard as guard_archived
 from ..automation import triggers as automation_triggers
 from ..core import audit
 from ..core.config import settings
@@ -220,6 +221,7 @@ def attach_sample(
     db: OrmSession, incident: Incident, row: Sample, file_name: str, actor: str, origin: str = ""
 ) -> dict[str, Any]:
     """Reference the sample from the incident (kept once); returns the reference."""
+    guard_archived(incident)
     doc = dict(relock(db, incident).doc or {})
     refs = _refs(doc)
     ref = next((item for item in refs if item.get("sha256") == row.sha256), None)
@@ -284,6 +286,7 @@ def keep_sample(
     does besides (the webhooks, the disassembly) is left to ``store_sample``:
     a playbook that keeps a file has no request to hang them on.
     """
+    guard_archived(incident)
     if not data:
         raise HTTPException(status_code=400, detail="The file is empty.")
     limit = settings.SAMPLE_MAX_MB * 1024 * 1024
@@ -390,6 +393,7 @@ async def upload_sample(
     file that is already in the store reuses its analysis.
     """
     incident = _incident_or_404(db, incident_id)
+    guard_archived(incident)
     data = await read_upload(file, settings.SAMPLE_MAX_MB, "sample")
     # Hashing, strings and YARA take seconds on a large file: off the event loop.
     row, ref = await run_in_threadpool(store_sample, db, incident, data, file.filename or "", caller, background_tasks)
@@ -599,6 +603,7 @@ def remove_sample(
     """Detach the sample from the incident. The sample stays as an artifact
     (`DELETE /api/artifacts/file-<sha256>` deletes it)."""
     incident = _incident_or_404(db, incident_id)
+    guard_archived(incident)
     _sample_or_404(db, sha256)
     if not detach_sample(db, incident, sha256):
         raise HTTPException(status_code=404, detail="The incident does not reference this sample")

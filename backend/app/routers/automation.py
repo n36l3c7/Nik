@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import archive
 from ..automation import (
     catalog,
     debugger,
@@ -903,6 +904,9 @@ def start_by_hand(
     if found is None:
         raise HTTPException(status_code=404, detail="The object to run the playbook on does not exist")
     data, classes, what, incident_id = found
+    if incident_id and not dry_run:
+        # A run by hand writes to its incident: not to one that is archived (a dry run writes nothing).
+        archive.guard_id(db, incident_id)
     wrong = triggers.manual_problem(config, what)
     if wrong:
         raise HTTPException(status_code=400, detail=wrong)

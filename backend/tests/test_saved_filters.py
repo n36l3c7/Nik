@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.core.db import SessionLocal
+from app.core.models import Incident
 from app.incident_quick import counts
 from app.main import app
 from tests.conftest import make_key
@@ -193,18 +195,29 @@ DOC = {
 }
 
 
-def test_the_numbers_of_the_evidence_are_counted_without_trusting_the_shape():
-    assert counts(DOC) == {
-        "browserEvents": 5,
-        "commands": 3,
-        "endpointArtifacts": 4,
-        "flagged": 2,
-        "bookmarks": 2,
-        "notes": 1,
-    }
-    empty = {"browserEvents": 0, "commands": 0, "endpointArtifacts": 0, "flagged": 0, "bookmarks": 0, "notes": 0}
-    assert counts(None) == empty
-    assert counts({"data": {"browser": {"browsers": []}, "commands": "x"}, "flags": [], "notes": {}}) == empty
+def test_the_numbers_of_the_evidence_are_counted_from_the_tables(admin: TestClient):
+    assert admin.post("/api/incidents", json=DOC).status_code == 201  # the old document is moved to the tables
+    with SessionLocal() as db:
+        assert counts(db, "inc-quick", db.get(Incident, "inc-quick").doc) == {
+            "browserEvents": 5,
+            "commands": 3,
+            "endpointArtifacts": 4,
+            "eventLogs": 0,
+            "flagged": 2,
+            "bookmarks": 2,
+            "notes": 1,
+        }
+        empty = {
+            "browserEvents": 0,
+            "commands": 0,
+            "endpointArtifacts": 0,
+            "eventLogs": 0,
+            "flagged": 0,
+            "bookmarks": 0,
+            "notes": 0,
+        }
+        assert counts(db, "nothing", None) == empty
+        assert counts(db, "nothing", {"data": {"browser": 1}, "flags": [], "notes": {}}) == empty
 
 
 def test_the_quick_view_reads_an_incident_without_its_evidence(admin: TestClient):

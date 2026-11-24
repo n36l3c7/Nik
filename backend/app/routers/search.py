@@ -54,6 +54,7 @@ def search(
             Incident.os,
             Incident.updated_at,
             Incident.number,
+            Incident.archived_at,
         )
         .where(
             or_(
@@ -104,8 +105,10 @@ def search(
                 "username": user,
                 "os": os,
                 "updatedAt": updated,
+                # The archived incidents are found here, and marked.
+                "archived": bool(archived_at),
             }
-            for i, name, host, user, os, updated, number in incidents
+            for i, name, host, user, os, updated, number, archived_at in incidents
         ],
         "iocs": [{"type": kind, "value": value, "incidents": n} for kind, value, n in iocs],
         "samples": [

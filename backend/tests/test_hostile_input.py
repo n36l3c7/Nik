@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
-import time
 from urllib.parse import unquote
 
 import pytest
@@ -14,76 +12,6 @@ from app.core import files
 from app.core.config import settings
 from app.core.db import SessionLocal, after_commit
 from app.mail import verify
-from app.parsing import browser, common, timeutil
-
-
-def _database(path, statements) -> bytes:
-    conn = sqlite3.connect(path)
-    for statement in statements:
-        conn.execute(statement)
-    conn.commit()
-    conn.close()
-    return path.read_bytes()
-
-
-# --------------------------------------------------------------------------- #
-# SQLite
-# --------------------------------------------------------------------------- #
-def test_a_database_built_to_stall_the_parser_is_stopped(tmp_path, monkeypatch):
-    """A view over an endless query, where a table is expected, hits the time budget."""
-    data = _database(
-        tmp_path / "History",
-        [
-            "CREATE TABLE downloads (id INTEGER, target_path TEXT, start_time INTEGER)",
-            "INSERT INTO downloads VALUES (1, 'C:/x.exe', 13300000000000000)",
-            # In place of the real table: it never returns its first row.
-            "CREATE VIEW downloads_url_chain AS WITH RECURSIVE n(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM n) "
-            "SELECT id, 'u' AS url, 0 AS chain_index FROM n WHERE id < 0",
-        ],
-    )
-    monkeypatch.setattr(common, "SQLITE_BUDGET_SECONDS", 0.3)
-    started = time.monotonic()
-    with common.open_sqlite(data) as conn, pytest.raises(ValueError, match="took more than"):
-        browser.parse_chromium_downloads(conn)
-    assert time.monotonic() - started < 5
-
-
-def test_a_browser_database_is_opened_read_only_with_a_row_limit(tmp_path, monkeypatch):
-    data = _database(
-        tmp_path / "db",
-        ["CREATE TABLE t (a INTEGER)", *[f"INSERT INTO t VALUES ({i})" for i in range(10)]],
-    )
-    with common.open_sqlite(data) as conn:
-        assert len(common.query_rows(conn, "SELECT a FROM t")) == 10
-        # A missing table is an empty result, as before.
-        assert common.query_rows(conn, "SELECT a FROM nope") == []
-        with pytest.raises(sqlite3.OperationalError, match="readonly"):
-            conn.execute("INSERT INTO t VALUES (99)")
-        assert conn.execute("PRAGMA trusted_schema").fetchone()[0] == 0
-    monkeypatch.setattr(common, "SQLITE_MAX_ROWS", 3)
-    with common.open_sqlite(data) as conn:
-        assert len(common.query_rows(conn, "SELECT a FROM t")) == 3
-
-
-def test_an_upload_that_stalls_is_refused_with_its_reason(admin: TestClient, tmp_path, monkeypatch):
-    data = _database(
-        tmp_path / "History",
-        [
-            "CREATE TABLE urls (id INTEGER, url TEXT, title TEXT, visit_count INTEGER)",
-            "CREATE TABLE visits (id INTEGER, url INTEGER, visit_time INTEGER, from_visit INTEGER, transition INTEGER)",
-            "CREATE TABLE downloads (id INTEGER, target_path TEXT, start_time INTEGER)",
-            "CREATE VIEW downloads_url_chain AS WITH RECURSIVE n(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM n) "
-            "SELECT id, 'u' AS url, 0 AS chain_index FROM n WHERE id < 0",
-        ],
-    )
-    monkeypatch.setattr(common, "SQLITE_BUDGET_SECONDS", 0.3)
-    admin.post("/api/incidents", json={"id": "h1", "data": {}})
-    res = admin.post(
-        "/api/incidents/h1/upload?tab=browser&browser=chrome&source=history", files={"file": ("History", data)}
-    )
-    assert res.status_code == 400 and "built to stall" in res.json()["detail"]
-    # The server still answers.
-    assert admin.get("/api/health").status_code == 200
 
 
 # --------------------------------------------------------------------------- #
@@ -95,8 +23,6 @@ def test_an_oversized_evidence_file_is_refused_while_it_is_read(admin: TestClien
     big = {"file": (".bash_history", b"ls\n" * 400_000)}
     res = admin.post("/api/incidents/h2/upload?tab=commands&shell=bash", files=big)
     assert res.status_code == 413 and "1 MB" in res.json()["detail"]
-    small = {"file": (".bash_history", b"ls\n")}
-    assert admin.post("/api/incidents/h2/upload?tab=commands&shell=bash", files=small).status_code == 200
 
     monkeypatch.setattr(settings, "SAMPLE_MAX_MB", 1)
     sample = admin.post("/api/incidents/h2/samples", files={"file": ("big.bin", b"A" * (1024 * 1024 + 1))})
@@ -146,11 +72,6 @@ def test_a_sample_downloads_under_a_name_in_any_script(admin: TestClient):
 # Timestamps
 # --------------------------------------------------------------------------- #
 def test_a_timestamp_no_calendar_holds_is_no_timestamp():
-    assert timeutil.webkit_to_ms(9e18) is None
-    assert timeutil.firefox_to_ms(9e21) is None
-    assert timeutil.mac_to_ms(9e15) is None
-    assert timeutil.any_to_ms(9e13) is not None and timeutil.any_to_ms(5e13) > 0
-    assert timeutil.webkit_to_ms(13300000000000000) == 1655526400000
     # A value already stored by an older release must not break the report.
     assert report._ms(9e17) == "—"
     assert report._ms(1655526400000) == "2022-06-18 04:26 UTC"

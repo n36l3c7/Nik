@@ -10,7 +10,11 @@ API clients get either from ``POST /api/incidents/{id}/report``.
 Sections (each can be left out): executive summary and key facts, flagged
 events, MITRE ATT&CK techniques, indicators of compromise, malware samples,
 event-log coverage, analyst notes, evidence appendix (every imported file
-with its SHA-256 when known). Labels in English or Italian.
+with its SHA-256 when known) and the evidence integrity table (what was read of each file and what was
+lost). Labels in English or Italian.
+
+Host evidence is in tables from 7.0: ``evidence/reporting.py`` queries it and the router hands the
+answers to ``build_html`` as ``host``. Nothing here reads a record.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ SECTIONS = (
     "eventlogs",
     "notes",
     "evidence",
+    "integrity",
 )
 TLP_LEVELS = ("clear", "green", "amber", "amber+strict", "red")
 LANGS = ("en", "it")
@@ -182,6 +187,30 @@ T = {
         "page": "Page",
         "of": "of",
         "yes": "yes",
+        "events": "Events",
+        "files": "Files",
+        "not_kept": "not kept: imported before 7.0",
+        "kept_records": "kept",
+        "integrity": "Evidence integrity",
+        "integrity_intro": "What was read of each file, and what was lost. A file read in part says why; an"
+        " analyst may have acknowledged it.",
+        "parser": "Parser",
+        "counts": "Records",
+        "in_file": "in the file",
+        "read_n": "read",
+        "kept_n": "kept",
+        "duplicates_n": "already imported",
+        "lost_n": "lost",
+        "reading": "Reading",
+        "read_complete": "complete",
+        "read_partial": "read in part",
+        "read_failed": "failed",
+        "read_legacy": "no report: imported before 7.0",
+        "read_pending": "not read yet",
+        "lost_for": "lost",
+        "acknowledged": "Acknowledged by {who} on {when}",
+        "totals": "{files} files, {partial} read in part, {failed} failed.",
+        "detections_found": "Rule matches",
     },
     "it": {
         "title": "Report dell'incidente",
@@ -274,6 +303,30 @@ T = {
         "page": "Pagina",
         "of": "di",
         "yes": "sì",
+        "events": "Eventi",
+        "files": "File",
+        "not_kept": "non conservato: importato prima della 7.0",
+        "kept_records": "tenuti",
+        "integrity": "Integrità delle prove",
+        "integrity_intro": "Che cosa è stato letto di ogni file e che cosa è andato perso. Un file letto in parte"
+        " dice perché; un analista può averlo preso in carico.",
+        "parser": "Parser",
+        "counts": "Record",
+        "in_file": "nel file",
+        "read_n": "letti",
+        "kept_n": "tenuti",
+        "duplicates_n": "già importati",
+        "lost_n": "persi",
+        "reading": "Lettura",
+        "read_complete": "completa",
+        "read_partial": "letto in parte",
+        "read_failed": "fallita",
+        "read_legacy": "nessun rapporto: importato prima della 7.0",
+        "read_pending": "non ancora letto",
+        "lost_for": "persi",
+        "acknowledged": "Preso in carico da {who} il {when}",
+        "totals": "{files} file, {partial} letti in parte, {failed} falliti.",
+        "detections_found": "Corrispondenze delle regole",
     },
 }
 
@@ -404,24 +457,27 @@ def _capture_row(capture: dict[str, Any], t: dict[str, Any]) -> list[str]:
 
 
 SCOPES = ("flagged", "all")
-# Sections of a flag that belong to a browser profile's data.
-_BROWSER_SECTIONS = {"events", "bookmarks", "shortcuts"}
 
 
-def flagged_scope(doc: dict) -> dict[str, set]:
+def flagged_scope(doc: dict, host: dict[str, Any] | None = None) -> dict[str, set]:
     """What the analysts flagged, by kind, read from the flag keys.
 
     A sample, an e-mail, a capture or a scanned address counts when it was
     flagged itself or when something inside it was (an indicator or a
     function of a sample, a packet, a held submission or a beacon of a
     capture). ``iocs`` are the indicators flagged by hand, ``(type, value)``.
-    The other sets name the sources that hold a flagged event, for the
-    evidence appendix.
+    ``sources`` and ``channels`` name the files and the event logs that hold a
+    flagged record of host evidence, for the appendix: they come from ``host``
+    (``evidence/reporting.py``), as the flags of those records are in the
+    tables and not in the document.
     """
     scope: dict[str, set] = {
-        name: set()
-        for name in ("samples", "mails", "captures", "urls", "iocs", "browsers", "shells", "categories", "channels")
+        name: set() for name in ("samples", "mails", "captures", "urls", "iocs", "sources", "channels")
     }
+    if host:
+        flagged = host.get("flagged") or {}
+        scope["sources"] = set(flagged.get("sources") or ())
+        scope["channels"] = set(flagged.get("channels") or ())
     for key, flag in (doc.get("flags") or {}).items():
         if not isinstance(flag, dict):
             continue
@@ -439,16 +495,6 @@ def flagged_scope(doc: dict) -> dict[str, set]:
             scope["urls"].add(parts[1])
         elif head == "ioc" and len(parts) >= 3:
             scope["iocs"].add((parts[1], ":".join(parts[2:])))
-        elif head == "evt" and len(parts) >= 2:
-            scope["channels"].add(parts[1])
-        section = str(flag.get("section") or "")
-        source = str(flag.get("browserId") or "")
-        if section in _BROWSER_SECTIONS and source:
-            scope["browsers"].add(source)
-        elif section == "commands" and source:
-            scope["shells"].add(source)
-        elif section.startswith("endpoint:"):
-            scope["categories"].add(section.split(":", 1)[1])
     return scope
 
 
@@ -462,11 +508,24 @@ def _flagged_iocs(iocs: list[dict[str, Any]], wanted: set) -> list[dict[str, Any
     return rows
 
 
-def evidence(doc: dict, scope: dict[str, set] | None = None) -> list[dict[str, Any]]:
+_SECTION_LABELS = {
+    "browser": "Browser",
+    "commands": "Commands",
+    "endpoint": "Endpoint",
+    "eventlog": "Event logs",
+    "disk": "Disk",
+    "syslog": "Syslog",
+}
+
+
+def evidence(
+    doc: dict, scope: dict[str, set] | None = None, host: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """Every imported file: tab, source, file name, format, rows, time, SHA-256.
 
-    With ``scope`` (see ``flagged_scope``), only the sources that hold
-    something flagged.
+    The files of host evidence come from ``host`` (its ``sources``, see ``evidence/reporting.py``):
+    a file imported before 7.0 has no SHA-256 (``legacy``) and says so. With ``scope`` (see
+    ``flagged_scope``), only the sources that hold something flagged.
     """
     data = doc.get("data") or {}
     rows: list[dict[str, Any]] = []
@@ -474,39 +533,25 @@ def evidence(doc: dict, scope: dict[str, set] | None = None) -> list[dict[str, A
     def keep(kind: str, value: Any) -> bool:
         return scope is None or value in scope[kind]
 
-    def add(tab: str, source: str, meta: Any) -> None:
-        if isinstance(meta, dict) and meta.get("fileName") and meta.get("format") != "demo":
-            rows.append(
-                {
-                    "tab": tab,
-                    "source": source,
-                    "fileName": meta.get("fileName"),
-                    "format": meta.get("format", ""),
-                    "rows": meta.get("rows", meta.get("kept")),
-                    "importedAt": meta.get("importedAt"),
-                    "sha256": meta.get("sha256", ""),
-                }
-            )
-
-    for browser_id, slot in ((data.get("browser") or {}).get("browsers") or {}).items():
-        if not keep("browsers", browser_id):
+    for source in (host or {}).get("sources") or []:
+        if not keep("sources", source["id"]):
             continue
-        for profile in ((slot or {}).get("profiles") or {}).values():
-            for source, meta in ((profile or {}).get("meta") or {}).items():
-                add("Browser", f"{browser_id} · {profile.get('name', '')} · {source}", meta)
-    for shell_id, slot in ((data.get("commands") or {}).get("shells") or {}).items():
-        if not keep("shells", shell_id):
-            continue
-        for source, meta in ((slot or {}).get("meta") or {}).items():
-            add("Commands", f"{shell_id} · {source}", meta)
-    for category_id, category in ((data.get("endpoint") or {}).get("categories") or {}).items():
-        if not keep("categories", category_id):
-            continue
-        for source, slot in ((category or {}).get("sources") or {}).items():
-            add("Endpoint", f"{category_id} · {source}", (slot or {}).get("meta"))
-    for channel, slot in ((data.get("eventlogs") or {}).get("channels") or {}).items():
-        if keep("channels", channel):
-            add("Event logs", channel, (slot or {}).get("meta"))
+        legacy = bool(source.get("legacy"))
+        rows.append(
+            {
+                "tab": _SECTION_LABELS.get(source["kind"], str(source["kind"]).capitalize()),
+                "source": " · ".join(filter(None, [source["source"], source.get("profile")])),
+                "fileName": source.get("file_name") or "",
+                "format": source.get("parser") or "",
+                "rows": source.get("kept"),
+                "importedAt": source.get("created_at"),
+                "sha256": source.get("sha256") or "",
+                "legacy": legacy,
+                "read": source.get("read") or "unknown",
+                "state": source.get("state") or "",
+                "known": ((source.get("report") or {}).get("legacy") or {}).get("sha256") or "",
+            }
+        )
     for ref in ((data.get("network") or {}).get("captures") or []) if isinstance(data.get("network"), dict) else []:
         if isinstance(ref, dict) and ref.get("sha256") and keep("captures", ref.get("id")):
             rows.append(
@@ -546,12 +591,7 @@ def evidence(doc: dict, scope: dict[str, set] | None = None) -> list[dict[str, A
                     "sha256": ref.get("sha256", ""),
                 }
             )
-    # One .evtx file can hold several channels: list it once.
-    unique: dict[tuple, dict[str, Any]] = {}
-    for row in rows:
-        key = (row["tab"], row["fileName"], row["sha256"] or row["source"])
-        unique.setdefault(key, row)
-    return list(unique.values())
+    return rows
 
 
 # --------------------------------------------------------------------------- #
@@ -613,30 +653,37 @@ def build_html(
     generated_by: str = "",
     generated_at: str = "",
     scope: str = "flagged",
+    host: dict[str, Any] | None = None,
 ) -> str:
     """The report as one HTML page (see the module docstring).
 
     ``scope`` ``flagged`` (the default) keeps, in every section, what the
     analysts flagged: see ``flagged_scope``. ``all`` lists everything the
-    incident holds.
+    incident holds. ``host`` is what ``evidence.reporting.gather`` read of the host
+    evidence of the incident: its files, the records flagged, the event logs, the logs
+    cleared and the rules that matched.
     """
     t = T.get(lang, T["en"])
     wanted = [s for s in (sections or SECTIONS) if s in SECTIONS]
     tlp = tlp if tlp in TLP_LEVELS else "amber"
     branding = branding or {}
-    detections = detections or []
+    host = host or {}
+    # The browser sends the rules it ran; when it sends none, the matches of the tables stand in.
+    detections = detections or host.get("detections") or []
     iocs = [i for i in (iocs or []) if not i.get("allowlisted")]
     samples = samples or []
     mails = mails or []
     data = doc.get("data") or {}
-    only = flagged_scope(doc) if scope != "all" else None
+    only = flagged_scope(doc, host) if scope != "all" else None
     empty = "nothing_flagged" if only is not None else None
     if only is not None:
         samples = [s for s in samples if s.get("sha256") in only["samples"]]
         mails = [m for m in mails if m.get("sha256") in only["mails"]]
         iocs = _flagged_iocs(iocs, only["iocs"])
+    marked = host.get("flagged") or {}
     flags = sorted(
-        (f for f in (doc.get("flags") or {}).values() if isinstance(f, dict)),
+        [f for f in (doc.get("flags") or {}).values() if isinstance(f, dict)]
+        + [_flag_of(record) for record in marked.get("records") or []],
         key=lambda f: f.get("time") or 0,
     )
     techniques = attack_techniques(samples, detections)
@@ -679,7 +726,7 @@ def build_html(
         out.append(f"<h2>{esc(t['summary'])}</h2>")
         out.append(_paragraphs(executive_summary) or f'<p class="muted">{esc(t["no_summary"])}</p>')
         facts = [
-            (len(flags), t["flagged"]),
+            (len(flags) + max(0, int(marked.get("total") or 0) - len(marked.get("records") or [])), t["flagged"]),
             (sum(int(d.get("count") or 0) for d in detections), t["detections"]),
             (len(iocs), t["iocs"]),
             (len(samples), t["samples"]),
@@ -827,27 +874,29 @@ def build_html(
 
     if "eventlogs" in wanted:
         out.append(f"<h2>{esc(t['eventlogs'])}</h2>")
-        channels = (data.get("eventlogs") or {}).get("channels") or {}
-        # Clears are computed on every channel (a System event can name another log).
-        cleared = _cleared_channels(channels) if channels else {}
+        channels = list(host.get("channels") or [])
+        cleared = host.get("cleared") or {}
         if only is not None:
-            channels = {name: slot for name, slot in channels.items() if name in only["channels"]}
+            channels = [c for c in channels if c["channel"] in only["channels"]]
         if channels:
-            rows = []
-            for channel, slot in sorted(channels.items()):
-                meta = (slot or {}).get("meta") or {}
-                rows.append(
-                    [
-                        esc(channel),
-                        f'<span class="mono">{esc(_ms(meta.get("first")))} → {esc(_ms(meta.get("last")))}</span>',
-                        f"{len((slot or {}).get('events') or [])} / {esc(meta.get('total', '—'))}",
-                        f'<span class="high">{esc(", ".join(_ms(c) for c in cleared[channel]))}</span>'
-                        if cleared.get(channel)
-                        else "—",
-                    ]
-                )
+            rows = [
+                [
+                    esc(c["channel"]),
+                    f'<span class="mono">{esc(_ms(c.get("first")))} → {esc(_ms(c.get("last")))}</span>',
+                    esc(c["events"]),
+                    esc(", ".join(c.get("files") or [])) or "—",
+                    f'<span class="high">{esc(", ".join(_ms(when) for when in cleared[c["channel"]]))}</span>'
+                    if cleared.get(c["channel"])
+                    else "—",
+                ]
+                for c in channels
+            ]
             out.append(
-                _table([t["channel"], t["covers"], t["records"], t["cleared"]], rows, ["34%", "36%", "12%", "18%"])
+                _table(
+                    [t["channel"], t["covers"], t["events"], t["file"], t["cleared"]],
+                    rows,
+                    ["26%", "30%", "9%", "21%", "14%"],
+                )
             )
         else:
             out.append(f'<p class="muted">{esc(t[empty or "no_eventlogs"])}</p>')
@@ -866,23 +915,30 @@ def build_html(
 
     if "evidence" in wanted:
         out.append(f"<h2>{esc(t['evidence'])}</h2>")
-        items = evidence(doc, only)
+        items = evidence(doc, only, host)
         if items:
             out.append(f'<p class="muted">{esc(t["evidence_intro"])}</p>')
-            rows = [
-                [
-                    f"{esc(e['tab'])}<br><span class='muted'>{esc(e['source'])}</span>",
-                    f"{esc(e['fileName'])}<br><span class='muted'>{esc(e['format'])}"
-                    + (f" · {esc(e['rows'])} {esc(t['rows'].lower())}" if e.get("rows") is not None else "")
-                    + "</span>",
-                    f'<span class="mono">{esc(_iso(e["importedAt"]))}</span>',
-                    f'<span class="mono">{esc(e["sha256"] or "—")}</span>',
-                ]
-                for e in items
-            ]
+            rows = []
+            for e in items:
+                detail = [esc(e["format"])]
+                if e.get("rows") is not None:
+                    detail.append(f"{esc(e['rows'])} {esc(t['kept_records'])}")
+                if "read" in e:
+                    detail.append(esc(_reading(e["read"], e.get("legacy", False), e.get("state", ""), t)))
+                rows.append(
+                    [
+                        f"{esc(e['tab'])}<br><span class='muted'>{esc(e['source'])}</span>",
+                        f"{esc(e['fileName'])}<br><span class='muted'>{' · '.join(d for d in detail if d)}</span>",
+                        f'<span class="mono">{esc(_iso(e["importedAt"]))}</span>',
+                        _sha_cell(e, t),
+                    ]
+                )
             out.append(_table([t["source"], t["file"], t["imported"], t["sha256"]], rows, ["20%", "26%", "16%", "38%"]))
         else:
             out.append(f'<p class="muted">{esc(t[empty or "no_evidence"])}</p>')
+
+    if "integrity" in wanted:
+        out.append(_integrity(host.get("sources") or [], t))
 
     title = f"{t['title']} — {name}"
     return (
@@ -891,23 +947,111 @@ def build_html(
     )
 
 
-def _cleared_channels(channels: dict) -> dict[str, list[int]]:
-    """Channel → times it was cleared (1102 clears Security, 104 names the log)."""
-    cleared: dict[str, list[int]] = {}
-    lookup = {name.lower(): name for name in channels}
-    for channel, slot in channels.items():
-        for event in (slot or {}).get("events") or []:
-            if not isinstance(event, dict):
-                continue
-            if channel == "Security" and event.get("eventId") == 1102:
-                target = "Security"
-            elif channel == "System" and event.get("eventId") == 104:
-                named = str((event.get("data") or {}).get("Channel") or "").lower()
-                target = lookup.get(named, (event.get("data") or {}).get("Channel") or "System")
-            else:
-                continue
-            cleared.setdefault(target, []).append(event.get("time"))
-    return cleared
+def _flag_of(record: dict[str, Any]) -> dict[str, Any]:
+    """A flagged record of host evidence in the shape of a flag of the document, for the list of flagged events."""
+    note = str(record.get("note") or "").strip()
+    return {
+        "time": record.get("time"),
+        "section": "/".join(filter(None, [record.get("kind"), record.get("type")])),
+        "browserId": record.get("file") or "",
+        "title": record.get("summary") or "",
+        "flaggedBy": record.get("by") or "",
+        "comments": [{"text": note, "author": record.get("by") or ""}] if note else [],
+    }
+
+
+def _reading(read: str, legacy: bool, state: str, t: dict[str, Any]) -> str:
+    """The verdict of the parse report of a file, in words."""
+    if legacy:
+        return t["read_legacy"]
+    if state in ("queued", "parsing"):
+        return t["read_pending"]
+    return {"complete": t["read_complete"], "partial": t["read_partial"], "failed": t["read_failed"]}.get(
+        read, t["read_pending"]
+    )
+
+
+def _sha_cell(row: dict[str, Any], t: dict[str, Any]) -> str:
+    """The SHA-256 of the original, or why there is none. A file imported before 7.0 has no original; the
+    hash its parser took then, when there is one, is shown beside it."""
+    if row.get("sha256"):
+        return f'<span class="mono">{esc(row["sha256"])}</span>'
+    if row.get("legacy"):
+        known = f'<br><span class="mono">{esc(row["known"])}</span>' if row.get("known") else ""
+        return f'<span class="muted">{esc(t["not_kept"])}</span>{known}'
+    return '<span class="mono">—</span>'
+
+
+def _count(value: Any) -> str:
+    return "—" if value is None else str(value)
+
+
+def _integrity(sources: list[dict[str, Any]], t: dict[str, Any]) -> str:
+    """The section "Evidence integrity": one row per file, with what was read of it and what was lost,
+    then the totals. Every file is listed, whatever the scope of the report: a file that failed must
+    not be left out of a report that says what the incident holds."""
+    out = [f"<h2>{esc(t['integrity'])}</h2>"]
+    if not sources:
+        out.append(f'<p class="muted">{esc(t["no_evidence"])}</p>')
+        return "".join(out)
+    out.append(f'<p class="muted">{esc(t["integrity_intro"])}</p>')
+    rows = []
+    for source in sources:
+        legacy = bool(source.get("legacy"))
+        report = source.get("report") or {}
+        verdict = _reading(source.get("read") or "unknown", legacy, source.get("state") or "", t)
+        bad = not legacy and source.get("read") in ("partial", "failed")
+        reading = f'<span class="high">{esc(verdict)}</span>' if bad else esc(verdict)
+        if source.get("read") == "failed" and source.get("error"):
+            reading += f'<div class="comment">{esc(source["error"])}</div>'
+        reasons = report.get("reasons") if isinstance(report.get("reasons"), dict) else {}
+        if source.get("read") == "partial" and not legacy:
+            for reason, held in sorted(reasons.items()):
+                held = held if isinstance(held, dict) else {}
+                reading += (
+                    f'<div class="comment">{esc(reason)}: {esc(held.get("count", 0))}'
+                    f" ({esc(t['lost_for'])} {esc(held.get('lost', 0))})</div>"
+                )
+            if source.get("seen_at"):
+                who = esc(t["acknowledged"].format(who=source.get("seen_by") or "—", when=_iso(source["seen_at"])))
+                note = f": “{esc(source['seen_note'])}”" if source.get("seen_note") else ""
+                reading += f'<div class="comment">{who}{note}</div>'
+        if legacy:
+            counts = f"{esc(t['kept_n'])} {esc(_count(source.get('kept')))}"
+        else:
+            counts = " · ".join(
+                f"{esc(t[key])} {esc(_count(source.get(field)))}"
+                for key, field in (
+                    ("in_file", "in_file"),
+                    ("read_n", "read_count"),
+                    ("kept_n", "kept"),
+                    ("duplicates_n", "duplicates"),
+                    ("lost_n", "skipped"),
+                )
+            )
+        parser = " ".join(filter(None, [source.get("parser"), source.get("parser_version")]))
+        known = (report.get("legacy") or {}).get("sha256") or ""
+        rows.append(
+            [
+                f"{esc(source.get('file_name'))}<br><span class='muted'>{esc(source.get('kind'))}"
+                f" · {esc(source.get('source'))}</span>",
+                _sha_cell({**source, "known": known}, t),
+                esc(parser or "—"),
+                counts,
+                reading,
+            ]
+        )
+    out.append(
+        _table(
+            [t["file"], t["sha256"], t["parser"], t["counts"], t["reading"]],
+            rows,
+            ["18%", "24%", "9%", "22%", "27%"],
+        )
+    )
+    partial = sum(1 for s in sources if s.get("read") == "partial" and not s.get("legacy"))
+    failed = sum(1 for s in sources if s.get("read") == "failed" and not s.get("legacy"))
+    out.append(f"<p><strong>{esc(t['totals'].format(files=len(sources), partial=partial, failed=failed))}</strong></p>")
+    return "".join(out)
 
 
 def to_pdf(document: str) -> bytes:

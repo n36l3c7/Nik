@@ -211,7 +211,11 @@ def test_chromium_bookmarks_json(tmp_path):
         "browser": "opera",
         "profile": "Default",
     }
-    assert nik["loc"] == {"path": "Bookmarks bar"} and wiki["loc"] == {"path": "Bookmarks bar > Work"}
+    assert nik["loc"] == {"path": "Bookmarks bar", "index": 0} and wiki["loc"] == {
+        "path": "Bookmarks bar > Work",
+        "index": 0,
+    }
+    assert again["loc"] == {"path": "Bookmarks bar", "index": 1}
     assert wiki["ts"] is None and wiki["ioc"] == [["url", "http://wiki.local/"]]
     assert nik["key"] != again["key"] and again["key"].startswith(nik["key"])  # the same bookmark twice stays two rows
     assert (end(ev)["in_file"], end(ev)["read"]) == (3, 3)
@@ -273,7 +277,7 @@ def test_firefox_places(tmp_path):
         and one["data"]["isRedirect"] is False
         and two["data"]["isRedirect"] is True
     )
-    assert two["loc"] == {"table": "visits", "rowid": 2}
+    assert two["loc"] == {"table": "moz_historyvisits", "rowid": 2}
     (bookmark,) = records(ev, "bookmark")  # the tag entry is not a second bookmark
     assert bookmark["data"]["folder"] == "Bookmarks Toolbar > Dev" and bookmark["ts"] == PRTIME_MS
     assert bookmark["loc"] == {"table": "moz_bookmarks", "rowid": 4}
@@ -319,7 +323,7 @@ def test_safari_history_and_plists(tmp_path):
     one, two = records(ev, "visit")
     assert one["key"] == "web:WKS-1:ana:safari:Default:visit:7" and one["ts"] == MAC_MS and two["ts"] == MAC_MS + 1500
     assert one["data"]["isRedirect"] is False and two["data"]["isRedirect"] is True and two["data"]["fromVisitId"] == 7
-    assert one["loc"] == {"table": "visits", "rowid": 7} and one["ioc"] == [["domain", "apple.com"]]
+    assert one["loc"] == {"table": "history_visits", "rowid": 7} and one["ioc"] == [["domain", "apple.com"]]
     assert (end(ev)["in_file"], end(ev)["read"]) == (2, 2)
 
     when = datetime.datetime(2023, 3, 8, 12, 0, 0)
@@ -376,7 +380,9 @@ def test_safari_history_and_plists(tmp_path):
     ev = said(marks, "safari.bookmarks")
     (mark,) = records(ev, "bookmark")
     assert (
-        mark["data"]["folder"] == "Favorites" and mark["data"]["name"] == "A" and mark["loc"] == {"path": "Favorites"}
+        mark["data"]["folder"] == "Favorites"
+        and mark["data"]["name"] == "A"
+        and mark["loc"] == {"path": "Favorites", "index": 0}
     )
     assert len(of(ev, "skip")) == 1 and (end(ev)["in_file"], end(ev)["read"]) == (2, 1)
     assert said(marks, "")[0]["source"] == "safari.bookmarks"  # by content, with no name
@@ -408,7 +414,7 @@ def test_generic_json_and_csv_exports(tmp_path):
     )
     ev = said(path, "chrome.json")
     (visit,) = records(ev, "visit")
-    assert visit["ts"] == 1704164645000 and visit["loc"] == {"row": 0} and visit["ioc"] == [["domain", "x.example"]]
+    assert visit["ts"] == 1704164645000 and visit["loc"] == {"row": 1} and visit["ioc"] == [["domain", "x.example"]]
     assert [s["reason"] for s in of(ev, "skip")] == ["row without what it is about", "row cannot be read"]
     assert (end(ev)["in_file"], end(ev)["read"]) == (3, 1)
 
@@ -667,3 +673,37 @@ def test_sqlite_safe_open_refuses_what_is_not_sqlite_and_stop_interrupts(tmp_pat
             ).fetchall()
     finally:
         conn.close()
+
+
+def test_a_view_in_the_place_of_a_table_is_not_expanded_and_time_is_bounded(tmp_path, monkeypatch):
+    """A file can hold a view named like the table a parser reads, over a query that never ends: views
+    are off for the connection, and whatever runs is cut when the connection's time is up."""
+    import sqlite3 as real
+
+    from nik_forensics import sqlite_safe
+
+    path = str(tmp_path / "History")
+    made = real.connect(path)
+    made.execute("CREATE TABLE real_rows (id INTEGER PRIMARY KEY, url TEXT)")
+    made.execute("INSERT INTO real_rows (url) VALUES ('https://example.test/')")
+    made.execute(
+        "CREATE VIEW urls AS WITH RECURSIVE loop(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM loop) SELECT n AS id FROM loop"
+    )
+    made.execute("CREATE TABLE log (x)")
+    made.execute("CREATE TRIGGER t AFTER INSERT ON log BEGIN SELECT 1; END")
+    made.commit()
+    made.close()
+    conn = sqlite_safe.open_ro(path)
+    assert sqlite_safe.tables(conn) == {"real_rows", "log"}
+    with pytest.raises(real.DatabaseError):
+        list(sqlite_safe.rows(conn, "SELECT id FROM urls LIMIT 5"))
+    assert [row["url"] for row in sqlite_safe.rows(conn, "SELECT url FROM real_rows")] == ["https://example.test/"]
+    conn.close()
+    # The bound on time: a query of our own that would not end is interrupted.
+    monkeypatch.setattr(sqlite_safe, "MAX_SECONDS", 0)
+    monkeypatch.setattr(sqlite_safe, "STOP_EVERY", 100)
+    conn = sqlite_safe.open_ro(path)
+    endless = "WITH RECURSIVE loop(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM loop) SELECT count(*) FROM loop"
+    with pytest.raises(real.OperationalError, match="interrupted"):
+        conn.execute(endless).fetchone()
+    conn.close()

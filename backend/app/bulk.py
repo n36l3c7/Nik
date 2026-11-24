@@ -59,6 +59,7 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from . import work
+from .archive import Archived
 from .core import audit, clock, leases, origin
 from .core.ids import new_id
 from .core.models import ApiKey, AutomationEvent, BulkItem, BulkJob, Run, Setting, User
@@ -598,6 +599,8 @@ def one(db: OrmSession, job: BulkJob, action: Action, seq: int, ref: str, caller
             state, note = "skipped", str(said)
         except Refused as said:
             state, note = "refused", str(said)
+        except Archived as said:
+            state, note = "refused", said.message
         except HTTPException as error:
             # What the single action would have answered: a refusal with its sentence, unless the
             # server itself failed.

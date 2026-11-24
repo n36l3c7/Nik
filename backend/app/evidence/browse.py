@@ -256,6 +256,47 @@ def record(db: OrmSession, incident_id: str, record_id: int) -> dict[str, Any] |
     return answer
 
 
+EXPORT_VERSION = 1
+EXPORT_MARKS = 20_000
+
+
+def exported(db: OrmSession, incident_id: str) -> dict[str, Any]:
+    """What an export of the incident carries of its host evidence: every file with its SHA-256,
+    its counts and its parse report, and the flags and notes on records. Neither the records nor
+    the originals: whoever imports it sees what was there, and gives the files again
+    (``imports.restore`` takes this back)."""
+    listed = []
+    for row in sources(db, incident_id):
+        listed.append({**source_of(row), "report": row.report or {}})
+    marks = []
+    held = (
+        select(EvidenceMark, EvidenceRecord.summary, EvidenceRecord.type, EvidenceRecord.ts, EvidenceRecord.kind)
+        .outerjoin(
+            EvidenceRecord,
+            and_(EvidenceRecord.incident_id == EvidenceMark.incident_id, EvidenceRecord.key == EvidenceMark.key),
+        )
+        .where(EvidenceMark.incident_id == incident_id)
+        .order_by(EvidenceMark.key)
+        .limit(EXPORT_MARKS)
+    )
+    for mark, summary, kind, ts, section in db.execute(held):
+        marks.append(
+            {
+                "key": mark.key,
+                "flagged": bool(mark.flagged),
+                "note": mark.note or "",
+                "updatedBy": mark.updated_by,
+                "updatedAt": mark.updated_at,
+                # What the record was, for a reader that has the export and not the file.
+                "summary": summary or "",
+                "type": kind or "",
+                "kind": section or "",
+                "ts": ts,
+            }
+        )
+    return {"version": EXPORT_VERSION, "sources": listed, "marks": marks}
+
+
 def key_exists(db: OrmSession, incident_id: str, key: str) -> bool:
     found = select(EvidenceRecord.id).where(EvidenceRecord.incident_id == incident_id, EvidenceRecord.key == key)
     return db.scalar(found.limit(1)) is not None
@@ -273,9 +314,13 @@ def summary(db: OrmSession, incident_id: str) -> dict[str, Any]:
             s.kind,
             func.count(),
             func.coalesce(func.sum(s.kept), 0),
-            func.coalesce(func.sum(case((and_(s.read == "partial", s.seen_at.is_(None)), 1), else_=0)), 0),
+            # A file an import listed and that is not here was read in part elsewhere, not here.
+            func.coalesce(
+                func.sum(case((and_(s.read == "partial", s.seen_at.is_(None), s.state == "done"), 1), else_=0)), 0
+            ),
             func.coalesce(func.sum(case((s.state == "failed", 1), else_=0)), 0),
             func.coalesce(func.sum(case((s.state.in_(("queued", "parsing")), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((s.state == "absent", 1), else_=0)), 0),
         )
         .where(s.incident_id == incident_id)
         .group_by(s.kind)
@@ -287,7 +332,8 @@ def summary(db: OrmSession, incident_id: str) -> dict[str, Any]:
             "partial": int(partial),
             "failed": int(failed),
             "parsing": int(parsing),
+            "absent": int(absent),
         }
-        for kind, n, kept, partial, failed, parsing in rows
+        for kind, n, kept, partial, failed, parsing, absent in rows
     }
     return {"kinds": kinds, "partialUnseen": sum(item["partial"] for item in kinds.values())}

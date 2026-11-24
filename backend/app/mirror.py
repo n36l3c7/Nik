@@ -630,6 +630,8 @@ def due(db: OrmSession, now: float) -> list[str]:
         state = state_of(incident)
         if state is None or state["direction"] not in ("in", "both"):
             continue
+        if incident.archived_at:
+            continue  # an archived incident is read-only: nothing is pulled into it
         if state.get("fed") or state.get("gone"):
             continue  # fed by the fetch; or gone on the other side, until someone reads it by hand
         if float(state.get("nextAt") or 0) > now:
@@ -881,6 +883,8 @@ def absorb(
             continue
         if state["direction"] not in ("in", "both"):
             continue
+        if incident.archived_at:
+            continue  # read-only: what goes on with its conversation is an item of its own
         if incident.status == "closed" and not _closed_lately(incident, now):
             continue
         if wanted & set(state.get("thread") or [state["id"]]):
@@ -933,6 +937,9 @@ def run_pull(incident_id: str, now: float | None = None) -> None:
     with SessionLocal() as db:
         incident = lock_incident(db, incident_id)
         if incident is None or state_of(incident) is None:
+            return
+        if incident.archived_at:
+            logger.debug("Mirror: the incident %s is archived, it is not read", incident_id)
             return
         try:
             pull(db, incident, now)
@@ -1076,6 +1083,10 @@ def push(db: OrmSession, job: MirrorJob, now: float) -> None:
     state = state_of(incident) if incident is not None else None
     if state is None or state["connection"] != job.connection_id:
         raise MirrorError("The incident is not mirrored any more")
+    if incident.archived_at:
+        # Archived after this was queued: nothing is sent, and nothing is written to the incident.
+        logger.debug("Mirror: the incident %s is archived, job %s sends nothing", incident.id, job.id)
+        return
     if state["direction"] not in ("out", "both"):
         raise MirrorError("Mirroring does not send any more")
     connection, connector = _parts(db, state)

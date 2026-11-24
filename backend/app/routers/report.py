@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..core.db import get_db
 from ..core.models import AuditEntry, Incident, Mail, Sample, SampleCapa
 from ..core.security import Principal, now_iso, reader_principal
+from ..evidence import reporting
 from ..iocs import Allowlist, incident_iocs
 from ..report import LANGS, SCOPES, SECTIONS, TLP_LEVELS, build_html, to_pdf
 from .settings import read_settings
@@ -44,6 +45,8 @@ class ReportIn(BaseModel):
     detections: list[Detection] = Field(default_factory=list, max_length=500)
     # flagged (default): only what the analysts flagged; all: everything in the incident.
     scope: Optional[Literal["flagged", "all"]] = None
+    # The table "Evidence integrity" (what was read of each file, what was lost): on unless said.
+    integrity: Optional[bool] = None
 
 
 def _samples(db: OrmSession, doc: dict) -> list[dict[str, Any]]:
@@ -116,8 +119,9 @@ def incident_report(
     the evidence files they come from. ``scope: "all"`` lists everything.
 
     Sections: summary, timeline (flagged events), attack, iocs, samples,
-    mails, network, eventlogs, notes, evidence. ``detections`` lists the SOC rule hits with
-    their ATT&CK ids; the app sends them, API clients may leave them out.
+    mails, network, eventlogs, notes, evidence and integrity (the table of what was read of each file;
+    on unless ``integrity`` is false). ``detections`` lists the SOC rule hits with their ATT&CK ids; the
+    app sends them, and when it sends none the rules matched in the tables stand in.
     """
     row = db.get(Incident, incident_id)
     if row is None:
@@ -128,6 +132,9 @@ def incident_report(
     lang = body.lang or (saved.get("lang") if saved.get("lang") in LANGS else "en")
     tlp = body.tlp or (saved.get("tlp") if saved.get("tlp") in TLP_LEVELS else "amber")
     sections = body.sections if body.sections is not None else saved.get("sections") or list(SECTIONS)
+    sections = [s for s in sections if s != "integrity"]
+    if body.integrity is not False:
+        sections.append("integrity")
     summary = body.executiveSummary if body.executiveSummary is not None else str(saved.get("executiveSummary") or "")
     scope = body.scope or (saved.get("scope") if saved.get("scope") in SCOPES else "flagged")
     now = now_iso()
@@ -146,6 +153,7 @@ def incident_report(
         generated_by=caller.actor,
         generated_at=now,
         scope=scope,
+        host=reporting.gather(db, incident_id),
     )
     db.add(
         AuditEntry(

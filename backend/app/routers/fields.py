@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import archive
 from .. import fields as registry
 from ..core import audit
 from ..core.db import get_db
@@ -192,6 +193,7 @@ def set_incident_fields(
     row = lock_incident(db, incident_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    archive.guard(row)
     try:
         changed = registry.update(db, row, body.changes, caller.actor, f"user:{caller.actor}", if_rev=body.ifRev)
     except registry.FieldError as error:
