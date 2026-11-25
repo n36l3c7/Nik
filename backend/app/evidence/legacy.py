@@ -375,6 +375,15 @@ def move(db: OrmSession, incident: Incident) -> dict[str, int] | None:
                 ).one()
                 row.kept = row.read_count = int(count or 0)
                 row.first_ts, row.last_ts = first, last
+                # What its records name, as a reading would have counted it (the most, at the cap).
+                channels = db.execute(
+                    select(EvidenceRecord.channel, func.count().label("n"))
+                    .where(EvidenceRecord.source_id == row.id, EvidenceRecord.channel != "")
+                    .group_by(EvidenceRecord.channel)
+                    .order_by(func.count().desc(), EvidenceRecord.channel)
+                    .limit(parse.CHANNELS_CAP)
+                )
+                row.report = {**(row.report or {}), "channels": {name: int(n) for name, n in channels}}
         doc = dict(doc)
         doc["flags"] = mover.marks(doc.get("flags"))
         if doc["flags"] is None:

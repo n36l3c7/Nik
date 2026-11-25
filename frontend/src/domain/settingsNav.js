@@ -141,6 +141,13 @@ export const SETTINGS_GROUPS = [
         permission: 'incidents.configure',
         keywords: 'fetch alerts drop duplicate link existing dedup noise script before incident',
       },
+      {
+        id: 'archiving',
+        slug: 'archiving',
+        label: 'Archiving',
+        permission: 'incidents.archive',
+        keywords: 'archive closed incident days old read-only host records database drop automatic rule',
+      },
     ],
   },
   {

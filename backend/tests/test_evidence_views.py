@@ -201,6 +201,18 @@ def test_the_stack_follows_the_filters(stacked):
     assert stack(stacked, "host", **{"from": BASE + 4, "to": BASE + 5}).json()["missing"] == 0
 
 
+def test_the_new_filters_narrow_the_histogram_and_the_stack(stacked):
+    assert histogram(stacked, source="chrome.history")["total"] == 1
+    assert histogram(stacked, dated="true", type="logon")["total"] == 2
+    assert histogram(stacked, dataKey="Ip", dataValue="10.0.0.2")["total"] == 2
+    assert histogram(stacked, matter="true")["total"] == 4  # the three logons and the browser file's default event
+    assert values(stack(stacked, "host", sourcePrefix="chrome").json()) == [("H3", 1)]
+    both = stack(stacked, "host", type="logon,nothing", dataKey="Ip", dataValue="10.0.0.2").json()
+    assert values(both) == [("H2", 1)]
+    assert stack(stacked, "host", dataKey="Ip").status_code == 400
+    assert get(stacked, "ev-api/evidence/histogram", dataKey="Ip").status_code == 400
+
+
 def test_a_bad_field_or_order_is_a_400(stacked):
     for field in ("bogus", "data.", "data.has space", 'data.x"y', "data.a$", "data." + "k" * 81, "summary", "id"):
         assert stack(stacked, field).status_code == 400, field
@@ -393,6 +405,120 @@ def test_a_page_has_its_limits_and_needs_its_original(env):
 
 
 # --------------------------------------------------------------------------- #
+# A search of the original                                                    #
+# --------------------------------------------------------------------------- #
+def find(env, source_id: str, **params):
+    return get(env, f"ev-api/evidence/sources/{source_id}/find", **params)
+
+
+def test_a_search_is_asked_of_the_worker_and_answered_with_the_size_of_the_file(env):
+    source_id, _ = a_record(env, b"0123456789")
+    sha256 = change(source_id, state="done")
+    asked = []
+
+    def ask(sha, body, route="view"):
+        asked.append((sha, body, route))
+        return 200, {
+            "matches": [{"offset": 4, "length": 2, "encoding": "utf-8"}],
+            "next": None,
+            "scanned": 10,
+            "cut": False,
+        }
+
+    env["monkeypatch"].setattr(views, "ask_view", ask)
+    res = find(env, source_id, q="45")
+    assert res.status_code == 200
+    assert res.json() == {
+        "matches": [{"offset": 4, "length": 2, "encoding": "utf-8"}],
+        "next": None,
+        "scanned": 10,
+        "cut": False,
+        "size": 10,
+    }
+    assert asked == [(sha256, {"sha256": sha256, "needle": "45", "as": "text", "from": 0, "limit": 100}, "find")]
+    find(env, source_id, q="34 35", **{"as": "hex", "from": 3, "limit": 5})
+    assert asked[1][1] == {"sha256": sha256, "needle": "34 35", "as": "hex", "from": 3, "limit": 5}
+
+
+def test_a_search_has_its_limits_and_needs_its_original_and_a_worker(env):
+    source_id, _ = a_record(env, b"abc")
+    env["monkeypatch"].setattr(
+        views, "ask_view", lambda *_: (200, {"matches": [], "next": None, "scanned": 3, "cut": False})
+    )
+    for params in (
+        {},
+        {"q": ""},
+        {"q": "ab", "limit": 0},
+        {"q": "ab", "limit": 201},
+        {"q": "ab", "from": -1},
+        {"q": "ab", "as": "x"},
+    ):
+        assert find(env, source_id, **params).status_code == 422, params
+    assert find(env, source_id, q="ab", limit=200).status_code == 200
+    change(source_id, legacy=True)
+    res = find(env, source_id, q="ab")
+    assert res.status_code == 404 and res.json()["detail"] == views.LEGACY
+    sha256 = change(source_id, legacy=False, state="absent")
+    assert find(env, source_id, q="ab").json()["detail"] == views.NO_ORIGINAL
+    change(source_id, state="done")
+    originals.remove(sha256)
+    assert find(env, source_id, q="ab").json()["detail"] == views.NO_ORIGINAL
+    assert find(env, "unknown", q="ab").status_code == 404
+    env["monkeypatch"].setattr(settings, "FORENSICS_URL", "")
+    source_id, _ = a_record(env, b"other")
+    res = find(env, source_id, q="ab")
+    assert res.status_code == 503 and "FORENSICS_URL" in res.json()["detail"]
+
+
+def test_a_search_passes_the_refusals_of_the_worker_on(env):
+    source_id, _ = a_record(env, b"abc")
+    answers = [
+        (400, {"detail": "bad needle"}),
+        (404, {"detail": "gone"}),
+        (503, {"detail": "busy"}),
+        (504, {"detail": "slow"}),
+        (409, {"missing": ["x"]}),
+        (500, {}),
+    ]
+    env["monkeypatch"].setattr(views, "ask_view", lambda *_: answers.pop(0))
+    seen = []
+    while answers:
+        res = find(env, source_id, q="ab")
+        seen.append((res.status_code, res.json()["detail"]))
+    assert seen[:4] == [(400, "bad needle"), (404, "gone"), (503, "busy"), (504, "slow")]
+    assert [code for code, _ in seen[4:]] == [502, 502]
+
+
+def test_a_search_gives_the_original_to_the_worker_that_lacks_it(env):
+    sha256 = originals.keep_bytes(b"for the worker")
+    calls, given = [], []
+
+    class Answer:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b'{"matches": [], "next": null, "scanned": 14, "cut": false}'
+
+    def urlopen(request, timeout):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(request.full_url, 409, "missing", {}, io.BytesIO(b'{"missing": ["x.bin"]}'))
+        return Answer()
+
+    env["monkeypatch"].setattr(views.urllib.request, "urlopen", urlopen)
+    env["monkeypatch"].setattr(handover, "give", lambda *args, **_: given.append(args[3]))
+    code, answer = views.find(sha256, "zz", "text", 0, 100)
+    assert code == 200 and answer["size"] == 14 and answer["matches"] == []
+    assert calls == ["http://forensics.test/find"] * 2 and given == [f"{sha256}.bin"]
+
+
+# --------------------------------------------------------------------------- #
 # The download                                                                #
 # --------------------------------------------------------------------------- #
 def test_the_download_needs_its_permission_and_gives_an_encrypted_zip_and_an_audit_entry(env, admin):
@@ -441,6 +567,7 @@ def test_the_ids_of_another_incident_and_unknown_incidents_are_404_on_every_rout
         base = f"/api/incidents/{incident}/evidence"
         assert client.get(f"{base}/records/{record_id}/view", headers=env["r"]).status_code == 404
         assert client.get(f"{base}/sources/{source_id}/page", headers=env["r"]).status_code == 404
+        assert client.get(f"{base}/sources/{source_id}/find?q=ab", headers=env["r"]).status_code == 404
         assert client.get(f"{base}/sources/{source_id}/download", headers=allowed).status_code == 404
     for path in ("histogram", "fields"):
         assert client.get(f"/api/incidents/nope/evidence/{path}", headers=env["r"]).status_code == 404

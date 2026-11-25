@@ -28,7 +28,7 @@ export default function StatCard({ icon: Icon = null, label, value, tone = 'defa
         <div className={`font-mono text-2xl font-extrabold tabular-nums leading-tight ${toneClasses.value}`}>
           {value}
         </div>
-        {hint && <div className="truncate text-xs text-fg-muted">{hint}</div>}
+        {hint && <div className="text-xs text-fg-muted">{hint}</div>}
       </div>
     </div>
   )

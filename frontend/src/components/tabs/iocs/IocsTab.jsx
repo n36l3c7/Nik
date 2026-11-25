@@ -8,7 +8,7 @@ import { api, apiUrl } from '../../../services/api.js'
 import { indicatorRef } from '../../../domain/bulk.js'
 import { IOC_TYPES, sourceLabel } from '../../../domain/iocs.js'
 import { onlyFound, scanWords } from '../../../domain/indicatorsFound.js'
-import { useAuth } from '../../../context/AuthContext.jsx'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
 import { useBulk } from '../../../context/BulkContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { reputationRank, verdictMeta } from '../../../domain/enrichment.js'
@@ -146,11 +146,10 @@ export default function IocsTab({ incident }) {
   const { openAllowlist, iocMenu } = useIocLookup()
   const { openCheck, openListForm, version: libraryVersion } = useIocLibrary()
   const { iocAllowlist } = useSettings()
-  const { can } = useAuth()
   const { showToast } = useToast()
   const { askBulk } = useBulk()
   const { openExport } = useIocLibrary()
-  const canWrite = can('write')
+  const canWrite = useCanWrite(incident)
   const [found, setFound] = useState(null)
   const [reading, setReading] = useState(false)
   const [state, setState] = useState({ loading: true, iocs: [], error: null })

@@ -16,7 +16,7 @@ import { MicroSkull } from '../ui/index.js'
 /*
  * Global search palette (Ctrl/Cmd+K or "/"): a `nik>` prompt that searches
  * incidents, indicators from every incident and samples on the server, plus
- * the open incident's events, notes and samples in memory. A query starting
+ * the events of the open incident's document, its notes and samples in memory. A query starting
  * with ">" lists actions. ↑/↓ move, Enter runs, Esc closes.
  */
 
@@ -75,7 +75,8 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
     }
   }, [open, isAction, text])
 
-  // The open incident's events (built only while the palette is open).
+  // The events of the open incident's document (built only while the palette is open). Host records are not
+  // here: a server "Evidence" group goes beside the others once the server can search them.
   const events = useMemo(
     () => (open && activeIncident ? buildTimelineEvents(activeIncident.data, engine) : []),
     [open, activeIncident, engine],

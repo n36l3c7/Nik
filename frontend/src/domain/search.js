@@ -6,8 +6,11 @@
  * The palette mixes two sources:
  *   - the server (GET /api/search): incidents, indicators from every incident
  *     and samples — what no single browser holds;
- *   - the open incident, already in memory: its timeline events, notes and
- *     samples, searched here with searchIncident().
+ *   - the open incident, already in memory: the events of its document (mail,
+ *     samples, captures, addresses), notes and samples, searched here with
+ *     searchIncident(). Host records (browser, commands, endpoint, event logs)
+ *     are NOT indexed here: they live on the server and are never loaded whole;
+ *     the palette gets an "Evidence" group from the server in a later stage.
  * A query starting with ">" lists actions instead (go to a tab, new
  * incident, settings…), filtered with matchActions().
  */
@@ -23,11 +26,7 @@ export function isTypingTarget(element) {
 
 /** The tab that shows a timeline event of the given source type. */
 export function tabForSource(sourceType) {
-  return (
-    { browser: 'browser', command: 'commands', endpoint: 'endpoint', eventlog: 'eventlogs', sample: 'malware' }[
-      sourceType
-    ] ?? 'timeline'
-  )
+  return { sample: 'malware', mail: 'mail', network: 'network' }[sourceType] ?? 'timeline'
 }
 
 /**

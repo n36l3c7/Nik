@@ -58,6 +58,8 @@ export default function RefreshControl({
       </Button>
       <Select
         label="Auto-refresh:"
+        // The select takes the width of its longest choice: squeezed by the toolbar it showed no value.
+        className="shrink-0 [&_select]:w-auto"
         value={choice}
         onChange={onChoice}
         options={options.map((item) => ({ value: item.id, label: item.label }))}

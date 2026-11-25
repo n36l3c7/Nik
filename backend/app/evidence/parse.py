@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -62,6 +63,7 @@ BATCH = 5000
 EXAMPLES = 50
 # Distinct indicators of one file that are looked at: a log of millions of logons names few addresses.
 INDICATORS = 20_000
+CHANNELS_CAP = 50  # distinct channels a report counts
 # How long the worker may say nothing: a pass over a file of gigabytes before the first record.
 READ_TIMEOUT = 1800
 NOT_CONFIGURED = "The forensics worker is not configured (FORENSICS_URL): the file is kept, and is read once it is"
@@ -137,6 +139,7 @@ class Report:
         self.notes: dict[str, dict[str, Any]] = {}
         self.skips = 0
         self.lost = 0
+        self.channels: dict[str, int] = {}
 
     def skip(self, event: dict[str, Any]) -> None:
         reason = str(event.get("reason") or "not read")[:120]
@@ -161,8 +164,19 @@ class Report:
         held["count"] += max(0, int(event.get("count") or 1))
         held["detail"] = held["detail"] or str(event.get("detail") or "")[:500]
 
-    def out(self, ended: bool) -> dict[str, Any]:
-        return {"reasons": self.reasons, "notes": self.notes, "ended": ended}
+    def channel(self, name: str) -> None:
+        """Count a record's channel; the 51st distinct one and the ones after it are not counted."""
+        if name and (name in self.channels or len(self.channels) < CHANNELS_CAP):
+            self.channels[name] = self.channels.get(name, 0) + 1
+
+    def out(self, ended: bool, seconds: float | None = None) -> dict[str, Any]:
+        return {
+            "reasons": self.reasons,
+            "notes": self.notes,
+            "channels": self.channels,
+            "ended": ended,
+            "seconds": seconds,
+        }
 
 
 # --------------------------------------------------------------------------- #
@@ -253,6 +267,7 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
             "file_name": source.file_name,
         },
     }
+    began = time.monotonic()
     report = Report()
     counts = {"read": 0, "kept": 0, "truncated": 0}
     ended: dict[str, Any] | None = None
@@ -281,6 +296,7 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
                     report.skip({"reason": "a record came without a usable key", "lost": 1})
                     continue
                 counts["read"] += 1
+                report.channel(row["channel"])
                 counts["truncated"] += int(row["truncated"])
                 for pair in event.get("ioc") or ():
                     if isinstance(pair, list) and len(pair) == 2 and all(isinstance(part, str) for part in pair):
@@ -348,7 +364,7 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
         row.skipped, row.truncated = report.lost, counts["truncated"]
         row.notes = sum(note["count"] for note in report.notes.values())
         row.first_ts, row.last_ts = first, last
-        row.report = report.out(ended is not None)
+        row.report = report.out(ended is not None, round(time.monotonic() - began, 1))
         nothing = counts["read"] == 0 and ended is None
         row.read = "failed" if nothing else "complete" if ended is not None and not report.skips else "partial"
         row.state = "failed" if nothing else "done"

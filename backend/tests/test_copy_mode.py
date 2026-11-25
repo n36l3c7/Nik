@@ -69,3 +69,19 @@ def test_no_playbook_starts_by_itself_on_a_copy(a_copy, monkeypatch):
 def test_the_screens_are_told_the_server_is_a_copy(admin, a_copy):
     shown = admin.get("/api/auth/me").json()
     assert shown["server"] == {"copy": True, "copyOf": "nik.example.org"}
+
+
+def test_the_answer_to_a_login_says_what_the_server_is(client):
+    from tests.conftest import ADMIN
+
+    assert client.post("/api/users", json=ADMIN).status_code == 201
+    answered = client.post("/api/auth/login", json=ADMIN).json()
+    assert answered["server"] == {"copy": False, "copyOf": ""}
+
+
+def test_the_answer_to_a_login_says_the_server_is_a_copy(client, a_copy):
+    from tests.conftest import ADMIN
+
+    assert client.post("/api/users", json=ADMIN).status_code == 201
+    answered = client.post("/api/auth/login", json=ADMIN).json()
+    assert answered["server"] == {"copy": True, "copyOf": "nik.example.org"}

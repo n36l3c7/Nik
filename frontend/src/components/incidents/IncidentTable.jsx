@@ -5,7 +5,7 @@ import { cellText, cleanSort, neighbour } from '../../domain/incidentList.js'
 import { fitTags } from '../../domain/incidentTags.js'
 import { numberedName } from '../../domain/incidentName.js'
 import { formatRelative } from '../../lib/time.js'
-import { Chip, MicroSkull, SelectBox, SeverityTag, StatusTag } from '../ui/index.js'
+import { Badge, Chip, MicroSkull, SelectBox, SeverityTag, StatusTag } from '../ui/index.js'
 import ConnectorLogo from '../ui/ConnectorLogo.jsx'
 import IncidentNumber from '../ui/IncidentNumber.jsx'
 
@@ -100,7 +100,14 @@ function Cell({ row, column, types, onTag }) {
     case 'severity':
       return row.severity ? <SeverityTag severity={row.severity} /> : EMPTY
     case 'status':
-      return <StatusTag status={row.status} showOpen />
+      return (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <StatusTag status={row.status} showOpen />
+          {row.archivedAt && (
+            <Badge title="This incident is in the archive: its host records are not loaded">archived</Badge>
+          )}
+        </span>
+      )
     case 'owner':
       return text ? <span className="font-mono text-xs">@{text}</span> : <span className="text-fg-subtle">nobody</span>
     case 'created':

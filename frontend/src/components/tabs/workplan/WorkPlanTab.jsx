@@ -2,6 +2,7 @@ import AutomationTab from '../automation/AutomationTab.jsx'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ListChecks, Plus, RefreshCw, Workflow } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
 import { useTasks } from '../../../context/TasksContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { api } from '../../../services/api.js'
@@ -181,6 +182,7 @@ function OpenTask({ taskId, tasks, canWrite, onClose, onChanged }) {
 
 export default function WorkPlanTab({ incident }) {
   const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   const { version, refresh } = useTasks()
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
@@ -269,7 +271,7 @@ export default function WorkPlanTab({ incident }) {
           <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load}>
             Refresh
           </Button>
-          {can('write') && (
+          {canWrite && (
             <Button size="sm" icon={Plus} onClick={() => setAdding(true)}>
               Add a task
             </Button>
@@ -340,7 +342,7 @@ export default function WorkPlanTab({ incident }) {
           key={openId}
           taskId={openId}
           tasks={everyTask}
-          canWrite={can('write')}
+          canWrite={canWrite}
           onClose={() => setOpenId(null)}
           onChanged={changed}
         />

@@ -16,15 +16,15 @@ import {
  * ENDPOINT ARTIFACT REGISTRY — the only file to edit to add a category/source
  * ============================================================================
  *
- * The "Endpoint Artifacts" tab shows a sub-tab per category. Each category is a
+ * The "Endpoint Artifacts" tab shows a selector item per category; the columns of each
+ * are in domain/endpointPage.js. Each category is a
  * flaggable table fed by one or more SOURCES; the table shows the union of
  * every source's records, tagged by which source produced them.
  *
  * A source is imported in one of two ways (never a third-party tool):
- *   - mode 'file'   → upload the EXISTING raw file from the host; a dedicated
- *                     in-browser parser (config: `parser`) turns it into
- *                     records. Used when the data already lives in a plain
- *                     text/XML/log/SQLite file.
+ *   - mode 'file'   → upload the EXISTING raw file from the host; the worker's
+ *                     `endpoint` parser turns it into records. Used when the
+ *                     data already lives in a plain text/XML/log/SQLite file.
  *   - mode 'script' → run the shown native script (OS built-ins only) which
  *                     writes a CSV; import that CSV. Used for live system state
  *                     (registry, service manager, kernel journal) that is not a
@@ -36,22 +36,13 @@ import {
  *
  * Category shape:
  *   id / label / icon / accent
- *   primaryField   record field used as the row title and flag label
- *   columns        [{ key, label, mono?, grow?, align? }] shown in the table
- *   fields         { fieldKey: [aliases] } — lenient mapping for CSV/JSON import
- *   timeAliases    aliases for the record timestamp (CSV/JSON import)
- *   detectFields   record fields concatenated into the SOC keyword haystack
  *   sources        { windows|macos|linux: [source] } driven by the host OS
  *
  * Source shape (per OS):
- *   key            unique within the category (data slot + de-dup)
+ *   key            unique within the category (the `<id>` of the source name `<os>.<category>.<id>`)
  *   name           label shown in the collection list
  *   path           where the data lives (file path or registry location)
  *   mode           'file' | 'script'
- *   parser         (file) one of 'xbel'|'configlines'|'plist'|'setupapi'|'knowledgec'
- *   accept         (file) input accept filter
- *   recordKind     (configlines) the `kind` stamped on each parsed line
- *   recordName     (configlines) the `name` stamped on each parsed line
  *   script         (script) { lang, code } shown with copy/download
  *   tool           short label describing the method
  */
@@ -62,33 +53,6 @@ const EXECUTION = {
   label: 'Program Execution',
   icon: CirclePlay,
   accent: 'text-accent',
-  primaryField: 'name',
-  columns: [
-    { key: 'name', label: 'Executable', mono: true, grow: true },
-    { key: 'path', label: 'Path', mono: true, grow: true },
-    { key: 'runCount', label: 'Runs', align: 'right' },
-    { key: 'source', label: 'Artifact' },
-  ],
-  fields: {
-    name: ['name', 'program', 'executable', 'application', 'filename', 'process', 'value'],
-    path: ['path', 'fullpath', 'full_path', 'file_path', 'image', 'devicepath', 'programpath'],
-    runCount: ['runcount', 'run_count', 'count', 'executioncount', 'timesexecuted'],
-    source: ['source', 'artifact', 'sourcetype', 'type', 'hive'],
-  },
-  timeAliases: [
-    'lastrun',
-    'last_run',
-    'lastexecuted',
-    'last_executed',
-    'runtime',
-    'executiontime',
-    'timestamp',
-    'time',
-    'lastmodified',
-    'date',
-    'lastruntime',
-  ],
-  detectFields: ['name', 'path'],
   sources: {
     windows: [
       {
@@ -106,9 +70,7 @@ const EXECUTION = {
         name: 'KnowledgeC app usage',
         path: '~/Library/Application Support/Knowledge/knowledgeC.db',
         mode: 'file',
-        parser: 'knowledgec',
-        accept: '.db,.sqlite',
-        tool: 'SQLite (parsed in-browser)',
+        tool: 'SQLite (read by the server)',
       },
     ],
     linux: [],
@@ -121,21 +83,6 @@ const PERSISTENCE = {
   label: 'Persistence',
   icon: KeyRound,
   accent: 'text-med',
-  primaryField: 'name',
-  columns: [
-    { key: 'name', label: 'Name', grow: true },
-    { key: 'kind', label: 'Type' },
-    { key: 'command', label: 'Command / Target', mono: true, grow: true },
-    { key: 'location', label: 'Location', mono: true },
-  ],
-  fields: {
-    name: ['name', 'entry', 'task', 'service', 'key', 'label', 'value'],
-    kind: ['kind', 'type', 'mechanism', 'category'],
-    command: ['command', 'commandline', 'command_line', 'target', 'path', 'action', 'exec', 'data'],
-    location: ['location', 'source', 'hive', 'file', 'registrykey', 'key_path'],
-  },
-  timeAliases: ['created', 'modified', 'lastmodified', 'timestamp', 'time', 'date', 'lastwrite'],
-  detectFields: ['name', 'command', 'location'],
   sources: {
     windows: [
       {
@@ -185,10 +132,6 @@ const PERSISTENCE = {
         name: 'cron',
         path: '/etc/crontab, /etc/cron.d/*, /var/spool/cron/*',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'cron',
-        recordName: 'cron entry',
         tool: 'upload the cron file',
       },
       {
@@ -196,10 +139,6 @@ const PERSISTENCE = {
         name: 'SSH authorized_keys',
         path: '~/.ssh/authorized_keys',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'authorized_keys',
-        recordName: 'authorized_key',
         tool: 'upload the file',
       },
       {
@@ -207,10 +146,6 @@ const PERSISTENCE = {
         name: 'shell rc / profile',
         path: '~/.bashrc, ~/.profile, /etc/rc.local',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'shell rc',
-        recordName: 'rc line',
         tool: 'upload the file',
       },
       {
@@ -228,8 +163,6 @@ const PERSISTENCE = {
         name: 'LaunchAgent / LaunchDaemon',
         path: '~/Library/LaunchAgents/*.plist, /Library/Launch*',
         mode: 'file',
-        parser: 'plist',
-        accept: '.plist,.xml',
         tool: 'upload the .plist (XML)',
       },
       {
@@ -237,10 +170,6 @@ const PERSISTENCE = {
         name: 'cron',
         path: '/usr/lib/cron/tabs/*',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'cron',
-        recordName: 'cron entry',
         tool: 'upload the cron file',
       },
     ],
@@ -253,19 +182,6 @@ const FILE_ACCESS = {
   label: 'File & Folder Access',
   icon: HardDrive,
   accent: 'text-info',
-  primaryField: 'name',
-  columns: [
-    { key: 'name', label: 'Item', grow: true },
-    { key: 'target', label: 'Target path', mono: true, grow: true },
-    { key: 'kind', label: 'Evidence' },
-  ],
-  fields: {
-    name: ['name', 'item', 'file', 'filename', 'document', 'label', 'value'],
-    target: ['target', 'targetpath', 'target_path', 'path', 'localpath', 'href'],
-    kind: ['kind', 'type', 'artifact', 'source'],
-  },
-  timeAliases: ['accessed', 'lastaccessed', 'modified', 'visited', 'timestamp', 'time', 'date'],
-  detectFields: ['name', 'target'],
   // Windows/macOS file-access forensics (LNK, JumpLists, ShellBags, sfl) can
   // only be parsed with third-party tools, so no custom source is offered.
   sources: {
@@ -277,8 +193,6 @@ const FILE_ACCESS = {
         name: 'GTK recently-used',
         path: '~/.local/share/recently-used.xbel',
         mode: 'file',
-        parser: 'xbel',
-        accept: '.xbel,.xml',
         tool: 'upload the file (XML)',
       },
     ],
@@ -291,32 +205,6 @@ const USB = {
   label: 'USB & Devices',
   icon: Usb,
   accent: 'text-violet',
-  primaryField: 'device',
-  columns: [
-    { key: 'device', label: 'Device', grow: true },
-    { key: 'serial', label: 'Serial', mono: true },
-    { key: 'vendor', label: 'Vendor / Product', grow: true },
-    { key: 'connection', label: 'Event' },
-  ],
-  fields: {
-    device: ['device', 'friendlyname', 'friendly_name', 'devicename', 'description', 'model', 'value'],
-    serial: ['serial', 'serialnumber', 'serial_number', 'iserialnumber', 'guid'],
-    vendor: ['vendor', 'vendorproduct', 'manufacturer', 'product', 'vid_pid', 'vidpid'],
-    connection: ['connection', 'event', 'action', 'kind', 'type'],
-  },
-  timeAliases: [
-    'firstconnected',
-    'first_connected',
-    'lastconnected',
-    'last_connected',
-    'firstinstall',
-    'timestamp',
-    'time',
-    'date',
-    'installdate',
-    'connected',
-  ],
-  detectFields: ['device', 'vendor'],
   sources: {
     windows: [
       {
@@ -332,8 +220,6 @@ const USB = {
         name: 'setupapi log',
         path: 'C:\\Windows\\INF\\setupapi.dev.log',
         mode: 'file',
-        parser: 'setupapi',
-        accept: '.log,.txt',
         tool: 'upload the log file',
       },
     ],
@@ -356,29 +242,6 @@ export const ARTIFACT_CATEGORIES = [EXECUTION, PERSISTENCE, FILE_ACCESS, USB]
 /** Returns a category definition from its id. */
 export function getArtifactCategoryById(id) {
   return ARTIFACT_CATEGORIES.find((c) => c.id === id) ?? null
-}
-
-/** All source keys of a category across every OS (for the data slots). */
-export function categorySourceKeys(category) {
-  const keys = new Set()
-  for (const os of ['windows', 'macos', 'linux']) {
-    for (const source of category.sources[os] ?? []) keys.add(source.key)
-  }
-  return [...keys]
-}
-
-/** Initial data for a category: an empty { records, meta } slot per source. */
-export function buildDefaultArtifactData(category) {
-  const sources = {}
-  for (const key of categorySourceKeys(category)) sources[key] = { records: [], meta: null }
-  return { sources }
-}
-
-/** Map { [categoryId]: data } with every category initialized empty. */
-export function buildDefaultArtifactsMap() {
-  const map = {}
-  for (const category of ARTIFACT_CATEGORIES) map[category.id] = buildDefaultArtifactData(category)
-  return map
 }
 
 /** Sources available for a category on a given host OS. */

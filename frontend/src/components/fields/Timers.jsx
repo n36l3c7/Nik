@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Pause, Play, Square } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { useCanWrite } from '../../lib/useCanWrite.js'
 import { useFields } from '../../context/FieldsContext.jsx'
 import { api } from '../../services/api.js'
 import { anyRunning, timerLine } from '../../domain/timers.js'
@@ -31,7 +31,7 @@ function Move({ icon: Icon, label, onClick }) {
 
 /** @param {{ incident: object }} props */
 export default function Timers({ incident }) {
-  const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   // The types are read again when the SLA of one is saved: the timers follow.
   const { types } = useFields()
   const [timers, setTimers] = useState([])
@@ -84,7 +84,7 @@ export default function Timers({ incident }) {
                 </span>
                 <span className={`block text-sm ${TONES[line.tone]}`}>{line.text}</span>
               </span>
-              {can('write') && (
+              {canWrite && (
                 <span className="flex shrink-0">
                   {timer.state === 'running' ? (
                     <Move icon={Pause} label={`Pause ${timer.label}`} onClick={() => move(timer.field, 'pause')} />

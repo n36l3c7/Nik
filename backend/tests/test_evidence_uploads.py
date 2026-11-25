@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app import work
 from app.core.db import SessionLocal
 from app.core.models import Artifact, ArtifactLink, EvidenceSource, UploadSession, WorkClaim
-from app.evidence import originals, parse, uploads
+from app.evidence import imports, originals, parse, uploads
 from app.main import app as fastapi_app
 from tests.conftest import make_key
 
@@ -64,7 +64,7 @@ def test_a_file_sent_in_parts_is_kept_once_and_becomes_a_source(admin, monkeypat
     r = client.post(f"/api/uploads/{upload}/complete", headers=key)
     assert r.status_code == 202, r.text
     shown = client.get(f"/api/uploads/{upload}", headers=key).json()
-    assert shown["state"] == "complete" and shown["sourceId"]
+    assert shown["state"] == "complete" and shown["sourceId"] and shown["duplicate"] is False
 
     assert originals.has(sha256)
     assert not uploads.folder_of(upload).exists()  # the parts are gone
@@ -86,7 +86,28 @@ def test_a_file_sent_in_parts_is_kept_once_and_becomes_a_source(admin, monkeypat
     again = _open(client, key, "up1", data).json()["id"]
     client.put(f"/api/uploads/{again}?offset=0", headers=key, content=data)
     client.post(f"/api/uploads/{again}/complete", headers=key)
-    assert client.get(f"/api/uploads/{again}", headers=key).json()["sourceId"] == shown["sourceId"]
+    second = client.get(f"/api/uploads/{again}", headers=key).json()
+    assert second["sourceId"] == shown["sourceId"] and second["duplicate"] is True
+
+
+def test_a_listing_that_receives_its_file_is_not_a_duplicate(admin, monkeypatch):
+    _finish_here(monkeypatch)
+    client, key = _client(admin, "up2")
+    data = b"listed by an export " * 50
+    sha256 = hashlib.sha256(data).hexdigest()
+    with SessionLocal() as db:
+        db.add(
+            EvidenceSource(
+                id="listed", incident_id="up2", kind="disk", source="", sha256=sha256, file_name="$MFT",
+                size=len(data), state="absent", read="partial", report={}, created_at="2026-01-01T00:00:00Z",
+            )
+        )  # fmt: skip
+        db.commit()
+    upload = _open(client, key, "up2", data).json()["id"]
+    client.put(f"/api/uploads/{upload}?offset=0", headers=key, content=data)
+    client.post(f"/api/uploads/{upload}/complete", headers=key)
+    shown = client.get(f"/api/uploads/{upload}", headers=key).json()
+    assert shown["state"] == "complete" and shown["sourceId"] != "listed" and shown["duplicate"] is False
 
 
 def test_a_file_that_is_not_the_one_announced_is_not_kept(admin, monkeypatch):
@@ -131,3 +152,101 @@ def test_abandoned_sessions_expire_and_their_parts_go(admin):
         db.commit()
         assert db.get(UploadSession, upload).state == "expired"
     assert not uploads.folder_of(upload).exists()
+
+
+def _send(client, key, incident, data, file_name, params):
+    body = {"incidentId": incident, "fileName": file_name, "size": len(data), "params": params}
+    upload = client.post("/api/uploads", headers=key, json=body).json()["id"]
+    client.put(f"/api/uploads/{upload}?offset=0", headers=key, content=data)
+    client.post(f"/api/uploads/{upload}/complete", headers=key)
+    return client.get(f"/api/uploads/{upload}", headers=key).json()
+
+
+@pytest.mark.parametrize(
+    ("kind", "source", "file_name", "expected"),
+    [
+        ("eventlog", "", "Security.evtx", ("evtx", "evtx")),
+        ("eventlog", "evtx", "x.bin", ("evtx", "evtx")),
+        ("eventlog", "", "whatever.json", ("eventlog-json", "nik-eventlogs.json")),
+        ("eventlog", "", "WHATEVER.JSON", ("eventlog-json", "nik-eventlogs.json")),
+        ("eventlog", "nik-eventlogs.json", "log.txt", ("eventlog-json", "nik-eventlogs.json")),
+        ("eventlog", "other", "x.evtx", ("", "other")),
+        ("commands", "powershell", "second_history.txt", ("history", "powershell")),
+        ("commands", "", "second_history.txt", ("", "")),
+        ("browser", "chrome", "History", ("browser", "chrome")),
+        ("browser", "", "History", ("", "")),
+        ("endpoint", "windows.execution.bam", "bam-export.csv", ("endpoint", "windows.execution.bam")),
+        ("endpoint", "", "bam-export.csv", ("", "")),
+        ("disk", "", "$MFT", ("", "")),
+        ("disk", "mft", "$MFT", ("", "mft")),
+    ],
+)
+def test_reader_names_the_parser_and_the_source(kind, source, file_name, expected):
+    assert imports.reader(kind, source, file_name) == expected
+
+
+@pytest.mark.parametrize(
+    ("params", "file_name", "parser", "source"),
+    [
+        ({"kind": "commands", "source": "powershell"}, "second_history.txt", "history", "powershell"),
+        (
+            {"kind": "endpoint", "source": "windows.execution.bam"},
+            "bam-export.csv",
+            "endpoint",
+            "windows.execution.bam",
+        ),
+        ({"kind": "eventlog"}, "whatever.json", "eventlog-json", "nik-eventlogs.json"),
+        ({"kind": "eventlog"}, "Security.evtx", "evtx", "evtx"),
+        ({"kind": "commands"}, "history.txt", "", ""),
+    ],
+)  # fmt: skip
+def test_a_file_sent_in_parts_gets_the_parser_its_section_names(admin, monkeypatch, params, file_name, parser, source):
+    _finish_here(monkeypatch)
+    client, key = _client(admin, "up3")
+    shown = _send(client, key, "up3", f"{file_name} {parser}".encode() * 20, file_name, params)
+    assert shown["state"] == "complete", shown
+    with SessionLocal() as db:
+        row = db.get(EvidenceSource, shown["sourceId"])
+        assert (row.parser, row.source) == (parser, source)
+
+
+def test_an_event_log_sent_twice_without_source_is_one_row(admin, monkeypatch):
+    _finish_here(monkeypatch)
+    client, key = _client(admin, "up4")
+    data = b"an event log " * 50
+    first = _send(client, key, "up4", data, "Security.evtx", {"kind": "eventlog"})
+    second = _send(client, key, "up4", data, "Security.evtx", {"kind": "eventlog"})
+    assert first["duplicate"] is False and second["duplicate"] is True
+    assert first["sourceId"] == second["sourceId"]
+    with SessionLocal() as db:
+        assert db.query(EvidenceSource).filter_by(incident_id="up4").count() == 1
+
+
+def test_a_file_sent_without_source_is_a_duplicate_of_the_row_the_worker_filled(admin, monkeypatch):
+    _finish_here(monkeypatch)
+    client, key = _client(admin, "up5")
+    data = b"a history the worker recognised " * 30
+    first = _send(client, key, "up5", data, "h.txt", {"kind": "commands"})
+    with SessionLocal() as db:
+        db.get(EvidenceSource, first["sourceId"]).source = "bash"  # written by the worker after reading
+        db.commit()
+    second = _send(client, key, "up5", data, "h.txt", {"kind": "commands"})
+    assert second["duplicate"] is True and second["sourceId"] == first["sourceId"]
+    with SessionLocal() as db:
+        assert db.query(EvidenceSource).filter_by(incident_id="up5").count() == 1
+
+
+def test_a_failed_source_is_read_again_when_its_file_is_sent_again(admin, monkeypatch):
+    _finish_here(monkeypatch)
+    client, key = _client(admin, "up6")
+    data = b"a file that failed " * 30
+    first = _send(client, key, "up6", data, "Security.evtx", {"kind": "eventlog"})
+    with SessionLocal() as db:
+        row = db.get(EvidenceSource, first["sourceId"])
+        row.state, row.error = "failed", "boom"
+        db.commit()
+    second = _send(client, key, "up6", data, "Security.evtx", {"kind": "eventlog"})
+    assert second["sourceId"] == first["sourceId"] and second["duplicate"] is False
+    with SessionLocal() as db:
+        row = db.get(EvidenceSource, first["sourceId"])
+        assert row.state == "queued" and row.error is None

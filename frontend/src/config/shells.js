@@ -117,15 +117,3 @@ export function getShellById(shellId) {
 export function shellsForOs(osId) {
   return SHELLS.filter((s) => s.os.includes(osId))
 }
-
-/** Initial data structure for a single shell (no commands, no file). */
-export function buildDefaultShellData() {
-  return { commands: [], meta: { history: null } }
-}
-
-/** Map { [shellId]: shellData } with all shells initialized empty. */
-export function buildDefaultShellsMap() {
-  const map = {}
-  for (const shell of SHELLS) map[shell.id] = buildDefaultShellData()
-  return map
-}

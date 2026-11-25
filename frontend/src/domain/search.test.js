@@ -36,8 +36,10 @@ test('matchActions filters by the words after ">"', () => {
 })
 
 test('tabForSource and isTypingTarget', () => {
-  assert.equal(tabForSource('eventlog'), 'eventlogs')
-  assert.equal(tabForSource('command'), 'commands')
+  assert.equal(tabForSource('sample'), 'malware')
+  assert.equal(tabForSource('mail'), 'mail')
+  // Host records are not indexed here any more: whatever else goes to the timeline.
+  assert.equal(tabForSource('eventlog'), 'timeline')
   assert.equal(tabForSource('unknown'), 'timeline')
   assert.equal(isTypingTarget({ tagName: 'INPUT' }), true)
   assert.equal(isTypingTarget({ tagName: 'DIV', isContentEditable: true }), true)

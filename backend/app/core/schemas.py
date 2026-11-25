@@ -148,6 +148,8 @@ class LoginOut(BaseModel):
     session: Optional[SessionState] = None
     notice: Optional[str] = None
     secondFactor: Optional[dict] = None
+    # What this server is (a copy of another says so): the app shows it from the first screen.
+    server: Optional[dict] = None
 
 
 class UsersEnvelope(BaseModel):

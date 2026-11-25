@@ -65,6 +65,20 @@ export const ROLES = [
     shown: false,
   },
   {
+    id: 'archive',
+    label: 'Archive',
+    description: 'Archives closed incidents, takes them out of the archive, sets the rule that does it.',
+    permissions: ['incidents.archive'],
+    shown: true,
+  },
+  {
+    id: 'evidence',
+    label: 'Evidence',
+    description: 'Downloads the original of a file of host evidence.',
+    permissions: ['evidence.download'],
+    shown: true,
+  },
+  {
     id: 'admin',
     label: 'Admin',
     description: 'Everything, and alone: accounts, API keys, storage, backup, what leaves the server.',

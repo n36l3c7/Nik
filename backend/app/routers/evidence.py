@@ -22,11 +22,13 @@ from ..core.locking import lock_incident
 from ..core.models import ArtifactLink, EvidenceMark, EvidenceSource, Incident, WorkClaim
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..evidence import browse, imports, originals, parse
+from .evidence_filters import filters, keys_of
 
 router = APIRouter(prefix="/incidents/{incident_id}/evidence", tags=["incidents/evidence"])
 
 LEGACY = "This evidence was imported before 7.0: import the file again to have its report"
 NO_ORIGINAL = "The original of this file is not kept: import the file again to have its report"
+FIELDS_MAX = 12
 
 
 class SeenIn(BaseModel):
@@ -220,18 +222,8 @@ def remove_source(
 @router.get("/records")
 def list_records(
     incident_id: str,
-    kind: str = Query(default="", max_length=16),
-    type: str = Query(default="", max_length=40),  # noqa: A002 - the API's own name
-    sourceId: str = Query(default="", max_length=32),  # noqa: N803
-    host: str = Query(default="", max_length=255),
-    username: str = Query(default="", max_length=255),
-    channel: str = Query(default="", max_length=120),
-    eventId: int | None = Query(default=None),  # noqa: N803
-    level: int | None = Query(default=None, ge=1, le=5),
-    flagged: bool = False,
-    q: str = Query(default="", max_length=200),
-    from_: int | None = Query(default=None, alias="from"),
-    to: int | None = None,
+    f: dict[str, Any] = Depends(filters),
+    fields: str = Query(default="", max_length=1000),
     order: str = "time",
     limit: int = Query(default=100, ge=1, le=browse.LIMIT_MAX),
     cursor: str = Query(default="", max_length=200),
@@ -239,24 +231,12 @@ def list_records(
     db: OrmSession = Depends(get_db),
 ):
     """One page of records, with the total of the first page (counted up to 100001). ``next`` is
-    the cursor of the following page, null at the end."""
+    the cursor of the following page, null at the end. ``fields`` (1 to 12 keys of ``data``, comma-separated)
+    gives each record those keys of its data under ``data``."""
     _incident(db, incident_id)
-    filters = {
-        "kind": kind,
-        "type": type,
-        "sourceId": sourceId,
-        "host": host,
-        "username": username,
-        "channel": channel,
-        "eventId": eventId,
-        "level": level,
-        "flagged": flagged,
-        "q": q,
-        "from": from_,
-        "to": to,
-    }
+    names = keys_of(fields, FIELDS_MAX, "fields") if fields else None
     try:
-        return browse.records(db, incident_id, filters, order, limit, cursor or None)
+        return browse.records(db, incident_id, f, order, limit, cursor or None, names)
     except browse.BadQuery as error:
         raise HTTPException(status_code=400, detail=str(error)) from None
 

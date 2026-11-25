@@ -11,6 +11,7 @@ import {
   verdictBadge,
   ARTIFACTS_ROOT,
   isArtifactsPath,
+  artifactKind,
 } from './artifactRegistry.js'
 
 const SHA = 'a'.repeat(64)
@@ -58,6 +59,9 @@ test('the permalink accepts only well-formed ids', () => {
   assert.equal(artifactIdFromPath(artifactPath(file.id)), file.id)
   assert.equal(artifactIdFromPath(`/artifact/pcap-${'b'.repeat(32)}`), `pcap-${'b'.repeat(32)}`)
   assert.equal(artifactIdFromPath(`/artifact/url-${'d'.repeat(32)}`), `url-${'d'.repeat(32)}`)
+  // The original of a file of host evidence is an artifact of its own kind, by its SHA-256.
+  assert.equal(artifactIdFromPath(`/artifact/hostfile-${SHA}`), `hostfile-${SHA}`)
+  assert.equal(artifactIdFromPath(`/artifact/hostfile-${'b'.repeat(32)}`), null)
   assert.equal(artifactIdFromPath('/artifact/file-xyz'), null)
   assert.equal(artifactIdFromPath(`/artifact/file-${SHA}/../x`), null)
   assert.equal(artifactIdFromPath('/incident/abc'), null)
@@ -112,4 +116,11 @@ test('the page of the artifacts has an address of its own, which is not an artif
   assert.equal(isArtifactsPath('/artifact/file-00'), false)
   assert.equal(isArtifactsPath('/'), false)
   assert.equal(artifactIdFromPath('/artifacts'), null)
+})
+
+test('a file of host evidence is a kind of artifact that is never uploaded or opened on an analysis tab', () => {
+  const kind = artifactKind('hostfile')
+  assert.equal(kind.label, 'Host evidence file')
+  assert.equal(kind.uploadPath, null)
+  assert.equal(kind.tab, null)
 })

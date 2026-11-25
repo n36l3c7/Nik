@@ -186,7 +186,7 @@ def test_nothing_changes_for_an_account_without_a_second_factor(admin: TestClien
     make_user(admin)
     res = sign_in(browser())
     body = res.json()
-    assert res.status_code == 200 and set(body) == {"user", "session"}
+    assert res.status_code == 200 and set(body) == {"user", "session", "server"}
     assert body["user"]["secondFactor"] is False and body["user"]["secondFactorRequired"] is False
     assert "nik_session" in res.cookies and "nik_signin" not in res.cookies
 
@@ -198,7 +198,7 @@ def test_a_factor_counts_only_once_a_code_confirmed_it(admin: TestClient, clock:
     assert started["uri"].startswith("otpauth://totp/Nik%3Aanna?secret=" + started["secret"])
     # Not confirmed: the account still signs in with its password alone, and nothing says a factor is there.
     assert anna.get("/api/auth/second-factor").json()["factors"] == []
-    assert set(sign_in(browser()).json()) == {"user", "session"}
+    assert set(sign_in(browser()).json()) == {"user", "session", "server"}
     wrong = anna.post("/api/auth/second-factor/totp/confirm", json={"code": "000000"})
     assert wrong.status_code == 400 and "not right" in wrong.json()["detail"]
     # Starting again replaces the secret: a code of the first one is no longer taken.
@@ -359,7 +359,7 @@ def test_turning_it_off_asks_the_password_and_a_code_and_ends_the_other_sessions
     assert elsewhere.get("/api/auth/me").status_code == 401
     with SessionLocal() as db:
         assert db.scalar(sa.select(sa.func.count()).select_from(RecoveryCode)) == 0
-    assert set(sign_in(browser()).json()) == {"user", "session"}
+    assert set(sign_in(browser()).json()) == {"user", "session", "server"}
     assert anna.post(url, json={"password": "password1"}).status_code == 409
     assert "auth.factor.off" in actions(admin)
 

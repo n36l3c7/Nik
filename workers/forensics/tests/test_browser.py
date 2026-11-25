@@ -109,7 +109,7 @@ def test_chromium_history_visits_downloads_and_searches(tmp_path):
     (source,) = of(ev, "source")
     assert (source["parser"], source["version"], source["kind"], source["source"]) == (
         "browser",
-        "1",
+        "2",
         "browser",
         "edge.history",
     )
@@ -143,6 +143,7 @@ def test_chromium_history_visits_downloads_and_searches(tmp_path):
     assert search["data"] == {
         "term": "nik forensics",
         "url": "https://www.google.com/search?q=nik",
+        "domain": "google.com",
         "browser": "edge",
         "profile": "Default",
     }
@@ -154,6 +155,32 @@ def test_chromium_history_visits_downloads_and_searches(tmp_path):
     assert last["in_file"] == 6 and last["read"] == 6
     assert of(ev, "skip") == []
     assert {n["reason"]: n["count"] for n in of(ev, "note")} == {"row without a usable time": 1}
+
+
+def test_domain_of_a_url():
+    domain = browser._domain_of
+    assert domain("https://WWW.Example.com:8443/a") == "example.com"
+    assert domain("http://sub.www.example.com/") == "sub.www.example.com"
+    assert domain("ftp://files.example.org/x") == "files.example.org"
+    assert domain("http://xn--bcher-kva.example/") == "xn--bcher-kva.example"
+    assert domain("http://[2001:db8::1]:80/x") == "2001:db8::1"
+    for other in ("", "file:///C:/x.txt", "about:blank", "chrome://settings", "data:text/plain,hi"):
+        assert domain(other) == ""
+    for other in ("javascript:1", "http://", "http://[bad/", None, 5):
+        assert domain(other) == ""
+    assert domain("https://example.com/" + "a" * 100_000) == "example.com"
+
+
+def test_records_with_a_url_carry_its_domain(tmp_path):
+    ev = said(chrome_history(tmp_path), "edge.history")
+    visits = records(ev, "visit")
+    assert visits[0]["data"]["domain"] == "example.com"
+    assert visits[2]["data"]["domain"] == "google.com"  # no www.
+    assert "domain" not in visits[3]["data"]  # file:
+    (download,) = records(ev, "download")
+    assert download["data"]["domain"] == "cdn.example.net" and download["data"]["referrerDomain"] == "t.example"
+    (search,) = records(ev, "search")
+    assert search["data"]["domain"] == "google.com"
 
 
 def test_chromium_shortcuts(tmp_path):
@@ -208,6 +235,7 @@ def test_chromium_bookmarks_json(tmp_path):
         "url": "https://nik.example/",
         "folder": "Bookmarks bar",
         "dateAdded": WEBKIT_MS,
+        "domain": "nik.example",
         "browser": "opera",
         "profile": "Default",
     }

@@ -15,26 +15,89 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 from typing import Any
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import String, and_, bindparam, case, func, or_, select
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.sql.functions import FunctionElement
 
 from ..core.models import EvidenceDetection, EvidenceMark, EvidenceRecord, EvidenceSource
+from .curated import CURATED
 
 COUNT_CAP = 100_001
 LIMIT_MAX = 500
 ORDERS = ("time", "-time", "file")
 _TAGS = {"time": "t", "-time": "T", "file": "f"}
+KEY = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+FIELD_CUT = 500
+CHANNELS_SHOWN = 5
 
 
 class BadQuery(Exception):
     """A request that cannot be answered as asked: a sentence for the caller (400)."""
 
 
+class json_text(FunctionElement):  # noqa: N801 - named as the helpers of query/held.py
+    """The top-level key of a JSON column as text, or NULL: ``column ->> key`` on PostgreSQL (the key
+    bound), ``json_extract(column, '$."key"')`` on SQLite (the key is checked against ``KEY``, so it holds
+    no double quote). A true or false is ``true`` or ``false`` on both."""
+
+    type = String()
+    inherit_cache = False
+
+    def __init__(self, column: Any, key: str):
+        if not KEY.fullmatch(key or ""):
+            raise BadQuery("A key of data is made of letters, digits and _ . : - (80 at most)")
+        self.key = key
+        super().__init__(column, bindparam("json_key", key, type_=String))
+
+
+@compiles(json_text)
+def _json_text_sqlite(element: json_text, compiler: Any, **kw: Any) -> str:
+    column = compiler.process(element.clauses.clauses[0], **kw)
+    path = "'$.\"" + element.key + "\"'"
+    return (
+        f"CASE json_type({column}, {path}) WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' "
+        f"WHEN 'null' THEN NULL ELSE CAST(json_extract({column}, {path}) AS TEXT) END"
+    )
+
+
+@compiles(json_text, "postgresql")
+def _json_text_postgresql(element: json_text, compiler: Any, **kw: Any) -> str:
+    column, key = (compiler.process(clause, **kw) for clause in element.clauses.clauses)
+    return f"({column} ->> CAST({key} AS TEXT))"
+
+
 # --------------------------------------------------------------------------- #
 # Sources                                                                     #
 # --------------------------------------------------------------------------- #
+def first_reason(row: EvidenceSource) -> str | None:
+    """The reason that cost a file read in part (or not at all) the most records, in its reasons table's
+    wording. Chosen by count and then by name: a JSON object keeps no order of its own on PostgreSQL."""
+    if row.read not in ("partial", "failed"):
+        return None
+    reasons = (row.report or {}).get("reasons")
+    if not isinstance(reasons, dict) or not reasons:
+        return None
+
+    def weight(name: str) -> tuple[int, str]:
+        held = reasons[name]
+        return (-int(held.get("count") or 0) if isinstance(held, dict) else 0, name)
+
+    return min(reasons, key=weight)
+
+
+def channels_of(row: EvidenceSource) -> list[str]:
+    """The channels a file's records name, the most records first and then by name (at most 5)."""
+    held = (row.report or {}).get("channels")
+    if not isinstance(held, dict):
+        return []
+    count = {name: n for name, n in held.items() if isinstance(n, int) and not isinstance(n, bool)}
+    return sorted(count, key=lambda name: (-count[name], name))[:CHANNELS_SHOWN]
+
+
 def source_of(row: EvidenceSource, work: dict[str, Any] | None = None) -> dict[str, Any]:
     """A source as the screens read it, without its report (which can be large)."""
     return {
@@ -59,11 +122,13 @@ def source_of(row: EvidenceSource, work: dict[str, Any] | None = None) -> dict[s
         "duplicates": row.duplicates,
         "skipped": row.skipped,
         "notes": row.notes,
+        "channels": channels_of(row),
         "truncated": row.truncated,
         "indicators": row.indicators,
         "firstTs": row.first_ts,
         "lastTs": row.last_ts,
         "error": row.error,
+        "firstReason": first_reason(row),
         "seen": {"by": row.seen_by, "at": row.seen_at, "note": row.seen_note or ""} if row.seen_at else None,
         "createdAt": row.created_at,
         "createdBy": row.created_by,
@@ -94,12 +159,23 @@ def _like(text: str) -> str:
     return f"%{escaped}%"
 
 
+def _prefix(text: str) -> str:
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped}%"
+
+
+def _curated() -> Any:
+    """The event-log records the curated list names: an OR over channels of (channel and its ids). The
+    channel is compared in lower case, as the worker does (a log is spelled as its file spelled it)."""
+    record = EvidenceRecord
+    return or_(*(and_(func.lower(record.channel) == name, record.event_id.in_(ids)) for name, ids in CURATED.items()))
+
+
 def _filters(incident_id: str, f: dict[str, Any]) -> list[Any]:
     record = EvidenceRecord
     where: list[Any] = [record.incident_id == incident_id]
     for name, column in (
         ("kind", record.kind),
-        ("type", record.type),
         ("sourceId", record.source_id),
         ("host", record.host),
         ("username", record.username),
@@ -108,6 +184,29 @@ def _filters(incident_id: str, f: dict[str, Any]) -> list[Any]:
     ):
         if f.get(name) not in (None, ""):
             where.append(column == f[name])
+    # One type or a list of them (the API gives a list, the callers of the fields a text).
+    types = [f["type"]] if isinstance(f.get("type"), str) and f["type"] else list(f.get("type") or ())
+    if len(types) == 1:
+        where.append(record.type == types[0])
+    elif types:
+        where.append(record.type.in_(types))
+    # What the file is, asked of its row: no join on the main query.
+    held = []
+    if f.get("source"):
+        held.append(EvidenceSource.source == f["source"])
+    if f.get("sourcePrefix"):
+        held.append(EvidenceSource.source.like(_prefix(f["sourcePrefix"]), escape="\\"))
+    if f.get("profile"):
+        held.append(EvidenceSource.profile == f["profile"])
+    if held:
+        files = select(EvidenceSource.id).where(EvidenceSource.incident_id == incident_id, *held)
+        where.append(record.source_id.in_(files))
+    if f.get("dated") is not None:
+        where.append(record.ts.is_not(None) if f["dated"] else record.ts.is_(None))
+    if f.get("dataKey"):
+        where.append(json_text(record.data, f["dataKey"]) == str(f.get("dataValue") or ""))
+    if f.get("matter"):
+        where.append(_curated())
     if f.get("level") is not None:
         where.append(record.level >= f["level"])
     if f.get("q"):
@@ -188,11 +287,29 @@ def record_of(row: EvidenceRecord, flagged: bool | None, note: str | None) -> di
     }
 
 
+def _projected(data: Any, names: list[str]) -> dict[str, Any]:
+    """Only the asked keys of a record's data that exist; a long text is cut."""
+    held = data if isinstance(data, dict) else {}
+    return {
+        name: held[name][:FIELD_CUT] if isinstance(held[name], str) else held[name] for name in names if name in held
+    }
+
+
 def records(
-    db: OrmSession, incident_id: str, f: dict[str, Any], order: str, limit: int, cursor: str | None
+    db: OrmSession,
+    incident_id: str,
+    f: dict[str, Any],
+    order: str,
+    limit: int,
+    cursor: str | None,
+    fields: list[str] | None = None,
 ) -> dict[str, Any]:
     """One page of records: ``{"records", "next", "count", "countCapped"}``. ``f`` holds the filters
-    by their names in the API; the count is made on the first page only."""
+    by their names in the API; the count is made on the first page only. ``fields`` names keys of
+    ``data`` that each record of the page carries (under ``data``)."""
+    for name in fields or ():
+        if not KEY.fullmatch(name):
+            raise BadQuery("A key of data is made of letters, digits and _ . : - (80 at most)")
     if order not in ORDERS:
         raise BadQuery("order is one of " + ", ".join(ORDERS))
     if order == "file" and not f.get("sourceId"):
@@ -213,6 +330,9 @@ def records(
         "count": None,
         "countCapped": False,
     }
+    if fields:
+        for shown, (row, _flagged, _note) in zip(answer["records"], rows, strict=True):
+            shown["data"] = _projected(row.data, fields)
     if more and rows:
         last = rows[-1][0]
         answer["next"] = encode(order, last.seq if order == "file" else last.ts, last.id)

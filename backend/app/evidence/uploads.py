@@ -84,6 +84,7 @@ def shown(db: OrmSession, row: UploadSession) -> dict[str, Any]:
         "received": row.received,
         "state": row.state,
         "sourceId": row.source_id,
+        "duplicate": bool((row.params or {}).get("duplicate")),
         "error": (row.params or {}).get("error"),
         "chunk": CHUNK,
         "work": work.describe(db, WORK, row.id) if row.state == "finishing" else None,
@@ -212,6 +213,7 @@ def finish(upload_id: str) -> None:
         if row is None or row.state != "finishing":
             return
         try:
+            duplicate = imports.is_duplicate(db, row.incident_id, sha256, row.file_name, row.params or {})
             source = imports.accept(db, row.incident_id, sha256, row.size, row.file_name, row.params or {}, row.actor)
         except archive.Archived as refused:  # archived while the file was being sent
             row.state = "aborted"
@@ -219,7 +221,15 @@ def finish(upload_id: str) -> None:
             db.commit()
             store.remove_tree(folder_of(upload_id))
             return
+        if duplicate and source.state == "failed":
+            # A file that could not be read is read again when it is sent again, as the other way in does.
+            from . import parse
+
+            parse.again(db, source)
+            duplicate = False
         row.state, row.sha256, row.source_id = "complete", sha256, source.id
+        # Said by the session, which is all the screen asks after the last part.
+        row.params = {**(row.params or {}), "duplicate": duplicate}
         row.updated_epoch = time.time()
         wanted = source.state == "queued"
         source_id = source.id

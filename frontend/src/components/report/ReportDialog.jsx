@@ -16,7 +16,7 @@ import { buildTimelineEvents } from '../../domain/timeline.js'
 
 /*
  * Incident report dialog: language, TLP, sections and the executive summary
- * (saved on the incident), a preview of the server-built HTML in a sandboxed
+ * (saved on the incident), the table of evidence integrity (asked for with each report), a preview of the server-built HTML in a sandboxed
  * frame, and the PDF or HTML download. The app sends the SOC rule hits it
  * computed, so the report can list their ATT&CK techniques.
  */
@@ -33,6 +33,9 @@ export default function ReportDialog({ open, onClose, incident }) {
   const [busy, setBusy] = useState(null) // 'preview' | 'pdf' | 'html'
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
+  // The table of what was read of each file (7.0): on, as the server has it, unless unticked here. It is
+  // asked for with each report and not saved with the incident.
+  const [integrity, setIntegrity] = useState(true)
   const summaryTimer = useRef(null)
   // Options changed but not saved yet (the summary is saved after a pause).
   const unsaved = useRef({})
@@ -42,6 +45,7 @@ export default function ReportDialog({ open, onClose, incident }) {
     setOptions(reportSettings(incident))
     setPreview(null)
     setError(null)
+    setIntegrity(true)
     // Reopening for another incident resets the form; edits re-render only.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the incident is its id: saving its settings must not reset the form
   }, [open, incident?.id])
@@ -89,6 +93,7 @@ export default function ReportDialog({ open, onClose, incident }) {
       const blob = await postForBlob(`/incidents/${encodeURIComponent(incident.id)}/report`, {
         format,
         ...options,
+        integrity,
         detections,
       })
       return blob
@@ -213,6 +218,20 @@ export default function ReportDialog({ open, onClose, incident }) {
                 {section.label}
               </label>
             ))}
+            <label className="flex items-start gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                checked={integrity}
+                onChange={(event) => setIntegrity(event.target.checked)}
+                className="mt-0.5 accent-accent"
+              />
+              <span>
+                Evidence integrity
+                <span className="block text-xs text-fg-muted">
+                  What was read of each file of host evidence, and what was lost; a file read in part says why.
+                </span>
+              </span>
+            </label>
           </fieldset>
 
           <label className="block space-y-1">

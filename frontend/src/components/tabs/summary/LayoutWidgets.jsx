@@ -1,19 +1,17 @@
 import { Suspense, useMemo, useState } from 'react'
 import { Pencil } from 'lucide-react'
-import { useAuth } from '../../../context/AuthContext.jsx'
 import { useFields } from '../../../context/FieldsContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { ANALYSIS_TABS, getTabById } from '../../../config/tabs.js'
-import { BROWSERS } from '../../../config/browsers.js'
-import { SHELLS } from '../../../config/shells.js'
-import { ARTIFACT_CATEGORIES } from '../../../config/artifacts.js'
 import { getOsById } from '../../../config/os.js'
-import { evidenceGroups } from '../../../domain/evidence.js'
+import { evidenceGroups, hostCounts } from '../../../domain/evidence.js'
 import { IN_SUMMARY_FORM, valuesOf } from '../../../domain/fields.js'
 import { STATUSES } from '../../../domain/incidentName.js'
 import { gridSections, kindOf } from '../../../domain/layoutGrid.js'
 import { chartSummary } from '../../../domain/linked.js'
 import { formatDateTime } from '../../../lib/time.js'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
+import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
 import { Button, ErrorBoundary, SeverityTag, Wait } from '../../ui/index.js'
 import EditFieldsDialog from '../../fields/EditFieldsDialog.jsx'
 import FieldList from '../../fields/FieldList.jsx'
@@ -51,7 +49,7 @@ function Line({ label, children }) {
 
 /** What the incident is, with the button that edits it. */
 function Facts({ incident }) {
-  const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   const [editing, setEditing] = useState(false)
   const status = STATUSES.find((item) => item.value === (incident.status ?? 'open'))?.label ?? incident.status
   const window = [incident.suspiciousStart, incident.suspiciousEnd]
@@ -75,7 +73,7 @@ function Facts({ incident }) {
           {incident.createdBy || 'unknown'} · {formatDateTime(Date.parse(incident.createdAt))}
         </Line>
       </dl>
-      {can('write') && (
+      {canWrite && (
         <div className={IN_TITLE}>
           <Button variant="ghost" size="xs" icon={Pencil} onClick={() => setEditing(true)}>
             Edit the incident
@@ -89,7 +87,7 @@ function Facts({ incident }) {
 
 /** One section of the type, with its fields and the form that edits them. */
 function Section({ incident, type, widget }) {
-  const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   const { known } = useFields()
   const [editing, setEditing] = useState(false)
   const section = gridSections(type?.layout).find((item) => item.id === widget.section)
@@ -105,7 +103,7 @@ function Section({ incident, type, widget }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <FieldList fields={fields} values={values} columns={section.columns} />
       </div>
-      {can('write') && (
+      {canWrite && (
         <div className={IN_TITLE}>
           <Button
             variant="ghost"
@@ -134,33 +132,19 @@ function Section({ incident, type, widget }) {
 
 /** How much evidence the incident holds. */
 function Stats({ incident }) {
-  const figures = useMemo(() => {
-    const data = incident.data ?? {}
-    let events = 0
-    let bookmarks = 0
-    for (const browser of BROWSERS) {
-      for (const profile of Object.values(data.browser?.browsers?.[browser.id]?.profiles ?? {})) {
-        events += (profile.history?.length ?? 0) + (profile.downloads?.length ?? 0)
-        bookmarks += profile.bookmarks?.length ?? 0
-      }
-    }
-    let commands = 0
-    for (const shell of SHELLS) commands += data.commands?.shells?.[shell.id]?.commands?.length ?? 0
-    let artifacts = 0
-    for (const category of ARTIFACT_CATEGORIES) {
-      for (const source of Object.values(data.endpoint?.categories?.[category.id]?.sources ?? {})) {
-        artifacts += source?.records?.length ?? 0
-      }
-    }
-    return [
-      ['Browser events', events],
-      ['Commands', commands],
-      ['Endpoint artifacts', artifacts],
+  // What the machine gave is counted by the server (the document holds none of it).
+  const { summary } = useEvidenceSummary(incident.id)
+  const figures = useMemo(
+    () => [
+      ['Event logs', hostCounts(summary, 'eventlogs').records],
+      ['Browser records', hostCounts(summary, 'browser').records],
+      ['Commands', hostCounts(summary, 'commands').records],
+      ['Endpoint artifacts', hostCounts(summary, 'endpoint').records],
       ['Flagged', Object.keys(incident.flags ?? {}).length],
-      ['Bookmarks', bookmarks],
       ['Notes', incident.notes?.length ?? 0],
-    ]
-  }, [incident.data, incident.flags, incident.notes])
+    ],
+    [summary, incident.flags, incident.notes],
+  )
   return (
     <dl className="grid h-full grid-cols-2 content-start gap-2 overflow-y-auto @xs:grid-cols-3">
       {figures.map(([label, value]) => (
@@ -178,13 +162,15 @@ function Stats({ incident }) {
 /** The files of the incident, kind by kind: each opens in the Evidence tab. */
 function Evidence({ incident }) {
   const { goTo } = useNavigation()
+  const { summary } = useEvidenceSummary(incident.id)
   const groups = useMemo(
     () =>
       evidenceGroups(
         ANALYSIS_TABS.filter((tab) => tab.evidence),
         incident,
+        summary,
       ).filter((group) => group.count > 0),
-    [incident],
+    [incident, summary],
   )
   if (groups.length === 0) return <p className={MUTED}>No evidence yet: drop a file anywhere in the window.</p>
   return (

@@ -48,7 +48,7 @@ from .. import sqlite_safe, viewing
 from . import BadLocator, ViewError
 
 NAME = "browser"
-VERSION = "1"
+VERSION = "2"
 KIND = "browser"
 
 _CHROMIUM = ("chrome", "edge", "brave", "opera")
@@ -68,6 +68,7 @@ SOURCES = (
 MAX_ROWS = 2_000_000
 MAX_FILE = 64 * 1024 * 1024
 MAX_DEPTH = 100
+MAX_URL = 8192  # a longer URL is cut before it is split for its domain; the URL itself is kept whole
 
 CHROMIUM_REDIRECT_MASK = 0x40000000 | 0x80000000
 FIREFOX_REDIRECT_TYPES = {5, 6}
@@ -236,6 +237,21 @@ def _host_of(url: str) -> str:
         return ""
 
 
+def _domain_of(url: Any) -> str:
+    """The host of an http(s) or ftp URL for ``data["domain"]``: lower-case, no port, no leading ``www.``, IPv6 with
+    no brackets, punycode as written. Empty for any other URL or one that cannot be split; it never raises."""
+    if not isinstance(url, str) or not url:
+        return ""
+    try:
+        parts = urlsplit(url.strip()[:MAX_URL])
+        if parts.scheme.lower() not in ("http", "https", "ftp"):
+            return ""
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return ""
+    return host.removeprefix("www.")
+
+
 def _is_web(url: str) -> bool:
     return url.lower().startswith(("http://", "https://"))
 
@@ -280,6 +296,13 @@ class _Emit:
         if ts is None:
             self.no_time += 1
         data = {**data, "browser": self.browser, "profile": self.profile}
+        domain = _domain_of(data.get("url"))
+        if domain:
+            data["domain"] = domain
+        if kind == "download":  # the site the download came from, when it is another key than the URL
+            site = _domain_of(data.get("referrer"))
+            if site:
+                data["referrerDomain"] = site
         if self.extra:
             data["extra"] = list(self.extra)
         self.ctx.record(

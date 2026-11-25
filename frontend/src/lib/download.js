@@ -11,6 +11,20 @@ export function saveBlob(blob, fileName) {
 }
 
 /**
+ * Save what an address serves, by an anchor on it: the browser streams the file to the disk, so a large
+ * zip is not held in memory (the session cookie goes with the request; a refusal shows as a failed download).
+ */
+export function saveUrl(url, fileName = '') {
+  const anchor = document.createElement('a')
+  anchor.href = url
+  if (fileName) anchor.download = fileName
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+/**
  * Copy text; false when the browser refuses.
  *
  * The clipboard of a page exists only where the page is served over HTTPS (or from the

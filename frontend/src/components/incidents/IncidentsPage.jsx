@@ -24,7 +24,7 @@ import { useBulk } from '../../context/BulkContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useFields } from '../../context/FieldsContext.jsx'
-import { useIncidents } from '../../context/IncidentContext.jsx'
+import { normalizeSummary, useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { readChoice, secondsOf, writeChoice } from '../../domain/autoRefresh.js'
 import { typeOf } from '../../domain/fields.js'
@@ -51,7 +51,8 @@ import { hasModalLayer } from '../../lib/layers.js'
 import { useAutoRefresh } from '../../lib/useAutoRefresh.js'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
-import { Badge, BulkBar, Button, EmptyState, Modal, useSelection } from '../ui/index.js'
+import { Badge, BulkBar, Button, EmptyState, Modal, Select, useSelection } from '../ui/index.js'
+import { ARCHIVED_FILTER_OPTIONS, archivedParam } from '../../domain/archive.js'
 import QueryInput from '../ui/QueryInput.jsx'
 import RefreshControl from '../ui/RefreshControl.jsx'
 import ColumnsDialog from './ColumnsDialog.jsx'
@@ -111,6 +112,7 @@ function incidentActions({
   types,
   canWrite,
   canAutomate,
+  canArchive,
   askBulk,
   onDone,
   exportIncident,
@@ -261,6 +263,17 @@ function incidentActions({
           },
         ]
       : []),
+    ...(canArchive
+      ? [
+          { group: 'Archive' },
+          { id: 'archive', label: 'Archive…', onSelect: () => ask('archive', 'Archive the incidents') },
+          {
+            id: 'unarchive',
+            label: 'Take out of the archive…',
+            onSelect: () => ask('unarchive', 'Take the incidents out of the archive'),
+          },
+        ]
+      : []),
     { group: 'Take out' },
     { id: 'export', label: 'Export (JSON)', onSelect: exportAll },
     { id: 'links', label: 'Copy the links', onSelect: copyLinks },
@@ -272,9 +285,10 @@ function incidentActions({
 const remembered = new Map()
 
 /** Ask the server which incidents a query keeps, and the fields the columns need: the state `match` holds. */
-async function askMatch(text, wanted) {
+async function askMatch(text, wanted, archived = 'exclude') {
   const asked = [
     'view=summary',
+    ...(archivedParam(archived) ? [`archived=${archivedParam(archived)}`] : []),
     ...(text ? [`q=${encodeURIComponent(text)}`] : []),
     ...(wanted ? [`fields=${encodeURIComponent(wanted)}`] : []),
   ]
@@ -320,6 +334,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   const schema = useQuerySchema('incidents')
   const saved = useSavedFilters('incidents')
   const canWrite = can('write')
+  const canArchive = can('incidents.archive')
   const me = currentUser?.username ?? ''
   const pageRef = useRef(null)
 
@@ -377,13 +392,15 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   // ---- the incidents the query keeps, and the fields the columns need: asked of the server ----
   // `query`: what the rows on screen are the answer to (while a new query is asked, the old one).
   const [match, setMatch] = useState({ ids: null, fields: null, error: null, query: '' })
+  // Archived incidents are left out of the list unless it is asked for them: "no", "only" or "include".
+  const [archived, setArchived] = useState('exclude')
   const wanted = fieldNames(chosenKeys, columns).join(',')
   // What the query and the fields are now, and what a refresh is asking of the server (see `refresh`).
-  const asked = useRef({ text: '', wanted: '' })
+  const asked = useRef({ text: '', wanted: '', archived: 'exclude' })
   const asking = useRef(null)
   useEffect(() => {
-    asked.current = { text: view.query.trim(), wanted }
-  }, [view.query, wanted])
+    asked.current = { text: view.query.trim(), wanted, archived }
+  }, [view.query, wanted, archived])
   // Asked again when the list changes or a change reaches the server, so an edit shows in the filter.
   const stamp = `${incidents.length}:${incidents.reduce((latest, row) => (row.updatedAt > latest ? row.updatedAt : latest), '')}:${unsavedChanges}`
   useEffect(() => {
@@ -397,8 +414,8 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     let cancelled = false
     const timer = setTimeout(() => {
       // A refresh is asking the same already: its answer is as fresh as this one would be.
-      if (asking.current === `${text}|${wanted}`) return
-      askMatch(text, wanted)
+      if (asking.current === `${text}|${wanted}|${archived}`) return
+      askMatch(text, wanted, archived)
         .then((next) => !cancelled && setMatch(next))
         .catch((failure) => {
           if (!cancelled) setMatch((current) => ({ ...current, error: failure.query ?? { message: failure.message } }))
@@ -408,14 +425,32 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
       cancelled = true
       clearTimeout(timer)
     }
-  }, [view.query, wanted, stamp])
+  }, [view.query, wanted, stamp, archived])
+
+  // The rows of the list: the ones the app holds, or the ones the server lists when archived are asked for.
+  const [archivedRows, setArchivedRows] = useState([])
+  const loadArchived = useCallback(async () => {
+    const answer = await api.get(`/incidents?view=summary&archived=${archivedParam(archived)}`)
+    const found = Array.isArray(answer?.incidents) ? answer.incidents : []
+    setArchivedRows(found.filter((row) => row && row.id).map(normalizeSummary))
+  }, [archived])
+  useEffect(() => {
+    if (archived === 'exclude') {
+      setArchivedRows([])
+      return
+    }
+    loadArchived().catch(() => {})
+  }, [archived, loadArchived, stamp])
+  // An incident archived from its header is still in the rows the app holds (marked): the list leaves it out, as the server does.
+  const unarchived = useMemo(() => incidents.filter((row) => !row.archivedAt), [incidents])
+  const listed = archived === 'exclude' ? unarchived : archivedRows
 
   const rows = useMemo(() => {
-    const kept = incidents
+    const kept = listed
       .filter((row) => !match.ids || match.ids.has(row.id))
       .map((row) => (match.fields ? { ...row, fields: match.fields.get(row.id) ?? {} } : row))
     return sortIncidents(kept, view.sort, columns, { types })
-  }, [incidents, match.ids, match.fields, view.sort, columns, types])
+  }, [listed, match.ids, match.fields, view.sort, columns, types])
   const [limit, setLimit] = useState(PAGE_ROWS)
   const drawn = useMemo(() => rows.slice(0, limit), [rows, limit])
 
@@ -461,6 +496,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     types,
     canWrite,
     canAutomate,
+    canArchive,
     askBulk: askTracked,
     onDone: refreshIncidents,
     exportIncident,
@@ -514,17 +550,20 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   // the filter, the order, the columns, the rows shown, the selection and the quick view are not touched.
   const refresh = useCallback(async () => {
     await reloadIncidents()
-    const { text, wanted: fields } = asked.current
+    const { text, wanted: fields, archived: mode } = asked.current
+    if (mode !== 'exclude') await loadArchived().catch(() => {})
     if ((!text && !fields) || tryParse(text).error) return
-    asking.current = `${text}|${fields}`
+    asking.current = `${text}|${fields}|${mode}`
     try {
-      const next = await askMatch(text, fields)
+      const next = await askMatch(text, fields, mode)
       // Typed meanwhile: the effect of the new query is asking its own.
-      if (asked.current.text === text && asked.current.wanted === fields) setMatch(next)
+      if (asked.current.text === text && asked.current.wanted === fields && asked.current.archived === mode) {
+        setMatch(next)
+      }
     } finally {
       asking.current = null
     }
-  }, [reloadIncidents])
+  }, [reloadIncidents, loadArchived])
   const paused = Boolean(dialog || deleteTarget || taggingId || importing || bulkRunning > 0)
   const autoRefresh = useAutoRefresh({ refresh, seconds: secondsOf(chosenRefresh), paused, blocked: hasModalLayer })
 
@@ -638,9 +677,9 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
         <SearchBar />
         <div className="flex flex-1 basis-0 items-center justify-end gap-3">
           <p role="status" aria-label="Incidents listed" className="whitespace-nowrap font-mono text-xs text-fg-muted">
-            {rows.length === incidents.length
-              ? `${incidents.length} ${incidents.length === 1 ? 'incident' : 'incidents'}`
-              : `${rows.length} of ${incidents.length}`}
+            {rows.length === listed.length
+              ? `${listed.length} ${listed.length === 1 ? 'incident' : 'incidents'}`
+              : `${rows.length} of ${listed.length}`}
           </p>
           <RefreshControl
             what="the list"
@@ -704,6 +743,15 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
             values={offered}
             className="min-w-0 flex-1"
           />
+          <Select
+            label="Archive"
+            value={archived}
+            onChange={(value) => {
+              setArchived(value)
+              resetPicked()
+            }}
+            options={ARCHIVED_FILTER_OPTIONS}
+          />
           <Button variant="secondary" size="sm" icon={Save} onClick={() => setDialog('save')}>
             Save the filter…
           </Button>
@@ -752,7 +800,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
 
       {/* ----- The table (its own scroll, in both directions) ----- */}
       <div className="min-h-0 flex-1 overflow-auto">
-        {incidents.length === 0 ? (
+        {unarchived.length === 0 && archived === 'exclude' ? (
           <div className="flex h-full items-center justify-center p-6">
             <EmptyState
               skull

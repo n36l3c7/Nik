@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import {
   Activity,
+  Archive,
   Clock,
   DatabaseBackup,
   FileCode2,
@@ -49,6 +50,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
 import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
+import ArchivingSection from './sections/ArchivingSection.jsx'
 import PreprocessSection from './sections/PreprocessSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
 import ContentPacksSection from './sections/ContentPacksSection.jsx'
@@ -101,6 +103,7 @@ const SECTION_VIEWS = {
   incidentTypes: { icon: Shapes, Component: IncidentTypesSection },
   fields: { icon: TextCursorInput, Component: FieldsSection },
   sla: { icon: Timer, Component: SlaSection },
+  archiving: { icon: Archive, Component: ArchivingSection },
   preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },

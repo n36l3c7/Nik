@@ -156,6 +156,22 @@ def test_an_archived_incident_cannot_be_archived_again_nor_a_free_one_taken_out(
     assert admin.post("/api/incidents/ghost/archive").status_code == 404
 
 
+def test_going_into_the_archive_and_out_of_it_is_a_new_revision_of_the_incident(admin, world):
+    close(admin)
+    path = f"/api/incidents/{INCIDENT}"
+    before = admin.get(path).headers["ETag"]
+    assert admin.get(path, headers={"If-None-Match": before}).status_code == 304
+    assert admin.post(f"{path}/archive").status_code == 200
+    # Whoever holds the incident open is not told that nothing changed: it is read-only now.
+    seen = admin.get(path, headers={"If-None-Match": before})
+    assert seen.status_code == 200 and seen.json()["archivedAt"]
+    archived = seen.headers["ETag"]
+    assert archived != before
+    assert admin.delete(f"{path}/archive").status_code == 200
+    back = admin.get(path, headers={"If-None-Match": archived})
+    assert back.status_code == 200 and back.json()["archivedAt"] is None
+
+
 # --------------------------------------------------------------------------- #
 # Read-only                                                                   #
 # --------------------------------------------------------------------------- #

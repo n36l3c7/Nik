@@ -14,6 +14,11 @@
                                             unknown parser or a locator of the wrong shape (also one that
                                             lacks a member the parser needs), 504 after
                                             ``VIEW_SECONDS``
+    POST /find {"sha256", "needle", "as", "from"?, "limit"?}
+                                         -> where a text (as UTF-8 and UTF-16LE, any case) or some bytes (hex)
+                                            are in the original, from an offset: ``{"matches", "next",
+                                            "scanned", "cut"}`` (``nik_forensics/finding.py``); 400 for a bad
+                                            needle. After ``FIND_STOP_SECONDS`` it answers what it found with ``next``
 
 ``name`` is the name the original was given under: ``<sha256>.bin``, checked
 against what was received (``given.py``). Only the Nik backend talks to this
@@ -28,7 +33,8 @@ clear**, until nobody asked for it for ``FORENSICS_FILE_IDLE`` seconds, and at
 the latest until the worker starts again (it empties the place when it starts).
 
 A view is a short process of its own too (``view_job.py``), under its own small bound
-(``VIEW_SLOTS`` at once), so that it never waits behind a long parse.
+(``VIEW_SLOTS`` at once), so that it never waits behind a long parse; so is a search (``find_job.py``,
+``FIND_SLOTS``).
 
 **Every parse is a process of its own** (``run_job.py``), with its memory and
 its CPU time bounded: a file made to crash a parser ends that process. The
@@ -70,9 +76,16 @@ VIEW_SLOTS = 4
 VIEW_SECONDS = 30
 # What the answer of a view may weigh, whatever the child printed.
 VIEW_MAX_BYTES = 512 * 1024
+FINDER = os.path.join(HERE, "find_job.py")
+FIND_SLOTS = 2
+FIND_SECONDS = 30
+# The search stops reading by itself this long after it began, and answers with where to go on from.
+FIND_STOP_SECONDS = 24
+FIND_MAX_BYTES = 256 * 1024
 _NAME = re.compile(r"^[0-9a-f]{64}\.bin$")
 _slots = threading.BoundedSemaphore(MAX_JOBS)
 _view_slots = threading.BoundedSemaphore(VIEW_SLOTS)
+_find_slots = threading.BoundedSemaphore(FIND_SLOTS)
 JOBS = jobs.Jobs()
 GIVEN = given.Given(
     os.environ.get("FORENSICS_WORK_DIR", "/work"),
@@ -108,6 +121,16 @@ def check_view(body: dict) -> None:
     for key, value in loc.items():
         if len(key) > 40 or not (value is None or isinstance(value, (bool, int, str))) or len(str(value)) > 1024:
             raise Refused(422, "loc holds numbers and short texts only")
+
+
+def check_find(body: dict) -> None:
+    """The shape of a ``/find`` request, before the worker looks for the file: 400 when it is not one."""
+    from nik_forensics import finding
+
+    try:
+        finding.check(body.get("needle"), body.get("as", "text"), body.get("from", 0), body.get("limit", 100))
+    except finding.BadNeedle as error:
+        raise Refused(400, str(error)) from None
 
 
 def _parser_names() -> tuple[str, ...]:
@@ -172,6 +195,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
         except ValueError:
             raise Refused(400, "Invalid request body") from None
+        if self.path == "/find" and isinstance(body, dict):  # a search names the original by its hash
+            sha256 = body.get("sha256")
+            if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+                raise Refused(400, "sha256 must be 64 hexadecimal digits")
+            body["name"] = f"{sha256}.bin"
         name = str(body.get("name") or "") if isinstance(body, dict) else ""
         if not _NAME.fullmatch(name):
             raise Refused(400, "name must be <sha256>.bin")
@@ -183,12 +211,12 @@ class Handler(BaseHTTPRequestHandler):
         return body, path
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in ("/parse", "/recognise", "/view"):
+        if self.path not in ("/parse", "/recognise", "/view", "/find"):
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong forensics token"})
         try:
-            body, path = self._request(check_view if self.path == "/view" else None)
+            body, path = self._request({"/view": check_view, "/find": check_find}.get(self.path))
         except Refused as refused:
             return self._send(refused.status, refused.body)
         except (ValueError, TypeError) as error:
@@ -198,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._recognise(path, name, body)
         if self.path == "/view":
             return self._view(path, name, body)
+        if self.path == "/find":
+            return self._find(path, name, body)
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The forensics worker is busy; try again later"})
         try:
@@ -290,6 +320,71 @@ class Handler(BaseHTTPRequestHandler):
             500,
             {
                 "detail": "The view failed"
+                + (f": {said['detail']}" if isinstance(said, dict) and said.get("detail") else "")
+            },
+        )
+
+    def _find(self, path: str, name: str, body: dict) -> None:
+        """Where a needle is in the original: asked of a child that reads the file in blocks, under a clock.
+        The child stops reading by itself a little before the clock (``FIND_STOP_SECONDS``) and says where
+        to go on from; a child that outlives the clock is killed, and that is a 504."""
+        if not _find_slots.acquire(blocking=False):
+            return self._send(503, {"detail": "The forensics worker is busy with searches; try again later"})
+        try:
+            asked = {
+                "needle": body["needle"],
+                "as": body.get("as", "text"),
+                "from": body.get("from", 0),
+                "limit": body.get("limit", 100),
+                "seconds": min(FIND_STOP_SECONDS, FIND_SECONDS),
+            }
+            with GIVEN.hold([name]):
+                job = subprocess.Popen(  # noqa: S603 - fixed command, the file and the request are arguments
+                    [sys.executable, "-I", FINDER, path, json.dumps(asked)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    env=job_env(),
+                    cwd="/",
+                )
+                timed_out = threading.Event()
+
+                def stop() -> None:
+                    timed_out.set()
+                    job.kill()
+
+                clock = threading.Timer(FIND_SECONDS, stop)
+                clock.daemon = True
+                clock.start()
+                try:
+                    out = job.stdout.read(FIND_MAX_BYTES + 1)
+                    if len(out) > FIND_MAX_BYTES:
+                        job.kill()
+                    code = job.wait()
+                finally:
+                    clock.cancel()
+                    if job.poll() is None:
+                        job.kill()
+                    job.wait()
+                    job.stdout.close()
+        finally:
+            _find_slots.release()
+        if timed_out.is_set():
+            return self._send(504, {"detail": f"The search took more than {FIND_SECONDS} seconds"})
+        if len(out) > FIND_MAX_BYTES:
+            return self._send(502, {"detail": "The answer of the search is larger than the worker sends"})
+        try:
+            said = json.loads(out.decode("utf-8", "replace"))
+        except ValueError:
+            said = None
+        if code == 0 and isinstance(said, dict):
+            return self._send(200, said)
+        if code == 5 and isinstance(said, dict):
+            return self._send(400, {"detail": str(said.get("detail") or "The needle cannot be searched for")})
+        self._send(
+            500,
+            {
+                "detail": "The search failed"
                 + (f": {said['detail']}" if isinstance(said, dict) and said.get("detail") else "")
             },
         )

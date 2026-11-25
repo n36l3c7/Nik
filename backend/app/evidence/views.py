@@ -17,30 +17,26 @@ written into the SQL, not bound: a value that is selected and grouped by must re
 from __future__ import annotations
 
 import json
-import re
 import statistics
 import urllib.error
 import urllib.request
 from typing import Any
 
-from sqlalchemy import Integer, String, and_, bindparam, cast, func, literal_column, or_, select
-from sqlalchemy.ext.compiler import compiles
+from sqlalchemy import Integer, and_, cast, func, literal_column, or_, select
 from sqlalchemy.orm import Session as OrmSession
-from sqlalchemy.sql.functions import FunctionElement
 
 from ..core import store
 from ..core.config import settings
 from ..core.models import EvidenceMark, EvidenceRecord, EvidenceSource
 from ..workers import handover
 from . import originals, parse
-from .browse import BadQuery, _filters
+from .browse import KEY, BadQuery, _filters, json_text  # noqa: F401 - KEY is read by the routers
 
 GAPS_MAX = 200
 BURST_MIN = 20
 DISTINCT_CAP = 100_001
 FIELDS_OF = 500
 VIEW_TIMEOUT = 40
-KEY = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
 COLUMNS = ("host", "username", "channel", "eventId", "type", "kind", "source")
 
 LEGACY = "This evidence was imported before 7.0: there is no original to show"
@@ -149,37 +145,6 @@ def bursts(buckets: list[dict[str, Any]], factor: int) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------- #
 # The stack                                                                   #
 # --------------------------------------------------------------------------- #
-class json_text(FunctionElement):  # noqa: N801 - named as the helpers of query/held.py
-    """The top-level key of a JSON column as text, or NULL: ``column ->> key`` on PostgreSQL (the key
-    bound), ``json_extract(column, '$."key"')`` on SQLite (the key is checked against ``KEY``, so it holds
-    no double quote). A true or false is ``true`` or ``false`` on both."""
-
-    type = String()
-    inherit_cache = False
-
-    def __init__(self, column: Any, key: str):
-        if not KEY.fullmatch(key or ""):
-            raise BadQuery("A key of data is made of letters, digits and _ . : - (80 at most)")
-        self.key = key
-        super().__init__(column, bindparam("json_key", key, type_=String))
-
-
-@compiles(json_text)
-def _json_text_sqlite(element: json_text, compiler: Any, **kw: Any) -> str:
-    column = compiler.process(element.clauses.clauses[0], **kw)
-    path = "'$.\"" + element.key + "\"'"
-    return (
-        f"CASE json_type({column}, {path}) WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' "
-        f"WHEN 'null' THEN NULL ELSE CAST(json_extract({column}, {path}) AS TEXT) END"
-    )
-
-
-@compiles(json_text, "postgresql")
-def _json_text_postgresql(element: json_text, compiler: Any, **kw: Any) -> str:
-    column, key = (compiler.process(clause, **kw) for clause in element.clauses.clauses)
-    return f"({column} ->> CAST({key} AS TEXT))"
-
-
 def _expression(field: str) -> tuple[Any, bool, bool]:
     """What a field of the stack reads: the SQL expression, whether it is text, whether it needs the sources."""
     record = EvidenceRecord
@@ -267,16 +232,16 @@ def _answer(raw: bytes) -> dict[str, Any]:
     return answer if isinstance(answer, dict) else {}
 
 
-def ask_view(sha256: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """Ask the worker what the viewer shows: ``(status, answer)``. The original is given to the worker
-    when it says it does not hold it, and the question is asked once more. A worker that cannot be
-    reached is a 502."""
+def ask_view(sha256: str, body: dict[str, Any], route: str = "view") -> tuple[int, dict[str, Any]]:
+    """Ask the worker what the viewer shows (``route`` ``"find"``: where a needle is): ``(status, answer)``.
+    The original is given to the worker when it says it does not hold it, and the question is asked once
+    more. A worker that cannot be reached is a 502."""
     name = f"{sha256}.bin"
     url, token = settings.FORENSICS_URL, settings.FORENSICS_TOKEN
     data = json.dumps({**body, "name": name}).encode("utf-8")
     for attempt in (1, 2):
         request = urllib.request.Request(  # noqa: S310 - operator-configured URL
-            f"{url}/view",
+            f"{url}/{route}",
             data=data,
             method="POST",
             headers={parse.HEADER: token, "Content-Type": "application/json"},
@@ -296,6 +261,16 @@ def ask_view(sha256: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             return 502, {"detail": f"The forensics worker cannot be reached: {getattr(error, 'reason', error)}"}
     return 502, {"detail": "The forensics worker did not take the file"}
+
+
+def find(sha256: str, needle: str, how: str, start: int, limit: int) -> tuple[int, dict[str, Any]]:
+    """Ask the worker where a text or some bytes are in an original, from an offset: ``(status, answer)``.
+    The worker reads the file in blocks, under a clock, and says where to go on from (``next``)."""
+    body = {"sha256": sha256, "needle": needle, "as": how, "from": start, "limit": limit}
+    code, answer = ask_view(sha256, body, "find")
+    if code == 200:
+        answer["size"] = store.size(originals.path_of(sha256))
+    return code, answer
 
 
 def page(sha256: str, offset: int, length: int, how: str) -> dict[str, Any]:

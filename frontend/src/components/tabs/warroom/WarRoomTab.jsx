@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { lineKind } from '../../../domain/commandLine.js'
 import { FILTERS } from '../../../domain/warRoom.js'
@@ -24,7 +25,7 @@ import Room from '../../room/Room.jsx'
 export default function WarRoomTab({ incident, boxed = false }) {
   const { can } = useAuth()
   const { retryActiveIncident, refreshIncidents, askClose } = useIncidents()
-  const canWrite = can('write')
+  const canWrite = useCanWrite(incident)
   const canRun = can('automation.run')
   const source = useMemo(
     () => ({

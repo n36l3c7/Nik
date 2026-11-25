@@ -7,13 +7,13 @@
  * matter to an investigation. This catalog lists them, per channel, with a
  * label, a category and a one-line summary built from the event's fields.
  *
- * Event logs come in two ways (Event Logs tab):
- *   - the raw `.evtx` files, uploaded and parsed ON THE SERVER (a binary
- *     format the browser cannot read; see backend/app/parsing/eventlog.py);
- *   - the JSON written by the collection script below (Get-WinEvent, native),
- *     parsed in the browser.
- * Both keep only the curated ids. CURATED_EVENTS is mirrored by CURATED in
- * backend/app/parsing/eventlog.py; a unit test compares the two.
+ * Event logs come in two ways (Event Logs tab), both read ON THE SERVER, which
+ * keeps every event:
+ *   - the raw `.evtx` files;
+ *   - the JSON written by the collection script below (Get-WinEvent, native).
+ * The ids here give the labels and summaries of the page and the ids the
+ * script exports. The "Events that matter" filter uses the server's own list
+ * (backend/app/evidence/curated.py); keep the two in step by hand.
  */
 
 export const LOGON_TYPES = {
@@ -26,24 +26,6 @@ export const LOGON_TYPES = {
   9: 'new credentials',
   10: 'RDP',
   11: 'cached interactive',
-}
-
-/** Logon types a person is behind (console, RDP, unlock, cached). */
-export const HUMAN_LOGON_TYPES = new Set(['2', '7', '10', '11'])
-
-/** Event categories: filter values and badge colors. */
-export const EVENT_CATEGORIES = {
-  logon: { label: 'Logon', color: 'cyan' },
-  account: { label: 'Account', color: 'violet' },
-  process: { label: 'Process', color: 'emerald' },
-  service: { label: 'Service', color: 'amber' },
-  task: { label: 'Scheduled task', color: 'amber' },
-  powershell: { label: 'PowerShell', color: 'violet' },
-  rdp: { label: 'RDP', color: 'cyan' },
-  defender: { label: 'Defender', color: 'red' },
-  log: { label: 'Audit / log', color: 'red' },
-  system: { label: 'System', color: 'slate' },
-  network: { label: 'Network', color: 'slate' },
 }
 
 const v = (d, ...keys) => {
@@ -378,11 +360,6 @@ export function getChannel(name) {
 export function getEventDefinition(channelName, eventId) {
   return getChannel(channelName)?.events[eventId] ?? null
 }
-
-/** `{ channelKey: [ids] }` — the curated set (mirrored on the server). */
-export const CURATED_EVENTS = Object.fromEntries(
-  EVENT_CHANNELS.map((channel) => [channel.key, Object.keys(channel.events).map(Number)]),
-)
 
 /*
  * Collection script: exports the curated events of every channel above as

@@ -262,8 +262,11 @@ def _number_incident(_mapper, connection, target: Incident) -> None:
 
 @event.listens_for(Incident, "before_update")
 def _bump_incident_revision(_mapper, _connection, target: Incident) -> None:
-    """Every write of the document is a new revision, wherever it comes from."""
-    if sa_inspect(target).attrs.doc.history.has_changes():
+    """Every write of the document is a new revision, wherever it comes from. So is going into the
+    archive or out of it: whoever holds the incident open learns it is read-only at the next check,
+    instead of being told that nothing changed."""
+    attrs = sa_inspect(target).attrs
+    if attrs.doc.history.has_changes() or attrs.archived_at.history.has_changes():
         target.rev = (target.rev or 0) + 1
 
 

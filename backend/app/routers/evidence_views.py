@@ -24,6 +24,7 @@ from ..core.permissions import EVIDENCE_DOWNLOAD
 from ..core.security import Principal, reader_principal, require
 from ..evidence import browse, originals, parse, views
 from ..malware.samples import DEFAULT_ZIP_PASSWORD
+from .evidence_filters import filters
 
 router = APIRouter(prefix="/incidents/{incident_id}/evidence", tags=["incidents/evidence"])
 
@@ -50,37 +51,6 @@ def _original(row: EvidenceSource) -> str:
         return views.original_of(row)
     except views.NoOriginal as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
-
-
-def filters(
-    kind: str = Query(default="", max_length=16),
-    type: str = Query(default="", max_length=40),  # noqa: A002 - the API's own name
-    sourceId: str = Query(default="", max_length=32),  # noqa: N803
-    host: str = Query(default="", max_length=255),
-    username: str = Query(default="", max_length=255),
-    channel: str = Query(default="", max_length=120),
-    eventId: int | None = Query(default=None),  # noqa: N803
-    level: int | None = Query(default=None, ge=1, le=5),
-    flagged: bool = False,
-    q: str = Query(default="", max_length=200),
-    from_: int | None = Query(default=None, alias="from"),
-    to: int | None = None,
-) -> dict[str, Any]:
-    """The filters of the list of records, read the same way."""
-    return {
-        "kind": kind,
-        "type": type,
-        "sourceId": sourceId,
-        "host": host,
-        "username": username,
-        "channel": channel,
-        "eventId": eventId,
-        "level": level,
-        "flagged": flagged,
-        "q": q,
-        "from": from_,
-        "to": to,
-    }
 
 
 # --------------------------------------------------------------------------- #
@@ -178,6 +148,33 @@ def get_page(
     _incident(db, incident_id)
     sha256 = _original(_source(db, incident_id, source_id))
     return views.page(sha256, offset, length, as_)
+
+
+@router.get("/sources/{source_id}/find")
+def get_find(
+    incident_id: str,
+    source_id: str,
+    q: str = Query(min_length=1, max_length=1024),
+    as_: Literal["hex", "text"] = Query(default="text", alias="as"),
+    from_: int = Query(default=0, ge=0, alias="from"),
+    limit: int = Query(default=100, ge=1, le=200),
+    _caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+):
+    """Where a text (as UTF-8 and UTF-16LE, any case) or some bytes (hex) are in the original, from an offset
+    on: the matches, ``next`` to go on from (null at the end) and ``cut`` when the limit or the worker's clock
+    stopped the search before the end. The worker reads the file; a needle it refuses is a 400."""
+    _incident(db, incident_id)
+    sha256 = _original(_source(db, incident_id, source_id))
+    if not parse.configured():
+        raise HTTPException(status_code=503, detail=parse.NOT_CONFIGURED)
+    code, answer = views.find(sha256, q, as_, from_, limit)
+    if code == 200:
+        return answer
+    detail = answer.get("detail") if isinstance(answer, dict) else None
+    if code in FIXED or code == 400:
+        raise HTTPException(status_code=code, detail=str(detail or f"The forensics worker answered {code}"))
+    raise HTTPException(status_code=502, detail=str(detail or f"The forensics worker could not search ({code})"))
 
 
 @router.get("/sources/{source_id}/download")

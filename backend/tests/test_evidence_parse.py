@@ -99,7 +99,14 @@ def test_a_file_read_to_its_end_with_nothing_lost_is_complete(incident, monkeypa
     assert (source.state, source.read, source.parser, source.parser_version) == ("done", "complete", "evtx", "1")
     assert (source.in_file, source.read_count, source.kept, source.duplicates, source.skipped) == (2, 2, 2, 0, 0)
     assert (source.truncated, source.notes, source.host, source.source) == (1, 8, "WKS-042", "evtx")
-    assert source.report == {"reasons": {}, "notes": {"stale chunk": {"count": 8, "detail": ""}}, "ended": True}
+    seconds = source.report.pop("seconds")  # how long the reading took, to a tenth
+    assert isinstance(seconds, float) and 0 <= seconds < 60 and seconds == round(seconds, 1)
+    assert source.report == {
+        "reasons": {},
+        "notes": {"stale chunk": {"count": 8, "detail": ""}},
+        "channels": {"Security": 2},
+        "ended": True,
+    }
     assert (source.first_ts, source.last_ts) == (1_700_000_001_000, 1_700_000_002_000)
     first, second = records_of(source_id)
     assert (first.incident_id, first.kind, first.type, first.event_id, first.channel) == (
@@ -255,3 +262,14 @@ def test_the_war_room_gets_one_line_for_each_file_read(incident, monkeypatch):
         "System.evtx read: 1 record kept, 1 already imported from another file. Read in part: 3 records were not "
         "read (its report says what and where)." in lines
     )
+
+
+def test_the_report_counts_the_channels_of_a_file_up_to_the_cap():
+    report = parse.Report()
+    for number in range(parse.CHANNELS_CAP + 5):
+        report.channel(f"c{number}")
+    report.channel("c0")
+    report.channel("")
+    assert len(report.channels) == parse.CHANNELS_CAP and report.channels["c0"] == 2
+    assert "c54" not in report.channels and "" not in report.channels
+    assert report.out(True)["channels"] is report.channels

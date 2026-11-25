@@ -102,6 +102,7 @@ EXPECTED: dict[tuple[str, str], tuple[str, ...] | str] = {
     ("GET", "/api/incidents/{incident_id}/evidence/fields"): ("read",),
     ("GET", "/api/incidents/{incident_id}/evidence/records/{record_id}/view"): ("read",),
     ("GET", "/api/incidents/{incident_id}/evidence/sources/{source_id}/page"): ("read",),
+    ("GET", "/api/incidents/{incident_id}/evidence/sources/{source_id}/find"): ("read",),
     ("GET", "/api/incidents/{incident_id}/evidence/sources/{source_id}/download"): ("evidence.download",),
     # Archiving (7.0): a closed incident, read-only and out of the lists; the rule is set by whoever may archive.
     ("POST", "/api/incidents/{incident_id}/archive"): ("incidents.archive",),

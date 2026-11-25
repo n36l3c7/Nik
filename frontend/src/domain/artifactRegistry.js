@@ -17,6 +17,9 @@ export const ARTIFACT_KINDS = [
   { id: 'url', label: 'url', plural: 'addresses', tab: 'urls', uploadPath: null },
   // A mailbox (mbox, Maildir archive, PST) has a page of its own, not an analysis tab.
   { id: 'mailbox', label: 'mailbox', plural: 'mailboxes', tab: null, uploadPath: '/artifacts/mailboxes' },
+  // The original of a file of host evidence (an event log, a browser database, a $MFT). The evidence pages
+  // keep it when the file is imported: it is never uploaded from the artifacts. Its id carries the SHA-256.
+  { id: 'hostfile', label: 'Host evidence file', plural: 'host evidence files', tab: null, uploadPath: null },
 ]
 
 const BY_ID = Object.fromEntries(ARTIFACT_KINDS.map((kind) => [kind.id, kind]))
@@ -91,7 +94,7 @@ export function parseTags(text) {
 
 /* ---- Permalink (/artifact/<id>) ---- */
 
-const PATH_RE = /^\/artifact\/((?:file|mail)-[0-9a-f]{64}|(?:pcap|url|mailbox)-[0-9a-f]{32})$/
+const PATH_RE = /^\/artifact\/((?:file|mail|hostfile)-[0-9a-f]{64}|(?:pcap|url|mailbox)-[0-9a-f]{32})$/
 
 export const artifactPath = (id) => `/artifact/${id}`
 

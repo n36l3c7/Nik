@@ -1,9 +1,10 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpen, List, Plus } from 'lucide-react'
-import { useAuth } from '../../../context/AuthContext.jsx'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
+import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
 import { normalizeOs } from '../../../config/os.js'
 import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
 import { Button, EmptyState, ErrorBoundary, Wait } from '../../ui/index.js'
@@ -63,10 +64,12 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
   const [chosen, setChosen] = useState({})
   useEffect(() => setChosen({}), [incident.id])
 
-  const groups = useMemo(() => evidenceGroups(kinds, incident, query), [kinds, incident, query])
-  const every = useMemo(() => evidenceGroups(kinds, incident), [kinds, incident])
+  // What the machine gave (records, files read in part) is the server's: the document holds none of it.
+  const { summary } = useEvidenceSummary(incident.id)
+  const groups = useMemo(() => evidenceGroups(kinds, incident, summary, query), [kinds, incident, summary, query])
+  const every = useMemo(() => evidenceGroups(kinds, incident, summary), [kinds, incident, summary])
 
-  const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   const { updateIncidentMeta } = useIncidents()
   const { take } = useNavigation()
   const { showToast } = useToast()
@@ -168,6 +171,14 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
                   <span className={`shrink-0 text-[10px] ${item.count ? 'text-fg-muted' : 'text-fg-subtle'}`}>
                     {item.count || '—'}
                   </span>
+                  {item.partial > 0 && (
+                    <span
+                      role="img"
+                      aria-label="a file was read in part"
+                      title="A file of this kind was read in part"
+                      className="h-[7px] w-[7px] shrink-0 self-center rounded-full bg-med"
+                    />
+                  )}
                 </button>
                 {item.items.length > 0 && (
                   <ul aria-label={`Files of ${item.label}`}>
@@ -229,7 +240,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
         ) : asking ? (
           <SystemDialog
             kind={shownKind}
-            canEdit={can('write')}
+            canEdit={canWrite}
             onBack={backToFiles}
             onUse={(chosen) => updateIncidentMeta(incident.id, { os: chosen })}
           />

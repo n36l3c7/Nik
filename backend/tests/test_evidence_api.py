@@ -67,11 +67,20 @@ def env(admin, monkeypatch):
     return {"client": client, "w": writer, "r": reader, "started": started, "monkeypatch": monkeypatch}
 
 
-def make_source(env, events: list[dict], incident: str = "ev-api", data: bytes | None = None, kind: str = "eventlog"):
+def make_source(
+    env,
+    events: list[dict],
+    incident: str = "ev-api",
+    data: bytes | None = None,
+    kind: str = "eventlog",
+    source: str = "",
+):
     data = data if data is not None else f"ElfFile {incident} {len(events)} {id(events)}".encode()
     sha256 = originals.keep_bytes(data)
     with SessionLocal() as db:
-        row = imports.accept(db, incident, sha256, len(data), "Security.evtx", {"kind": kind}, "tester")
+        row = imports.accept(
+            db, incident, sha256, len(data), "Security.evtx", {"kind": kind, "source": source}, "tester"
+        )
         db.commit()
         source_id = row.id
 
@@ -271,7 +280,10 @@ def test_sources_list_without_the_report_and_open_with_it(env):
     assert [row["id"] for row in get(env, "ev-api/evidence/sources", kind="eventlog").json()["sources"]] == [older]
     one = get(env, f"ev-api/evidence/sources/{newer}").json()
     assert one["report"]["reasons"]["record cannot be read"]["count"] == 1
+    assert isinstance(one["report"]["seconds"], float)
     assert one["artifactId"] == f"hostfile-{one['sha256']}"
+    # The list says why a file was read in part, without its report; a complete one says nothing.
+    assert (listed[0]["firstReason"], listed[1]["firstReason"]) == ("record cannot be read", None)
     assert get(env, f"ev-other/evidence/sources/{newer}").status_code == 404
 
 
@@ -496,3 +508,115 @@ def test_every_route_answers_404_for_an_unknown_incident(env):
     assert env["client"].post(base + "/sources/x/seen", headers=env["w"], json={}).status_code == 404
     assert env["client"].delete(base + "/sources/x", headers=env["w"]).status_code == 404
     assert env["client"].put(base + "/marks", headers=env["w"], json={"key": "k"}).status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# The filters of 7.0, the projection and the channels of a file               #
+# --------------------------------------------------------------------------- #
+def summaries(env, **params) -> list[str]:
+    res = get(env, "ev-api/evidence/records", **params)
+    assert res.status_code == 200, res.text
+    return sorted(row["summary"] for row in res.json()["records"])
+
+
+@pytest.fixture()
+def mixed(env):
+    shell = {**SOURCE, "source": "powershell"}
+    make_source(
+        env,
+        [
+            shell,
+            event(1, channel="Security", event_id=4624, summary="curated logon", data={"Ip": "10.0.0.1"}),
+            event(2, channel="Security", event_id=9999, summary="other security", data={"Ip": "10.0.0.2"}),
+            event(3, channel="MICROSOFT-WINDOWS-SYSMON/OPERATIONAL", event_id=1, summary="sysmon one"),
+            event(4, channel="System", event_id=1, summary="system one"),
+            event(5, type="script", channel="", event_id=4624, summary="no channel", ts=None),
+            end(5),
+        ],
+        data=b"one",
+        source="powershell",  # an event log says its source, as a file sent with one does
+    )
+    run = {**SOURCE, "source": "windows.persistence.run", "kind": "endpoint"}
+    make_source(
+        env,
+        [run, event(9, key="p:9", type="key", channel="", event_id=None, summary="a run key"), end(1)],
+        data=b"two",
+        kind="endpoint",
+    )
+    visit = event(10, key="b:10", type="visit", channel="", event_id=None, summary="a visit")
+    path = make_source(env, [{**SOURCE, "source": "chrome.history"}, visit, end(1)], data=b"3", kind="browser")
+    with SessionLocal() as db:
+        db.get(EvidenceSource, path).profile = "Profile 1"
+        db.commit()
+    return env
+
+
+def test_type_takes_a_list_and_one_value_behaves_as_before(mixed):
+    assert summaries(mixed, type="key") == ["a run key"]
+    assert summaries(mixed, type="key,visit") == ["a run key", "a visit"]
+    assert summaries(mixed, type=" key , ,visit,nothing") == ["a run key", "a visit"]
+    assert get(mixed, "ev-api/evidence/records", type=",".join(f"t{n}" for n in range(41))).status_code == 400
+    assert get(mixed, "ev-api/evidence/records", type="x" * 41).status_code == 400
+
+
+def test_a_file_is_chosen_by_its_source_its_prefix_or_its_profile(mixed):
+    assert summaries(mixed, source="chrome.history") == ["a visit"]
+    assert summaries(mixed, source="chrome") == []
+    assert summaries(mixed, sourcePrefix="windows.persistence.") == ["a run key"]
+    assert summaries(mixed, sourcePrefix="windows_persistence") == []  # _ is a letter, not a wildcard
+    assert summaries(mixed, sourcePrefix="windows%") == []
+    assert summaries(mixed, profile="Profile 1") == ["a visit"]
+    assert summaries(mixed, profile="Profile 1", source="powershell") == []
+    assert len(summaries(mixed, source="powershell")) == 5
+    assert get(mixed, "ev-api/evidence/records", source="x" * 61).status_code == 422
+
+
+def test_dated_keeps_the_records_with_a_time_or_without(mixed):
+    assert summaries(mixed, dated="false") == ["no channel"]
+    assert len(summaries(mixed, dated="true")) == 6
+    assert len(summaries(mixed)) == 7
+
+
+def test_a_key_of_the_data_is_compared_as_text(mixed):
+    assert summaries(mixed, dataKey="Ip", dataValue="10.0.0.2") == ["other security"]
+    assert summaries(mixed, dataKey="Ip", dataValue="nobody") == []
+    for params in ({"dataKey": "Ip"}, {"dataValue": "x"}, {"dataKey": "a b", "dataValue": "x"}):
+        assert get(mixed, "ev-api/evidence/records", **params).status_code == 400
+    assert get(mixed, "ev-api/evidence/records", dataKey="Ip", dataValue="x" * 501).status_code == 422
+
+
+def test_matter_keeps_the_event_log_records_the_curated_list_names(mixed):
+    # The channel is compared in lower case, and a record with no channel is not matched.
+    assert summaries(mixed, matter="true") == ["curated logon", "sysmon one"]
+    assert len(summaries(mixed, matter="false")) == 7
+
+
+def test_fields_bring_the_asked_keys_of_the_data_that_exist(mixed):
+    rows = get(mixed, "ev-api/evidence/records").json()["records"]
+    assert all("data" not in row for row in rows)
+    asked = {"fields": "Ip,Nothing", "dataKey": "Ip", "dataValue": "10.0.0.2"}
+    rows = get(mixed, "ev-api/evidence/records", **asked).json()["records"]
+    assert [row["data"] for row in rows] == [{"Ip": "10.0.0.2"}]
+    assert get(mixed, "ev-api/evidence/records", fields="Nothing", q="curated").json()["records"][0]["data"] == {}
+    for bad in ("a b", ",", ",".join(f"k{n}" for n in range(13)), "a;b"):
+        assert get(mixed, "ev-api/evidence/records", fields=bad).status_code == 400
+
+
+def test_a_long_text_of_the_data_is_cut_and_other_values_stay(env):
+    held = {"Long": "x" * 900, "Count": 7, "On": True, "Tree": {"a": [1]}}
+    make_source(env, [SOURCE, event(1, data=held), end(1)])
+    row = get(env, "ev-api/evidence/records", fields="Long,Count,On,Tree").json()["records"][0]
+    assert row["data"] == {"Long": "x" * 500, "Count": 7, "On": True, "Tree": {"a": [1]}}
+
+
+def test_a_source_names_its_main_channels_most_records_first(env):
+    events = [event(n, channel="Security") for n in range(1, 4)]
+    events += [event(10 + n, channel=f"Chan{n}") for n in range(1, 6)]
+    events += [event(20, channel="Aaa"), event(21, channel="Aaa"), event(22, channel="")]
+    source_id = make_source(env, [SOURCE, *events, end(len(events))])
+    held = get(env, f"ev-api/evidence/sources/{source_id}").json()
+    assert held["channels"] == ["Security", "Aaa", "Chan1", "Chan2", "Chan3"] and held["source"] == "evtx"
+    assert held["report"]["channels"]["Security"] == 3 and "" not in held["report"]["channels"]
+    assert get(env, "ev-api/evidence/sources").json()["sources"][0]["channels"] == held["channels"]
+    other = make_source(env, [event(99, key="p:1", channel="")], data=b"none")
+    assert get(env, f"ev-api/evidence/sources/{other}").json()["channels"] == []

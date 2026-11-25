@@ -34,6 +34,45 @@ MAX_RESTORED = 5000
 MAX_RESTORED_MARKS = 20_000
 
 
+_PARSER_OF = {"commands": "history", "browser": "browser", "endpoint": "endpoint"}
+
+
+def reader(kind: str, source: str, file_name: str) -> tuple[str, str]:
+    """The parser and the source name of a file, from what its section says of it. A section that
+    names the source names the parser too: the worker is not left to guess from a file name what
+    the person already said. An event log is an EVTX file, or the JSON of Nik's script. An empty
+    parser is a file the worker has to recognise by itself."""
+    if kind == "eventlog":
+        if source == "nik-eventlogs.json" or (not source and (file_name or "").lower().endswith(".json")):
+            return "eventlog-json", "nik-eventlogs.json"
+        if source in ("", "evtx"):
+            return "evtx", "evtx"
+        return "", source
+    return (_PARSER_OF.get(kind, "") if source else ""), source
+
+
+def _held(db: OrmSession, incident_id: str, sha256: str, kind: str, source: str) -> EvidenceSource | None:
+    """The row the incident has for these bytes in this section. A file given without a source is
+    whichever row holds it: its source was written by the worker after reading."""
+    query = select(EvidenceSource).where(
+        EvidenceSource.incident_id == incident_id,
+        EvidenceSource.sha256 == sha256,
+        EvidenceSource.kind == kind,
+    )
+    if source:
+        query = query.where(EvidenceSource.source == source)
+    return db.scalars(query.order_by(EvidenceSource.created_at, EvidenceSource.id)).first()
+
+
+def is_duplicate(db: OrmSession, incident_id: str, sha256: str, file_name: str, params: dict[str, Any]) -> bool:
+    """Whether ``accept`` would give back a file the incident holds. A listing that is ``absent`` is
+    not one: giving it its file is what it waits for."""
+    kind = str(params.get("kind") or "")
+    _, source = reader(kind, str(params.get("source") or "")[:60], file_name)
+    found = _held(db, incident_id, sha256, kind, source)
+    return found is not None and found.state != ABSENT
+
+
 def accept(
     db: OrmSession, incident_id: str, sha256: str, size: int, file_name: str, params: dict[str, Any], actor: str
 ) -> EvidenceSource:
@@ -45,15 +84,8 @@ def accept(
     kind = str(params.get("kind") or "")
     if kind not in KINDS:
         raise ValueError(f"Not a section of host evidence: {kind or '(none)'}")
-    source = str(params.get("source") or "")[:60]
-    found = db.scalars(
-        select(EvidenceSource).where(
-            EvidenceSource.incident_id == incident_id,
-            EvidenceSource.sha256 == sha256,
-            EvidenceSource.kind == kind,
-            EvidenceSource.source == source,
-        )
-    ).first()
+    parser, source = reader(kind, str(params.get("source") or "")[:60], file_name)
+    found = _held(db, incident_id, sha256, kind, source)
     if found is not None and found.state != ABSENT:
         return found
     incident = db.get(Incident, incident_id)
@@ -76,6 +108,7 @@ def accept(
         host=str(params.get("host") or "")[:255],
         username=str(params.get("user") or "")[:255],
         profile=str(params.get("profile") or "")[:120],
+        parser=parser,
         state="queued",
         read="unknown",
         report={},

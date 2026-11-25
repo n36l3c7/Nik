@@ -6,8 +6,12 @@ import {
   asksSystem,
   evidenceGroups,
   firstFile,
+  firstPartialSource,
+  hostCounts,
   openedAlone,
+  partialPill,
   resolveTab,
+  tabOfKind,
 } from './evidence.js'
 
 const TABS = [
@@ -25,8 +29,12 @@ const INCIDENT = {
       messages: [{ sha256: 'm1', subject: 'Invoice overdue', from: 'billing@example.test', verdict: 'malicious' }],
     },
     malware: { samples: [{ sha256: 's1', fileName: 'invoice.exe', type: 'PE' }, { sha256: 's2' }] },
-    commands: { shells: { bash: { commands: [{}, {}, {}] }, zsh: { commands: [] } } },
   },
+}
+// What the server says of the host kinds (evidence.summary): the records are not in the document.
+const SUMMARY = {
+  kinds: { commands: { sources: 2, records: 3, partial: 1, failed: 0, parsing: 0, absent: 0 } },
+  partialUnseen: 1,
 }
 
 test('the address of a kind of evidence is the Evidence tab, on that kind', () => {
@@ -46,7 +54,7 @@ test('the address of a kind of evidence is the Evidence tab, on that kind', () =
 })
 
 test('the list of evidence: the files of each kind, the records of the others', () => {
-  const groups = evidenceGroups(KINDS, INCIDENT)
+  const groups = evidenceGroups(KINDS, INCIDENT, SUMMARY)
   assert.deepEqual(
     groups.map((group) => [group.id, group.files, group.count, group.items.map((item) => item.key)]),
     [
@@ -65,14 +73,14 @@ test('the list of evidence: the files of each kind, the records of the others', 
   assert.equal(groups[1].items[1].name, 's2')
   // Nothing at all: every kind is there, empty, so a file can be added to it.
   assert.deepEqual(
-    evidenceGroups(KINDS, {}).map((group) => group.count),
+    evidenceGroups(KINDS, {}, null).map((group) => group.count),
     [0, 0, 0],
   )
-  assert.deepEqual(evidenceGroups(null, INCIDENT), [])
+  assert.deepEqual(evidenceGroups(null, INCIDENT, SUMMARY), [])
 })
 
 test('the list is searched by the name of a file, by its detail and by the kind', () => {
-  const ids = (query) => evidenceGroups(KINDS, INCIDENT, query).map((group) => [group.id, group.items.length])
+  const ids = (query) => evidenceGroups(KINDS, INCIDENT, SUMMARY, query).map((group) => [group.id, group.items.length])
   assert.deepEqual(ids('invoice'), [
     ['mail', 1],
     ['malware', 1],
@@ -85,10 +93,9 @@ test('the list is searched by the name of a file, by its detail and by the kind'
 })
 
 test('with nothing chosen the tab opens on the first file there is', () => {
-  assert.deepEqual(firstFile(evidenceGroups(KINDS, INCIDENT)), { kind: 'mail', key: 'm1' })
-  const hostOnly = { data: { commands: INCIDENT.data.commands } }
-  assert.deepEqual(firstFile(evidenceGroups(KINDS, hostOnly)), { kind: 'commands', key: null })
-  assert.equal(firstFile(evidenceGroups(KINDS, {})), null)
+  assert.deepEqual(firstFile(evidenceGroups(KINDS, INCIDENT, SUMMARY)), { kind: 'mail', key: 'm1' })
+  assert.deepEqual(firstFile(evidenceGroups(KINDS, {}, SUMMARY)), { kind: 'commands', key: null })
+  assert.equal(firstFile(evidenceGroups(KINDS, {}, null)), null)
 })
 
 test('what was collected on the machine asks for the system of the incident', () => {
@@ -100,14 +107,40 @@ test('what was collected on the machine asks for the system of the incident', ()
   // A file is a file whatever the machine it came from.
   for (const kind of ['mail', 'malware', 'network', 'urls']) assert.equal(asksSystem(kind, ''), false, kind)
   // Without a system the tab opens by itself on a file, never on a kind that would ask.
-  const groups = evidenceGroups(KINDS, INCIDENT)
+  const groups = evidenceGroups(KINDS, INCIDENT, SUMMARY)
   assert.deepEqual(
     openedAlone(groups, '').map((group) => group.id),
     ['mail', 'malware'],
   )
   assert.equal(openedAlone(groups, 'windows').length, 3)
-  const only = evidenceGroups(KINDS, { data: { commands: INCIDENT.data.commands } })
+  const only = evidenceGroups(KINDS, {}, SUMMARY)
   assert.deepEqual(firstFile(only), { kind: 'commands', key: null })
   assert.equal(firstFile(openedAlone(only, '')), null)
   assert.deepEqual(openedAlone(null, ''), [])
+})
+
+test('the counts of host evidence come from the summary of the server', () => {
+  assert.equal(hostCounts(SUMMARY, 'commands').records, 3)
+  assert.equal(hostCounts(SUMMARY, 'browser').records, 0)
+  assert.equal(hostCounts(null, 'eventlogs').partial, 0)
+  assert.equal(hostCounts(SUMMARY, 'mail').records, 0)
+  const group = evidenceGroups(KINDS, INCIDENT, SUMMARY).find((item) => item.id === 'commands')
+  assert.equal(group.partial, 1)
+  assert.equal(tabOfKind('eventlog'), 'eventlogs')
+  assert.equal(tabOfKind('disk'), null)
+})
+
+test('the pill of the header and where it leads', () => {
+  assert.equal(partialPill(null), '')
+  assert.equal(partialPill({ partialUnseen: 0 }), '')
+  assert.equal(partialPill({ partialUnseen: 1 }), '1 file read in part')
+  assert.equal(partialPill({ partialUnseen: 2 }), '2 files read in part')
+  const sources = [
+    { id: 'a', read: 'complete', state: 'done', seen: null },
+    { id: 'b', read: 'partial', state: 'done', seen: { at: 'x' } },
+    { id: 'c', read: 'partial', state: 'done', seen: null },
+  ]
+  assert.equal(firstPartialSource(sources).id, 'c')
+  assert.equal(firstPartialSource([]), null)
+  assert.equal(firstPartialSource(null), null)
 })
