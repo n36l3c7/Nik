@@ -1,6 +1,6 @@
 /*
- * Incident report options and the detections the app sends with a report
- * request (the server builds the HTML/PDF: backend/app/report.py).
+ * Incident report options (the server builds the HTML/PDF: backend/app/report.py; the rule matches in it
+ * are read there from its tables).
  */
 
 export const REPORT_SECTIONS = [
@@ -40,30 +40,4 @@ export function reportSettings(incident) {
     // 'flagged': only what the analysts flagged (the default); 'all': everything in the incident.
     scope: saved.scope === 'all' ? 'all' : 'flagged',
   }
-}
-
-/**
- * The SOC rule hits of an incident, from buildTimelineEvents() output:
- * `[{ id, label, severity, count, attack }]`, most frequent first. With
- * `flags` (the incident's flags), only the hits on flagged events count.
- */
-export function reportDetections(events, flags = null) {
-  const byRule = new Map()
-  for (const event of events) {
-    if (flags && !flags[event.flaggable?.key ?? event.id]) continue
-    for (const rule of event.soc?.keywordMatches ?? []) {
-      const known = byRule.get(rule.id)
-      if (known) known.count += 1
-      else {
-        byRule.set(rule.id, {
-          id: rule.id,
-          label: rule.label,
-          severity: rule.severity,
-          count: 1,
-          attack: Array.isArray(rule.attack) ? rule.attack : [],
-        })
-      }
-    }
-  }
-  return [...byRule.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
 }

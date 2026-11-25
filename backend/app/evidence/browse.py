@@ -23,7 +23,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.sql.functions import FunctionElement
 
-from ..core.models import EvidenceDetection, EvidenceMark, EvidenceRecord, EvidenceSource
+from ..core.models import LEVELS, EvidenceDetection, EvidenceMark, EvidenceRecord, EvidenceSource
 from .curated import CURATED
 
 COUNT_CAP = 100_001
@@ -31,6 +31,7 @@ LIMIT_MAX = 500
 ORDERS = ("time", "-time", "file")
 _TAGS = {"time": "t", "-time": "T", "file": "f"}
 KEY = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+_LEVEL_NAMES = {number: name for name, number in LEVELS.items()}
 FIELD_CUT = 500
 CHANNELS_SHOWN = 5
 
@@ -209,6 +210,12 @@ def _filters(incident_id: str, f: dict[str, Any]) -> list[Any]:
         where.append(_curated())
     if f.get("level") is not None:
         where.append(record.level >= f["level"])
+    if f.get("rule"):
+        # The records a rule of Sigma matched (``evidence_detections``): asked of the table, no join.
+        matched = select(EvidenceDetection.record_id).where(
+            EvidenceDetection.incident_id == incident_id, EvidenceDetection.rule_id == f["rule"]
+        )
+        where.append(record.id.in_(matched))
     if f.get("q"):
         where.append(record.summary.ilike(_like(f["q"]), escape="\\"))
     if f.get("from") is not None:
@@ -370,6 +377,8 @@ def record(db: OrmSession, incident_id: str, record_id: int) -> dict[str, Any] |
             "ruleAuthor": d.rule_author,
             "level": d.level,
             "tags": list(d.tags or []),
+            # A correlation: the keys of the records that made it (up to 50); empty for a rule on one record.
+            "records": list(d.records or []),
         }
         for d in found
     ]
@@ -456,4 +465,100 @@ def summary(db: OrmSession, incident_id: str) -> dict[str, Any]:
         }
         for kind, n, kept, partial, failed, parsing, absent in rows
     }
+    # What the rules found, per section and level (1 informational to 5 critical).
+    d, r = EvidenceDetection, EvidenceRecord
+    levels = db.execute(
+        select(r.kind, d.level, func.count())
+        .select_from(d)
+        .join(r, r.id == d.record_id)
+        .where(d.incident_id == incident_id)
+        .group_by(r.kind, d.level)
+    ).all()
+    for item in kinds.values():
+        item["detections"] = dict.fromkeys(("1", "2", "3", "4", "5"), 0)
+    for kind, level, n in levels:
+        if kind in kinds and str(level) in kinds[kind]["detections"]:
+            kinds[kind]["detections"][str(level)] = int(n)
     return {"kinds": kinds, "partialUnseen": sum(item["partial"] for item in kinds.values())}
+
+
+# --------------------------------------------------------------------------- #
+# Detections                                                                  #
+# --------------------------------------------------------------------------- #
+RULES_MAX = 1000
+HOSTS_SHOWN = 10
+
+
+def detections(db: OrmSession, incident_id: str, f: dict[str, Any], limit: int = 200) -> dict[str, Any]:
+    """What the rules found, one row for each rule: ``{"rules", "total", "detections", "byLevel"}``.
+
+    ``f`` keeps ``kind`` (the section of the record), ``sourceId`` (the file), ``source`` (the kind of
+    file, as the parser names it) and ``level`` (the lowest). A row says the rule's id, title, author,
+    level (the highest it matched with), tags, how many records it matched, the time of the first and the
+    last of them, and the hosts they are of (``hosts`` the first ten by name, ``hostCount`` all of them).
+    Highest level first, then the rule that matched most."""
+    d, r = EvidenceDetection, EvidenceRecord
+    where: list[Any] = [d.incident_id == incident_id]
+    if f.get("level") is not None:
+        where.append(d.level >= f["level"])
+    for name, column in (("kind", r.kind), ("sourceId", r.source_id)):
+        if f.get(name):
+            where.append(column == f[name])
+    if f.get("source"):
+        files = select(EvidenceSource.id).where(
+            EvidenceSource.incident_id == incident_id, EvidenceSource.source == f["source"]
+        )
+        where.append(r.source_id.in_(files))
+    joined = select(d.rule_id).select_from(d).join(r, r.id == d.record_id).where(*where)
+    top = func.max(d.level)
+    count = func.count()
+    grouped = db.execute(
+        select(d.rule_id, top, count, func.min(r.ts), func.max(r.ts), func.min(d.id))
+        .select_from(d)
+        .join(r, r.id == d.record_id)
+        .where(*where)
+        .group_by(d.rule_id)
+        .order_by(top.desc(), count.desc(), d.rule_id)
+        .limit(min(limit, RULES_MAX))
+    ).all()
+    total_rules = db.scalar(select(func.count()).select_from(joined.group_by(d.rule_id).subquery())) or 0
+    levels = dict(
+        db.execute(
+            select(d.level, func.count()).select_from(d).join(r, r.id == d.record_id).where(*where).group_by(d.level)
+        ).all()
+    )
+    ids = [row[0] for row in grouped]
+    hosts: dict[str, set[str]] = {}
+    held: dict[int, tuple[str, str, list[str]]] = {}
+    if ids:
+        pairs = joined.with_only_columns(d.rule_id, r.host).where(d.rule_id.in_(ids)).distinct()
+        for rule_id, host in db.execute(pairs):
+            hosts.setdefault(rule_id, set()).add(host or "")
+        first = [row[5] for row in grouped]
+        found = db.execute(select(d.id, d.rule_title, d.rule_author, d.tags).where(d.id.in_(first)))
+        held = {detection_id: (title, author, list(tags or [])) for detection_id, title, author, tags in found}
+    rules = []
+    for rule_id, level, n, first_ts, last_ts, first_id in grouped:
+        title, author, tags = held.get(first_id, ("", "", []))
+        names = sorted(name for name in hosts.get(rule_id, ()) if name)
+        rules.append(
+            {
+                "ruleId": rule_id,
+                "title": title or rule_id,
+                "author": author,
+                "level": level,
+                "levelName": _LEVEL_NAMES.get(level, ""),
+                "tags": tags,
+                "count": n,
+                "firstTs": first_ts,
+                "lastTs": last_ts,
+                "hosts": names[:HOSTS_SHOWN],
+                "hostCount": len(names),
+            }
+        )
+    return {
+        "rules": rules,
+        "total": total_rules,
+        "detections": sum(levels.values()),
+        "byLevel": {str(level): int(levels.get(level, 0)) for level in range(1, 6)},
+    }

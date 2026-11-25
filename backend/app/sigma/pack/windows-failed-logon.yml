@@ -1,0 +1,17 @@
+title: 'Failed Logon'
+id: d6101db0-44bd-4487-a3e9-0fb861281826
+name: nik_failed_logon
+status: stable
+description: 'A logon failed (event 4625); it is the base of the correlations of brute force and of a logon after failures.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4625
+    condition: selection
+falsepositives:
+    - A mistyped password
+level: informational

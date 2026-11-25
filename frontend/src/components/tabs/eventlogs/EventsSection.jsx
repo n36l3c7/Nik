@@ -9,11 +9,13 @@ import { CalendarClock, FileSearch, Flag, Star, StickyNote } from 'lucide-react'
 import { Button, Select, ServerTable } from '../../ui/index.js'
 import SourceViewer from '../../evidence/SourceViewer.jsx'
 import StackPanel from '../../evidence/StackPanel.jsx'
+import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
 import DateTimeRangeFilter from '../../ui/DateTimeRangeFilter.jsx'
 import { useContextMenu } from '../../../context/ContextMenuContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { useItemMenu } from '../../menu/useRowMenu.js'
 import { getChannel, getEventDefinition } from '../../../config/eventLogs.js'
+import { ruleChipValue } from '../../../domain/detections.js'
 import { withFilter } from '../../../domain/serverTable.js'
 import {
   EVENTLOG_KIND,
@@ -27,6 +29,8 @@ import { evidence } from '../../../services/api.js'
 
 const BASE = { kind: EVENTLOG_KIND }
 const NO_OPTIONS = []
+// The detection level has a select of its own in the toolbar.
+const HIDDEN_CHIPS = ['level']
 // The event's own level is in its data; the record's `level` is the one of its detections (stage 5).
 const FIELDS = ['level']
 const FLAG_HIGHLIGHT = 'bg-accent-soft border-l-2 border-l-accent-strong'
@@ -80,11 +84,21 @@ function useStackOptions(incidentId, field, refresh) {
  * files were added or read, so the table and the lists of values load again. `matter` keeps to the events
  * that matter (the page owns it: the count of its tab follows it).
  */
-export default function EventsSection({ incident, sources, canWrite, refresh, matter, onMatterChange }) {
+export default function EventsSection({
+  incident,
+  sources,
+  canWrite,
+  refresh,
+  matter,
+  onMatterChange,
+  focusRule = '',
+  ruleTitles,
+}) {
   const { askText } = useContextMenu()
   const { showToast } = useToast()
   const menu = useItemMenu(incident)
-  const [filters, setFilters] = useState(() => incidentRange(incident))
+  // Opened from a rule of the Detections tab: only that rule's events (the incident's range would hide some).
+  const [filters, setFilters] = useState(() => (focusRule ? { rule: focusRule } : incidentRange(incident)))
   const [rows, setRows] = useState([])
   const [flags, setFlags] = useState({}) // key -> flagged, what was marked here since the page loaded
   const [notes, setNotes] = useState({}) // key -> note
@@ -95,7 +109,7 @@ export default function EventsSection({ incident, sources, canWrite, refresh, ma
 
   // Another incident starts with its own range, not the last one's.
   useEffect(() => {
-    setFilters(incidentRange(incident))
+    setFilters(focusRule ? { rule: focusRule } : incidentRange(incident))
     setFlags({})
     setNotes({})
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only another incident resets the filters, not an edit of its window
@@ -178,6 +192,7 @@ export default function EventsSection({ incident, sources, canWrite, refresh, ma
           </span>
         ),
       },
+      detectionsColumn,
       {
         key: 'host',
         label: 'Host',
@@ -282,6 +297,7 @@ export default function EventsSection({ incident, sources, canWrite, refresh, ma
         label="Host"
       />
       <FilterInput label="User" value={filters.username ?? ''} onCommit={(value) => setFilter('username', value)} />
+      <LevelFilter filters={filters} onChange={(value) => setFilter('level', value)} />
       <DateTimeRangeFilter
         start={filters.from ?? null}
         end={filters.to ?? null}
@@ -368,6 +384,8 @@ export default function EventsSection({ incident, sources, canWrite, refresh, ma
         onFiltersChange={setFilters}
         toolbar={toolbar}
         refreshKey={`${refresh}:${matter}`}
+        hideChips={HIDDEN_CHIPS}
+        chipLabel={(name, value) => (name === 'rule' ? ruleChipValue(value, ruleTitles) : null)}
         defaultOrder="-time"
         searchPlaceholder="Search the summaries…"
         emptyMessage={

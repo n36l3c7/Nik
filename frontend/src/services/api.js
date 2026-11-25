@@ -368,6 +368,14 @@ export const evidence = {
   putMark: (incidentId, { key, flagged = false, note = '' }) =>
     api.put(evidencePath(incidentId, '/marks'), { key, flagged, note }),
   exportDocument: (incidentId, { signal } = {}) => api.get(evidencePath(incidentId, '/export'), { signal }),
+  /**
+   * What the rules found, one row for each rule (highest level first): `{ rules, total, detections, byLevel }`.
+   * `kind` is a section, `sourceId` one file, `source` the kind of file (a shell), `level` the lowest level.
+   */
+  detections: (incidentId, { kind, sourceId, source, level, limit = 200, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/detections${queryString({ kind, sourceId, source, level, limit })}`), {
+      signal,
+    }),
 
   /**
    * The `load` of a ServerTable over the records of an incident (components/ui/ServerTable.jsx).
@@ -386,6 +394,32 @@ export const evidence = {
       })
       return { items: page.records, next: page.next, total: cursor ? undefined : page.count, capped: page.countCapped }
     },
+}
+
+/*
+ * The Sigma rules (routers/sigma_rules.py). A list takes the filters of `domain/sigma.js`; a text the worker
+ * refuses comes back as an error with `data.errors` (`{ line, column, message }`).
+ */
+const RULES = '/sigma/rules'
+
+export const sigmaRules = {
+  list: (params = {}, { signal } = {}) => api.get(`${RULES}${queryString(params)}`, { signal }),
+  summary: ({ signal } = {}) => api.get(`${RULES}/summary`, { signal }),
+  get: (id, { signal } = {}) => api.get(`${RULES}/${encodeURIComponent(id)}`, { signal }),
+  /** Read a text without saving it: `{ ok, engine, errors, rules }`. */
+  validate: (source, { signal } = {}) => api.post(`${RULES}/validate`, { source }, { signal }),
+  /** Run a text over the records of an incident, saving nothing. */
+  tryOn: ({ source, incidentId, kind = '', sourceId = '' }, { signal } = {}) =>
+    api.post(`${RULES}/try`, { source, incidentId, kind, sourceId }, { signal }),
+  create: (source, enabled) => api.post(RULES, enabled === undefined ? { source } : { source, enabled }),
+  update: (id, source, enabled) =>
+    api.put(`${RULES}/${encodeURIComponent(id)}`, enabled === undefined ? { source } : { source, enabled }),
+  setEnabled: (id, enabled) => api.patch(`${RULES}/${encodeURIComponent(id)}`, { enabled }),
+  reset: (id) => api.post(`${RULES}/${encodeURIComponent(id)}/reset`),
+  remove: (id) => api.del(`${RULES}/${encodeURIComponent(id)}`),
+  /** `{ enabled, ids }` or `{ enabled, filters }`: `{ matched, changed }`. */
+  bulk: (body) => api.post(`${RULES}/bulk`, body),
+  recheck: () => api.post(`${RULES}/recheck`),
 }
 
 /**

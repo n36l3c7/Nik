@@ -23,7 +23,9 @@ def enrichment_defaults() -> dict[str, Any]:
     return deepcopy(DEFAULTS)
 
 
-# Mirror of DEFAULT_SUSPICIOUS_KEYWORDS in frontend/src/config/detectionRules.js.
+# The suspicious keywords Nik shipped before 7.0, when the browser looked for them. They are no longer a
+# setting (browser records are read against Sigma rules, ``sigma/``); migration 0057 compares what a server
+# held with this list, to move only the entries a person wrote or changed.
 DEFAULT_SUSPICIOUS_KEYWORDS: list[dict[str, Any]] = [
     {
         "id": "pastebin",
@@ -97,13 +99,13 @@ DEFAULT_BUSINESS_HOURS: dict[str, Any] = {
     "startHour": 8,  # start of business hours (inclusive)
     "endHour": 18,  # end of business hours (exclusive)
     "flagWeekends": True,  # if true, weekends are always "outside hours"
+    "tz": "UTC",  # the time zone the hours are read in (an incident may have its own)
 }
 
 
 def default_settings_doc() -> dict[str, Any]:
     """Return a fresh copy of the factory-default settings document."""
     return {
-        "keywords": [dict(k) for k in DEFAULT_SUSPICIOUS_KEYWORDS],
         "businessHours": dict(DEFAULT_BUSINESS_HOURS),
         "iocAllowlist": list(DEFAULT_ALLOWLIST),
         # Incident report header: organisation name and logo (a data: URI).

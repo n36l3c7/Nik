@@ -20,6 +20,7 @@ import { copyText } from '../../lib/download.js'
 import { useLayer } from '../../lib/layers.js'
 import { evidence } from '../../services/api.js'
 import { Button, Wait } from '../ui/index.js'
+import DetectionsPanel from './DetectionsPanel.jsx'
 
 // The colour of each kind of token of an XML record; the text of the file is never given to the DOM as markup.
 const XML_COLOURS = {
@@ -308,20 +309,20 @@ export default function SourceViewer({ incidentId, source, record = null, onClos
   const ref = useRef(null)
   useLayer(ref, { open: true, onClose })
   const [mode, setMode] = useState(record ? 'record' : 'file')
-  const [extracted, setExtracted] = useState(null) // the record read from the server, when it came without fields
+  const [extracted, setExtracted] = useState(null) // the record read from the server: its fields, when it came without, and its detections
   const given = record?.fields
   const recordId = record?.id
-  const hasFields = Boolean(given)
 
-  // The fields of the record: the caller's, or its `data` from the server.
+  // The record from the server: its `data` (the fields, when the caller gave none) and its detections.
   useEffect(() => {
-    if (recordId === undefined || hasFields) return undefined
+    if (recordId === undefined) return undefined
     const controller = new AbortController()
     evidence
       .record(incidentId, recordId, { signal: controller.signal })
       .then((full) =>
         setExtracted({
           id: recordId,
+          detections: full.detections ?? [],
           rows: fieldRows([
             ['summary', full.summary],
             ['type', full.type],
@@ -331,10 +332,11 @@ export default function SourceViewer({ incidentId, source, record = null, onClos
           ]),
         }),
       )
-      .catch(() => setExtracted({ id: recordId, rows: [] }))
+      .catch(() => setExtracted({ id: recordId, rows: [], detections: [] }))
     return () => controller.abort()
-  }, [incidentId, recordId, hasFields])
+  }, [incidentId, recordId])
   const rows = given ? fieldRows(given) : extracted?.id === recordId ? extracted.rows : null
+  const detections = extracted?.id === recordId ? extracted.detections : null
 
   // What the worker's viewer shows of the record: the right pane, and the title and place in the header.
   const [view, setView] = useState({ id: null, answer: null, error: null })
@@ -395,6 +397,7 @@ export default function SourceViewer({ incidentId, source, record = null, onClos
                 aria-label="What Nik extracted"
                 className="hidden w-[300px] shrink-0 overflow-y-auto border-r border-line sm:block"
               >
+                <DetectionsPanel detections={detections} />
                 <h3 className="border-b border-line-soft px-4 py-3 text-sm font-semibold">What Nik extracted</h3>
                 {rows === null ? (
                   <div className="p-4">

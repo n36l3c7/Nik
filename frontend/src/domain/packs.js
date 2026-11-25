@@ -115,6 +115,7 @@ const KIND_WORDS = {
   lists: 'list',
   dashboards: 'dashboard',
   preprocess_rules: 'pre-processing rule',
+  sigma_rules: 'Sigma rule',
 }
 
 /** How many of each kind a pack holds, counted from the items of an installed one. */
@@ -160,6 +161,7 @@ export function packCards(catalogue, installed) {
       tags: entry.tags ?? [],
       connectors: entry.connectors ?? [],
       description: entry.description ?? '',
+      notice: pack?.notice ?? entry.notice ?? '',
       version: entry.version,
       installed: pack?.version ?? null,
       state: entry.update ? 'update' : pack ? 'installed' : entry.needsNik ? 'later' : 'available',
@@ -182,6 +184,7 @@ export function packCards(catalogue, installed) {
       tags: pack.tags ?? [],
       connectors: (pack.items ?? []).filter((item) => item.kind === 'connectors').map((item) => item.name),
       description: pack.description ?? '',
+      notice: pack.notice ?? '',
       version: pack.version,
       installed: pack.version,
       state: 'installed',

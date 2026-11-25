@@ -152,6 +152,8 @@ test('the catalogue and what is installed make one list of cards', async () => {
     'connector (41 commands, 3 premium) · 2 playbooks · 1 mapper',
   )
   assert.equal(contentsLine({ connectors: 2, incident_types: 1 }), '2 connectors · 1 type')
+  assert.equal(contentsLine({ sigma_rules: 1 }), '1 Sigma rule')
+  assert.equal(contentsLine({ sigma_rules: 2700 }), '2700 Sigma rules')
   assert.equal(contentsLine({}), 'Nothing yet')
   assert.deepEqual(contentsOf([{ kind: 'lists' }, { kind: 'lists' }, { kind: 'scripts' }]), { lists: 2, scripts: 1 })
   assert.deepEqual(

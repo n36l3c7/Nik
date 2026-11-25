@@ -54,6 +54,7 @@ from ..evidence import imports as evidence_imports
 from ..evidence import intake, originals, parse
 from ..evidence import legacy as evidence_legacy
 from ..iocs import reindex_incident
+from ..timers import zone_name
 
 logger = logging.getLogger("nik.incidents")
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -70,6 +71,21 @@ def _timers(db: OrmSession, incident: Incident) -> None:
     from .. import timers
 
     timers.sync(db, incident, time.time())
+
+
+def _zone_given(body: dict[str, Any]) -> tuple[bool, str | None]:
+    """The time zone a request names for the incident (``tz`` is a column, not part of the document):
+    whether it was named, and the IANA name (None for empty: the time zone of Nik is used). 422 for a
+    name that is not a time zone."""
+    if "tz" not in body:
+        return False, None
+    given = body.pop("tz")
+    if given is None or (isinstance(given, str) and not given.strip()):
+        return True, None
+    try:
+        return True, zone_name(given if isinstance(given, str) else "")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _sync_columns(incident: Incident) -> None:
@@ -122,6 +138,8 @@ def _shown(row: Incident, source: dict[str, Any] | None = None) -> dict[str, Any
         # When it was archived and by whom (null when it is not): an archived incident is read-only.
         "archivedAt": row.archived_at,
         "archivedBy": row.archived_by,
+        # The time zone it is read in; empty is the one of Nik (Settings → business hours).
+        "tz": row.tz or "",
     }
 
 
@@ -440,6 +458,7 @@ def create_incident(
     incident_id = doc.get("id") or str(uuid.uuid4())
     doc["id"] = incident_id
     doc["createdBy"] = caller.actor
+    zone_sent, zone = _zone_given(doc)
     # Its type and its custom fields are not part of the document: they are checked by the registry.
     field_changes = _field_changes(doc)
 
@@ -447,11 +466,13 @@ def create_incident(
     archive.guard(existing)
     _own_number(doc, new=existing is None)
     if existing is None:
-        incident = Incident(id=str(incident_id), doc=doc)
+        incident = Incident(id=str(incident_id), doc=doc, tz=zone)
         _sync_columns(incident)
         db.add(incident)
     else:
         existing.doc = doc
+        if zone_sent:
+            existing.tz = zone
         _sync_columns(existing)
         incident = existing
     db.flush()
@@ -539,6 +560,11 @@ def patch_incident(
         raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
     # The type and the custom fields first, through the registry; what is left is the document.
     partial = dict(partial)
+    zone_sent, zone = _zone_given(partial)
+    if zone_sent and zone != row.tz:
+        archive.guard(row)
+        row.tz = zone
+        _audit(db, caller, "incident.update", f"Set the time zone of the incident to {zone or 'the one of Nik'}", row)
     field_changes = _field_changes(partial)
     was_closed = row.status == "closed"
     if field_changes:

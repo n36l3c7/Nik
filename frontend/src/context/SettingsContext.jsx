@@ -1,13 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  DEFAULT_SUSPICIOUS_KEYWORDS,
-  DEFAULT_COMMAND_KEYWORDS,
-  DEFAULT_ARTIFACT_KEYWORDS,
-  DEFAULT_MALWARE_KEYWORDS,
-  DEFAULT_BUSINESS_HOURS,
-} from '../config/detectionRules.js'
+import { DEFAULT_MALWARE_KEYWORDS, DEFAULT_BUSINESS_HOURS } from '../config/detectionRules.js'
 import { api } from '../services/api.js'
-import { generateId } from '../lib/id.js'
 import { createSocEngine } from '../domain/soc.js'
 import { useAuth } from './AuthContext.jsx'
 
@@ -16,9 +9,8 @@ import { useAuth } from './AuthContext.jsx'
  * PLATFORM SETTINGS (global, shared by all analysts) — backed by the API
  * ============================================================================
  *
- *  - keywords:      SOC detection rules editable by the user
- *                   (add / edit / remove; severity 'high' or 'medium')
- *  - businessHours: business hours; events OUTSIDE this window are marked as a
+ *  - businessHours: { startHour, endHour, flagWeekends, tz }: business hours, told in the zone `tz`; the
+ *                   server's rules and timers use them, and events OUTSIDE this window are marked as a
  *                   time anomaly.
  *  - iocAllowlist:  indicators hidden by default in the IOCs tab and left out
  *                   of exports (domains, IPs/CIDRs, exact values). null until
@@ -50,20 +42,9 @@ const DEFAULT_ENRICHMENT = {
   refreshExpired: true,
 }
 
-/** True if `pattern` is a valid RegExp (used by the UI to validate input). */
-export function isValidRegex(pattern) {
-  try {
-    new RegExp(pattern, 'i')
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** Factory-default settings (used before the server responds). */
 function factorySettings() {
   return {
-    keywords: structuredClone(DEFAULT_SUSPICIOUS_KEYWORDS),
     businessHours: { ...DEFAULT_BUSINESS_HOURS },
     iocAllowlist: null,
     iocAllowlistDefault: [],
@@ -74,16 +55,12 @@ function factorySettings() {
 }
 
 // The keys PUT /api/settings takes: one left out keeps what the server has.
-const SENT_KEYS = ['keywords', 'businessHours', 'iocAllowlist', 'report', 'mail', 'enrichment']
+const SENT_KEYS = ['businessHours', 'iocAllowlist', 'report', 'mail', 'enrichment']
 
 /** Normalize a settings document coming from the server. */
 function normalizeSettings(doc) {
   return {
-    keywords: Array.isArray(doc?.keywords) ? doc.keywords : structuredClone(DEFAULT_SUSPICIOUS_KEYWORDS),
-    businessHours: {
-      ...DEFAULT_BUSINESS_HOURS,
-      ...(doc?.businessHours ?? {}),
-    },
+    businessHours: { ...DEFAULT_BUSINESS_HOURS, ...(doc?.businessHours ?? {}) },
     iocAllowlist: Array.isArray(doc?.iocAllowlist) ? doc.iocAllowlist : null,
     iocAllowlistDefault: Array.isArray(doc?.iocAllowlistDefault) ? doc.iocAllowlistDefault : [],
     report: doc?.report && typeof doc.report === 'object' ? { orgName: '', logo: '', ...doc.report } : null,
@@ -168,57 +145,9 @@ export function SettingsProvider({ children }) {
     }
   }, [])
 
-  /** Adds a new keyword rule (id generated if missing). */
-  const addKeyword = useCallback((rule) => {
-    const clean = {
-      id: rule.id || generateId(),
-      label: rule.label?.trim() || rule.pattern,
-      pattern: rule.pattern,
-      severity: rule.severity === 'high' ? 'high' : 'medium',
-      description: rule.description?.trim() || '',
-    }
-    setSettings((prev) => ({ ...prev, keywords: [...prev.keywords, clean] }))
-    return clean
-  }, [])
-
-  /** Edits an existing rule (partial merge). */
-  const updateKeyword = useCallback((id, patch) => {
-    setSettings((prev) => ({
-      ...prev,
-      keywords: prev.keywords.map((k) =>
-        k.id === id
-          ? {
-              ...k,
-              ...patch,
-              severity: patch.severity === 'high' ? 'high' : patch.severity === 'medium' ? 'medium' : k.severity,
-            }
-          : k,
-      ),
-    }))
-  }, [])
-
-  /** Removes a keyword rule. */
-  const removeKeyword = useCallback((id) => {
-    setSettings((prev) => ({
-      ...prev,
-      keywords: prev.keywords.filter((k) => k.id !== id),
-    }))
-  }, [])
-
-  /** Restores only the keywords to the factory defaults. */
-  const resetKeywords = useCallback(() => {
-    setSettings((prev) => ({
-      ...prev,
-      keywords: structuredClone(DEFAULT_SUSPICIOUS_KEYWORDS),
-    }))
-  }, [])
-
   /** Updates the business hours (partial merge). */
   const setBusinessHours = useCallback((patch) => {
-    setSettings((prev) => ({
-      ...prev,
-      businessHours: { ...prev.businessHours, ...patch },
-    }))
+    setSettings((prev) => ({ ...prev, businessHours: { ...prev.businessHours, ...patch } }))
   }, [])
 
   /** Replaces the IOC allowlist (one entry per item; blanks dropped). */
@@ -263,17 +192,12 @@ export function SettingsProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      keywords: settings.keywords,
       businessHours: settings.businessHours,
       iocAllowlist: settings.iocAllowlist,
       iocAllowlistDefault: settings.iocAllowlistDefault,
       reportBranding: settings.report,
       mailSettings: settings.mail,
       enrichmentSettings: settings.enrichment,
-      addKeyword,
-      updateKeyword,
-      removeKeyword,
-      resetKeywords,
       setBusinessHours,
       setIocAllowlist,
       setReportBranding,
@@ -281,19 +205,7 @@ export function SettingsProvider({ children }) {
       setEnrichment,
       reload,
     }),
-    [
-      settings,
-      addKeyword,
-      updateKeyword,
-      removeKeyword,
-      resetKeywords,
-      setBusinessHours,
-      setIocAllowlist,
-      setReportBranding,
-      setMailSettings,
-      setEnrichment,
-      reload,
-    ],
+    [settings, setBusinessHours, setIocAllowlist, setReportBranding, setMailSettings, setEnrichment, reload],
   )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
@@ -307,24 +219,11 @@ export function useSettings() {
 }
 
 /**
- * Hook that provides a memoized SOC detection engine, rebuilt only when the
- * keyword rules or the business hours change. The analysis components use it
- * to enrich events with `engine.analyze(entry)`.
+ * Hook that provides a memoized engine for what is still analysed in the browser (the keywords of the
+ * Malware tab, and the business hours for the events of the other tabs), rebuilt when the hours change.
+ * Host evidence is not here: its rules are Sigma rules, run by the server.
  */
 export function useSocEngine() {
-  const { keywords, businessHours } = useSettings()
-  return useMemo(
-    // The user-editable keywords apply to every entry; the built-in command
-    // and artifact rulesets add shell and filesystem/registry tradecraft
-    // detection on top, each only for its own entry kind (see createSocEngine).
-    () =>
-      createSocEngine({
-        keywords,
-        commandKeywords: DEFAULT_COMMAND_KEYWORDS,
-        artifactKeywords: DEFAULT_ARTIFACT_KEYWORDS,
-        malwareKeywords: DEFAULT_MALWARE_KEYWORDS,
-        businessHours,
-      }),
-    [keywords, businessHours],
-  )
+  const { businessHours } = useSettings()
+  return useMemo(() => createSocEngine({ malwareKeywords: DEFAULT_MALWARE_KEYWORDS, businessHours }), [businessHours])
 }

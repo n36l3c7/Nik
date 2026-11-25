@@ -34,6 +34,7 @@ def filters(
     channel: str = Query(default="", max_length=120),
     eventId: int | None = Query(default=None),  # noqa: N803
     level: int | None = Query(default=None, ge=1, le=5),
+    rule: str = Query(default="", max_length=64),
     flagged: bool = False,
     dated: bool | None = None,
     matter: bool | None = None,
@@ -63,6 +64,7 @@ def filters(
         "channel": channel,
         "eventId": eventId,
         "level": level,
+        "rule": rule,
         "flagged": flagged,
         "dated": dated,
         "matter": matter,

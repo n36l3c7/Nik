@@ -2,24 +2,30 @@
  * "Commands" section of the Command History tab: the commands of all the history files of a shell, read from the server
  * (`/records`, a page at a time), with the stat cards, the filters, the "Stack values" panel on the
  * Program column and the original behind each row (the viewer). Flags and notes are marks of the server
- * (`evidence.putMark`); the detection of suspicious commands comes from the server in a later stage.
+ * (`evidence.putMark`). A second part, Detections, lists the Sigma rules that matched commands of the shell.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Copy, Flag, Hash, MessageSquarePlus, Terminal } from 'lucide-react'
-import { Button, CopyButton, Select, ServerTable, StatCard } from '../../ui/index.js'
+import { CalendarClock, Copy, Flag, Hash, MessageSquarePlus, ShieldAlert, Terminal } from 'lucide-react'
+import { Button, CopyButton, Select, ServerTable, StatCard, Tabs } from '../../ui/index.js'
+import DetectionsSection from '../../evidence/DetectionsSection.jsx'
+import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
 import StackPanel from '../../evidence/StackPanel.jsx'
 import SourceViewer from '../../evidence/SourceViewer.jsx'
 import DateTimeRangeFilter from '../../ui/DateTimeRangeFilter.jsx'
 import { useContextMenu } from '../../../context/ContextMenuContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { noTimeText, defaultOrderFor, distinctOf, lineOf } from '../../../domain/commands.js'
+import { detectionTone, levelsText, ruleChipValue } from '../../../domain/detections.js'
 import { withFilter } from '../../../domain/serverTable.js'
 import { copyText } from '../../../lib/download.js'
 import { formatDateTime } from '../../../lib/time.js'
+import { useDetections } from '../../../lib/useDetections.js'
 import { evidence } from '../../../services/api.js'
 
 const FLAG_HIGHLIGHT = 'bg-accent-soft border-l-2 border-l-accent-strong'
 const number = (n) => (n ?? 0).toLocaleString('en-US')
+// The detection level has a select of its own in the toolbar.
+const HIDDEN_CHIPS = ['level']
 
 function FlagButton({ flagged, onToggle, disabled }) {
   const label = flagged ? 'Remove flag' : 'Flag as malicious'
@@ -59,6 +65,9 @@ export default function CommandsSection({ incident, shell, sources, canWrite, ve
   const [stack, setStack] = useState(null) // the field being stacked
   const [viewing, setViewing] = useState(null) // the row whose original is open
   const [counts, setCounts] = useState({ total: null, dated: null, flagged: null })
+  const [part, setPart] = useState('commands') // 'commands' or 'detections'
+  const [ruleTitles, setRuleTitles] = useState({}) // rule id -> title, for the chip of the filter
+  const found = useDetections(incident.id, { kind: 'commands', source: shell.id, refresh: version + marks })
 
   // What the files of the shell hold, from the server: all records, the ones with a time, the flagged.
   useEffect(() => {
@@ -138,6 +147,7 @@ export default function CommandsSection({ incident, shell, sources, canWrite, ve
           </span>
         ),
       },
+      detectionsColumn,
       {
         key: 'username',
         label: 'User',
@@ -246,6 +256,7 @@ export default function CommandsSection({ incident, shell, sources, canWrite, ve
       >
         Flagged only
       </Button>
+      <LevelFilter filters={filters} onChange={(value) => setFilters(withFilter(filters, 'level', value))} />
       <DateTimeRangeFilter start={range.start} end={range.end} onChange={setRange} />
       <Button
         variant="ghost"
@@ -268,7 +279,7 @@ export default function CommandsSection({ incident, shell, sources, canWrite, ve
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Terminal} label="Commands" value={counts.total === null ? '—' : number(counts.total)} />
         <StatCard
           icon={Hash}
@@ -282,29 +293,69 @@ export default function CommandsSection({ incident, shell, sources, canWrite, ve
           value={counts.flagged === null ? '—' : number(counts.flagged)}
           tone={counts.flagged > 0 ? 'accent' : 'default'}
         />
+        <StatCard
+          icon={ShieldAlert}
+          label="Detections"
+          value={number(found.data.detections)}
+          tone={detectionTone(found.data.byLevel)}
+          hint={levelsText(found.data.byLevel) || undefined}
+        />
       </div>
 
-      <ServerTable
-        key={`${shell.id}|${range.start}|${range.end}|${defaultOrder}`}
-        tableKey="commands"
-        load={load}
-        columns={columns}
-        filters={filters}
-        onFiltersChange={setFilters}
-        toolbar={toolbar}
-        refreshKey={version + marks}
-        defaultOrder={defaultOrder}
-        searchPlaceholder="Search commands…"
-        emptyMessage="No commands match the current filters"
-        rowClassName={(row) => (row.flagged ? FLAG_HIGHLIGHT : '')}
-        onRowContextMenu={rowMenu}
-        onStack={setStack}
+      <Tabs
+        variant="section"
+        label={`Parts of the ${shell.label} history`}
+        idPrefix="commands"
+        items={[
+          { id: 'commands', label: 'Commands', count: counts.total ?? undefined },
+          { id: 'detections', label: 'Detections', count: found.data.total },
+        ]}
+        value={part}
+        onChange={setPart}
       />
-      {untimed && (
-        <p className="text-xs text-fg-muted">
-          Commands without a time come after the ones with a time; the histories without any are listed file by file,
-          each in its own order.
-        </p>
+
+      {part === 'detections' && (
+        <DetectionsSection
+          data={found.data}
+          loading={found.loading}
+          error={found.error}
+          noun="commands"
+          onOpen={(rule) => {
+            setRuleTitles((before) => ({ ...before, [rule.ruleId]: rule.title }))
+            setFilters(withFilter({}, 'rule', rule.ruleId))
+            setRange({ start: null, end: null }) // the rule's records may lie outside the range
+            setPart('commands')
+          }}
+        />
+      )}
+
+      {part === 'commands' && (
+        <>
+          <ServerTable
+            key={`${shell.id}|${range.start}|${range.end}|${defaultOrder}`}
+            tableKey="commands"
+            load={load}
+            columns={columns}
+            filters={filters}
+            onFiltersChange={setFilters}
+            toolbar={toolbar}
+            refreshKey={version + marks}
+            defaultOrder={defaultOrder}
+            searchPlaceholder="Search commands…"
+            emptyMessage="No commands match the current filters"
+            rowClassName={(row) => (row.flagged ? FLAG_HIGHLIGHT : '')}
+            onRowContextMenu={rowMenu}
+            onStack={setStack}
+            hideChips={HIDDEN_CHIPS}
+            chipLabel={(name, value) => (name === 'rule' ? ruleChipValue(value, ruleTitles) : null)}
+          />
+          {untimed && (
+            <p className="text-xs text-fg-muted">
+              Commands without a time come after the ones with a time; the histories without any are listed file by
+              file, each in its own order.
+            </p>
+          )}
+        </>
       )}
 
       {stack && (

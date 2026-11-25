@@ -2289,6 +2289,8 @@ class EvidenceDetection(Base):
     __table_args__ = (
         Index("ix_evidence_detections_incident", "incident_id", "level"),
         Index("ix_evidence_detections_rule", "incident_id", "rule_id"),
+        # One row for a rule and a record: a file read twice, or a record two files hold, says it once.
+        Index("uq_evidence_detections_record_rule", "record_id", "rule_id", unique=True),
     )
 
     id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
@@ -2412,10 +2414,15 @@ class SigmaRule(Base):
     """
 
     __tablename__ = "sigma_rules"
-    __table_args__ = (Index("ix_sigma_rules_pick", "enabled", "product", "category", "service"),)
+    __table_args__ = (
+        Index("ix_sigma_rules_pick", "enabled", "product", "category", "service"),
+        Index("ix_sigma_rules_pack", "pack"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     pack: Mapped[str] = mapped_column(String(80), nullable=False, default="", server_default="")
+    # The ``name`` of the rule, which a correlation rule names the rules it counts by (else by ``id``).
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     title: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
     kind: Mapped[str] = mapped_column(String(12), nullable=False, default="rule")
@@ -2430,6 +2437,11 @@ class SigmaRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     supported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     reason: Mapped[str] = mapped_column(String(400), nullable=False, default="", server_default="")
+    # The version of the worker's evaluator this row was last checked with: empty for a rule that was
+    # never checked (the worker was not there), which is not run and is checked when the worker answers.
+    engine: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    # What the pack says of a rule a person changed: ``source`` is theirs, this is what Reset puts back.
+    original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False, default="")

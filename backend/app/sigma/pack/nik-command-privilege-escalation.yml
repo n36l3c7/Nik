@@ -1,0 +1,25 @@
+title: 'Command: Privilege Escalation Attempt'
+id: 5f955ded-ba17-4c5e-98a6-3ccd17ad93e5
+status: stable
+description: 'A setuid bit is set, sudoers is edited or pkexec is run.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.privilege-escalation
+    - attack.t1548
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - '/etc/sudoers'
+        - command|re|i:
+              - 'sudo\s+su\b'
+              - 'chmod\s+\+s\b'
+              - 'chmod\s+4755'
+              - 'pkexec\b'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: medium

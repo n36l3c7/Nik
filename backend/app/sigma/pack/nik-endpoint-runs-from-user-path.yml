@@ -1,0 +1,28 @@
+title: 'Artifact: Program Runs From a User-Writable Folder'
+id: c59197fb-cfb0-4319-8859-8ef0d5917dc5
+status: stable
+description: 'An executable or a script runs from AppData, Downloads or Desktop rather than from Program Files.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.execution
+    - attack.t1204.002
+logsource:
+    product: nik
+    service: endpoint
+detection:
+    selection:
+        - name|re|i:
+              - '\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\[^\\]*\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\.cache)/[^/]*\.(sh|elf)'
+        - path|re|i:
+              - '\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\[^\\]*\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\.cache)/[^/]*\.(sh|elf)'
+        - command|re|i:
+              - '\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\[^\\]*\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\.cache)/[^/]*\.(sh|elf)'
+        - target|re|i:
+              - '\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\[^\\]*\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\.cache)/[^/]*\.(sh|elf)'
+        - location|re|i:
+              - '\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\[^\\]*\.(exe|dll|ps1|scr|js|vbs)|/home/[^/]+/(downloads|\.cache)/[^/]*\.(sh|elf)'
+    condition: selection
+falsepositives:
+    - Software that is installed or run this way on purpose
+level: medium

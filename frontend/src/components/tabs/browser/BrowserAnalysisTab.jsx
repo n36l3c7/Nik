@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Eye, FolderInput, Globe, Info, Plus } from 'lucide-react'
+import { Download, Eye, FolderInput, Globe, Info, Plus, ShieldAlert } from 'lucide-react'
 import { Button, Modal, StatCard, Tabs, Wait, tabId } from '../../ui/index.js'
 import SourceFiles from '../../evidence/SourceFiles.jsx'
 import BrowserTable from './BrowserTable.jsx'
+import DetectionsSection from '../../evidence/DetectionsSection.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
 import { BROWSERS, getBrowserById, isBrowserAvailableOn, sourcePathFor } from '../../../config/browsers.js'
 import { DEFAULT_OS, getOsById } from '../../../config/os.js'
@@ -30,6 +31,8 @@ import {
   typeTotals,
 } from '../../../domain/browserEvidence.js'
 import { noteEvidenceChanged } from '../../../lib/useEvidenceSummary.js'
+import { detectionTone, levelsText } from '../../../domain/detections.js'
+import { useDetections } from '../../../lib/useDetections.js'
 import { evidence } from '../../../services/api.js'
 
 /*
@@ -138,7 +141,18 @@ export default function BrowserAnalysisTab({ incident }) {
   }, [incident.id, archived, readKey, scopeFor, version])
 
   const totals = stats?.totals ?? {}
-  const sectionItems = SECTIONS.map((item) => ({ ...item, count: sectionCount(totals, item.id) }))
+  // Detections is the last part: the rules that matched records of the browser section (all browsers).
+  const found = useDetections(incident.id, {
+    kind: 'browser',
+    refresh: version,
+    enabled: !archived && readable.length > 0,
+  })
+  const sectionItems = [
+    ...SECTIONS.map((item) => ({ ...item, count: sectionCount(totals, item.id) })),
+    { id: 'detections', label: 'Detections', count: found.data.total },
+  ]
+  const [focusRule, setFocusRule] = useState('') // a rule opened from Detections: Events shows only its records
+  const [ruleTitles, setRuleTitles] = useState({}) // rule id -> title, for the chip of the filter
 
   // ---- Where the files come from ----
   const expected = useMemo(() => expectedFor(browser, os), [browser, os])
@@ -232,7 +246,7 @@ export default function BrowserAnalysisTab({ incident }) {
 
       {!archived && readable.length > 0 && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard icon={Eye} label="Total visits" value={stats ? countText(totals.visit ?? 0) : '…'} />
             <StatCard
               icon={Globe}
@@ -246,6 +260,13 @@ export default function BrowserAnalysisTab({ incident }) {
               value={stats ? countText(totals.download ?? 0) : '…'}
               tone={totals.download > 0 ? 'accent' : 'default'}
             />
+            <StatCard
+              icon={ShieldAlert}
+              label="Detections"
+              value={found.data.detections.toLocaleString('en-US')}
+              tone={detectionTone(found.data.byLevel)}
+              hint={levelsText(found.data.byLevel) || undefined}
+            />
           </div>
 
           <Tabs
@@ -254,17 +275,36 @@ export default function BrowserAnalysisTab({ incident }) {
             idPrefix="browser-section"
             items={sectionItems}
             value={section}
-            onChange={setSection}
+            onChange={(id) => {
+              setFocusRule('')
+              setSection(id)
+            }}
           />
           <div role="tabpanel" aria-labelledby={tabId('browser-section', section)}>
-            <BrowserTable
-              key={`${incident.id}|${browserId}|${activeProfile}|${section}`}
-              incident={incident}
-              section={section}
-              scope={scopeFor}
-              sources={list}
-              canWrite={canWrite}
-            />
+            {section === 'detections' ? (
+              <DetectionsSection
+                data={found.data}
+                loading={found.loading}
+                error={found.error}
+                noun="records"
+                onOpen={(rule) => {
+                  setRuleTitles((before) => ({ ...before, [rule.ruleId]: rule.title }))
+                  setFocusRule(rule.ruleId)
+                  setSection('events')
+                }}
+              />
+            ) : (
+              <BrowserTable
+                key={`${incident.id}|${browserId}|${activeProfile}|${section}|${focusRule}`}
+                incident={incident}
+                section={section}
+                scope={scopeFor}
+                sources={list}
+                canWrite={canWrite}
+                focusRule={focusRule}
+                ruleTitles={ruleTitles}
+              />
+            )}
           </div>
         </>
       )}

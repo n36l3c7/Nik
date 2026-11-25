@@ -9,7 +9,7 @@ from app import lists
 from app.automation import state
 from app.core.db import SessionLocal
 from app.core.models import NamedList, Setting
-from app.defaults import DEFAULT_BUSINESS_HOURS, DEFAULT_SUSPICIOUS_KEYWORDS
+from app.defaults import DEFAULT_BUSINESS_HOURS
 from app.iocs import DEFAULT_ALLOWLIST
 from tests.conftest import make_key
 from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fixture
@@ -46,7 +46,6 @@ def test_what_the_settings_held_becomes_lists_and_the_settings_api_stays_the_sam
     saved = admin.put(
         "/api/settings",
         json={
-            "keywords": [{"id": "x", "label": "x", "pattern": "xx", "severity": "high", "description": "d"}],
             "businessHours": {"startHour": 9, "endHour": 17, "flagWeekends": False},
             "iocAllowlist": ["corp.example", "10.0.0.0/8"],
             "mail": {"orgDomains": ["Corp.Example."], "trustedAuthServers": ["mx.corp.example"]},
@@ -58,7 +57,6 @@ def test_what_the_settings_held_becomes_lists_and_the_settings_api_stays_the_sam
         for row in db.scalars(select(NamedList)).all():
             db.delete(row)
         db.get(Setting, 1).doc = {
-            "keywords": [{"id": "x", "label": "x", "pattern": "xx", "severity": "high", "description": "d"}],
             "businessHours": {"startHour": 9, "endHour": 17, "flagWeekends": False},
             "iocAllowlist": ["corp.example", "10.0.0.0/8"],
             "mail": {"orgDomains": ["corp.example"], "trustedAuthServers": ["mx.corp.example"]},
@@ -68,7 +66,7 @@ def test_what_the_settings_held_becomes_lists_and_the_settings_api_stays_the_sam
         db.commit()
     lists.clear_cache()
 
-    assert seed() == 6 and seed() == 0  # once
+    assert seed() == 5 and seed() == 0  # once
     found = by_name(admin)
     assert set(lists.BUILTIN) <= set(found) and all(found[name]["builtin"] for name in lists.BUILTIN)
     assert (found["ioc_allowlist"]["items"], found["ioc_allowlist"]["kind"]) == (2, "values")
@@ -76,14 +74,13 @@ def test_what_the_settings_held_becomes_lists_and_the_settings_api_stays_the_sam
     assert found["ioc_allowlist"]["usedBy"] == ["Settings → Indicators → Allowlist"]
     hours = admin.get("/api/lists/business_hours").json()
     assert hours["document"] == {"startHour": 9, "endHour": 17, "flagWeekends": False}
-    keywords = admin.get("/api/lists/suspicious_keywords").json()
-    assert keywords["entries"][0]["key"] == "x" and keywords["entries"][0]["value"]["severity"] == "high"
-    assert [column["name"] for column in keywords["columns"]] == ["label", "pattern", "severity", "description"]
+    # The suspicious keywords are Sigma rules since 7.0: there is no list of them.
+    assert "suspicious_keywords" not in found and admin.get("/api/lists/suspicious_keywords").status_code == 404
     assert [item["key"] for item in admin.get("/api/lists/automation_hosts").json()["entries"]] == ["siem.corp"]
     # The settings hold which list they read, and nothing else of it.
     with SessionLocal() as db:
         doc = db.get(Setting, 1).doc
-        assert doc["iocAllowlist"] == {"list": "ioc_allowlist"} and doc["keywords"] == {"list": "suspicious_keywords"}
+        assert doc["iocAllowlist"] == {"list": "ioc_allowlist"} and "keywords" not in doc
         assert doc["mail"] == {
             "orgDomains": {"list": "internal_domains"},
             "trustedAuthServers": {"list": "mail_trusted_auth_servers"},
@@ -94,8 +91,8 @@ def test_what_the_settings_held_becomes_lists_and_the_settings_api_stays_the_sam
     # Read the old way, they are what they were.
     shown = admin.get("/api/settings").json()
     assert shown["iocAllowlist"] == ["corp.example", "10.0.0.0/8"]
-    assert shown["businessHours"] == {"startHour": 9, "endHour": 17, "flagWeekends": False}
-    assert shown["keywords"] == [{"id": "x", "label": "x", "pattern": "xx", "severity": "high", "description": "d"}]
+    assert shown["businessHours"] == {"startHour": 9, "endHour": 17, "flagWeekends": False, "tz": "UTC"}
+    assert "keywords" not in shown
     assert shown["mail"] == {"orgDomains": ["corp.example"], "trustedAuthServers": ["mx.corp.example"]}
     # Written the old way, the list takes it.
     shown["iocAllowlist"] = ["corp.example", "partner.example"]
@@ -111,12 +108,11 @@ def test_what_the_settings_held_becomes_lists_and_the_settings_api_stays_the_sam
 
 
 def test_a_server_never_configured_gets_the_factory_lists(admin: TestClient):
-    assert seed() == 6
+    assert seed() == 5
     shown = admin.get("/api/settings").json()
     assert shown["iocAllowlist"] == list(DEFAULT_ALLOWLIST)
     assert shown["businessHours"] == DEFAULT_BUSINESS_HOURS
-    assert [item["id"] for item in shown["keywords"]] == [item["id"] for item in DEFAULT_SUSPICIOUS_KEYWORDS]
-    assert shown["keywords"][0] == DEFAULT_SUSPICIOUS_KEYWORDS[0]
+    assert "keywords" not in shown
     assert shown["mail"] == {"orgDomains": [], "trustedAuthServers": []}
     with SessionLocal() as db:
         assert state.read(db)["hosts"] == [] and db.get(Setting, 1) is None  # nothing to point: the default is read

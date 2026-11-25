@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { CalendarClock, Flag, MessageSquare, RotateCcw, X } from 'lucide-react'
 import { Badge, Button, DateTimeRangeFilter, Select, ServerTable } from '../../ui/index.js'
 import SourceViewer from '../../evidence/SourceViewer.jsx'
+import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
 import StackPanel from '../../evidence/StackPanel.jsx'
 import { useArtifacts } from '../../../context/ArtifactContext.jsx'
 import { useContextMenu } from '../../../context/ContextMenuContext.jsx'
@@ -18,6 +19,7 @@ import {
   rowText,
   summaryText,
 } from '../../../domain/browserEvidence.js'
+import { ruleChipValue } from '../../../domain/detections.js'
 import { formatBytes } from '../../../domain/events.js'
 import { indicatorFlaggable, defang } from '../../../domain/iocs.js'
 import { evidenceAddress } from '../../../domain/links.js'
@@ -42,7 +44,7 @@ const TYPE_OPTIONS = [
 ]
 const TYPE_COLOURS = { visit: 'slate', download: 'cyan', search: 'violet', bookmark: 'emerald', shortcut: 'amber' }
 // These filters have a control in the toolbar: they are not repeated as chips.
-const TOOLBAR_FILTERS = ['type', 'from', 'to', 'flagged', 'dataKey', 'dataValue']
+const TOOLBAR_FILTERS = ['type', 'from', 'to', 'flagged', 'dataKey', 'dataValue', 'level']
 const FLAGGED_ROW = 'bg-accent-soft border-l-2 border-l-accent-strong'
 
 const TITLES = {
@@ -56,9 +58,10 @@ const KEY_LABELS = { domain: 'Domain', url: 'Address', title: 'Title', name: 'Na
 
 /**
  * Props: `incident`; `section` (`events`, `bookmarks`, `shortcuts`); `scope` (the filters of the browser and
- * the profile: `kind`, `sourcePrefix`, `profile`); `sources` (every file, for the viewer); `canWrite`.
+ * the profile: `kind`, `sourcePrefix`, `profile`); `sources` (every file, for the viewer); `canWrite`;
+ * `focusRule` (a rule of the Detections part to show the records of) and `ruleTitles` (for its chip).
  */
-export default function BrowserTable({ incident, section, scope, sources, canWrite }) {
+export default function BrowserTable({ incident, section, scope, sources, canWrite, focusRule = '', ruleTitles }) {
   const { openMenu, askText } = useContextMenu()
   const { toggleFlag } = useIncidents()
   const { openIoc } = useIocLookup()
@@ -68,7 +71,7 @@ export default function BrowserTable({ incident, section, scope, sources, canWri
   const labels = TITLES[section]
   const types = SECTION_TYPES[section].join(',')
 
-  const [filters, setFilters] = useState({})
+  const [filters, setFilters] = useState(() => (focusRule ? { rule: focusRule } : {})) // a rule opened from Detections
   const [stacking, setStacking] = useState(null) // the field of the open stack panel
   const [viewing, setViewing] = useState(null) // the row whose original is open
   const [marks, setMarks] = useState({}) // key -> { flagged, note }: what was set here, over what the page read
@@ -244,6 +247,7 @@ export default function BrowserTable({ incident, section, scope, sources, canWri
         order: 'time',
         render: (row) => <span className="whitespace-nowrap font-mono text-xs text-fg">{formatDateTime(row.ts)}</span>,
       },
+      detectionsColumn,
     ]
     if (section === 'events') {
       list.push({
@@ -344,6 +348,7 @@ export default function BrowserTable({ incident, section, scope, sources, canWri
           options={TYPE_OPTIONS}
         />
       )}
+      <LevelFilter filters={filters} onChange={(value) => setFilters((held) => withFilter(held, 'level', value))} />
       <DateTimeRangeFilter
         start={filters.from ?? null}
         end={filters.to ?? null}
@@ -399,6 +404,7 @@ export default function BrowserTable({ incident, section, scope, sources, canWri
         onFiltersChange={setFilters}
         toolbar={toolbar}
         hideChips={TOOLBAR_FILTERS}
+        chipLabel={(name, value) => (name === 'rule' ? ruleChipValue(value, ruleTitles) : null)}
         tableKey={`browser-${section}`}
         searchPlaceholder={labels.search}
         emptyMessage="No records match the current filters"

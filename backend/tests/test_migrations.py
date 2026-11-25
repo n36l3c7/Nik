@@ -1647,3 +1647,147 @@ def test_migration_0056_adds_the_tables_of_host_evidence_and_the_time_zone(tmp_p
         assert not set(EVIDENCE_TABLES) & set(inspector.get_table_names())
         assert "tz" not in {column["name"] for column in inspector.get_columns("incidents")}
         assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1
+
+
+def _server_before_0057(tmp_path, monkeypatch):
+    """A database as 0056 left it: every table, without what 0057 adds."""
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP INDEX uq_evidence_detections_record_rule"))
+        conn.execute(sa.text("DROP INDEX ix_sigma_rules_pack"))
+        for column in ("name", "engine", "original"):
+            conn.execute(sa.text(f"ALTER TABLE sigma_rules DROP COLUMN {column}"))
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0056_evidence")
+    return engine, cfg
+
+
+def test_migration_0057_adds_what_sigma_needs_and_moves_the_keywords_a_person_wrote(tmp_path, monkeypatch):
+    import yaml
+
+    from app.defaults import DEFAULT_SUSPICIOUS_KEYWORDS
+
+    engine, cfg = _server_before_0057(tmp_path, monkeypatch)
+    shipped = [dict(item) for item in DEFAULT_SUSPICIOUS_KEYWORDS]
+    own = {
+        "id": "my-site",
+        "label": "Our wiki",
+        "pattern": r"wiki\.corp",
+        "severity": "high",
+        "description": "Internal",
+    }
+    changed = {**shipped[0], "severity": "critical"}  # a shipped one a person raised
+    odd = {"id": "odd", "label": "", "pattern": "", "severity": "low"}  # no pattern: nothing to look for
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text("INSERT INTO settings (id, doc) VALUES (1, :doc)"),
+            {"doc": json.dumps({"keywords": [changed, *shipped[1:], own, odd], "businessHours": {"startHour": 9}})},
+        )
+        # Two rows of the same rule on the same record: what a file read twice could have left.
+        for _number in (1, 2):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO evidence_detections (incident_id, record_id, rule_id, rule_title, rule_author, level,"
+                    " tags, records, created_at) VALUES ('i1', 7, 'r1', 'x', '', 4, '[]', '[]', 'now')"
+                )
+            )
+    command.upgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert {"name", "engine", "original"} <= {column["name"] for column in inspector.get_columns("sigma_rules")}
+        assert "ix_sigma_rules_pack" in {index["name"] for index in inspector.get_indexes("sigma_rules")}
+        unique = [
+            i for i in inspector.get_indexes("evidence_detections") if i["name"] == "uq_evidence_detections_record_rule"
+        ]
+        assert unique and unique[0]["unique"] and unique[0]["column_names"] == ["record_id", "rule_id"]
+        assert conn.execute(sa.text("SELECT count(*) FROM evidence_detections")).scalar() == 1
+        rows = conn.execute(
+            sa.text(
+                "SELECT title, level, product, service, enabled, supported, engine, pack, source, reason"
+                " FROM sigma_rules ORDER BY title"
+            )
+        ).all()
+        doc = json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar())
+    # The two the person made became rules; the ones Nik shipped did not.
+    assert [(r[0], r[1]) for r in rows] == [("Our wiki", 4), (changed["label"], 5)]
+    wiki = rows[0]
+    assert (wiki[2], wiki[3], wiki[4], wiki[5], wiki[6], wiki[7]) == ("nik", "browser", 1, 0, "", "")
+    assert wiki[9] == "Not checked yet: the forensics worker was not reached"
+    text = yaml.safe_load(wiki[8])
+    assert (
+        text["title"] == "Our wiki"
+        and text["level"] == "high"
+        and text["logsource"] == {"product": "nik", "service": "browser"}
+    )
+    assert (
+        text["detection"]["url"] == {"url|re": r"(?i)wiki\.corp"} and text["detection"]["condition"] == "url or title"
+    )
+    assert text["id"] and len(text["id"]) == 36
+    assert doc == {"businessHours": {"startHour": 9}}  # the keywords are not a setting any more
+
+    # Again: nothing to move, nothing twice. Down, then up.
+    command.downgrade(cfg, "0056_evidence")
+    with engine.connect() as conn:
+        assert "engine" not in {c["name"] for c in sa.inspect(conn).get_columns("sigma_rules")}
+        assert "uq_evidence_detections_record_rule" not in {
+            i["name"] for i in sa.inspect(conn).get_indexes("evidence_detections")
+        }
+    command.upgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT count(*) FROM sigma_rules")).scalar() == 2
+
+
+def test_migration_0057_reads_the_keywords_from_their_list_and_removes_the_list(tmp_path, monkeypatch):
+    from app.core.models import NamedList, NamedListItem
+    from app.defaults import DEFAULT_SUSPICIOUS_KEYWORDS
+
+    engine, cfg = _server_before_0057(tmp_path, monkeypatch)
+    first = DEFAULT_SUSPICIOUS_KEYWORDS[0]
+    items = [
+        (item["id"], {key: item[key] for key in ("label", "pattern", "severity", "description")})
+        for item in DEFAULT_SUSPICIOUS_KEYWORDS
+    ]
+    items.append(("mine", {"label": "Mine", "pattern": r"mine\.example", "severity": "medium", "description": ""}))
+    with engine.begin() as conn:
+        conn.execute(
+            NamedList.__table__.insert(),
+            {"id": "l1", "name": "suspicious_keywords", "label": "x", "description": "", "kind": "key_value",
+             "item_type": "keyword", "columns": [], "builtin": True, "writable_by_automation": False,
+             "updated_at": "now", "updated_by": "nik"},
+        )  # fmt: skip
+        for position, (key, value) in enumerate(items):
+            conn.execute(
+                NamedListItem.__table__.insert(),
+                {"list_id": "l1", "key": key, "value": value, "note": "", "position": position,
+                 "added_at": "now", "added_by": "nik"},
+            )  # fmt: skip
+        conn.execute(
+            sa.text("INSERT INTO settings (id, doc) VALUES (1, :doc)"),
+            {
+                "doc": json.dumps(
+                    {"keywords": {"list": "suspicious_keywords"}, "iocAllowlist": {"list": "ioc_allowlist"}}
+                )
+            },
+        )
+    assert first["id"] == items[0][0]
+    command.upgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        assert [r[0] for r in conn.execute(sa.text("SELECT title FROM sigma_rules")).all()] == ["Mine"]
+        assert conn.execute(sa.text("SELECT count(*) FROM lists")).scalar() == 0
+        assert conn.execute(sa.text("SELECT count(*) FROM list_items")).scalar() == 0
+        assert json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar()) == {
+            "iocAllowlist": {"list": "ioc_allowlist"}
+        }
+
+
+def test_migration_0057_on_a_server_that_never_had_keywords_changes_nothing_else(tmp_path, monkeypatch):
+    engine, cfg = _server_before_0057(tmp_path, monkeypatch)
+    command.upgrade(cfg, "0057_sigma")  # no settings row at all
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT count(*) FROM sigma_rules")).scalar() == 0

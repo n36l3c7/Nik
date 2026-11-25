@@ -852,7 +852,7 @@ export default function App() {
           },
         ]
       : []),
-    { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
+    { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings(SETTINGS_HOME) },
     ...(canWrite
       ? [
           {

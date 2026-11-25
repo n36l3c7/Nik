@@ -45,6 +45,7 @@ SECTIONS = (
 TLP_LEVELS = ("clear", "green", "amber", "amber+strict", "red")
 LANGS = ("en", "it")
 MAX_IOCS = 500
+MAX_RULE_ROWS = 100
 
 # TLP 2.0 colours (FIRST): the label is printed in colour on black.
 _TLP_COLOURS = {"clear": "#ffffff", "green": "#33ff00", "amber": "#ffc000", "amber+strict": "#ffc000", "red": "#ff2b2b"}
@@ -134,6 +135,12 @@ T = {
         "no_attack": "No technique was suggested.",
         "technique": "Technique",
         "tactic": "Tactic",
+        "rule": "Rule",
+        "rule_level": "Level",
+        "rule_matches": "Records",
+        "rule_author": "Author",
+        "rule_credit": "Detection rules are credited to their authors.",
+        "levels": {"1": "informational", "2": "low", "3": "medium", "4": "high", "5": "critical"},
         "evidence_of": "Seen in",
         "type": "Type",
         "value": "Value",
@@ -250,6 +257,12 @@ T = {
         "no_attack": "Nessuna tecnica suggerita.",
         "technique": "Tecnica",
         "tactic": "Tattica",
+        "rule": "Regola",
+        "rule_level": "Livello",
+        "rule_matches": "Record",
+        "rule_author": "Autore",
+        "rule_credit": "Le regole di rilevamento sono attribuite ai loro autori.",
+        "levels": {"1": "informativo", "2": "basso", "3": "medio", "4": "alto", "5": "critico"},
         "evidence_of": "Rilevata in",
         "type": "Tipo",
         "value": "Valore",
@@ -638,6 +651,25 @@ tr { break-inside: avoid; }
 """
 
 
+def _rule_matches(detections: list[dict[str, Any]], t: dict[str, Any]) -> str:
+    """The rules that matched, each with its level, how many records and who wrote it."""
+    rows = [
+        [
+            esc(d.get("label") or d.get("id")),
+            f'<span class="{"high" if (d.get("level") or 0) >= 4 else ""}">'
+            f"{esc(t['levels'].get(str(d.get('level')), d.get('severity') or ''))}</span>",
+            esc(d.get("count")),
+            esc(d.get("author") or "—"),
+        ]
+        for d in detections[:MAX_RULE_ROWS]
+    ]
+    table = _table(
+        [t["rule"], t["rule_level"], t["rule_matches"], t["rule_author"]], rows, ["46%", "14%", "12%", "28%"]
+    )
+    credit = f'<p class="muted">{esc(t["rule_credit"])}</p>' if any(d.get("author") for d in detections) else ""
+    return f"<h3>{esc(t['detections_found'])}</h3>{table}{credit}"
+
+
 def build_html(
     doc: dict,
     *,
@@ -645,7 +677,6 @@ def build_html(
     tlp: str = "amber",
     sections: list[str] | None = None,
     executive_summary: str = "",
-    detections: list[dict[str, Any]] | None = None,
     iocs: list[dict[str, Any]] | None = None,
     samples: list[dict[str, Any]] | None = None,
     mails: list[dict[str, Any]] | None = None,
@@ -668,8 +699,8 @@ def build_html(
     tlp = tlp if tlp in TLP_LEVELS else "amber"
     branding = branding or {}
     host = host or {}
-    # The browser sends the rules it ran; when it sends none, the matches of the tables stand in.
-    detections = detections or host.get("detections") or []
+    # What the rules found is read from the tables, never from the request (a client may still send some).
+    detections = host.get("detections") or []
     iocs = [i for i in (iocs or []) if not i.get("allowlisted")]
     samples = samples or []
     mails = mails or []
@@ -778,6 +809,8 @@ def build_html(
             out.append(_table([t["technique"], t["tactic"], "", t["evidence_of"]], rows, ["13%", "17%", "30%", "40%"]))
         else:
             out.append(f'<p class="muted">{esc(t["no_attack"])}</p>')
+        if detections:
+            out.append(_rule_matches(detections, t))
 
     if "iocs" in wanted:
         out.append(f"<h2>{esc(t['iocs'])}</h2>")

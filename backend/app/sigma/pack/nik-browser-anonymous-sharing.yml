@@ -1,0 +1,39 @@
+title: 'Browser: Anonymous File Sharing or Disposable Mail'
+id: bbc26784-1465-43f4-b5ba-00861a589388
+status: stable
+description: 'A page of an anonymous file sharing or disposable mail service, a possible way to send data out.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - 'anonfiles'
+              - 'transfer.sh'
+              - 'gofile.io'
+              - 'tempmail'
+              - 'temp-mail'
+              - 'temp_mail'
+              - 'temp mail'
+        - title|contains:
+              - 'anonfiles'
+              - 'transfer.sh'
+              - 'gofile.io'
+              - 'tempmail'
+              - 'temp-mail'
+              - 'temp_mail'
+              - 'temp mail'
+        - fileName|contains:
+              - 'anonfiles'
+              - 'transfer.sh'
+              - 'gofile.io'
+              - 'tempmail'
+              - 'temp-mail'
+              - 'temp_mail'
+              - 'temp mail'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: medium

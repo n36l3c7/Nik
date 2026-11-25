@@ -1,0 +1,68 @@
+title: 'Artifact: Common Persistence Location'
+id: 300ef247-3408-419d-ae67-e581cbd7835b
+status: stable
+description: 'An entry sits in a place used for persistence: a Run key, a scheduled task, cron, systemd, a LaunchAgent or SSH keys.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1053.005
+logsource:
+    product: nik
+    service: endpoint
+detection:
+    selection:
+        - name|contains:
+              - 'currentversion\run'
+              - '\tasks\'
+              - 'authorized_keys'
+              - '/etc/cron'
+              - 'launchagents'
+              - 'launchdaemons'
+              - 'rc.local'
+        - name|re|i:
+              - '\.service\b'
+        - path|contains:
+              - 'currentversion\run'
+              - '\tasks\'
+              - 'authorized_keys'
+              - '/etc/cron'
+              - 'launchagents'
+              - 'launchdaemons'
+              - 'rc.local'
+        - path|re|i:
+              - '\.service\b'
+        - command|contains:
+              - 'currentversion\run'
+              - '\tasks\'
+              - 'authorized_keys'
+              - '/etc/cron'
+              - 'launchagents'
+              - 'launchdaemons'
+              - 'rc.local'
+        - command|re|i:
+              - '\.service\b'
+        - target|contains:
+              - 'currentversion\run'
+              - '\tasks\'
+              - 'authorized_keys'
+              - '/etc/cron'
+              - 'launchagents'
+              - 'launchdaemons'
+              - 'rc.local'
+        - target|re|i:
+              - '\.service\b'
+        - location|contains:
+              - 'currentversion\run'
+              - '\tasks\'
+              - 'authorized_keys'
+              - '/etc/cron'
+              - 'launchagents'
+              - 'launchdaemons'
+              - 'rc.local'
+        - location|re|i:
+              - '\.service\b'
+    condition: selection
+falsepositives:
+    - Software that is installed or run this way on purpose
+level: medium

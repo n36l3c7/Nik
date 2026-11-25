@@ -30,7 +30,7 @@ import { transfer } from '../../../lib/transfers.js'
  * Lists (who manages lists).
  *
  * Every list a feature or a playbook reads by its name: those Nik ships
- * (the IoC allowlist, your domains, the suspicious keywords, the business
+ * (the IoC allowlist, your domains, the business
  * hours…), yours, and the watch lists of the Indicators page, which are read
  * here and changed where indicators are. The table on the left, the list
  * that is chosen on the right: what it is, its items, where it is used, and

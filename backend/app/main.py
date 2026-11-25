@@ -84,6 +84,7 @@ from .routers import (
     script_signatures,
     search,
     settings,
+    sigma_rules,
     storage,
     system_keys,
     tasks,
@@ -101,6 +102,7 @@ from .routers import (
     health as health_details,
 )
 from .routers import workers as worker_status
+from .sigma.rules import SigmaError
 
 setup_logging(app_settings.LOG_LEVEL)
 # The store asks this whether files in clear may still be there, and tells it of a damaged one.
@@ -142,6 +144,10 @@ TAGS_METADATA = [
         "description": "Uploaded FLIRT signatures applied by the analyzer worker (rules.manage to change).",
     },
     {"name": "capa-rules", "description": "Added capa rules, checked by the capa worker (rules.manage to change)."},
+    {
+        "name": "sigma-rules",
+        "description": "Sigma rules for host evidence, judged by the forensics worker (rules.manage to change).",
+    },
     {
         "name": "samples",
         "description": "Malware samples: stored on the server, analysed statically, downloaded as a protected zip.",
@@ -302,6 +308,10 @@ def on_startup() -> None:
         from .evidence import legacy as evidence_legacy
 
         evidence_legacy.start()
+        # The Sigma rules the worker did not read with its present version are read again, in the background.
+        from .sigma import recheck as sigma_recheck
+
+        sigma_recheck.start()
     # The scans of addresses that playbooks ask for run here: the automation worker cannot reach the isolated browser.
     if app_settings.API_BACKGROUND and app_settings.AUTOMATION_WORKER != "off":
         urlscan_queue.start()
@@ -342,6 +352,14 @@ def on_startup() -> None:
                     db.commit()
             except IntegrityError:
                 db.rollback()  # another process of the server wrote them at the same moment
+            # The Sigma rules Nik ships (those nobody changed follow a release).
+            from .sigma import seed as sigma_seed
+
+            try:
+                if sigma_seed.seed(db):
+                    db.commit()
+            except IntegrityError:
+                db.rollback()  # another process of the server added them at the same moment
             # The packs of the folder an administrator filled, for a Nik without the catalogue.
             if app_settings.PACKS_DIR:
                 from pathlib import Path
@@ -422,6 +440,15 @@ def _damaged_file(_request: Request, error: SealError) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": str(error), "code": "file_damaged"})
 
 
+@app.exception_handler(SigmaError)
+def _sigma_refused(_request: Request, error: SigmaError) -> JSONResponse:
+    """A rule that cannot be taken: the sentence, and the lines of the text that are wrong when it has some."""
+    body: dict = {"detail": error.message}
+    if error.errors:
+        body["errors"] = error.errors
+    return JSONResponse(status_code=error.status, content=body)
+
+
 @app.exception_handler(archive.Archived)
 def _archived(_request: Request, error: archive.Archived) -> JSONResponse:
     """A write to an archived incident: the sentence says to take it out of the archive first."""
@@ -484,6 +511,7 @@ app.include_router(annotations.router, prefix="/api")
 app.include_router(yara_rules.router, prefix="/api")
 app.include_router(flirt.router, prefix="/api")
 app.include_router(capa_rules.router, prefix="/api")
+app.include_router(sigma_rules.router, prefix="/api")
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")

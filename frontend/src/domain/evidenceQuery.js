@@ -16,6 +16,7 @@ export const RECORD_FILTERS = [
   'channel',
   'eventId',
   'level',
+  'rule',
   'flagged',
   'dated',
   'matter',

@@ -1,0 +1,25 @@
+title: 'Command: Reverse or Bind Shell'
+id: 8e5406df-2393-4d7c-93b5-d5526ed5210d
+status: stable
+description: 'A classic reverse or bind shell one-liner (netcat -e, /dev/tcp, socat exec).'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.execution
+    - attack.t1059
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - '/dev/tcp/'
+        - command|re|i:
+              - '\bnc(at)?\b[^|]*\s-e\s'
+              - 'bash\s+-i\s+>&'
+              - 'mkfifo\s+/tmp'
+              - 'socat\b.*exec'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: high

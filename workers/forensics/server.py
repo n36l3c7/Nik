@@ -1,12 +1,17 @@
 """HTTP front of the Nik forensics worker (standard library only).
 
-    GET  /health
+    GET  /health                         -> {"status", "started", "sigma"} (``sigma``: the version of the evaluator)
     GET  /jobs/<name>                    -> whether the worker still has a job (``jobs.py``)
     PUT  /files/<sha256>.bin             -> the worker is given an original of host evidence (the body)
+    PUT  /rules/<sha256>                 -> the worker is given a set of Sigma rules (the body: one JSON rule per line;
+                                            its SHA-256 is the name); {"rules": n}, 400 when it is not that
     POST /recognise {"name", "fileName"} -> {"parser", "version", "kind", "source"}, or 422
-    POST /parse {"name", "fileName", "parser"?, "source"?, "params"?}
+    POST /parse {"name", "fileName", "parser"?, "source"?, "params"?, "rules"?}
                                          -> the events of the parse, one JSON object per line, as they
-                                            are found (``nik_forensics/context.py`` says which)
+                                            are found (``nik_forensics/context.py`` says which). ``rules``
+                                            is the SHA-256 of a rule set: the records are matched against it
+                                            and the matches come as ``det`` lines; ``params.hours`` are the
+                                            working hours (``nik_forensics/sigma/hours.py``)
     POST /view {"name", "parser", "source", "loc"}
                                          -> the piece of the original a record came from (``view`` of the
                                             parser: ``nik_forensics/parsers/__init__.py`` says its shape);
@@ -14,6 +19,12 @@
                                             unknown parser or a locator of the wrong shape (also one that
                                             lacks a member the parser needs), 504 after
                                             ``VIEW_SECONDS``
+    POST /sigma/check {"documents": [{"source"}]}
+                                         -> the rules each text holds and the errors in it, with lines
+                                            (``nik_forensics/sigma/check.py``)
+    POST /sigma/try {"rules", "hours"?, "records"}
+                                         -> {"matches", "notEvaluated"}: the rules run over the records, which come
+                                            in time order (at most 20,000); ``sigma_job.py`` says the shapes
     POST /find {"sha256", "needle", "as", "from"?, "limit"?}
                                          -> where a text (as UTF-8 and UTF-16LE, any case) or some bytes (hex)
                                             are in the original, from an offset: ``{"matches", "next",
@@ -21,7 +32,9 @@
                                             needle. After ``FIND_STOP_SECONDS`` it answers what it found with ``next``
 
 ``name`` is the name the original was given under: ``<sha256>.bin``, checked
-against what was received (``given.py``). Only the Nik backend talks to this
+against what was received (``given.py``). A rule set is given the same way (``rules.py``): a ``/parse`` that
+names one the worker does not hold is answered ``409`` with ``missingRules`` (the digest) and ``missing``
+(the files, possibly none). Only the Nik backend talks to this
 server, on the internal network, with the shared ``X-Forensics-Token``. At
 most ``FORENSICS_MAX_JOBS`` parses run at once; extra requests get 503.
 
@@ -31,6 +44,9 @@ hold is answered ``409`` with the name that is ``missing``; the backend sends
 it and asks again. What is given sits in the work volume (``/work``), **in
 clear**, until nobody asked for it for ``FORENSICS_FILE_IDLE`` seconds, and at
 the latest until the worker starts again (it empties the place when it starts).
+
+A check or a try of Sigma rules is a short process of its own as well (``sigma_job.py``, ``SIGMA_SLOTS`` at once):
+the YAML of a rule is read there, never in the server.
 
 A view is a short process of its own too (``view_job.py``), under its own small bound
 (``VIEW_SLOTS`` at once), so that it never waits behind a long parse; so is a search (``find_job.py``,
@@ -63,6 +79,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import given
 import jobs
+import rules
+from nik_forensics.sigma import ENGINE_VERSION
 
 TOKEN = given.secret("FORENSICS_TOKEN")
 PORT = int(os.environ.get("FORENSICS_PORT", "8760"))
@@ -82,10 +100,17 @@ FIND_SECONDS = 30
 # The search stops reading by itself this long after it began, and answers with where to go on from.
 FIND_STOP_SECONDS = 24
 FIND_MAX_BYTES = 256 * 1024
+SIGMA_JOB = os.path.join(HERE, "sigma_job.py")
+SIGMA_SLOTS = 2
+SIGMA_SECONDS = int(os.environ.get("FORENSICS_SIGMA_SECONDS", "120"))
+SIGMA_MAX_BYTES = 64 * 1024 * 1024
+# What the body of a request may weigh, by route (the rest: a megabyte).
+BODY_LIMITS = {"/sigma/check": 16 * 1024 * 1024, "/sigma/try": 64 * 1024 * 1024}
 _NAME = re.compile(r"^[0-9a-f]{64}\.bin$")
 _slots = threading.BoundedSemaphore(MAX_JOBS)
 _view_slots = threading.BoundedSemaphore(VIEW_SLOTS)
 _find_slots = threading.BoundedSemaphore(FIND_SLOTS)
+_sigma_slots = threading.BoundedSemaphore(SIGMA_SLOTS)
 JOBS = jobs.Jobs()
 GIVEN = given.Given(
     os.environ.get("FORENSICS_WORK_DIR", "/work"),
@@ -93,8 +118,17 @@ GIVEN = given.Given(
     max_bytes=int(os.environ.get("FORENSICS_FILES_MB", "49152")) * 1024 * 1024,
     idle=float(os.environ.get("FORENSICS_FILE_IDLE", "900")),
 )
+RULES = rules.RuleSets(os.environ.get("FORENSICS_WORK_DIR", "/work"))
 # What a job is started with: nothing of the worker's own environment but what it needs to run.
-_JOB_ENV = ("PATH", "LANG", "LC_ALL", "FORENSICS_JOB_MEMORY_MB", "FORENSICS_JOB_SECONDS", "TMPDIR")
+_JOB_ENV = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "FORENSICS_JOB_MEMORY_MB",
+    "FORENSICS_JOB_SECONDS",
+    "FORENSICS_SIGMA_SECONDS",
+    "TMPDIR",
+)
 
 
 class Refused(Exception):
@@ -104,7 +138,9 @@ class Refused(Exception):
 
 
 def job_command(path: str, request: dict) -> list[str]:
-    asked = {key: request.get(key) for key in ("fileName", "parser", "source", "params") if request.get(key)}
+    asked = {key: request.get(key) for key in ("fileName", "parser", "source", "params", "rules") if request.get(key)}
+    if asked.get("rules"):  # the job is given the file of the set, not its name
+        asked["rules"] = RULES.path(str(asked["rules"])) or ""
     return [sys.executable, "-I", RUNNER, path, json.dumps(asked)]
 
 
@@ -179,17 +215,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path == "/health":
-            return self._send(200, {"status": "ok", "started": JOBS.started})
+            return self._send(200, {"status": "ok", "started": JOBS.started, "sigma": ENGINE_VERSION})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong forensics token"})
         self._send(*(JOBS.answer(self.path) or (404, {"detail": "Not found"})))
 
     def do_PUT(self) -> None:  # noqa: N802
+        if self.path.startswith("/rules/"):
+            return self._take_rules()
         given.take_request(self, GIVEN, self._authorized())
+
+    def _take_rules(self) -> None:
+        """``PUT /rules/<sha256>``: a set of rules, kept until it is the least recently used of a few."""
+        if not self._authorized():
+            return self._send(401, {"detail": "Missing or wrong token"})
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            return self._send(411, {"detail": "The size of the rule set must be said (Content-Length)"})
+        try:
+            count = RULES.put(self.path[len("/rules/") :], self.rfile, length)
+        except given.Refused as refused:
+            self.close_connection = True  # what was not read of the body must not be taken for the next request
+            return self._send(refused.status, {"detail": refused.detail})
+        self._send(200, {"rules": count})
 
     def _request(self, validate=None) -> tuple[dict, str]:
         length = int(self.headers.get("Content-Length", "0") or 0)
-        if length > 1024 * 1024:
+        if length > BODY_LIMITS.get(self.path, 1024 * 1024):
             raise Refused(413, "Request too large")
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
@@ -206,15 +259,27 @@ class Handler(BaseHTTPRequestHandler):
         if validate is not None:
             validate(body)
         path = GIVEN.path(name)
+        digest = body.get("rules") if self.path == "/parse" else None
+        if digest is not None and (not isinstance(digest, str) or not rules.DIGEST.fullmatch(digest)):
+            raise Refused(400, "rules must be the SHA-256 of a rule set (64 hexadecimal digits)")
+        if digest is not None and RULES.path(digest) is None:
+            raise Refused(
+                409,
+                "The worker does not hold this rule set" + ("" if path is not None else " nor this file"),
+                missing=[] if path is not None else [name],
+                missingRules=digest,
+            )
         if path is None:
             raise Refused(409, "The worker does not hold this file", missing=[name])
         return body, path
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in ("/parse", "/recognise", "/view", "/find"):
+        if self.path not in ("/parse", "/recognise", "/view", "/find", "/sigma/check", "/sigma/try"):
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong forensics token"})
+        if self.path.startswith("/sigma/"):
+            return self._sigma()
         try:
             body, path = self._request({"/view": check_view, "/find": check_find}.get(self.path))
         except Refused as refused:
@@ -231,10 +296,60 @@ class Handler(BaseHTTPRequestHandler):
         if not _slots.acquire(blocking=False):
             return self._send(503, {"detail": "The forensics worker is busy; try again later"})
         try:
-            with GIVEN.hold([name]), JOBS.running(self.headers.get(jobs.HEADER)) as say:
+            with GIVEN.hold([name]), RULES.hold(body.get("rules")), JOBS.running(self.headers.get(jobs.HEADER)) as say:
                 self._parse(path, body, say)
         finally:
             _slots.release()
+
+    def _sigma(self) -> None:
+        """A check or a try of rules: asked of a child that reads the YAML and runs the rules, under a clock.
+        The request goes to the child on its standard input; the answer is what the child printed."""
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            return self._send(400, {"detail": "Invalid Content-Length"})
+        if length > BODY_LIMITS[self.path]:
+            self.close_connection = True
+            return self._send(413, {"detail": "Request too large"})
+        raw = self.rfile.read(length) or b"{}"
+        try:
+            json.loads(raw)
+        except ValueError:
+            return self._send(400, {"detail": "Invalid request body"})
+        if not _sigma_slots.acquire(blocking=False):
+            return self._send(503, {"detail": "The forensics worker is busy with rules; try again later"})
+        try:
+            try:
+                done = subprocess.run(  # noqa: S603 - fixed command, the request is its input
+                    [sys.executable, "-I", SIGMA_JOB, self.path.rsplit("/", 1)[1]],
+                    input=raw,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    timeout=SIGMA_SECONDS,
+                    env=job_env(),
+                    cwd="/",
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                return self._send(504, {"detail": f"The rules took more than {SIGMA_SECONDS} seconds"})
+        finally:
+            _sigma_slots.release()
+        if len(done.stdout) > SIGMA_MAX_BYTES:
+            return self._send(502, {"detail": "The answer is larger than the worker sends"})
+        try:
+            said = json.loads(done.stdout.decode("utf-8", "replace"))
+        except ValueError:
+            said = None
+        if done.returncode == 0 and isinstance(said, dict):
+            return self._send(200, said)
+        if done.returncode == 5 and isinstance(said, dict):
+            return self._send(400, {"detail": str(said.get("detail") or "The request is not one")})
+        if isinstance(said, dict) and said.get("detail"):
+            detail = said["detail"]
+        else:
+            ended = how_it_stopped(done.returncode, False)
+            detail = ended["detail"] if ended else "it left without an answer"
+        self._send(500, {"detail": f"The rules could not be run: {detail}"})
 
     def _recognise(self, path: str, name: str, body: dict) -> None:
         """Which parser reads the file: asked of a job too, since looking is already reading."""
@@ -462,6 +577,7 @@ if __name__ == "__main__":
         # An empty token, or the public one of the example file, protects nothing.
         raise SystemExit("FORENSICS_TOKEN is not set (or is the example value): refusing to start.")
     GIVEN.clear()
+    RULES.clear()
     print(f"nik-forensics listening on :{PORT}", flush=True)
     threading.Thread(target=_expire, name="expire", daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)  # noqa: S104 - the internal network of the stack

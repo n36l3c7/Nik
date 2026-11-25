@@ -18,6 +18,8 @@ into the parse report:
      "data", "loc", "trunc", "ioc"}
     {"t": "skip", "reason", "offset", "length", "lost", "detail"}
     {"t": "note", "reason", "count", "detail"}
+    {"t": "det", "key", "rule"}                                     (a rule matched the record before it; "records",
+                                                                      "count" on a correlation, written before "end")
     {"t": "end", "in_file", "read", "first_ts", "last_ts"}
 
 **Nothing is dropped in silence.** A record a parser could not read is a
@@ -30,7 +32,11 @@ says so (``trunc``): the viewer shows the whole of it from the original. A
 key longer than ``MAX_KEY`` keeps its start and ends with a hash of the whole.
 ``ts`` is milliseconds since the epoch, UTC, or None.
 
-Standard library only.
+A ``detector`` (``sigma/engine.py``), when the job has a rule set, is shown every record **before** its values are
+cut (a rule sees the whole of a script), and the rules that match it are written as ``det`` lines right after its
+``r`` line; the correlations and the notes about rules are written when the parser ends.
+
+Standard library only (the detector is the one thing that is not, and it is given, never imported here).
 """
 
 from __future__ import annotations
@@ -60,6 +66,9 @@ class Context:
         self.first_ts: int | None = None
         self.last_ts: int | None = None
         self._ended = False
+        self.detector: Any = None
+        self.kind = ""
+        self.source_name = ""
 
     def _write(self, event: dict[str, Any]) -> bool:
         line = json.dumps(event, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8", "replace")
@@ -98,6 +107,7 @@ class Context:
 
     # -- what a parser says --------------------------------------------------- #
     def source(self, parser: str, version: str, kind: str, source: str, host: str = "", username: str = "") -> None:
+        self.kind, self.source_name = kind, source
         self._write(
             {
                 "t": "source",
@@ -151,6 +161,21 @@ class Context:
         if ts is not None:
             self.first_ts = ts if self.first_ts is None else min(self.first_ts, ts)
             self.last_ts = ts if self.last_ts is None else max(self.last_ts, ts)
+        if self.detector is not None:
+            for rule in self.detector.see(
+                self.kind,
+                event["key"],
+                event["type"],
+                event["ts"],
+                event["host"],
+                event["username"],
+                event["event_id"],
+                str(channel or ""),
+                str(summary or ""),
+                data or {},
+                self.source_name,
+            ):
+                self._write({"t": "det", "key": event["key"], "rule": rule})
 
     def skip(
         self, reason: str, *, offset: int | None = None, length: int | None = None, lost: int = 1, detail: str = ""
@@ -174,11 +199,26 @@ class Context:
             {"t": "note", "reason": str(reason)[:120], "count": int(count), "detail": str(detail or "")[:MAX_DETAIL]}
         )
 
+    def _finish_detection(self) -> None:
+        """The correlations and the notes about the rules, before the end of the stream."""
+        detector, self.detector = self.detector, None
+        if detector is None:
+            return
+        try:
+            dets, notes = detector.finish()
+            for det in dets:
+                self._write(det)
+            for reason, count, detail in notes:
+                self.note(reason, count=count, detail=detail)
+        except Exception as error:  # noqa: BLE001 - a rule must never end the parse
+            self.note("detection failed at the end of the file", detail=f"{type(error).__name__}: {error}")
+
     def end(self, in_file: int | None = None) -> None:
         """The file was read to its end. ``in_file``: the records the file itself says it holds, when
         its format says so by other means than the parser (the chunk headers of an event log)."""
         if self._ended:
             return
+        self._finish_detection()
         self._ended = True
         self._write(
             {"t": "end", "in_file": in_file, "read": self.read, "first_ts": self.first_ts, "last_ts": self.last_ts}

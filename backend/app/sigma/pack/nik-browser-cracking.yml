@@ -1,0 +1,30 @@
+title: 'Browser: Pirated Software'
+id: 2929c3cc-7dab-4286-ba9d-394826994ce6
+status: stable
+description: 'A page about cracked software, key generators or warez, a common infection vector on company machines.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - 'keygen'
+              - 'warez'
+        - url|re|i:
+              - '\bcrack(ed|ing)?\b'
+        - title|contains:
+              - 'keygen'
+              - 'warez'
+        - title|re|i:
+              - '\bcrack(ed|ing)?\b'
+        - fileName|contains:
+              - 'keygen'
+              - 'warez'
+        - fileName|re|i:
+              - '\bcrack(ed|ing)?\b'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: medium

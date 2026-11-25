@@ -1,0 +1,60 @@
+title: 'Service Installed From a User-Writable Path or Running a Shell'
+id: aac0cf1b-9bc9-4efa-b00e-2a15b1a62080
+status: stable
+description: 'A service was installed (7045 or 4697) whose binary lives in a folder any user can write to or that runs a shell, as remote-execution tools and malware do.'
+references:
+    - https://attack.mitre.org/techniques/T1543/003/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1543.003
+    - attack.t1569.002
+logsource:
+    product: windows
+detection:
+    service_event:
+        - Channel: System
+          EventID: 7045
+        - Channel: Security
+          EventID: 4697
+    user_path:
+        - ImagePath|contains:
+              - '\users\'
+              - '\appdata\'
+              - '\temp\'
+              - '\windows\tasks\'
+              - '\perflogs\'
+              - 'powershell'
+              - 'mshta'
+              - 'rundll32'
+              - '%comspec%'
+        - ImagePath|re|i:
+              - '\bcmd(\.exe)?\s+/[ck]\b'
+        - ServiceFileName|contains:
+              - '\users\'
+              - '\appdata\'
+              - '\temp\'
+              - '\windows\tasks\'
+              - '\perflogs\'
+              - 'powershell'
+              - 'mshta'
+              - 'rundll32'
+              - '%comspec%'
+        - ServiceFileName|re|i:
+              - '\bcmd(\.exe)?\s+/[ck]\b'
+    programdata:
+        - ImagePath|contains:
+              - '\programdata\'
+        - ServiceFileName|contains:
+              - '\programdata\'
+    programdata_microsoft:
+        - ImagePath|contains:
+              - '\programdata\microsoft\'
+        - ServiceFileName|contains:
+              - '\programdata\microsoft\'
+    condition: service_event and (user_path or (programdata and not programdata_microsoft))
+falsepositives:
+    - Software that installs its service from a user profile or from ProgramData
+level: high

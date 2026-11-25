@@ -1,0 +1,40 @@
+title: 'Account Added to a Privileged Group'
+id: f1b9e07c-5134-4a02-a6e1-dcf035de2879
+status: stable
+description: 'An account was added to a privileged group: Administrators, Domain, Enterprise or Schema Admins, Remote Desktop Users or Backup Operators (4728, 4732, 4756).'
+references:
+    - https://attack.mitre.org/techniques/T1098/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1098
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID:
+            - 4728
+            - 4732
+            - 4756
+    privileged:
+        - TargetUserName|contains:
+              - 'administrators'
+              - 'domain admins'
+              - 'enterprise admins'
+              - 'schema admins'
+              - 'remote desktop users'
+              - 'backup operators'
+        - TargetSid:
+              - 'S-1-5-32-544'
+              - 'S-1-5-32-555'
+              - 'S-1-5-32-551'
+        - TargetSid|endswith:
+              - '-512'
+              - '-518'
+              - '-519'
+    condition: selection and privileged
+falsepositives:
+    - An administrator who is given their rights
+level: high

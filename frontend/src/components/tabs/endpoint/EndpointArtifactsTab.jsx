@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarClock, Clock, Files, Flag, MessageSquarePlus, Terminal, X } from 'lucide-react'
+import { CalendarClock, Clock, Files, Flag, MessageSquarePlus, ShieldAlert, Terminal, X } from 'lucide-react'
 import { Badge, Button, Modal, Select, ServerTable, StatCard, Tabs, tabId } from '../../ui/index.js'
 import SourceFiles from '../../evidence/SourceFiles.jsx'
+import DetectionsSection from '../../evidence/DetectionsSection.jsx'
+import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
 import SourceViewer from '../../evidence/SourceViewer.jsx'
 import StackPanel from '../../evidence/StackPanel.jsx'
 import DateTimeRangeFilter from '../../ui/DateTimeRangeFilter.jsx'
@@ -37,7 +39,9 @@ import {
   withoutData,
 } from '../../../domain/endpointPage.js'
 import { COUNT_SHOWN_CAP } from '../../../domain/serverTable.js'
+import { detectionTone, levelsText, ruleChipValue } from '../../../domain/detections.js'
 import { formatDateTime } from '../../../lib/time.js'
+import { useDetections } from '../../../lib/useDetections.js'
 import { evidence } from '../../../services/api.js'
 
 /*
@@ -55,6 +59,8 @@ const slugify = (text) =>
     .replace(SLUG, '-')
     .replace(/^-+|-+$/g, '')
 
+// The detection level has a select of its own in the toolbar.
+const HIDDEN_CHIPS = ['level', 'dataKey', 'dataValue']
 const FLAGGED_ROW = 'bg-accent-soft border-l-2 border-l-accent-strong'
 const FLAG_OPTIONS = [
   { value: '', label: 'Flagged: any' },
@@ -94,7 +100,19 @@ function ScriptsDialog({ category, sources, osLabel, onClose }) {
 }
 
 /** The records of a category (all its sources, or the one chosen), with their filters, stat cards and the Source viewer. */
-function Records({ incident, category, os, sources, counts, reloadKey, reload, canWrite }) {
+function Records({
+  incident,
+  category,
+  os,
+  sources,
+  counts,
+  reloadKey,
+  reload,
+  canWrite,
+  found,
+  focusRule,
+  ruleTitles,
+}) {
   const isOther = category.id === OTHER
   const prefix = sourcePrefix(os, category.id)
   const otherNames = useMemo(
@@ -113,6 +131,8 @@ function Records({ incident, category, os, sources, counts, reloadKey, reload, c
   const fields = useMemo(() => fieldsOf(category.id), [category.id])
   const dataColumns = columnsOf(category.id)
   const [filters, setFilters] = useState(() => {
+    // Opened from a rule of the Detections part: only that rule's records, in no range.
+    if (focusRule) return { rule: focusRule }
     const range = incidentRange(incident)
     return range ? { from: range.from, to: range.to } : {}
   })
@@ -267,6 +287,7 @@ function Records({ incident, category, os, sources, counts, reloadKey, reload, c
         <span className="whitespace-nowrap font-mono text-xs text-fg">{row.ts ? formatDateTime(row.ts) : '—'}</span>
       ),
     },
+    detectionsColumn,
     {
       key: 'type',
       label: 'Source',
@@ -343,6 +364,7 @@ function Records({ incident, category, os, sources, counts, reloadKey, reload, c
         onChange={(value) => setFilters((held) => ({ ...held, flagged: value === 'yes' }))}
         options={FLAG_OPTIONS}
       />
+      <LevelFilter filters={filters} onChange={(value) => setFilters((held) => ({ ...held, level: value }))} />
       <DateTimeRangeFilter
         start={filters.from ?? null}
         end={filters.to ?? null}
@@ -377,7 +399,7 @@ function Records({ incident, category, os, sources, counts, reloadKey, reload, c
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={category.icon} label="Entries" value={stats?.entries ?? '—'} />
         <StatCard icon={Clock} label="With timestamp" value={stats?.timed ?? '—'} />
         <StatCard
@@ -385,6 +407,13 @@ function Records({ incident, category, os, sources, counts, reloadKey, reload, c
           label="Flagged"
           value={stats?.flagged ?? '—'}
           tone={stats?.flagged > 0 ? 'accent' : 'default'}
+        />
+        <StatCard
+          icon={ShieldAlert}
+          label="Detections"
+          value={found.data.detections.toLocaleString('en-US')}
+          tone={detectionTone(found.data.byLevel)}
+          hint={levelsText(found.data.byLevel) || 'in all categories'}
         />
       </div>
 
@@ -394,7 +423,8 @@ function Records({ incident, category, os, sources, counts, reloadKey, reload, c
         filters={filters}
         onFiltersChange={setFilters}
         toolbar={toolbar}
-        hideChips={['dataKey', 'dataValue']}
+        hideChips={HIDDEN_CHIPS}
+        chipLabel={(name, value) => (name === 'rule' ? ruleChipValue(value, ruleTitles) : null)}
         filterChips={
           chip ? (
             <span className="inline-flex items-center gap-1 border border-accent-strong bg-accent-soft py-0.5 pl-2 pr-1 font-mono text-xs text-accent-fg">
@@ -457,6 +487,9 @@ export default function EndpointArtifactsTab({ incident }) {
   const [addAs, setAddAs] = useState('')
   const [showScripts, setShowScripts] = useState(false)
   const [fileView, setFileView] = useState(null) // a source opened whole in the viewer
+  const [part, setPart] = useState('entries') // 'entries' or 'detections'
+  const [focusRule, setFocusRule] = useState('') // a rule opened from Detections: Entries shows only its records
+  const [ruleTitles, setRuleTitles] = useState({}) // rule id -> title, for the chip of the filter
   const reload = useCallback(() => setReloadKey((n) => n + 1), [])
 
   const os = getOsById(incident.os) ? incident.os : DEFAULT_OS
@@ -492,6 +525,12 @@ export default function EndpointArtifactsTab({ incident }) {
   }, [incident.id, archived, reloadKey])
 
   const totals = useMemo(() => categoryTotals(ARTIFACT_CATEGORIES, os, counts ?? {}), [os, counts])
+  const anyRecords = Object.values(totals).some((count) => count > 0)
+  const found = useDetections(incident.id, {
+    kind: ENDPOINT_KIND,
+    refresh: reloadKey,
+    enabled: !archived && anyRecords,
+  })
   const items = useMemo(
     () => categoryItems(ARTIFACT_CATEGORIES, totals, partialCategories(sources, os, ARTIFACT_CATEGORIES), hasOther),
     [totals, sources, os, hasOther],
@@ -572,9 +611,46 @@ export default function EndpointArtifactsTab({ incident }) {
             Archived: the records are not loaded. Take the incident out of the archive to read them again.
           </p>
         )}
-        {!archived && counts !== null && (totals[category.id] ?? 0) > 0 && (
+        {!archived && counts !== null && anyRecords && (
+          <Tabs
+            variant="section"
+            label="Parts of the endpoint artifacts"
+            idPrefix="endpoint-part"
+            items={[
+              { id: 'entries', label: 'Entries' },
+              {
+                id: 'detections',
+                label: 'Detections',
+                count: found.data.total,
+              },
+            ]}
+            value={part}
+            onChange={(id) => {
+              setFocusRule('')
+              setPart(id)
+            }}
+          />
+        )}
+        {!archived && counts !== null && anyRecords && part === 'detections' && (
+          <DetectionsSection
+            data={found.data}
+            loading={found.loading}
+            error={found.error}
+            noun="records"
+            onOpen={(rule) => {
+              // The rule may have matched in another category: Entries then says there is nothing here.
+              setRuleTitles((before) => ({
+                ...before,
+                [rule.ruleId]: rule.title,
+              }))
+              setFocusRule(rule.ruleId)
+              setPart('entries')
+            }}
+          />
+        )}
+        {!archived && counts !== null && part === 'entries' && (totals[category.id] ?? 0) > 0 && (
           <Records
-            key={`${incident.id}:${category.id}`}
+            key={`${incident.id}:${category.id}:${focusRule}`}
             incident={incident}
             category={category}
             os={os}
@@ -583,6 +659,9 @@ export default function EndpointArtifactsTab({ incident }) {
             reloadKey={reloadKey}
             reload={reload}
             canWrite={canWrite}
+            found={found}
+            focusRule={focusRule}
+            ruleTitles={ruleTitles}
           />
         )}
       </div>

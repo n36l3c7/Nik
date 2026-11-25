@@ -50,13 +50,6 @@ CACHE_SECONDS = 3.0
 SETTINGS_ID = 1
 AUTOMATION_SETTINGS_ID = 2
 
-KEYWORD_COLUMNS = [
-    {"name": "label", "label": "Label", "type": "text"},
-    {"name": "pattern", "label": "Pattern", "type": "text"},
-    {"name": "severity", "label": "Severity", "type": "choice", "choices": ["low", "medium", "high", "critical"]},
-    {"name": "description", "label": "Description", "type": "text"},
-]
-
 # name → what Nik ships, and the setting it was moved from (``setting``: the key of the
 # settings document, dotted for a key inside another; ``state`` for the automation's own row).
 BUILTIN: dict[str, dict[str, Any]] = {
@@ -84,19 +77,10 @@ BUILTIN: dict[str, dict[str, Any]] = {
         "setting": "mail.trustedAuthServers",
         "used": "Settings → Analysis → Mail analysis",
     },
-    "suspicious_keywords": {
-        "label": "Suspicious keywords",
-        "description": "The keywords of the detection rules: each with its pattern and its severity.",
-        "kind": "key_value",
-        "item_type": "keyword",
-        "columns": KEYWORD_COLUMNS,
-        "setting": "keywords",
-        "used": "Settings → Analysis → Detection rules",
-    },
     "business_hours": {
         "label": "Business hours",
-        "description": "The hours your organisation works, in UTC: activity outside them is highlighted, "
-        "and SLA timers can count only inside them.",
+        "description": "The hours your organisation works and the time zone they are read in (an incident may "
+        "have its own): activity outside them is highlighted, and SLA timers can count only inside them.",
         "kind": "json",
         "item_type": "text",
         "setting": "businessHours",
@@ -513,6 +497,13 @@ def set_items(db: OrmSession, row: NamedList, entries: Any, actor: str, *, check
     or for a list of kind json the document itself. Returns how many items it holds after."""
     stamp = now_iso()
     if row.kind == "json":
+        if row.name == "business_hours" and isinstance(entries, dict) and entries.get("tz"):
+            from .timers import zone_name
+
+            try:
+                zone_name(entries["tz"])
+            except ValueError as error:
+                raise ListError(str(error)) from None
         db.execute(delete(NamedListItem).where(NamedListItem.list_id == row.id))
         db.add(
             NamedListItem(
@@ -687,11 +678,6 @@ def pointers_of(db: OrmSession) -> dict[str, str]:
 
 def _as_setting(db: OrmSession, setting: str, name: str) -> Any:
     """What a list holds, in the shape the setting always had."""
-    if setting == "keywords":
-        return [
-            {"id": item["key"], **(item["value"] if isinstance(item["value"], dict) else {})}
-            for item in items(db, name)
-        ]
     if setting == "businessHours":
         return document(db, name)
     return values(db, name)
@@ -710,14 +696,6 @@ def settings_value(db: OrmSession, setting: str, default: Any) -> Any:
 
 def _entries_of(setting: str, value: Any) -> Any:
     """A setting's value as the items of its list."""
-    if setting == "keywords":
-        entries = []
-        for item in value or []:
-            if isinstance(item, dict) and str(item.get("id") or "").strip():
-                entries.append(
-                    {"key": str(item["id"]).strip(), "value": {key: item[key] for key in item if key != "id"}}
-                )
-        return entries
     if setting == "businessHours":
         return value if isinstance(value, dict) else {}
     return [str(entry).strip() for entry in value or [] if str(entry).strip()]

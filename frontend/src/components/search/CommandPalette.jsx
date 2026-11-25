@@ -3,7 +3,7 @@ import { Bug, ChevronRight, Crosshair, FolderOpen, StickyNote, Zap } from 'lucid
 import { Badge } from '../ui/index.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { useIocLookup } from '../../context/IocLookupContext.jsx'
-import { useSocEngine } from '../../context/SettingsContext.jsx'
+import { NO_DETECTION_ENGINE } from '../../domain/soc.js'
 import { api } from '../../services/api.js'
 import { IOC_TYPES } from '../../domain/iocs.js'
 import { matchActions, searchIncident, tabForSource } from '../../domain/search.js'
@@ -35,7 +35,6 @@ function Group({ title, children }) {
 export default function CommandPalette({ open, onClose, actions, onOpenTab, initialQuery = '' }) {
   const { activeIncident, selectIncident } = useIncidents()
   const { openIoc } = useIocLookup()
-  const engine = useSocEngine()
   const listRef = useRef(null)
   const [query, setQuery] = useState('')
   const [remote, setRemote] = useState({ loading: false, data: NO_RESULTS, error: null })
@@ -78,8 +77,8 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
   // The events of the open incident's document (built only while the palette is open). Host records are not
   // here: a server "Evidence" group goes beside the others once the server can search them.
   const events = useMemo(
-    () => (open && activeIncident ? buildTimelineEvents(activeIncident.data, engine) : []),
-    [open, activeIncident, engine],
+    () => (open && activeIncident ? buildTimelineEvents(activeIncident.data, NO_DETECTION_ENGINE) : []),
+    [open, activeIncident],
   )
   const local = useMemo(
     () =>

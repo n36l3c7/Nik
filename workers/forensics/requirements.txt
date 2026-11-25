@@ -3,3 +3,10 @@
 
 # Windows event logs (.evtx): a Rust parser with Python bindings (abi3 wheels). MIT / Apache-2.0.
 evtx>=0.15,<0.16
+
+# Sigma detection (nik_forensics/sigma): pySigma only parses and validates the rules (LGPL-2.1, imported and never
+# changed; its own dependencies are MIT, BSD, Apache-2.0 and MPL-2.0 certifi); our evaluator runs them.
+# Regular expressions of a rule run in RE2 (BSD-3-Clause): linear time, no backtracking, so a hostile rule cannot hang.
+pysigma>=2.1.2,<2.2
+google-re2>=1.1.20251105,<1.2
+pyyaml>=6.0.4,<7

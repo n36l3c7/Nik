@@ -11,6 +11,9 @@ and its CPU time are bounded (``FORENSICS_JOB_MEMORY_MB``,
 larger than a megabyte. It runs with ``-I``: nothing of the environment or of
 the folder it is started from is on its import path but the worker's own code.
 
+When the request names a rule set (``rules``), the records are matched against it as they are found
+(``nik_forensics/sigma/engine.py``) and the matches are written as ``det`` lines (``context.py``).
+
 It exits 0 when the parser read the file to its end, 3 when no parser reads
 the file (said on the output as a skip), 1 when the parser raised: the server
 tells the backend, which keeps what came and reports the file as read in part.
@@ -49,6 +52,32 @@ def limits() -> None:
             continue
 
 
+def rule_lines(handle):
+    """The rules of a set (one JSON object per line); a line that is not JSON is handed on as text, and the engine
+    lists it as a rule it could not read."""
+    for line in handle:
+        if line.strip():
+            try:
+                yield json.loads(line)
+            except ValueError:
+                yield line[:100].decode("utf-8", "replace")
+
+
+def detector(request: dict, ctx) -> None:
+    """Give the context the engine of the job's rule set (``request["rules"]``, a file of the worker's own folder
+    that the server resolved), when there is one. A set that cannot be read is said, not fatal."""
+    path = request.get("rules")
+    if not path:
+        return
+    try:
+        from nik_forensics.sigma.engine import Engine
+
+        with open(path, "rb") as handle:
+            ctx.detector = Engine(rule_lines(handle), ctx.params.get("hours"))
+    except Exception as error:  # noqa: BLE001 - detection is on top of the reading: the parse goes on without it
+        ctx.skip("the rule set could not be loaded", lost=0, detail=f"{type(error).__name__}: {error}")
+
+
 def main(argv: list[str]) -> int:
     from nik_forensics import parsers
     from nik_forensics.context import Context
@@ -56,6 +85,7 @@ def main(argv: list[str]) -> int:
     path, request = argv[1], json.loads(argv[2])
     out = sys.stdout.buffer
     ctx = Context(out, request.get("params") or {})
+    detector(request, ctx)
     try:
         if request.get("parser"):
             module, source = parsers.load(str(request["parser"])), str(request.get("source") or "")

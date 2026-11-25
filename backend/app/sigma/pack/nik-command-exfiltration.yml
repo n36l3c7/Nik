@@ -1,0 +1,23 @@
+title: 'Command: Bulk Transfer Toward a Remote Host'
+id: aed14c1c-22cf-4300-8d51-bd481007806d
+status: stable
+description: 'Data is sent to a remote host in bulk (rclone, scp, a curl upload, tar over ssh).'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.exfiltration
+    - attack.t1048
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|re|i:
+              - '\brclone\b'
+              - 'curl\s+(-T|--upload-file)'
+              - 'tar\b[^|;&]*\|\s*ssh'
+              - 'scp\s+[^|;&]*@'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: medium

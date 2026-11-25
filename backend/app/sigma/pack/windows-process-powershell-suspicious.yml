@@ -1,0 +1,40 @@
+title: 'Suspicious PowerShell Command Line'
+id: 1d09caa1-b4a5-4867-88fa-dd9b327df8c1
+status: stable
+description: 'PowerShell is started with an encoded command, a download cradle, Invoke-Expression, a hidden window or AMSI tampering on its command line (Sysmon 1, Security 4688).'
+references:
+    - https://attack.mitre.org/techniques/T1059/001/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.execution
+    - attack.t1059.001
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    image:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+    suspicious:
+        - CommandLine|contains:
+              - 'frombase64string'
+              - 'downloadstring'
+              - 'downloadfile'
+              - 'net.webclient'
+              - 'invoke-webrequest'
+              - 'invoke-expression'
+              - 'start-bitstransfer'
+              - 'amsiutils'
+              - 'amsiinitfailed'
+              - 'reflection.assembly]::load'
+        - CommandLine|re|i:
+              - '-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}'
+              - '\biwr\s'
+              - '\biex\b'
+              - '-w(indowstyle)?\s+h(idden)?\b'
+    condition: image and suspicious
+falsepositives:
+    - Administration scripts that download or decode on purpose
+level: high

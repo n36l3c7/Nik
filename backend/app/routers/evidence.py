@@ -256,6 +256,28 @@ def get_record(
     return answer
 
 
+@router.get("/detections")
+def list_detections(
+    incident_id: str,
+    kind: str = Query(default="", max_length=16),
+    sourceId: str = Query(default="", max_length=32),  # noqa: N803
+    source: str = Query(default="", max_length=60),
+    level: int | None = Query(default=None, ge=1, le=5),
+    limit: int = Query(default=200, ge=1, le=browse.RULES_MAX),
+    _caller: Principal = Depends(reader_principal),
+    db: OrmSession = Depends(get_db),
+):
+    """What the Sigma rules found in the host evidence of the incident, one row for each rule:
+    ``rules`` (``ruleId``, ``title``, ``author``, ``level`` 1 to 5 with its ``levelName``, ``tags``, ``count`` of
+    records, ``firstTs``, ``lastTs``, ``hosts``), the highest level first and then the rule that matched
+    most; ``total`` rules, ``detections`` in all and ``byLevel``. ``kind`` is the section, ``sourceId`` a
+    file, ``source`` the kind of file, ``level`` the lowest level. A rule's records are
+    ``GET …/records?rule=<ruleId>``."""
+    _incident(db, incident_id)
+    filter_ = {"kind": kind, "sourceId": sourceId, "source": source, "level": level}
+    return browse.detections(db, incident_id, filter_, limit)
+
+
 @router.put("/marks")
 def put_mark(
     incident_id: str,

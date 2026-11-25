@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, CalendarClock, Clock, ExternalLink, Flag, ListTree, RotateCcw, TriangleAlert } from 'lucide-react'
+import { Activity, CalendarClock, Clock, ExternalLink, Flag, ListTree, RotateCcw, ShieldAlert } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, ServerTable, StatCard } from '../../ui/index.js'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
+import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
-import { computeSocStats } from '../../../domain/soc.js'
+import { detectionTone, levelsText, summedByLevel, totalOf } from '../../../domain/detections.js'
 import { ARCHIVED_RECORDS_NOTE } from '../../../domain/archive.js'
 import { hostCounts } from '../../../domain/evidence.js'
 import {
@@ -38,6 +39,8 @@ import { evidence } from '../../../services/api.js'
 const NIGHT_TOOLTIP = 'Outside configured business hours'
 const NO_FLAGS = {}
 const HOST_TABS = ['eventlogs', 'browser', 'commands', 'endpoint']
+// The detection level has a select of its own in the toolbar.
+const HIDDEN_CHIPS = ['level']
 
 const DETECTION_FILTER_OPTIONS = [
   { value: 'all', label: 'All detections' },
@@ -218,13 +221,13 @@ export default function TimelineTab({ incident }) {
       }),
     [events, sourceFilter, detectionFilter, range],
   )
-  const stats = useMemo(() => computeSocStats(events), [events])
   const flaggedDocs = useMemo(() => events.reduce((sum, event) => sum + (flags[event.id] ? 1 : 0), 0), [events, flags])
 
   // ---- The server's view of the host records: their density and how many are flagged ----
   const [histogram, setHistogram] = useState(null)
   const [flaggedHost, setFlaggedHost] = useState(0)
   const hostTotal = HOST_TABS.reduce((sum, tab) => sum + hostCounts(summary, tab).records, 0)
+  const found = summedByLevel(summary) // what the Sigma rules found in the host records, by level
   useEffect(() => {
     if (!incident?.id || archived) return undefined
     const controller = new AbortController()
@@ -282,6 +285,7 @@ export default function TimelineTab({ incident }) {
           return <Badge color={meta?.color ?? 'slate'}>{meta?.label ?? row.kind}</Badge>
         },
       },
+      detectionsColumn,
       {
         key: 'summary',
         label: 'Event',
@@ -438,11 +442,11 @@ export default function TimelineTab({ incident }) {
         <StatCard icon={Activity} label="Timeline events" value={hostTotal + events.length} />
         <StatCard icon={Clock} label="Time span" value={spanLabel} />
         <StatCard
-          icon={TriangleAlert}
-          label="Other events flagged by SOC"
-          value={stats.flagged}
-          tone={stats.flagged > 0 ? 'accent' : 'default'}
-          hint={stats.high > 0 ? `${stats.high} high-severity` : undefined}
+          icon={ShieldAlert}
+          label="Detections"
+          value={totalOf(found).toLocaleString('en-US')}
+          tone={detectionTone(found)}
+          hint={levelsText(found) || undefined}
         />
         <StatCard
           icon={Flag}
@@ -478,17 +482,25 @@ export default function TimelineTab({ incident }) {
               onFiltersChange={setFilters}
               defaultOrder="-time"
               tableKey="timeline.host"
+              hideChips={HIDDEN_CHIPS}
               refreshKey={`${hostTotal}:${marked}`}
               searchPlaceholder="Search the host records…"
               emptyMessage="No host records match the current filters"
               rowClassName={(row) => (row.flagged ? FLAG_HIGHLIGHT : '')}
               toolbar={
-                <Select
-                  label="Kind"
-                  value={filters.kind ?? ''}
-                  onChange={(kind) => setFilters((held) => ({ ...held, kind: kind || undefined }))}
-                  options={KIND_OPTIONS}
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  {' '}
+                  <Select
+                    label="Kind"
+                    value={filters.kind ?? ''}
+                    onChange={(kind) => setFilters((held) => ({ ...held, kind: kind || undefined }))}
+                    options={KIND_OPTIONS}
+                  />{' '}
+                  <LevelFilter
+                    filters={filters}
+                    onChange={(level) => setFilters((held) => ({ ...held, level: level || undefined }))}
+                  />{' '}
+                </div>
               }
             />
           </Card>

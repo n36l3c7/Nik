@@ -1746,16 +1746,17 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   await gear.click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
-  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await expect(page).toHaveURL(/\/settings\/analysis\/business-hours$/)
   // The sections are in groups; the one shown is marked.
   await expect(sections.getByRole('group')).toHaveCount(8)
   await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
+    'Sigma rules',
     'YARA rules',
     'capa rules',
     'FLIRT signatures',
     'Script signatures',
   ])
-  await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveAttribute('aria-current', 'page')
+  await expect(sections.getByRole('button', { name: 'Business hours' })).toHaveAttribute('aria-current', 'page')
   // The rail shows the page is open; what was open under it is not shown.
   await expect(page.getByRole('button', { name: 'Platform settings' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
@@ -3394,7 +3395,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await rita.getByRole('button', { name: 'Platform settings' }).click()
   const ritaSections = rita.getByRole('navigation', { name: 'Settings sections' })
   await expect(ritaSections.getByText('YARA rules')).toBeVisible()
-  await expect(ritaSections.getByText('Detection rules')).toBeVisible()
+  await expect(ritaSections.getByText('Sigma rules')).toBeVisible()
   for (const hidden of ['Accounts and roles', 'API keys', 'Audit log', 'Storage', 'Backup', 'Threat intelligence']) {
     await expect(ritaSections.getByText(hidden, { exact: true })).toHaveCount(0)
   }
@@ -7776,14 +7777,14 @@ test('an entry of the rail always shows the first screen of its section, and doe
   // ---- Settings: its first section, from another one ----
   await entry('Platform settings').click()
   const settings = page.getByRole('region', { name: 'Settings' })
-  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await expect(page).toHaveURL(/\/settings\/analysis\/business-hours$/)
   await settings
     .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('button', { name: 'Audit log' })
     .click()
   await expect(page).toHaveURL(/audit-log$/)
   await entry('Platform settings').click()
-  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await expect(page).toHaveURL(/\/settings\/analysis\/business-hours$/)
   await entry('Platform settings').click()
   await expect(settings).toBeVisible()
   await expect(entry('Platform settings')).toHaveAttribute('aria-pressed', 'true')
@@ -9112,6 +9113,275 @@ test('a viewer selects and takes out, and is offered nothing that changes', asyn
   await bar.getByRole('button', { name: 'Clear' }).click()
   await expect(bar).toHaveCount(0)
   await other.close()
+})
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Sigma detection on host evidence (7.0, stage 5)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A screenshot at 1440x900 for the documentation, only when the run asks for them (SHOTS_DIR). */
+async function shot(name, show = null) {
+  if (!process.env.SHOTS_DIR) return
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // What the picture is about is brought to the top of the window.
+  if (show) await show.evaluate((element) => element.scrollIntoView({ block: 'start' }))
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${process.env.SHOTS_DIR}/${name}.png` })
+}
+
+const SIGMA_RULE_ID = 'a3b1d7e2-5c64-4f0e-9d1a-2e7c9b0f4a11'
+
+/** The text of a Sigma rule for the log-cleared event, with the condition it is given (a wrong one makes a mistake). */
+const sigmaRuleText = (condition = 'selection', title = 'E2E log cleared by hand') =>
+  [
+    `title: ${title}`,
+    `id: ${SIGMA_RULE_ID}`,
+    'status: experimental',
+    'description: Found by the end-to-end test.',
+    'author: E2E Analyst',
+    'date: 2026/11/25',
+    'logsource:',
+    '    product: windows',
+    '    service: security',
+    'detection:',
+    '    selection:',
+    '        EventID: 1102',
+    `    condition: ${condition}`,
+    'level: low',
+    '',
+  ].join('\n')
+
+/** The settings page open on a section by its address (the page is read again, so what changed elsewhere shows). */
+async function openSettingsAt(path) {
+  await page.goto(path)
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await expect(settings).toBeVisible()
+  return settings
+}
+
+/** Replace the text of the YAML editor. */
+async function writeInEditor(text) {
+  const editor = page.getByRole('textbox', { name: 'Sigma rule, YAML' })
+  await editor.click()
+  await page.keyboard.press('Control+A')
+  await page.keyboard.insertText(text)
+}
+
+test('a Sigma rule is written with a mistake, mended, saved, listed, switched off and on, and deleted', async () => {
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const settings = await openSettingsAt('/settings/rules/sigma')
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible()
+  // The list: the rules of the Nik pack are here, and the line over it counts them.
+  await expect(settings.getByRole('status').filter({ hasText: /\d+ rules? ·/ })).toBeVisible({ timeout: 30_000 })
+  await settings.getByPlaceholder('Search title, id, name or author…').fill('Security Event Log Cleared')
+  await expect(settings.getByRole('row').filter({ hasText: 'Windows Security Event Log Cleared' })).toBeVisible({
+    timeout: 30_000,
+  })
+  await settings.getByPlaceholder('Search title, id, name or author…').fill('')
+  await expect(settings.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
+  await shot('sigma-rules-list')
+
+  // A new rule starts from a template that the worker reads without a problem.
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  await expect(settings.getByText('The worker reads this text without a problem.')).toBeVisible({ timeout: 30_000 })
+  await expect(settings.getByRole('complementary', { name: 'What the rule is' })).toContainText(
+    'Nik can run this rule.',
+  )
+
+  // A condition that names a selection that does not exist: the mistake shows on its line, with a mark in the editor.
+  await writeInEditor(sigmaRuleText('selecton'))
+  const errors = settings.getByRole('list', { name: 'Errors in the rule' })
+  await expect(errors).toBeVisible({ timeout: 30_000 })
+  await expect(errors.getByRole('button').first()).toHaveText(/^Line \d+: /)
+  await expect(page.locator('.cm-lintRange-error').first()).toBeVisible()
+  await expect(page.locator('.cm-lint-marker-error').first()).toBeVisible()
+  await expect(settings.getByRole('button', { name: 'Save rule' })).toBeDisabled()
+  await shot('sigma-rule-editor-error')
+
+  // Mended: the rule is read, what it is shows beside the editor, and Save writes it.
+  await writeInEditor(sigmaRuleText('selection'))
+  await expect(errors).toHaveCount(0, { timeout: 30_000 })
+  const card = settings.getByRole('complementary', { name: 'What the rule is' })
+  await expect(card).toContainText('E2E log cleared by hand')
+  await expect(card).toContainText('E2E Analyst')
+  await expect(card).toContainText('windows / security')
+  await settings.getByRole('button', { name: 'Save rule' }).click()
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible({ timeout: 30_000 })
+
+  // Listed, and on (a rule written here that Nik can run is on).
+  await settings.getByPlaceholder('Search title, id, name or author…').fill('E2E log cleared')
+  const row = settings.getByRole('row').filter({ hasText: 'E2E log cleared by hand' })
+  await expect(row).toHaveCount(1, { timeout: 30_000 })
+  await expect(row).toContainText('by E2E Analyst')
+  const power = row.getByRole('switch', { name: /E2E log cleared by hand/ })
+  await expect(power).toHaveAttribute('aria-checked', 'true')
+
+  // Off and on again, and the server keeps each.
+  await power.click()
+  await expect(power).toHaveAttribute('aria-checked', 'false')
+  expect((await (await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).json()).enabled).toBe(false)
+  await power.click()
+  await expect(power).toHaveAttribute('aria-checked', 'true')
+  expect((await (await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).json()).enabled).toBe(true)
+
+  // Deleted: from its editor, after a question.
+  await row.getByText('E2E log cleared by hand').click()
+  await expect(settings.getByRole('heading', { name: 'E2E log cleared by hand', level: 2 })).toBeVisible()
+  await settings.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete this rule?' }).getByRole('button', { name: 'Delete the rule' }).click()
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible({ timeout: 30_000 })
+  await expect(settings.getByRole('row').filter({ hasText: 'E2E log cleared by hand' })).toHaveCount(0)
+  expect((await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).status()).toBe(404)
+})
+
+test('an event-log export with a Security 1102 gives a detection: its rule with its author, its events, the level in the table', async () => {
+  test.setTimeout(240_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const made = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-sigma', host: 'E2E-SIGMA', os: 'windows', data: {} },
+  })
+  expect(made.status()).toBe(201)
+  const export1102 = JSON.stringify({
+    format: 'nik-eventlogs',
+    host: 'E2E-SIGMA',
+    events: [
+      logEvent('Security', 4688, 9800, '2025-11-07T02:20:00Z', { NewProcessName: 'C:\\Windows\\System32\\cmd.exe' }),
+      logEvent('Security', 1102, 9801, '2025-11-07T02:30:00Z', { SubjectUserName: 'j.alvarez' }),
+      logEvent('Application', 1000, 9802, '2025-11-07T02:31:00Z', { Application: 'excel.exe' }),
+    ],
+  })
+  const sent = await page.request.post('/api/incidents/e2e-sigma/upload?tab=eventlogs', {
+    multipart: { file: { name: 'nik-eventlogs.json', mimeType: 'application/json', buffer: Buffer.from(export1102) } },
+  })
+  expect(sent.status()).toBe(200)
+  await openIncidentAt('/incident/e2e-sigma')
+  await openEvidence('Event Logs')
+  await waitRead('nik-eventlogs.json')
+
+  // The tabs: Events and Detections, each with its count.
+  const parts = page.getByRole('tablist', { name: 'Parts of the event logs' })
+  await expect(parts.getByRole('tab', { name: /^Events/ })).toBeVisible({ timeout: 30_000 })
+  await expect(parts.getByRole('tab', { name: /^Detections\s*1$/ })).toBeVisible({ timeout: 30_000 })
+  // The stat card counts the detection.
+  const stat = page.locator('.truncate.text-xs', { hasText: /^Detections$/ }).locator('xpath=..')
+  await expect(stat).toContainText('1')
+  await expect(stat).toContainText('1 high')
+  // The facts of the incident are folded for the picture, so that the table has the width to show its columns.
+  if (process.env.SHOTS_DIR) await page.getByRole('button', { name: "Hide the incident's facts" }).click()
+  await shot('eventlogs-events-with-levels', parts)
+  if (process.env.SHOTS_DIR) await page.getByRole('button', { name: "Show the incident's facts" }).click()
+
+  // The Detections tab lists the rule of the Nik pack, with its author, its level, its tags and its count.
+  await parts.getByRole('tab', { name: /^Detections/ }).click()
+  const rules = page.getByRole('tabpanel', { name: 'Detections' })
+  const found = rules.getByRole('row').filter({ hasText: 'Windows Security Event Log Cleared' })
+  await expect(found).toHaveCount(1, { timeout: 30_000 })
+  await expect(found).toContainText('Rule by Nik')
+  await expect(found).toContainText('high')
+  await expect(found).toContainText('T1070.001')
+  await expect(found).toContainText('WKS-FINANCE-01')
+  await shot('eventlogs-detections', parts)
+
+  // A row opens the events of the rule: Events, filtered on it, with a chip that can be removed.
+  await found.getByRole('button', { name: /Show the events that matched/ }).click()
+  await expect(parts.getByRole('tab', { name: /^Events/ })).toHaveAttribute('aria-selected', 'true')
+  const chips = page.getByRole('list', { name: 'Filters in force' })
+  await expect(chips).toContainText('rule = Windows Security Event Log Cleared')
+  const table = recordsTable()
+  await expect(table.locator('tbody tr')).toHaveCount(1, { timeout: 30_000 })
+  await expect(table.locator('tbody tr').first()).toContainText('1102')
+  // The record's level shows in its row.
+  await expect(table.locator('tbody tr').first().getByText('high', { exact: true })).toBeVisible()
+
+  // Its drawer lists the detection with the author.
+  await table.locator('tbody tr').first().getByRole('button', { name: 'Source' }).click()
+  const drawer = page.getByRole('dialog', { name: 'Source of the record' })
+  const inRecord = drawer.getByRole('region', { name: 'Detections' })
+  await expect(inRecord).toContainText('Windows Security Event Log Cleared', { timeout: 30_000 })
+  await expect(inRecord).toContainText('Rule by Nik')
+  await expect(inRecord).toContainText('T1070.001')
+  await shot('record-drawer-detections')
+  await drawer.getByRole('button', { name: 'Close' }).click()
+
+  // The chip comes off: the events of the file are back.
+  await chips.getByRole('button', { name: /Remove the filter rule/ }).click()
+  await expect(table.locator('tbody tr')).not.toHaveCount(1, { timeout: 30_000 })
+
+  // The level select keeps the records of a minimum level.
+  await page.getByRole('combobox', { name: /^Detection/ }).selectOption('4')
+  await expect(table.locator('tbody tr')).toHaveCount(1, { timeout: 30_000 })
+  await page.getByRole('combobox', { name: /^Detection/ }).selectOption('')
+
+  // The parse report of the file says what the rules found in it.
+  await sourceRow('nik-eventlogs.json').getByRole('button', { name: 'Report' }).click()
+  const report = page.getByRole('region', { name: 'Parse report of nik-eventlogs.json' })
+  const reported = report.getByRole('region', { name: 'Detections of this file' })
+  await expect(reported).toContainText('Windows Security Event Log Cleared')
+  await expect(reported).toContainText('1 high')
+  await shot('parse-report-detections', report)
+
+  // The Timeline counts it too, and its host records carry the level.
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
+  const timelineStat = page.locator('.truncate.text-xs', { hasText: /^Detections$/ }).locator('xpath=..')
+  await expect(timelineStat).toContainText('1', { timeout: 30_000 })
+  await expect(page.getByRole('table').last().getByText('high', { exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  })
+  await shot('timeline-detections')
+})
+
+test('"Try on an incident" runs the text on screen over the records of an incident and finds the match', async () => {
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const settings = await openSettingsAt('/settings/rules/sigma')
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  await writeInEditor(sigmaRuleText('selection', 'E2E log cleared, tried only'))
+  await expect(settings.getByText('The worker reads this text without a problem.')).toBeVisible({ timeout: 30_000 })
+  const trying = settings.getByRole('region', { name: 'Try on an incident' })
+  await trying.getByRole('combobox', { name: 'Incident' }).fill('E2E-SIGMA')
+  await trying.getByRole('option').first().click()
+  await trying.getByRole('button', { name: 'Run' }).click()
+  await expect(trying).toContainText('1 match', { timeout: 60_000 })
+  await expect(trying.getByRole('row').filter({ hasText: 'E2E log cleared, tried only' })).toHaveCount(1)
+  await expect(trying.getByRole('link', { name: 'Open the incident' })).toHaveAttribute('href', '/incident/e2e-sigma')
+  await shot('sigma-rule-editor-try', trying)
+  // Nothing was saved by it.
+  expect((await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).status()).toBe(404)
+  // Back to the list: the text was changed and not saved, so Nik asks before it is left.
+  await settings.getByRole('button', { name: 'Sigma rules' }).last().click()
+  await page
+    .getByRole('dialog', { name: 'Leave without saving?' })
+    .getByRole('button', { name: 'Leave without saving' })
+    .click()
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible()
+})
+
+test('the list of suspicious keywords is gone: its old address leads to the Sigma rules', async () => {
+  const settings = await openSettingsAt('/settings/analysis/detection-rules')
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible()
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveCount(0)
+  expect(Object.keys(await (await page.request.get('/api/settings')).json())).not.toContain('keywords')
+})
+
+test('the business hours are told in a time zone, which the rules and the timers use', async () => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const settings = await openSettingsAt('/settings/analysis/business-hours')
+  const zone = settings.getByLabel('Time zone')
+  await expect(zone).toHaveValue('UTC')
+  await zone.fill('Europe/Rome')
+  await expect
+    .poll(async () => (await (await page.request.get('/api/settings')).json()).businessHours.tz, { timeout: 15_000 })
+    .toBe('Europe/Rome')
+  await shot('business-hours-tz')
+  await page.reload()
+  await expect(settings.getByLabel('Time zone')).toHaveValue('Europe/Rome')
+  // Put back.
+  await settings.getByLabel('Time zone').fill('UTC')
+  await expect
+    .poll(async () => (await (await page.request.get('/api/settings')).json()).businessHours.tz, { timeout: 15_000 })
+    .toBe('UTC')
 })
 
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {

@@ -23,8 +23,9 @@ webhooks. A timer that counts business hours advances only inside them.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -55,8 +56,28 @@ class TimerError(ValueError):
 # --------------------------------------------------------------------------- #
 # Business hours                                                              #
 # --------------------------------------------------------------------------- #
-def business_hours(db: OrmSession) -> dict[str, Any]:
-    """The hours the organisation works, as Settings hold them (in UTC)."""
+def zone_name(value: Any) -> str:
+    """An IANA time zone name as ``zoneinfo`` knows it. Raises ``ValueError`` with a sentence."""
+    name = str(value or "").strip()
+    try:
+        if not name or name.startswith(("/", ".")) or ".." in name:
+            raise ZoneInfoNotFoundError(name)
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        raise ValueError(f'"{name[:60]}" is not a time zone name: use one such as Europe/Rome or UTC') from None
+    return name
+
+
+def _zone(name: Any) -> tzinfo:
+    try:
+        return ZoneInfo(zone_name(name)) if name else timezone.utc
+    except ValueError:
+        return timezone.utc
+
+
+def business_hours(db: OrmSession, incident: Incident | None = None) -> dict[str, Any]:
+    """The hours the organisation works, as Settings hold them, and the time zone they are read in:
+    the one of the incident when it has one, else the one of Settings (UTC by default)."""
     from . import lists
 
     held = lists.settings_value(db, "businessHours", None)
@@ -67,14 +88,26 @@ def business_hours(db: OrmSession) -> dict[str, Any]:
         start, end = DEFAULT_BUSINESS_HOURS["startHour"], DEFAULT_BUSINESS_HOURS["endHour"]
     if not 0 <= start < end <= 24:
         start, end = DEFAULT_BUSINESS_HOURS["startHour"], DEFAULT_BUSINESS_HOURS["endHour"]
-    return {"startHour": start, "endHour": end, "flagWeekends": bool(hours.get("flagWeekends"))}
+    name = "UTC"
+    for candidate in (incident.tz if incident is not None else None, hours.get("tz")):
+        if not candidate:
+            continue
+        try:
+            name = zone_name(candidate)
+        except ValueError:
+            continue  # a name that is not a zone any more is as if it was not given
+        break
+    return {"startHour": start, "endHour": end, "flagWeekends": bool(hours.get("flagWeekends")), "tz": name}
 
 
 def business_seconds(start: float, end: float, hours: dict[str, Any]) -> float:
-    """How much of the time between two moments falls inside business hours."""
+    """How much of the time between two moments falls inside business hours, the days and the hours
+    read on the wall clock of ``hours["tz"]`` (UTC when it has none): a day that changes the clock
+    has 23 or 25 hours, and the hours of work stay at the same time on the clock."""
     if end <= start:
         return 0.0
-    first = datetime.fromtimestamp(start, timezone.utc)
+    zone = _zone(hours.get("tz"))
+    first = datetime.fromtimestamp(start, zone)
     day = first.replace(hour=0, minute=0, second=0, microsecond=0)
     total = 0.0
     for _ in range(DAYS_MAX):
@@ -157,7 +190,7 @@ def start(
     (``by_rule`` false) is the timer's own: the rules of the type do not change it afterwards."""
     _known(db, name)
     stored = _held(incident)
-    hours = business_hours(db)
+    hours = business_hours(db, incident)
     timer = dict(stored[name]) if isinstance(stored.get(name), dict) and not restart else {}
     counted = elapsed(timer, now, hours)
     timer.update({"state": "running", "started_at": now, "accumulated_s": counted})
@@ -191,7 +224,7 @@ def halt(
         return None
     timer = {
         **timer,
-        "accumulated_s": elapsed(timer, now, business_hours(db)),
+        "accumulated_s": elapsed(timer, now, business_hours(db, incident)),
         "state": state,
         "started_at": None,
     }
@@ -212,7 +245,7 @@ def _known(db: OrmSession, name: str) -> None:
 def of(db: OrmSession, incident: Incident, now: float) -> list[dict[str, Any]]:
     """The timers of an incident that were started, the shipped ones first."""
     stored = _held(incident)
-    hours = business_hours(db)
+    hours = business_hours(db, incident)
     labels = timer_fields(db)
     names = [name for name in SHIPPED if name in labels] + sorted(name for name in labels if name not in SHIPPED)
     return [view(name, labels[name], stored[name], now, hours) for name in names if isinstance(stored.get(name), dict)]
@@ -351,7 +384,6 @@ def tick(db: OrmSession, now: float) -> int:
     from .automation import triggers
 
     breached = 0
-    hours = business_hours(db)
     labels = timer_fields(db)
     for incident in db.scalars(
         select(Incident).where(Incident.status != "closed", Incident.archived_at.is_(None))
@@ -362,7 +394,7 @@ def tick(db: OrmSession, now: float) -> int:
             if name not in labels or not isinstance(timer, dict) or timer.get("state") != "running":
                 continue
             due = timer.get("due_s")
-            counted = elapsed(timer, now, hours)
+            counted = elapsed(timer, now, business_hours(db, incident))  # in the zone of the incident
             if not due or counted < due or timer.get("breached_at"):
                 continue
             # Its real time: the moment it ran out, which is before now when the worker was stopped

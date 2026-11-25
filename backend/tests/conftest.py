@@ -30,6 +30,8 @@ from app import lists
 from app.core import security
 from app.core.db import Base, engine
 from app.main import app
+from app.sigma import ruleset
+from app.sigma import worker as sigma_worker
 
 # bcrypt's lowest cost: hashing in tests needs to be correct, not slow.
 security.BCRYPT_ROUNDS = 4
@@ -42,6 +44,8 @@ def client():
     """A TestClient on a freshly-created schema and empty rate-limit counters."""
     app.state.limiter.reset()
     lists.clear_cache()  # what the last test's lists held is not this one's
+    ruleset.forget()  # nor the set of Sigma rules it handed the worker, nor the version the worker said it had
+    sigma_worker.forget()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     return TestClient(app)

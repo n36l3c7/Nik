@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Badge, Button, CopyButton, Modal } from '../ui/index.js'
+import LevelBadge from './LevelBadge.jsx'
+import { levelsText, reportDetections } from '../../domain/detections.js'
 import { sizeText } from '../../domain/transfers.js'
 import { formatDateTime } from '../../lib/time.js'
 import { canAcknowledge, canReadAgain, canView, noteRows, readPill, reasonRows } from '../../domain/sourceFiles.js'
@@ -44,6 +46,7 @@ export default function ParseReport({
   const report = source.report ?? {}
   const reasons = reasonRows(report)
   const notes = noteRows(report)
+  const found = reportDetections(report)
   const pill = readPill(source)
   const lostReasons = reasons.length
 
@@ -173,6 +176,32 @@ export default function ParseReport({
                 </tbody>
               </table>
             </div>
+          )}
+
+          {found && (
+            <section
+              aria-label="Detections of this file"
+              className="space-y-2 border-t border-line px-4 py-3 text-[13px]"
+            >
+              <p className="flex flex-wrap items-baseline gap-2">
+                <span className="font-semibold">Detections</span>
+                <span className="font-mono tabular-nums">{number(found.total)}</span>
+                <span className="text-fg-muted">
+                  {found.total > 0 ? levelsText(found.byLevel) : 'No rule matched a record of this file.'}
+                </span>
+              </p>
+              {found.rules.length > 0 && (
+                <ul aria-label="The rules that matched most" className="space-y-1">
+                  {found.rules.map((rule) => (
+                    <li key={rule.id} className="flex flex-wrap items-center gap-2">
+                      <LevelBadge level={rule.level} />
+                      <span>{rule.title}</span>
+                      <span className="font-mono tabular-nums text-fg-muted">{number(rule.count)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           )}
 
           {notes.length > 0 && (

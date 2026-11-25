@@ -50,8 +50,11 @@ from ..core.models import (
     EvidenceProcess,
     EvidenceRecord,
     EvidenceSource,
+    Incident,
 )
 from ..core.security import now_iso
+from ..sigma import detections as sigma_detections
+from ..sigma import ruleset as sigma_ruleset
 from ..workers import handover, watching
 from . import originals
 from .imports import PARSE_WORK as WORK
@@ -82,12 +85,17 @@ def configured() -> bool:
 # --------------------------------------------------------------------------- #
 def _events(sha256: str, body: dict[str, Any], job: str) -> Iterator[dict[str, Any]]:
     """The events of a parse, as the worker sends them. The original is given to the worker when it
-    says it does not hold it. Raises ``ParseError`` when the worker cannot be asked; a stream that is
-    cut is simply over (the caller sees that no ``end`` came)."""
+    says it does not hold it, and so is the set of rules (``body["rules"]``, a digest) when it lacks it;
+    then the question is asked again, each of them once. Raises ``ParseError`` when the worker cannot be
+    asked; a stream that is cut is simply over (the caller sees that no ``end`` came).
+
+    A set of rules the worker does not take does not stop the reading of the file: it is read without
+    rules (``body`` loses its ``rules``, which the caller looks at) and a ``note`` says so."""
     name = f"{sha256}.bin"
     url, token = settings.FORENSICS_URL, settings.FORENSICS_TOKEN
-    data = json.dumps({**body, "name": name}).encode("utf-8")
-    for attempt in (1, 2):
+    gave_file = gave_rules = False
+    while True:
+        data = json.dumps({**body, "name": name}).encode("utf-8")
         request = urllib.request.Request(  # noqa: S310 - operator-configured URL
             f"{url}/parse",
             data=data,
@@ -101,11 +109,21 @@ def _events(sha256: str, body: dict[str, Any], job: str) -> Iterator[dict[str, A
                 answer = json.loads(error.read() or b"{}")
             except ValueError:
                 answer = {}
-            if attempt == 1 and handover.missing_of(error, answer):
+            if not gave_file and handover.missing_of(error, answer):
+                gave_file = True
                 try:
                     handover.give(url, HEADER, token, name, originals.path_of(sha256))
                 except handover.NotGiven as refused:
                     raise ParseError(str(refused)) from None
+                continue
+            lacking = answer.get("missingRules") if error.code == 409 and isinstance(answer, dict) else None
+            if not gave_rules and isinstance(lacking, str) and lacking and body.get("rules"):
+                gave_rules = True
+                refused_rules = sigma_ruleset.give(lacking)
+                if refused_rules is not None:
+                    body.pop("rules", None)  # the file is read, without the rules
+                    body.get("params", {}).pop("hours", None)
+                    yield {"t": "note", "reason": "rules not applied", "count": 1, "detail": refused_rules}
                 continue
             detail = answer.get("detail") if isinstance(answer, dict) else None
             raise ParseError(str(detail or f"The forensics worker answered {error.code}")) from None
@@ -140,6 +158,8 @@ class Report:
         self.skips = 0
         self.lost = 0
         self.channels: dict[str, int] = {}
+        # What the rules matched, when the file was read with rules: ``Detected.report()``.
+        self.detections: dict[str, Any] | None = None
 
     def skip(self, event: dict[str, Any]) -> None:
         reason = str(event.get("reason") or "not read")[:120]
@@ -170,13 +190,16 @@ class Report:
             self.channels[name] = self.channels.get(name, 0) + 1
 
     def out(self, ended: bool, seconds: float | None = None) -> dict[str, Any]:
-        return {
+        held = {
             "reasons": self.reasons,
             "notes": self.notes,
             "channels": self.channels,
             "ended": ended,
             "seconds": seconds,
         }
+        if self.detections is not None:
+            held["detections"] = self.detections
+        return held
 
 
 # --------------------------------------------------------------------------- #
@@ -256,7 +279,10 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
         db.commit()
         db.refresh(source)
         db.expunge(source)
-    body = {
+        # The rules to read it with: those enabled and supported (none: the file is read as it always was).
+        rules_now = sigma_ruleset.current(db)
+        hours = sigma_ruleset.hours(db, db.get(Incident, source.incident_id)) if rules_now else None
+    body: dict[str, Any] = {
         "fileName": source.file_name,
         "parser": source.parser or None,
         "source": source.source or None,
@@ -267,6 +293,10 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
             "file_name": source.file_name,
         },
     }
+    if rules_now is not None:
+        body["rules"] = rules_now.digest
+        body["params"]["hours"] = hours
+    detected = sigma_detections.Detected(rules_now, source.incident_id)
     began = time.monotonic()
     report = Report()
     counts = {"read": 0, "kept": 0, "truncated": 0}
@@ -278,10 +308,12 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
     job = watching.job_name(WORK, source_id, getattr(claim, "attempts", 1) or 1)
 
     def flush() -> None:
-        if not batch:
+        if not batch and not detected.pending:
             return
         with SessionLocal() as db:
-            counts["kept"] += _insert(db, batch)
+            if batch:
+                counts["kept"] += _insert(db, batch)
+            detected.write(db)  # after the records they are of
             db.commit()
         batch.clear()
         if claim is not None:
@@ -309,6 +341,10 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
                 batch.append(row)
                 if len(batch) >= BATCH:
                     flush()
+            elif kind == "det":
+                detected.add(event)
+                if detected.full():
+                    flush()
             elif kind == "skip":
                 report.skip(event)
             elif kind == "note":
@@ -334,6 +370,16 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
             db.commit()
         report.skip({"reason": "the worker stopped answering", "lost": 0, "detail": str(error)})
 
+    if "rules" not in body:
+        detected.set = None  # no rules were given, or the worker did not take them: nothing was matched
+    elif detected:
+        report.detections = detected.report()
+        for reason, count in (
+            ("detection of a record that is not here", detected.unplaced),
+            ("detection of a rule that is not in the set", detected.unknown),
+        ):
+            if count:
+                report.note({"reason": reason, "count": count})
     if undeclared:
         report.note(
             {
@@ -375,9 +421,26 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
 
         # One line for the file, whatever it held: what was read of it, and whether anything was not.
         war_room.add(db, row.incident_id, "system", {"text": sentence(row), "evidence": {"source": row.id}}, "nik")
+        if detected and detected.total:
+            _detected(db, row, detected)
         db.commit()
     if claim is not None and nothing:
         claim.failed = True  # type: ignore[attr-defined]
+
+
+def _detected(db: OrmSession, source: EvidenceSource, found: sigma_detections.Detected) -> None:
+    """What the rules found in a file: a line in the War Room when any is of level medium or more, and
+    the event ``evidence.detected`` for the playbooks that wait for it (one for the file, not one for
+    each detection). Detections never change the severity of the incident."""
+    from .. import war_room
+    from ..automation import triggers
+
+    line = sigma_detections.sentence(source.file_name or source.sha256[:12], found)
+    if line:
+        war_room.add(db, source.incident_id, "system", {"text": line, "evidence": {"source": source.id}}, "nik")
+    incident = db.get(Incident, source.incident_id)
+    if incident is not None:
+        triggers.evidence_detected(db, incident, source, found.total, found.highest(), found.top())
 
 
 def sentence(source: EvidenceSource) -> str:

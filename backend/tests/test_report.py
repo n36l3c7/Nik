@@ -177,12 +177,13 @@ def test_report_endpoint_html_pdf_and_branding(admin: TestClient):
         headers=key,
         json={
             "format": "html",
+            # What a client sends of detections is accepted and ignored: the tables say what was found.
             "detections": [{"id": "evt-log-cleared", "label": "log cleared", "count": 1, "attack": ["T1070.001"]}],
             "scope": "all",
         },
     )
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
-    assert "ACME SOC" in r.text and LOGO in r.text and "T1070.001" in r.text
+    assert "ACME SOC" in r.text and LOGO in r.text and "T1070.001" not in r.text
     assert "185.220.101.47" in r.text  # from the IOC index
     assert "everything in the incident" in r.text and "ConsoleHost_history.txt" in r.text
     assert "Evidence integrity" in r.text and "3 files, 0 read in part, 0 failed." in r.text

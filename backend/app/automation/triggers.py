@@ -200,6 +200,17 @@ def indicators_found(db: OrmSession, incident: Incident, door: str, found: list[
     publish(db, "indicators.found", "incident", incident.id, data, classes)
 
 
+def evidence_detected(
+    db: OrmSession, incident: Incident, source: Any, count: int, level: int, rules: list[dict]
+) -> None:
+    """The rules found something in a file of host evidence being read (``evidence/parse.py``): one
+    event for the file, in the transaction of its reading, never one for each detection."""
+    if settings.AUTOMATION_WORKER == "off" or not count:
+        return
+    data, classes = payloads.evidence_detected(incident, source, count, level, rules)
+    publish(db, "evidence.detected", "incident", incident.id, data, classes)
+
+
 def indicator_id(kind: str, value: str) -> str:
     """An indicator as the object of a run: ``domain:evil.example``."""
     return f"{kind}:{value}"
@@ -445,6 +456,7 @@ _ABOUT = {
     "incident.updated": "incident",
     "ioc.watch_hit": "incident",
     "indicators.found": "incident",
+    "evidence.detected": "incident",
     "mail.analysed": "mail",
     "file.analysed": "file",
     "code.analysed": "file",

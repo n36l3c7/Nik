@@ -1,0 +1,27 @@
+title: 'Command: Persistence Mechanism Set Up'
+id: 83a4dcef-d219-4020-8c90-d45da016e4f1
+status: stable
+description: 'A command sets up persistence: cron, SSH keys, a service, a Run key, a scheduled task or a LaunchAgent.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1053
+    - attack.t1543
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - 'authorized_keys'
+              - 'schtasks'
+        - command|re|i:
+              - 'crontab\s+-'
+              - 'systemctl\s+enable'
+              - 'reg\s+add\b[^|;&]*\\run'
+              - 'launchctl\s+(load|bootstrap)'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: medium

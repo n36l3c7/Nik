@@ -181,6 +181,7 @@ def detections(db: OrmSession, incident_id: str, limit: int = MAX_DETECTIONS) ->
         select(
             EvidenceDetection.rule_id,
             func.max(EvidenceDetection.rule_title),
+            func.max(EvidenceDetection.rule_author),
             top,
             func.count(),
             func.min(EvidenceDetection.id),
@@ -190,7 +191,7 @@ def detections(db: OrmSession, incident_id: str, limit: int = MAX_DETECTIONS) ->
         .order_by(top.desc(), func.count().desc(), EvidenceDetection.rule_id)
         .limit(limit)
     ).all()
-    first = [row[4] for row in grouped]
+    first = [row[5] for row in grouped]
     held = (
         {
             detection_id: (tags, summary, ts)
@@ -204,7 +205,7 @@ def detections(db: OrmSession, incident_id: str, limit: int = MAX_DETECTIONS) ->
         else {}
     )
     out = []
-    for rule_id, title, level, count, detection_id in grouped:
+    for rule_id, title, author, level, count, detection_id in grouped:
         tags, summary, ts = held.get(detection_id, ([], "", None))
         attack = sorted(
             {
@@ -219,6 +220,7 @@ def detections(db: OrmSession, incident_id: str, limit: int = MAX_DETECTIONS) ->
                 "label": title or rule_id,
                 "severity": _SEVERITY.get(level, "medium"),
                 "level": level,
+                "author": author or "",
                 "count": count,
                 "attack": attack,
                 "summary": summary or "",

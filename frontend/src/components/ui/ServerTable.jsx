@@ -120,7 +120,8 @@ function MenuItem({ icon: Icon, children, onSelect, disabled = false, title }) {
  *
  * Columns are DataTable's (`key, label, render, className, headerClassName, align`) plus:
  * `order` (the server order the column sorts by; `-order` is its reverse unless `reverse: false`),
- * `filterKey` (the filter a value of the column can be set on), `stackField` (the field `onStack`
+ * `filterKey` (the filter a value of the column can be set on; `filterText(value)` words the menu entry for it:
+ * "At least high"), `stackField` (the field `onStack`
  * is called with), `hideable` (the Columns menu can hide it), `value(row)` (what the cell holds, when it
  * is not `row[key]`). A column with any of these has a menu in its header: Sort, Filter on a value
  * (the value of the row the pointer was last on, also in the row's right-click menu), Stack values, Hide.
@@ -273,7 +274,7 @@ export default function ServerTable({
       .map((column) => {
         const value = cellValue(column, row)
         return {
-          label: `Filter ${column.label} = ${String(value).slice(0, 60)}`,
+          label: column.filterText?.(value) ?? `Filter ${column.label} = ${String(value).slice(0, 60)}`,
           onSelect: () => onFiltersChange?.(withFilter(filters, column.filterKey, value)),
         }
       })
@@ -461,7 +462,9 @@ export default function ServerTable({
                                 title={value === null ? 'Point at a row with a value in this column first' : undefined}
                                 onSelect={() => setFilter(column.filterKey, value)}
                               >
-                                {value === null ? 'Filter on a value' : `Filter on ${String(value).slice(0, 40)}`}
+                                {value === null
+                                  ? 'Filter on a value'
+                                  : (column.filterText?.(value) ?? `Filter on ${String(value).slice(0, 40)}`)}
                               </MenuItem>
                             )
                           })()}

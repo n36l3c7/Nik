@@ -204,7 +204,9 @@ def test_index_lookup_shared_and_export(admin: TestClient):
 def test_settings_allowlist_round_trip(admin: TestClient):
     settings = admin.get("/api/settings").json()
     assert "10.0.0.0/8" in settings["iocAllowlist"] and settings["iocAllowlistDefault"] == settings["iocAllowlist"]
-    body = {"keywords": settings["keywords"], "businessHours": settings["businessHours"]}
+    # A client of before 7.0 still sends the keywords: they are accepted and ignored.
+    assert "keywords" not in settings
+    body = {"keywords": [{"id": "x", "pattern": "x"}], "businessHours": settings["businessHours"]}
     body["iocAllowlist"] = ["x.org", " "]
     assert admin.put("/api/settings", json=body).json()["iocAllowlist"] == ["x.org"]
     # A client that does not send the list keeps it.

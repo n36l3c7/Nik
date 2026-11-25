@@ -1,0 +1,28 @@
+title: 'Command: Network or Directory Reconnaissance'
+id: 58e65c1d-07cd-4d13-a0b5-4efa8136d71d
+status: stable
+description: 'A network or Active Directory reconnaissance or scanning tool is run.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.discovery
+    - attack.t1046
+    - attack.t1082
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - 'masscan'
+              - 'smbclient'
+              - 'bloodhound'
+              - 'sharphound'
+        - command|re|i:
+              - '\bnmap\b'
+              - 'whoami\s*/priv'
+              - 'net\s+group\s+.domain'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: medium

@@ -1,0 +1,21 @@
+title: 'Browser: Bypass of a Security Control'
+id: 96da62ca-c1fb-4b8a-a8fc-73b5dbb74d2c
+status: stable
+description: 'A page about evading security controls (antivirus, UAC, filters).'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - 'bypass'
+        - title|contains:
+              - 'bypass'
+        - fileName|contains:
+              - 'bypass'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: medium

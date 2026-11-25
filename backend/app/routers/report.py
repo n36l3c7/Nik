@@ -24,7 +24,7 @@ router = APIRouter(tags=["report"])
 
 
 class Detection(BaseModel):
-    """A SOC rule's hits in the incident (the app runs the rules and sends them)."""
+    """A rule's hits in the incident, as an older client sent them: accepted and ignored (7.0)."""
 
     id: str = Field(max_length=100)
     label: str = Field(max_length=200)
@@ -120,8 +120,9 @@ def incident_report(
 
     Sections: summary, timeline (flagged events), attack, iocs, samples,
     mails, network, eventlogs, notes, evidence and integrity (the table of what was read of each file;
-    on unless ``integrity`` is false). ``detections`` lists the SOC rule hits with their ATT&CK ids; the
-    app sends them, and when it sends none the rules matched in the tables stand in.
+    on unless ``integrity`` is false). What the Sigma rules found is read from the tables (their techniques
+    come from the ``attack.tNNNN`` tags of the rules, their authors are named); ``detections`` is accepted
+    and ignored.
     """
     row = db.get(Incident, incident_id)
     if row is None:
@@ -145,7 +146,6 @@ def incident_report(
         tlp=tlp,
         sections=[s for s in sections if s in SECTIONS],
         executive_summary=summary,
-        detections=[d.model_dump() for d in body.detections],
         iocs=incident_iocs(db, incident_id, Allowlist(settings.get("iocAllowlist") or [])),
         samples=_samples(db, doc),
         mails=_mails(db, doc),

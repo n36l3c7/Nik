@@ -254,7 +254,7 @@ def list_timers(
     incident = db.get(Incident, incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
-    return {"timers": timers.of(db, incident, time.time()), "businessHours": timers.business_hours(db)}
+    return {"timers": timers.of(db, incident, time.time()), "businessHours": timers.business_hours(db, incident)}
 
 
 @router.post("/incidents/{incident_id}/timers/{field}/{what}")

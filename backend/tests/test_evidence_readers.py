@@ -342,7 +342,7 @@ def test_an_incident_without_files_says_so_in_the_integrity_section(world):
     assert "Evidence integrity" in html and "No file was imported." in html
 
 
-def test_detections_of_the_tables_stand_in_when_the_browser_sends_none(world):
+def test_the_report_reads_detections_from_the_tables_and_ignores_the_ones_a_client_sends(world):
     client, key, _ = world
     incident = an_incident(world, "rd-det")
     read_file(
@@ -368,6 +368,7 @@ def test_detections_of_the_tables_stand_in_when_the_browser_sends_none(world):
                     record_id=record,
                     rule_id=rule,
                     rule_title=title,
+                    rule_author="Florian Roth",
                     level=level,
                     tags=tags,
                     records=[],
@@ -385,9 +386,13 @@ def test_detections_of_the_tables_stand_in_when_the_browser_sends_none(world):
 
     html = client.post(f"/api/incidents/{incident}/report", headers=key, json={"format": "html", "scope": "all"}).text
     assert "T1070.001" in html and "SOC · Security log cleared ×2" in html
+    # The table of what matched names the rule, its level, how many records and who wrote it.
+    assert "Rule matches" in html and "Florian Roth" in html and "credited to their authors" in html
     sent = {"detections": [{"id": "x", "label": "from the browser", "count": 1, "attack": ["T1003"]}]}
-    html = client.post(f"/api/incidents/{incident}/report", headers=key, json={"format": "html", **sent}).text
-    assert "T1003" in html and "T1070.001" not in html
+    html = client.post(
+        f"/api/incidents/{incident}/report", headers=key, json={"format": "html", "scope": "all", **sent}
+    )
+    assert html.status_code == 200 and "T1003" not in html.text and "T1070.001" in html.text
 
 
 def test_a_report_of_twenty_thousand_records_asks_a_bounded_number_of_questions(world):

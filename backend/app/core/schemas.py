@@ -254,7 +254,8 @@ class EnrichmentSettingsIn(BaseModel):
 class SettingsIn(BaseModel):
     """Shared settings request body."""
 
-    keywords: list[dict[str, Any]] = Field(default_factory=list)
+    # Accepted and ignored since 7.0: the suspicious keywords are Sigma rules now (``/api/sigma/rules``).
+    keywords: Optional[list[dict[str, Any]]] = Field(default=None, deprecated=True)
     businessHours: dict[str, Any] = Field(default_factory=dict)
     # Omitted (older clients): the stored allowlist is kept.
     iocAllowlist: Optional[list[str]] = Field(default=None, max_length=5000)
@@ -269,7 +270,6 @@ class SettingsIn(BaseModel):
 class SettingsOut(BaseModel):
     """Shared settings response body."""
 
-    keywords: list[dict[str, Any]]
     businessHours: dict[str, Any]
     iocAllowlist: list[str]
     report: dict[str, Any]

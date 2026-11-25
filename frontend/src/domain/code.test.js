@@ -4,7 +4,7 @@ import { analyzeFunctions, callGraph, cfgGraph, decompiledLines, displayName, he
 import { createSocEngine } from './soc.js'
 import { DEFAULT_MALWARE_KEYWORDS } from '../config/detectionRules.js'
 
-const engine = createSocEngine({ keywords: [], malwareKeywords: DEFAULT_MALWARE_KEYWORDS })
+const engine = createSocEngine({ malwareKeywords: DEFAULT_MALWARE_KEYWORDS })
 
 // entry0 → main → inject → VirtualAllocEx (import); main → log (benign); inject ↔ retry (cycle)
 const FUNCTIONS = [

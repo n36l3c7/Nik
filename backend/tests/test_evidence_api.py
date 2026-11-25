@@ -428,7 +428,14 @@ def test_one_record_comes_whole_with_its_file_and_detections(env):
         and page["source"]["read"] == "complete"
     )
     assert page["detections"] == [
-        {"ruleId": "r1", "ruleTitle": "Logon", "ruleAuthor": "someone", "level": 3, "tags": ["attack.t1078"]}
+        {
+            "ruleId": "r1",
+            "ruleTitle": "Logon",
+            "ruleAuthor": "someone",
+            "level": 3,
+            "tags": ["attack.t1078"],
+            "records": [],
+        }
     ]
     assert get(env, f"ev-other/evidence/records/{record_id}").status_code == 404
     assert get(env, "ev-api/evidence/records/999999").status_code == 404
@@ -479,6 +486,7 @@ def test_the_summary_counts_per_section(env):
         db.commit()
     assert get(env, f"ev-api/evidence/sources/{failed}").json()["state"] == "failed"
     summary = get(env, "ev-api/evidence/summary").json()
+    none_found = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}  # what the Sigma rules found, by level
     assert summary["kinds"]["eventlog"] == {
         "sources": 2,
         "records": 3,
@@ -486,6 +494,7 @@ def test_the_summary_counts_per_section(env):
         "failed": 0,
         "parsing": 0,
         "absent": 0,
+        "detections": none_found,
     }
     assert summary["kinds"]["endpoint"] == {
         "sources": 2,
@@ -494,6 +503,7 @@ def test_the_summary_counts_per_section(env):
         "failed": 1,
         "parsing": 0,
         "absent": 0,
+        "detections": none_found,
     }
     assert summary["kinds"]["browser"]["parsing"] == 1
     assert summary["partialUnseen"] == 1

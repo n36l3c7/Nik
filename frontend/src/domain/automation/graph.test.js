@@ -643,3 +643,16 @@ test('an output that says what is inside it is listed with it, from the shapes o
   // Until the catalog is read, what is written in the editor is listed.
   assert.equal(valueTree(graph, 'say', entries)[0].fields[0].path, 'trigger.incident.id')
 })
+
+test('a playbook can start on a Sigma detection, with a condition on its level', () => {
+  const { names, runs } = {
+    names: (config) => triggerFields(config).map((field) => field.name),
+    runs: runsOn({ event: 'evidence.detected' }),
+  }
+  assert.equal(runs, 'incident')
+  assert.ok(names({ event: 'evidence.detected' }).includes('levelNumber'))
+  assert.ok(names({ event: 'evidence.detected' }).includes('source.fileName'))
+  assert.ok(names({ event: 'evidence.detected' }).includes('incident.id'))
+  assert.deepEqual(sampleFilter('evidence.detected').all[0], { left: '{{ trigger.levelNumber }}', op: 'gte', right: 4 })
+  assert.match(eventLabel('evidence.detected'), /evidence\.detected/)
+})

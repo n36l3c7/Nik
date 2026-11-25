@@ -1,0 +1,26 @@
+title: 'Command: Shell History Cleared or Disabled'
+id: f0be23fa-2979-4e21-a801-41baebf26a37
+status: stable
+description: 'The shell history is cleared or switched off, an anti-forensics step.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1070.003
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - 'histsize=0'
+              - 'histfilesize=0'
+              - 'clear-history'
+        - command|re|i:
+              - 'history\s+-c'
+              - 'unset\s+histfile'
+              - 'rm\s+[^|;&]*_history'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: high

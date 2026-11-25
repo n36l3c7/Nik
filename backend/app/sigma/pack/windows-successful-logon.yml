@@ -1,0 +1,15 @@
+title: 'Successful Logon'
+id: 2a676eea-8d21-48f2-8720-aafbcbfe2240
+name: nik_successful_logon
+status: stable
+description: 'A logon succeeded (event 4624); it is the base of the correlation of a logon after failures.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4624
+    condition: selection
+level: informational

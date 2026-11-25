@@ -1,0 +1,28 @@
+title: 'Artifact: Program Runs From a Temporary Folder'
+id: faf34047-45c4-432b-97c2-22a9785150d7
+status: stable
+description: 'An executable or a script runs from a temporary directory, classic malware staging.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.execution
+    - attack.t1204.002
+logsource:
+    product: nik
+    service: endpoint
+detection:
+    selection:
+        - name|re|i:
+              - '\\(temp|tmp|windows\\temp)\\[^\\]*\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\.(sh|elf|py)|/dev/shm/'
+        - path|re|i:
+              - '\\(temp|tmp|windows\\temp)\\[^\\]*\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\.(sh|elf|py)|/dev/shm/'
+        - command|re|i:
+              - '\\(temp|tmp|windows\\temp)\\[^\\]*\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\.(sh|elf|py)|/dev/shm/'
+        - target|re|i:
+              - '\\(temp|tmp|windows\\temp)\\[^\\]*\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\.(sh|elf|py)|/dev/shm/'
+        - location|re|i:
+              - '\\(temp|tmp|windows\\temp)\\[^\\]*\.(exe|dll|ps1|bat|cmd|scr|js|vbs)|/tmp/[^/]*\.(sh|elf|py)|/dev/shm/'
+    condition: selection
+falsepositives:
+    - Software that is installed or run this way on purpose
+level: high

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, FileSearch, Flag, HelpCircle, Info, ScrollText, Server, Terminal } from 'lucide-react'
+import { Activity, FileSearch, Flag, HelpCircle, Info, ScrollText, Server, ShieldAlert, Terminal } from 'lucide-react'
 import { Button, Card, Modal, StatCard, Tabs } from '../../ui/index.js'
 import SourceFiles from '../../evidence/SourceFiles.jsx'
+import DetectionsSection from '../../evidence/DetectionsSection.jsx'
 import ScriptBlock from '../endpoint/ScriptBlock.jsx'
 import CoverageChart from './CoverageChart.jsx'
 import EventsSection from './EventsSection.jsx'
@@ -14,6 +15,8 @@ import {
   coverageRows,
   matchSource,
 } from '../../../domain/eventLogSources.js'
+import { detectionTone, levelsText } from '../../../domain/detections.js'
+import { useDetections } from '../../../lib/useDetections.js'
 import { evidence } from '../../../services/api.js'
 
 /*
@@ -21,14 +24,18 @@ import { evidence } from '../../../services/api.js'
  *   - raw .evtx files and the collection script's nik-eventlogs.json are sent to the server in parts
  *     (SourceFiles); the worker keeps every event and writes a report of what it read of each file;
  *   - the events are read from the server a page at a time (EventsSection).
- * Detections, processes and logons come as more section tabs: one item of SECTIONS each.
+ * Detections (the Sigma rules that matched events) is the second part; processes and logons come as more
+ * section tabs: one item of SECTIONS each.
  * Linux and macOS logs are not covered yet.
  */
 
 const NO_SOURCES = []
 
 /** The parts of the page, as Tabs items; `count` is filled from the server. */
-const SECTIONS = [{ id: 'events', label: 'Events' }]
+const SECTIONS = [
+  { id: 'events', label: 'Events' },
+  { id: 'detections', label: 'Detections' },
+]
 
 function Help() {
   const [open, setOpen] = useState(false)
@@ -76,6 +83,8 @@ export default function EventLogsTab({ incident }) {
   const [counts, setCounts] = useState({ records: 0, sources: 0, channels: 0, flagged: 0, matter: 0 })
   const [matter, setMatter] = useState(true) // "Events that matter": on until the person asks for all
   const [section, setSection] = useState(SECTIONS[0].id)
+  const [focusRule, setFocusRule] = useState('') // a rule opened from Detections: Events shows only its events
+  const [ruleTitles, setRuleTitles] = useState({}) // rule id -> title, for the chip of the filter
   const changed = useCallback(() => setVersion((n) => n + 1), [])
 
   // What the page shows above the table: the files, and the counts of the server.
@@ -110,11 +119,18 @@ export default function EventLogsTab({ incident }) {
   }, [incident.id, archived, version])
 
   const chart = useMemo(() => coverageRows(sources), [sources])
+  const hasRecords = counts.records > 0
+  const found = useDetections(incident.id, { kind: EVENTLOG_KIND, refresh: version, enabled: !archived && hasRecords })
+  const openRule = useCallback((rule) => {
+    setRuleTitles((before) => ({ ...before, [rule.ruleId]: rule.title }))
+    setFocusRule(rule.ruleId)
+    setMatter(false) // the events of a rule are not all "events that matter"
+    setSection('events')
+  }, [])
   const items = SECTIONS.map((item) => ({
     ...item,
-    count: item.id === 'events' ? (matter ? counts.matter : counts.records) : undefined,
+    count: item.id === 'events' ? (matter ? counts.matter : counts.records) : found.data.total,
   }))
-  const hasRecords = counts.records > 0
 
   return (
     <div className="space-y-6">
@@ -147,7 +163,7 @@ export default function EventLogsTab({ incident }) {
 
       {!archived && hasRecords && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <StatCard icon={ScrollText} label="Events kept" value={counts.records.toLocaleString('en-US')} />
             <StatCard icon={FileSearch} label="Sources" value={counts.sources.toLocaleString('en-US')} />
             <StatCard icon={Server} label="Channels" value={counts.channels.toLocaleString('en-US')} />
@@ -156,6 +172,13 @@ export default function EventLogsTab({ incident }) {
               label="Flagged"
               value={counts.flagged.toLocaleString('en-US')}
               tone={counts.flagged > 0 ? 'accent' : 'default'}
+            />
+            <StatCard
+              icon={ShieldAlert}
+              label="Detections"
+              value={found.data.detections.toLocaleString('en-US')}
+              tone={detectionTone(found.data.byLevel)}
+              hint={levelsText(found.data.byLevel) || undefined}
             />
           </div>
 
@@ -172,8 +195,20 @@ export default function EventLogsTab({ incident }) {
               idPrefix="eventlogs"
               items={items}
               value={section}
-              onChange={setSection}
+              onChange={(id) => {
+                setFocusRule('')
+                setSection(id)
+              }}
             />
+            {section === 'detections' && (
+              <DetectionsSection
+                data={found.data}
+                loading={found.loading}
+                error={found.error}
+                onOpen={openRule}
+                noun="events"
+              />
+            )}
             {section === 'events' && (
               <EventsSection
                 incident={incident}
@@ -182,6 +217,8 @@ export default function EventLogsTab({ incident }) {
                 refresh={version}
                 matter={matter}
                 onMatterChange={setMatter}
+                focusRule={focusRule}
+                ruleTitles={ruleTitles}
               />
             )}
           </div>

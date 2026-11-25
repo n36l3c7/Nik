@@ -13,6 +13,21 @@ offers an update only for a higher version.
 `tags` in `pack.yml` (lower case words: what the product is, what it works on)
 are what the page of the packs filters by, beside the category.
 
+## Sigma rules
+
+A pack may carry Sigma rules for host evidence (7.0): a folder `sigma/`, in any
+depth of subfolders, with **one rule document in each `.yml` file**, as the rule
+is written (its `id` is what names it). Nik asks the forensics worker to read
+them 200 at a time when the pack is applied; a rule arrives switched on when the
+worker can run it, its `status` is `stable` or `test` and its `level` is `medium`
+or more, and off otherwise. A rule a person changed keeps their text when the
+pack is updated, and Reset gives the text of the pack back.
+
+`notice` in `pack.yml` is the licence or the notice of what the pack carries
+(the Detection Rule License of SigmaHQ asks that the authors of the rules be
+named): it is shown with the pack, and the report names the author of each rule
+that matched.
+
 Every connector here was written from what its vendor publishes about its
 API and is tested against recorded exchanges
 (`backend/tests/data/connectors/<id>/`), not against a real system: each says

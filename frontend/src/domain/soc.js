@@ -1,19 +1,16 @@
 /*
  * ============================================================================
- * SOC DETECTION ENGINE
+ * SOC ENGINE — what is left of the client-side detection
  * ============================================================================
  *
- * The rules (keywords + business hours) are no longer static: they come from
- * the platform Settings (SettingsContext). An "engine" is created with
- * `createSocEngine({ keywords, businessHours })` which compiles the regexes
- * once and analyzes any event (history visit or download).
+ * Since 7.0 the host evidence (event logs, browser, commands, endpoint artifacts) is read by Sigma rules on
+ * the server. This engine serves what is still analysed in the browser: the keywords of the Malware tab
+ * (strings and indicators of a sample) and the business hours, which mark the events of the other tabs
+ * (mail, network, addresses, samples) that fall outside working time.
  *
- * An analyzable event has: `url`, `title` (opt.), `fileName` (opt., for
- * downloads) and a time in `time` (fallback: `visitTime` / `startTime`), in
- * Unix epoch ms.
- *
- * To add a NEW type of detection (beyond keywords) extend `analyze()` below
- * and show the new field in the UI. See README.md.
+ * `createSocEngine({ malwareKeywords, businessHours })` compiles the regexes once and analyzes an event:
+ * `url`, `title` (opt.), `fileName` (opt.) and a time in `time` (fallback: `visitTime` / `startTime`), in
+ * Unix epoch ms. Only an event of `kind: 'malware'` is matched against the keywords.
  */
 
 import { DEFAULT_BUSINESS_HOURS } from '../config/detectionRules.js'
@@ -41,44 +38,25 @@ export function isOutsideBusinessHours(ms, businessHours = DEFAULT_BUSINESS_HOUR
 }
 
 /**
- * Creates a detection engine from the current settings.
- * The regexes are compiled once; rules with an invalid pattern are silently
- * ignored (the Settings UI validates the input).
+ * Creates the engine from the current settings.
+ * The regexes are compiled once; rules with an invalid pattern are silently ignored.
  */
-export function createSocEngine({
-  keywords = [],
-  commandKeywords = [],
-  artifactKeywords = [],
-  malwareKeywords = [],
-  businessHours = DEFAULT_BUSINESS_HOURS,
-} = {}) {
-  const compile = (rules) =>
-    rules
-      .map((rule) => {
-        try {
-          return { ...rule, regex: new RegExp(rule.pattern, 'i') }
-        } catch {
-          return null // invalid pattern: rule skipped
-        }
-      })
-      .filter(Boolean)
+export function createSocEngine({ malwareKeywords = [], businessHours = DEFAULT_BUSINESS_HOURS } = {}) {
+  const compiledMalware = malwareKeywords
+    .map((rule) => {
+      try {
+        return { ...rule, regex: new RegExp(rule.pattern, 'i') }
+      } catch {
+        return null // invalid pattern: rule skipped
+      }
+    })
+    .filter(Boolean)
 
-  const compiled = compile(keywords)
-  // Specialized rulesets run in addition to the shared keywords, but each only
-  // for its own entry kind, so shell/filesystem patterns never fire against
-  // URLs (and vice versa).
-  const compiledCommands = compile(commandKeywords)
-  const compiledArtifacts = compile(artifactKeywords)
-  const compiledMalware = compile(malwareKeywords)
-
-  /** Keyword rules matching URL + title (+ file name for downloads). */
+  /** Keyword rules matching URL + title (+ file name); only malware entries have any. */
   function matchKeywords(entry) {
+    if (entry.kind !== 'malware') return []
     const haystack = `${entry.url ?? ''} ${entry.title ?? ''} ${entry.fileName ?? ''}`
-    let rules = compiled
-    if (entry.kind === 'command') rules = [...compiled, ...compiledCommands]
-    else if (entry.kind === 'endpoint') rules = [...compiled, ...compiledArtifacts]
-    else if (entry.kind === 'malware') rules = [...compiled, ...compiledMalware]
-    return rules.filter((rule) => rule.regex.test(haystack))
+    return compiledMalware.filter((rule) => rule.regex.test(haystack))
   }
 
   /**
@@ -99,18 +77,9 @@ export function createSocEngine({
   return { analyze, matchKeywords, businessHours }
 }
 
-/**
- * Aggregate statistics for the stat cards. Receives already-enriched events:
- * [{ ...entry, soc }]. Counts flagged, time anomalies and high severity.
- */
-export function computeSocStats(enrichedEntries) {
-  let flagged = 0
-  let anomalousTime = 0
-  let high = 0
-  for (const entry of enrichedEntries) {
-    if (entry.soc.isFlagged) flagged += 1
-    if (entry.soc.isAnomalousTime) anomalousTime += 1
-    if (entry.soc.severity === 'high') high += 1
-  }
-  return { flagged, anomalousTime, high, total: enrichedEntries.length }
+/** An engine that detects nothing, for what only needs the events built (the search palette). */
+export const NO_DETECTION_ENGINE = {
+  analyze: () => ({ keywordMatches: [], isAnomalousTime: false, severity: null, isFlagged: false }),
+  matchKeywords: () => [],
+  businessHours: DEFAULT_BUSINESS_HOURS,
 }

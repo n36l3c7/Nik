@@ -1,0 +1,25 @@
+title: New Service Installed
+id: 2536e357-3978-4225-ba66-172a250f99e1
+status: test
+description: >
+    A service was installed (event 7045 of the Service Control Manager). Installing a service is a
+    common way to run code with high rights and to stay on the machine after a restart.
+references:
+    - https://attack.mitre.org/techniques/T1543/003/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1543.003
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 7045
+        Provider_Name: Service Control Manager
+    condition: selection
+falsepositives:
+    - Software that is installed or updated
+level: medium
