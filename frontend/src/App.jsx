@@ -64,7 +64,7 @@ import { recognise } from './domain/pasted.js'
 import { useIocLookup } from './context/IocLookupContext.jsx'
 import { sha256Hex } from './lib/hash.js'
 import { useNavigation } from './context/NavigationContext.jsx'
-import { detectFileRoute, readHead } from './domain/fileRouting.js'
+import { HOST_TAB, detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
 import SessionGuards, { RequiredEnrolmentScreen } from './components/auth/SessionGuards.jsx'
@@ -74,6 +74,8 @@ import CopyBanner from './components/layout/CopyBanner.jsx'
 import { ArchiveBanner } from './components/incident/ArchiveControl.jsx'
 import { uploadFile } from './lib/chunkedUpload.js'
 import { appDropHeld } from './lib/dropOwner.js'
+import CollectionHost from './components/evidence/CollectionDialog.jsx'
+import { useHostFileSender } from './lib/useHostFileSender.js'
 import { noteEvidenceChanged } from './lib/useEvidenceSummary.js'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
 import RunPlaybookDialog from './components/automation/RunPlaybookDialog.jsx'
@@ -274,6 +276,7 @@ export default function App() {
 
   // Navigation requests from menus and dialogs (see NavigationContext).
   const navigation = useNavigation()
+  const sendHostFile = useHostFileSender()
   const { importInto, clearSearch } = navigation
   /** Show the active incident's tabs: an artifact or the Indicators page in the main area is left. */
   const showIncident = useCallback(() => {
@@ -785,6 +788,11 @@ export default function App() {
         // Samples and files of host evidence go to the server: the incident must exist there first.
         if (!(await whenSaved(incident.id))) return
       }
+      // A file of host evidence nobody placed by hand: the server recognises it (or says why it does not).
+      if (tab === HOST_TAB && incidentId) {
+        await sendHostFile(file, incidentId)
+        return
+      }
       const kind = SERVER_KIND[tab]
       if (kind && incidentId) {
         // Host evidence is sent in parts and read by the worker; the page of its kind shows what became of it.
@@ -1253,6 +1261,8 @@ export default function App() {
           <IncidentFields value={newFields} onChange={setNewFields} idPrefix="new" />
         </form>
       </Modal>
+
+      <CollectionHost />
 
       <AddFileDialog
         drop={drop}

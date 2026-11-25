@@ -9,9 +9,19 @@ event_id)``: ``kind`` is the section of the evidence the parser says it fills (`
                           is its equivalent, whose fields are given the Sysmon names when the record is read:
                           ``engine.py``); a service names the channels.
     ``product: nik``      the records Nik makes itself: ``service: commands | endpoint | browser`` is the section.
+    ``product: linux``    the ``syslog`` section (``parsers/syslog.py``): channels ``auth`` (auth.log, secure, any
+                          syslog file), ``journal`` (``journalctl -o json``) and ``audit`` (audit.log, an event
+                          per record). ``service: auth | sshd | sudo | syslog | cron | vsftpd | clamav`` name the
+                          text logs and, for the programs, the ``program`` that wrote the message; ``service:
+                          auditd`` the audit log; ``category: process_creation`` the audit events that are an
+                          execve (a journal entry says a process logged a line, not that it started). A rule with
+                          no service and no category reads every channel.
+    ``product: macos``    the ``syslog`` section, channel ``unifiedlog``, for a rule with no category and no
+                          service (keywords). ``category: process_creation`` is NOT supported: a unified log record
+                          says which process wrote it, not that one was started, and it has no command line.
 
-Anything else (linux, macos, cloud…) has no records in Nik: ``places`` raises ``NoRecords`` with the sentence
-that is shown to the analyst.
+Anything else (cloud, a Linux category the records cannot satisfy…) has no records in Nik: ``places`` raises
+``NoRecords`` with the sentence that is shown to the analyst.
 """
 
 from __future__ import annotations
@@ -138,6 +148,50 @@ SERVICE: dict[str, tuple[str, ...]] = {
 # The sections of the records Nik makes itself (``product: nik``).
 NIK_SERVICES = ("commands", "endpoint", "browser")
 
+# ``product: linux`` and ``product: macos``: the places of the ``syslog`` section. A place is a channel and an extra
+# condition on lower-case fields of the record (``program`` is the program that wrote the message, ``facility`` the
+# syslog facility of a journal entry, ``recordtype`` the type Nik gave the record).
+SYSLOG = "syslog"
+_AUTH_FACILITY = {"facility": ["auth", "authpriv"]}
+
+
+def _programs(*names: str) -> tuple[Place, ...]:
+    return (("auth", None, {"program": list(names)}), ("journal", None, {"program": list(names)}))
+
+
+LINUX_SERVICE: dict[str, tuple[Place, ...]] = {
+    "auth": (("auth", None, None), ("journal", None, _AUTH_FACILITY)),
+    "syslog": (("auth", None, None), ("journal", None, None)),
+    "sshd": _programs("sshd", "sshd-session", "sshd-auth"),
+    "sudo": _programs("sudo"),
+    "cron": _programs("cron", "crond", "crontab", "anacron"),
+    "vsftpd": _programs("vsftpd"),
+    "clamav": _programs("clamd", "freshclam", "clamav-daemon", "clamav-freshclam"),
+    "auditd": (("audit", None, None),),
+}
+# ``process_creation`` of Linux: an execve of the audit log. A journal entry is NOT one: it says a process logged a
+# line, not that it started.
+LINUX_CATEGORY: dict[str, tuple[Place, ...]] = {
+    "process_creation": (("audit", None, {"recordtype": ["process"]}),),
+}
+LINUX_ALL: tuple[Place, ...] = (("auth", None, None), ("journal", None, None), ("audit", None, None))
+MACOS_ALL: tuple[Place, ...] = (("unifiedlog", None, None),)
+
+# Fields added to a record of the ``syslog`` section, by channel: name -> the name it is read from (when the name is not
+# there already). The audit log's own names (``exe``, ``ppid``, ``auid``…) stay too, as SigmaHQ's auditd rules write
+# them.
+SYSLOG_ALIASES: dict[str, dict[str, str]] = {
+    "audit": {
+        "image": "exe",
+        "parentprocessid": "ppid",
+        "processid": "pid",
+        "logonid": "auid",
+        "currentdirectory": "cwd",
+    },
+    "journal": {"image": "_exe", "commandline": "_cmdline", "processid": "_pid"},
+    "unifiedlog": {"image": "processimagepath"},
+}
+
 # Fields added to a record of a given kind, so that rules written with the Sysmon names also run on the Security
 # equivalents. The key is (lower-case channel, event id): name -> the name it is read from.
 ALIASES: dict[tuple[str, int], dict[str, str]] = {
@@ -159,6 +213,40 @@ def _name(product: str | None, category: str | None, service: str | None) -> str
     return "/".join(part for part in (product, category, service) if part) or "(nothing)"
 
 
+def _linux_places(category: str | None, service: str | None, sorry: NoRecords) -> tuple[Place, ...]:
+    if category:
+        found = LINUX_CATEGORY.get(category)
+        if found is None:
+            raise sorry
+        if service:
+            wanted = LINUX_SERVICE.get(service)
+            if wanted is None:
+                raise sorry
+            channels = {place[0] for place in wanted}
+            found = tuple(place for place in found if place[0] in channels)
+            if not found:
+                raise sorry
+        return found
+    if service:
+        found = LINUX_SERVICE.get(service)
+        if found is None:
+            raise sorry
+        return found
+    return LINUX_ALL
+
+
+def syslog_fields(channel: str, rtype: str, orig: dict) -> None:
+    """The fields of a ``syslog`` record that its parser does not write under the name the rules read: the Windows
+    names of a process (``Image``, ``CommandLine``…), ``recordtype`` (the type Nik gave the record), and for the audit
+    log ``type``, which is the list of the types of the lines of the event (SigmaHQ writes ``type: EXECVE``)."""
+    orig["recordtype"] = rtype
+    for name, read in SYSLOG_ALIASES.get(channel, {}).items():
+        if name not in orig and orig.get(read) is not None:
+            orig[name] = orig[read]
+    if channel == "audit" and orig.get("types") is not None:
+        orig["type"] = orig["types"]
+
+
 def places(product: str | None, category: str | None, service: str | None) -> tuple[str, tuple[Place, ...]]:
     """The section a rule reads and the places of its records, or ``NoRecords``."""
     product = (product or "").lower() or None
@@ -171,6 +259,12 @@ def places(product: str | None, category: str | None, service: str | None) -> tu
         if service is None:
             raise NoRecords("a rule for product nik must say its service: commands, endpoint or browser")
         return service, ((None, None, None),)
+    if product == "linux":
+        return SYSLOG, _linux_places(category, service, sorry)
+    if product == "macos":
+        if category or service:
+            raise sorry
+        return SYSLOG, MACOS_ALL
     if product not in (None, "windows"):
         raise sorry
     if category:

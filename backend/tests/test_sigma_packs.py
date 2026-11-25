@@ -47,7 +47,8 @@ def generated(count: int) -> dict[str, str]:
             status=("stable", "test", "experimental", "stable", "stable")[kind],
             level=("high", "medium", "high", "low", "high")[kind],
             product="linux" if kind == 4 else "windows",
-            service="auditd" if kind == 4 else "security",
+            service="" if kind == 4 else "security",
+            category="network_connection" if kind == 4 else "",
         )
     return found
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarClock, Clock, Files, Flag, MessageSquarePlus, ShieldAlert, Terminal, X } from 'lucide-react'
+import { CalendarClock, Clock, Files, Flag, Info, MessageSquarePlus, ShieldAlert, Terminal, X } from 'lucide-react'
 import { Badge, Button, Modal, Select, ServerTable, StatCard, Tabs, tabId } from '../../ui/index.js'
 import SourceFiles from '../../evidence/SourceFiles.jsx'
 import DetectionsSection from '../../evidence/DetectionsSection.jsx'
@@ -12,33 +12,50 @@ import { useAuth } from '../../../context/AuthContext.jsx'
 import { useContextMenu } from '../../../context/ContextMenuContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
-import { ARTIFACT_CATEGORIES, getArtifactCategoryById, sourceNameByKey } from '../../../config/artifacts.js'
+import {
+  ARTIFACT_CATEGORIES,
+  HIVE_HELP,
+  HIVE_OPTION,
+  HIVE_SOURCE,
+  SRUM_OPTION,
+  SRUM_SOURCE,
+  getArtifactCategoryById,
+  sourceNameByKey,
+} from '../../../config/artifacts.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
 import {
   ENDPOINT_KIND,
   OTHER,
+  addOptions,
+  categoriesOfFile,
   categoryItems,
   categoryOfSource,
   categoryTotals,
   columnsOf,
   countsBySource,
   dataChip,
-  dataOf,
   expectedSources,
   fieldsOf,
   incidentRange,
+  isMultiSource,
+  labelOfFile,
+  notesOf,
   otherOptions,
   otherSources,
   partialCategories,
+  presentKeys,
   sourceFilter,
   sourceKeyOf,
   sourceOptions,
   sourcePrefix,
   statFilters,
+  timeLabelOf,
+  valueOf,
   withData,
   withoutData,
 } from '../../../domain/endpointPage.js'
 import { COUNT_SHOWN_CAP } from '../../../domain/serverTable.js'
+import { sizeText } from '../../../domain/transfers.js'
 import { detectionTone, levelsText, ruleChipValue } from '../../../domain/detections.js'
 import { formatDateTime } from '../../../lib/time.js'
 import { useDetections } from '../../../lib/useDetections.js'
@@ -115,9 +132,10 @@ function Records({
 }) {
   const isOther = category.id === OTHER
   const prefix = sourcePrefix(os, category.id)
+  // The names of the sources no category claims, from the records themselves (a hive file's own name holds none).
   const otherNames = useMemo(
-    () => [...new Set(otherSources(sources, os, ARTIFACT_CATEGORIES).map((source) => source.source))],
-    [sources, os],
+    () => Object.keys(counts).filter((name) => categoryOfSource(name, os, ARTIFACT_CATEGORIES) === OTHER),
+    [counts, os],
   )
   const options = useMemo(
     () => (isOther ? otherOptions(otherNames, counts) : sourceOptions(category, os, counts)),
@@ -281,7 +299,7 @@ function Records({
     },
     {
       key: 'ts',
-      label: 'Time',
+      label: timeLabelOf(category, os, source),
       order: 'time',
       render: (row) => (
         <span className="whitespace-nowrap font-mono text-xs text-fg">{row.ts ? formatDateTime(row.ts) : '—'}</span>
@@ -303,7 +321,7 @@ function Records({
           hideable: index > 0,
           render: (row) => (
             <span className={column.mono ? 'break-all font-mono text-xs text-fg' : 'break-words text-xs text-fg'}>
-              {dataOf(row, column.key) || '—'}
+              {valueOf(row, column, sizeText) || '—'}
               {index === 0 && row.note && <span className="ml-2 font-sans text-fg-muted">— {row.note}</span>}
             </span>
           ),
@@ -399,6 +417,12 @@ function Records({
 
   return (
     <div className="space-y-4">
+      {notesOf(category, os, counts).map((note) => (
+        <p key={note} className="flex items-start gap-2 border border-line bg-panel p-3 text-xs text-fg-muted">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          {note}
+        </p>
+      ))}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={category.icon} label="Entries" value={stats?.entries ?? '—'} />
         <StatCard icon={Clock} label="With timestamp" value={stats?.timed ?? '—'} />
@@ -483,6 +507,7 @@ export default function EndpointArtifactsTab({ incident }) {
   const [categoryId, setCategoryId] = useState(ARTIFACT_CATEGORIES[0].id)
   const [counts, setCounts] = useState(null) // records per source name, from the server
   const [sources, setSources] = useState([])
+  const [gave, setGave] = useState({}) // file id -> the source names its records have (a hive, SRUDB.dat)
   const [reloadKey, setReloadKey] = useState(0)
   const [addAs, setAddAs] = useState('')
   const [showScripts, setShowScripts] = useState(false)
@@ -494,7 +519,7 @@ export default function EndpointArtifactsTab({ incident }) {
 
   const os = getOsById(incident.os) ? incident.os : DEFAULT_OS
   const osLabel = getOsById(os)?.label ?? os
-  const others = useMemo(() => otherSources(sources, os, ARTIFACT_CATEGORIES), [sources, os])
+  const others = useMemo(() => otherSources(sources, os, ARTIFACT_CATEGORIES, gave), [sources, os, gave])
   const hasOther = others.length > 0
   const isOther = categoryId === OTHER && hasOther
   const category = isOther ? OTHER_CATEGORY : (getArtifactCategoryById(categoryId) ?? ARTIFACT_CATEGORIES[0])
@@ -524,6 +549,42 @@ export default function EndpointArtifactsTab({ incident }) {
     return () => controller.abort()
   }, [incident.id, archived, reloadKey])
 
+  // A hive and SRUDB.dat are one file for several sources: ask what each gave (its records' own sources).
+  const multi = useMemo(
+    () =>
+      sources
+        .filter((file) => isMultiSource(file.source))
+        .map((file) => `${file.id}:${file.kept}:${file.state}`)
+        .join('|'),
+    [sources],
+  )
+  useEffect(() => {
+    const files = sources.filter((file) => isMultiSource(file.source))
+    if (archived || files.length === 0) {
+      setGave({})
+      return undefined
+    }
+    const controller = new AbortController()
+    Promise.all(
+      files.map((file) =>
+        evidence
+          .stack(incident.id, {
+            field: 'source',
+            filters: { kind: ENDPOINT_KIND, sourceId: file.id },
+            limit: 50,
+            signal: controller.signal,
+          })
+          .then((answer) => [file.id, answer.values.map((item) => item.value)])
+          .catch(() => [file.id, []]),
+      ),
+    ).then((pairs) => {
+      if (!controller.signal.aborted) setGave(Object.fromEntries(pairs))
+    })
+    return () => controller.abort()
+    // The files are read through `multi`: another list with the same files and counts asks nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incident.id, archived, multi])
+
   const totals = useMemo(() => categoryTotals(ARTIFACT_CATEGORIES, os, counts ?? {}), [os, counts])
   const anyRecords = Object.values(totals).some((count) => count > 0)
   const found = useDetections(incident.id, {
@@ -532,34 +593,52 @@ export default function EndpointArtifactsTab({ incident }) {
     enabled: !archived && anyRecords,
   })
   const items = useMemo(
-    () => categoryItems(ARTIFACT_CATEGORIES, totals, partialCategories(sources, os, ARTIFACT_CATEGORIES), hasOther),
-    [totals, sources, os, hasOther],
+    () =>
+      categoryItems(ARTIFACT_CATEGORIES, totals, partialCategories(sources, os, ARTIFACT_CATEGORIES, gave), hasOther),
+    [totals, sources, os, hasOther, gave],
   )
 
-  // The files of the page go to the source chosen here: the system, the category and the id.
-  const target = expected.some((item) => item.key === addAs) ? addAs : (expected[0]?.key ?? '')
-  const uploadParams = useMemo(
-    () => (target ? { source: `${sourcePrefix(os, category.id)}${target}` } : null),
-    [os, category.id, target],
+  // The files of the page go to the source chosen here: a file of its own, or the hive / SRUDB.dat that fills several.
+  const options = useMemo(
+    () =>
+      addOptions(category, os, {
+        hiveSource: HIVE_SOURCE,
+        hiveLabel: HIVE_OPTION,
+        srumSource: SRUM_SOURCE,
+        srumLabel: SRUM_OPTION,
+      }),
+    [category, os],
   )
+  const target = options.some((item) => item.key === addAs) ? addAs : (options[0]?.key ?? '')
+  const uploadParams = useMemo(() => {
+    const chosen = options.find((item) => item.key === target)
+    return chosen ? { source: chosen.source } : null
+  }, [options, target])
+  const hasHive = categorySources.some((source) => source.via === 'hive')
   const keepOfCategory = useCallback(
-    (source) =>
-      isOther
-        ? categoryOfSource(source.source, os, ARTIFACT_CATEGORIES) === OTHER
-        : sourceKeyOf(source, os, category.id) !== null,
-    [isOther, os, category.id],
+    (file) => {
+      const mine = categoriesOfFile(file, os, ARTIFACT_CATEGORIES, gave)
+      return isOther ? mine.includes(OTHER) : mine.includes(category.id)
+    },
+    [isOther, os, category.id, gave],
   )
-  const matchSource = useCallback((source) => sourceKeyOf(source, os, category.id), [os, category.id])
+  // A file of its own satisfies its row; a hive's rows are satisfied by their records (`present`).
+  const matchSource = useCallback(
+    (file) => (isMultiSource(file.source) ? null : sourceKeyOf(file, os, category.id)),
+    [os, category.id],
+  )
+  const present = useMemo(() => presentKeys(category, os, counts ?? {}), [category, os, counts])
+  const labelOf = useCallback((file) => labelOfFile(file, os, ARTIFACT_CATEGORIES, gave), [os, gave])
   const hasScripts = categorySources.some((source) => source.mode !== 'file' && source.script)
 
   const help = (
     <>
-      {canWrite && expected.length > 0 && (
+      {canWrite && options.length > 0 && (
         <Select
           label="Add files as"
           value={target}
           onChange={setAddAs}
-          options={expected.map((item) => ({
+          options={options.map((item) => ({
             value: item.key,
             label: item.label,
           }))}
@@ -587,9 +666,14 @@ export default function EndpointArtifactsTab({ incident }) {
       <div role="tabpanel" aria-labelledby={tabId('endpoint', category.id)} className="space-y-6">
         {!isOther && categorySources.length === 0 && (
           <p className="border border-line bg-panel p-4 text-sm text-fg-muted">
-            No fully-custom collection method for <strong>{category.label.toLowerCase()}</strong> on {osLabel}: the
-            standard artifacts here require third-party DFIR parsers, so this category is empty for this host OS. Switch
-            the incident OS, or use another tab.
+            Nik reads no <strong>{category.label.toLowerCase()}</strong> files for {osLabel}: this category is empty for
+            this host OS. Switch the incident OS, or use another tab.
+          </p>
+        )}
+        {hasHive && !isOther && (
+          <p className="flex items-start gap-2 border border-line bg-panel p-3 text-xs text-fg-muted">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {HIVE_HELP}
           </p>
         )}
         <SourceFiles
@@ -599,6 +683,8 @@ export default function EndpointArtifactsTab({ incident }) {
           uploadParams={uploadParams}
           expected={expected}
           match={matchSource}
+          present={present}
+          labelOf={labelOf}
           title={`Sources — ${category.label} (${osLabel})`}
           help={help}
           canWrite={canWrite && categorySources.length > 0 && !isOther}

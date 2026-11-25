@@ -18,7 +18,7 @@ import json
 import re
 from typing import Any
 
-from sqlalchemy import String, and_, bindparam, case, func, or_, select
+from sqlalchemy import Boolean, String, and_, bindparam, case, func, or_, select
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.sql.functions import FunctionElement
@@ -52,7 +52,7 @@ class json_text(FunctionElement):  # noqa: N801 - named as the helpers of query/
         if not KEY.fullmatch(key or ""):
             raise BadQuery("A key of data is made of letters, digits and _ . : - (80 at most)")
         self.key = key
-        super().__init__(column, bindparam("json_key", key, type_=String))
+        super().__init__(column, bindparam(None, key, type_=String, unique=True))
 
 
 @compiles(json_text)
@@ -69,6 +69,43 @@ def _json_text_sqlite(element: json_text, compiler: Any, **kw: Any) -> str:
 def _json_text_postgresql(element: json_text, compiler: Any, **kw: Any) -> str:
     column, key = (compiler.process(clause, **kw) for clause in element.clauses.clauses)
     return f"({column} ->> CAST({key} AS TEXT))"
+
+
+class json_has(FunctionElement):  # noqa: N801 - named as json_text
+    """True when the array at the top-level key of a JSON column holds the text ``value``: JSONB containment on
+    PostgreSQL, a ``json_each`` of the key on SQLite. A key that is no array holds nothing."""
+
+    type = Boolean()
+    inherit_cache = False
+
+    def __init__(self, column: Any, key: str, value: str):
+        if not KEY.fullmatch(key or ""):
+            raise BadQuery("A key of data is made of letters, digits and _ . : - (80 at most)")
+        self.key = key
+        super().__init__(
+            column,
+            bindparam(None, key, type_=String, unique=True),
+            bindparam(None, json.dumps({key: [value]}), type_=String, unique=True),
+            bindparam(None, value, type_=String, unique=True),
+        )
+
+
+@compiles(json_has)
+def _json_has_sqlite(element: json_has, compiler: Any, **kw: Any) -> str:
+    column = compiler.process(element.clauses.clauses[0], **kw)
+    value = compiler.process(element.clauses.clauses[3], **kw)
+    path = "'$.\"" + element.key + "\"'"
+    return (
+        f"(json_type({column}, {path}) = 'array' AND EXISTS "
+        f"(SELECT 1 FROM json_each({column}, {path}) AS held WHERE held.value = {value}))"
+    )
+
+
+@compiles(json_has, "postgresql")
+def _json_has_postgresql(element: json_has, compiler: Any, **kw: Any) -> str:
+    column = compiler.process(element.clauses.clauses[0], **kw)
+    held = compiler.process(element.clauses.clauses[2], **kw)
+    return f"({column} @> CAST({held} AS JSONB))"
 
 
 # --------------------------------------------------------------------------- #
@@ -97,6 +134,13 @@ def channels_of(row: EvidenceSource) -> list[str]:
         return []
     count = {name: n for name, n in held.items() if isinstance(n, int) and not isinstance(n, bool)}
     return sorted(count, key=lambda name: (-count[name], name))[:CHANNELS_SHOWN]
+
+
+def _members_of(row: EvidenceSource) -> dict[str, Any] | None:
+    if row.kind != "collection" or row.source != "collection.zip":
+        return None
+    held = (row.report or {}).get("collection")
+    return held if isinstance(held, dict) else {}
 
 
 def source_of(row: EvidenceSource, work: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -135,6 +179,8 @@ def source_of(row: EvidenceSource, work: dict[str, Any] | None = None) -> dict[s
         "createdBy": row.created_by,
         "parsedAt": row.parsed_at,
         "collectionId": row.collection_id,
+        # A collection (a triage zip): what it holds and how far its import is (``report.collection``); None otherwise.
+        "members": _members_of(row),
         "work": work,
     }
 
@@ -172,6 +218,13 @@ def _curated() -> Any:
     return or_(*(and_(func.lower(record.channel) == name, record.event_id.in_(ids)) for name, ids in CURATED.items()))
 
 
+def _listed(value: Any) -> list[Any]:
+    """A filter that may come once as a text or several times as a list."""
+    if value is None or value == "":
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
 def _filters(incident_id: str, f: dict[str, Any]) -> list[Any]:
     record = EvidenceRecord
     where: list[Any] = [record.incident_id == incident_id]
@@ -192,20 +245,34 @@ def _filters(incident_id: str, f: dict[str, Any]) -> list[Any]:
     elif types:
         where.append(record.type.in_(types))
     # What the file is, asked of its row: no join on the main query.
-    held = []
+    # A record may say its own source (an export of Plaso holds records of every section): that one counts, and
+    # the file's own only for the records that say none.
+    held, own = [], []
     if f.get("source"):
         held.append(EvidenceSource.source == f["source"])
+        own.append(record.source == f["source"])
     if f.get("sourcePrefix"):
         held.append(EvidenceSource.source.like(_prefix(f["sourcePrefix"]), escape="\\"))
-    if f.get("profile"):
-        held.append(EvidenceSource.profile == f["profile"])
+        own.append(record.source.like(_prefix(f["sourcePrefix"]), escape="\\"))
     if held:
         files = select(EvidenceSource.id).where(EvidenceSource.incident_id == incident_id, *held)
+        where.append(or_(and_(*own), and_(record.source.is_(None), record.source_id.in_(files))))
+    if f.get("profile"):
+        files = select(EvidenceSource.id).where(
+            EvidenceSource.incident_id == incident_id, EvidenceSource.profile == f["profile"]
+        )
         where.append(record.source_id.in_(files))
     if f.get("dated") is not None:
         where.append(record.ts.is_not(None) if f["dated"] else record.ts.is_(None))
-    if f.get("dataKey"):
-        where.append(json_text(record.data, f["dataKey"]) == str(f.get("dataValue") or ""))
+    # Several keys at once (a pair is a key and the value at the same place); one text keeps working.
+    keys, values = _listed(f.get("dataKey")), _listed(f.get("dataValue"))
+    for key, value in zip(keys, values or [""] * len(keys), strict=False):
+        where.append(json_text(record.data, key) == str(value or ""))
+    for pair in _listed(f.get("dataHas")):
+        key, _, value = str(pair).partition(":")
+        where.append(json_has(record.data, key, value))
+    if f.get("kindNot"):
+        where.append(or_(record.kind.is_(None), record.kind.not_in(_listed(f["kindNot"]))))
     if f.get("matter"):
         where.append(_curated())
     if f.get("level") is not None:
@@ -508,7 +575,7 @@ def detections(db: OrmSession, incident_id: str, f: dict[str, Any], limit: int =
         files = select(EvidenceSource.id).where(
             EvidenceSource.incident_id == incident_id, EvidenceSource.source == f["source"]
         )
-        where.append(r.source_id.in_(files))
+        where.append(or_(r.source == f["source"], and_(r.source.is_(None), r.source_id.in_(files))))
     joined = select(d.rule_id).select_from(d).join(r, r.id == d.record_id).where(*where)
     top = func.max(d.level)
     count = func.count()

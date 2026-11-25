@@ -376,8 +376,11 @@ def test_a_rule_nik_cannot_run_is_listed_with_its_reason_not_as_an_error():
         assert document["errors"] == [], document["errors"]
         return document["rules"][0]
 
-    linux = only("", ("category: process_creation\n  product: windows", "product: linux\n  service: auditd"))
-    assert linux["supported"] is False and linux["reason"] == "Nik reads no records of this log source: linux/auditd"
+    linux = only(
+        "", ("category: process_creation\n  product: windows", "product: linux\n  category: network_connection")
+    )
+    assert linux["supported"] is False
+    assert linux["reason"] == "Nik reads no records of this log source: linux/network_connection"
     regex = GOOD.replace("Image|endswith: '\\whoami.exe'", "Image|re: '(?=a)b'")
     (document,) = check.check([{"source": regex}])["documents"]
     assert (
@@ -534,3 +537,21 @@ def test_a_text_that_names_a_correlation_as_base_is_supported_by_check():
     )
     (info,) = check.check([{"source": text}])["documents"][0]["rules"]
     assert info["kind"] == "correlation" and info["supported"] is True
+
+
+def test_a_linux_rule_is_supported_and_a_macos_process_rule_says_why_not():
+    def info(logsource: str) -> dict:
+        text = GOOD.replace(
+            "logsource:\n  category: process_creation\n  product: windows", f"logsource:\n  {logsource}"
+        )
+        (document,) = check.check([{"source": text}])["documents"]
+        assert document["errors"] == [], document["errors"]
+        return document["rules"][0]
+
+    assert info("product: linux\n  service: auditd")["supported"] is True
+    assert info("product: linux\n  category: process_creation")["supported"] is True
+    assert info("product: macos")["supported"] is True
+    mac = info("product: macos\n  category: process_creation")
+    assert (
+        mac["supported"] is False and mac["reason"] == "Nik reads no records of this log source: macos/process_creation"
+    )

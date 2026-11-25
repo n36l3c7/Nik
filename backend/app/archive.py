@@ -86,11 +86,13 @@ def _sources(db: OrmSession, incident: Incident) -> list[EvidenceSource]:
 
 
 def _can_return(source: EvidenceSource) -> bool:
-    """Whether the records of a source can be read again: it has an original, and it is a file."""
-    from .evidence import originals
+    """Whether the records of a source can be read again: it has an original, and it is a file. The row of a
+    collection zip has no records of its own (its files are sources of their own); the export of Plaso is a
+    source of kind ``collection`` too, and its records are read again from it like any file's."""
+    from .evidence import imports, originals
 
     return bool(
-        source.kind != "collection"
+        not (source.kind == "collection" and source.source == imports.COLLECTION_ZIP)
         and not source.legacy
         and source.sha256
         and originals.SHA256_RE.fullmatch(source.sha256)

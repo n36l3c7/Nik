@@ -5,7 +5,10 @@
     PUT  /files/<sha256>.bin             -> the worker is given an original of host evidence (the body)
     PUT  /rules/<sha256>                 -> the worker is given a set of Sigma rules (the body: one JSON rule per line;
                                             its SHA-256 is the name); {"rules": n}, 400 when it is not that
-    POST /recognise {"name", "fileName"} -> {"parser", "version", "kind", "source"}, or 422
+    POST /recognise {"name", "fileName"} -> {"parser", "version", "kind", "source"}; {"container": "zip", "kind":
+                                            "collection", "source": "collection.zip"} for a zip; 422 {"detail"} for a
+                                            file nothing reads (``refused`` is true for a kind of file Nik can say how
+                                            to convert: a disk image, a ``.plaso`` file)
     POST /parse {"name", "fileName", "parser"?, "source"?, "params"?, "rules"?}
                                          -> the events of the parse, one JSON object per line, as they
                                             are found (``nik_forensics/context.py`` says which). ``rules``
@@ -19,6 +22,19 @@
                                             unknown parser or a locator of the wrong shape (also one that
                                             lacks a member the parser needs), 504 after
                                             ``VIEW_SECONDS``
+    POST /unpack {"name", "fileName"?, "total"?}
+                                         -> a collection (a zip, given as ``<sha256>.bin``) unpacked in a process of
+                                            its own
+                                            (``unpack_job.py``, ``nik_forensics/triage.py``): one line per member
+                                            ``{"t": "member", "n", "path", "size", "sha256", "kind", "source", "parser",
+                                            "executable", "kept", "host", "username", "profile", "skip"?}`` and a last
+                                            ``{"t": "end", "members", "bytes", "recognised", "skipped", ...}``.
+                                            A member a parser reads is kept as a given file (``<sha256>.bin``), so the
+                                            parse that follows needs no transfer
+    POST /member {"sha256", "path", "name"?, "total"?}
+                                         -> the bytes of one member of a collection: from the files the worker holds
+                                            when
+                                            it kept it, else taken out of the zip ``name`` (409 when the zip is missing)
     POST /sigma/check {"documents": [{"source"}]}
                                          -> the rules each text holds and the errors in it, with lines
                                             (``nik_forensics/sigma/check.py``)
@@ -70,9 +86,11 @@ import hmac
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -100,6 +118,10 @@ FIND_SECONDS = 30
 # The search stops reading by itself this long after it began, and answers with where to go on from.
 FIND_STOP_SECONDS = 24
 FIND_MAX_BYTES = 256 * 1024
+UNPACKER = os.path.join(HERE, "unpack_job.py")
+# The unpacked size of a collection the worker accepts (the API says its own, never more than this), in megabytes.
+COLLECTION_MB = int(os.environ.get("FORENSICS_COLLECTION_MB", "20480"))
+MEMBER_SLOTS = 2
 SIGMA_JOB = os.path.join(HERE, "sigma_job.py")
 SIGMA_SLOTS = 2
 SIGMA_SECONDS = int(os.environ.get("FORENSICS_SIGMA_SECONDS", "120"))
@@ -111,6 +133,7 @@ _slots = threading.BoundedSemaphore(MAX_JOBS)
 _view_slots = threading.BoundedSemaphore(VIEW_SLOTS)
 _find_slots = threading.BoundedSemaphore(FIND_SLOTS)
 _sigma_slots = threading.BoundedSemaphore(SIGMA_SLOTS)
+_member_slots = threading.BoundedSemaphore(MEMBER_SLOTS)
 JOBS = jobs.Jobs()
 GIVEN = given.Given(
     os.environ.get("FORENSICS_WORK_DIR", "/work"),
@@ -127,6 +150,7 @@ _JOB_ENV = (
     "FORENSICS_JOB_MEMORY_MB",
     "FORENSICS_JOB_SECONDS",
     "FORENSICS_SIGMA_SECONDS",
+    "FORENSICS_MEMBER_MB",
     "TMPDIR",
 )
 
@@ -138,7 +162,9 @@ class Refused(Exception):
 
 
 def job_command(path: str, request: dict) -> list[str]:
-    asked = {key: request.get(key) for key in ("fileName", "parser", "source", "params", "rules") if request.get(key)}
+    asked = {
+        key: request.get(key) for key in ("fileName", "kind", "parser", "source", "params", "rules") if request.get(key)
+    }
     if asked.get("rules"):  # the job is given the file of the set, not its name
         asked["rules"] = RULES.path(str(asked["rules"])) or ""
     return [sys.executable, "-I", RUNNER, path, json.dumps(asked)]
@@ -274,12 +300,15 @@ class Handler(BaseHTTPRequestHandler):
         return body, path
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in ("/parse", "/recognise", "/view", "/find", "/sigma/check", "/sigma/try"):
+        paths = ("/parse", "/recognise", "/unpack", "/member", "/view", "/find", "/sigma/check", "/sigma/try")
+        if self.path not in paths:
             return self._send(404, {"detail": "Not found"})
         if not self._authorized():
             return self._send(401, {"detail": "Missing or wrong forensics token"})
         if self.path.startswith("/sigma/"):
             return self._sigma()
+        if self.path == "/member":
+            return self._member()
         try:
             body, path = self._request({"/view": check_view, "/find": check_find}.get(self.path))
         except Refused as refused:
@@ -297,7 +326,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(503, {"detail": "The forensics worker is busy; try again later"})
         try:
             with GIVEN.hold([name]), RULES.hold(body.get("rules")), JOBS.running(self.headers.get(jobs.HEADER)) as say:
-                self._parse(path, body, say)
+                if self.path == "/unpack":
+                    self._unpack(path, body, say)
+                else:
+                    self._parse(path, body, say)
         finally:
             _slots.release()
 
@@ -352,16 +384,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(500, {"detail": f"The rules could not be run: {detail}"})
 
     def _recognise(self, path: str, name: str, body: dict) -> None:
-        """Which parser reads the file: asked of a job too, since looking is already reading."""
+        """What the file is, asked of a job too, since looking is already reading (``triage.what_is``): a parser
+        and its source, a zip (a collection), or a sentence for a file Nik does not read."""
         code = (
             "import json,sys\n"
             f"sys.path.insert(0, {HERE!r})\n"
-            "from nik_forensics import parsers\n"
-            "try:\n"
-            "    m, s = parsers.recognise(sys.argv[1], sys.argv[2])\n"
-            "    print(json.dumps({'parser': m.NAME, 'version': m.VERSION, 'kind': m.KIND, 'source': s}))\n"
-            "except parsers.UnknownParser as error:\n"
-            "    print(json.dumps({'detail': str(error)})); sys.exit(3)\n"
+            "from nik_forensics import triage\n"
+            "print(json.dumps(triage.what_is(sys.argv[1], sys.argv[2])))\n"
         )
         with GIVEN.hold([name]):
             try:
@@ -378,7 +407,13 @@ class Handler(BaseHTTPRequestHandler):
             said = json.loads(done.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
         except (ValueError, IndexError):
             return self._send(422, {"detail": "The file could not be recognised"})
-        self._send(200 if done.returncode == 0 else 422, said)
+        if not isinstance(said, dict) or done.returncode != 0:
+            return self._send(422, {"detail": "The file could not be recognised"})
+        if said.get("refused"):
+            return self._send(422, {"detail": said["refused"], "refused": True})
+        if said.get("unknown"):
+            return self._send(422, {"detail": said["unknown"]})
+        self._send(200, said)
 
     def _view(self, path: str, name: str, body: dict) -> None:
         """The piece of the original a record came from: asked of a child that reads the file around the place."""
@@ -508,9 +543,121 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(f"{len(data):x}\r\n".encode("ascii") + data + b"\r\n")
 
     def _parse(self, path: str, body: dict, say) -> None:
+        self._relay(job_command(path, body), say, JOB_SECONDS + 60)
+
+    def _unpack(self, path: str, body: dict, say) -> None:
+        """A collection unpacked by a child (``unpack_job.py``). What the child keeps lands in the folder of the files
+        the worker holds, under the SHA-256 of each member; the lines say which."""
+        try:
+            limit = COLLECTION_MB * 1024 * 1024
+            total = min(int(body.get("total") or limit), limit)
+        except (TypeError, ValueError):
+            return self._send(400, {"detail": "total must be a number of bytes"})
+        try:
+            # Room for what a zip of this size is likely to give, not for the most the caller allows: the job checks the
+            # disk again before each member it writes.
+            GIVEN.make_room(min(total, 8 * os.path.getsize(path) + 1024**3))
+        except given.Refused as refused:
+            return self._send(refused.status, {"detail": refused.detail})
+        base = os.path.join(GIVEN.folder, "unpack")
+        os.makedirs(base, exist_ok=True)
+        scratch = tempfile.mkdtemp(dir=base)
+        asked = {
+            "total": total,
+            "files": os.path.join(GIVEN.folder, "files"),
+            "scratch": scratch,
+            "fileName": str(body.get("fileName") or "")[:500],
+        }
+
+        def kept(line: bytes) -> None:
+            # What the job keeps is marked as used now: the worker does not delete it as idle before the parse asks.
+            if line.startswith(b'{"t":"member"') and b'"kept":true' in line:
+                try:
+                    GIVEN.path(f"{json.loads(line)['sha256']}.bin")
+                except (ValueError, KeyError):
+                    return
+
+        try:
+            command = [sys.executable, "-I", UNPACKER, "list", path, json.dumps(asked)]
+            self._relay(command, say, JOB_SECONDS + 60, each=kept)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def _member(self) -> None:
+        """The bytes of one member of a collection: the file the worker kept when it unpacked, else taken out of the
+        zip again by a child. 409 names the zip when the worker does not hold it."""
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            body = json.loads(self.rfile.read(length) if 0 < length <= 1024 * 1024 else b"{}")
+        except ValueError:
+            return self._send(400, {"detail": "Invalid request body"})
+        if not isinstance(body, dict):
+            return self._send(400, {"detail": "Invalid request body"})
+        sha256, member = body.get("sha256"), body.get("path")
+        if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            return self._send(400, {"detail": "sha256 must be 64 hexadecimal digits"})
+        kept = f"{sha256}.bin"
+        with GIVEN.hold([kept]):
+            held = GIVEN.path(kept)
+            if held is not None:
+                return self._send_file(held)
+        name = str(body.get("name") or "")
+        if not _NAME.fullmatch(name):
+            return self._send(400, {"detail": "name must be <sha256>.bin"})
+        if not isinstance(member, str) or not member or len(member) > 1000:
+            return self._send(400, {"detail": "path must be the path of a member"})
+        zipped = GIVEN.path(name)
+        if zipped is None:
+            return self._send(409, {"detail": "The worker does not hold this file", "missing": [name]})
+        try:
+            limit = COLLECTION_MB * 1024 * 1024
+            total = min(int(body.get("total") or limit), limit)
+        except (TypeError, ValueError):
+            return self._send(400, {"detail": "total must be a number of bytes"})
+        if not _member_slots.acquire(blocking=False):
+            return self._send(503, {"detail": "The forensics worker is busy; try again later"})
+        base = os.path.join(GIVEN.folder, "unpack")
+        os.makedirs(base, exist_ok=True)
+        scratch = tempfile.mkdtemp(dir=base)
+        try:
+            asked = {"path": member, "sha256": sha256, "out": os.path.join(scratch, "member"), "total": total}
+            command = [sys.executable, "-I", UNPACKER, "member", zipped, json.dumps(asked)]
+            with GIVEN.hold([name]):
+                done = subprocess.run(  # noqa: S603 - fixed command, the zip and the request are arguments
+                    command, capture_output=True, timeout=JOB_SECONDS, env=job_env(), cwd="/", check=False
+                )
+            try:
+                said = json.loads(done.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                said = {}
+            if done.returncode == 0 and os.path.isfile(asked["out"]):
+                return self._send_file(asked["out"])
+            detail = str(said.get("detail") or "") if isinstance(said, dict) else ""
+            status = 404 if done.returncode == 4 else 422 if done.returncode == 2 else 500
+            self._send(status, {"detail": detail or "The member could not be read"})
+        except subprocess.TimeoutExpired:
+            self._send(504, {"detail": "The member took too long to read"})
+        finally:
+            _member_slots.release()
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def _send_file(self, path: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(os.path.getsize(path)))
+        self.end_headers()
+        try:
+            with open(path, "rb") as handle:
+                while piece := handle.read(1024 * 1024):
+                    self.wfile.write(piece)
+        except (BrokenPipeError, ConnectionError):
+            self.close_connection = True
+
+    def _relay(self, command: list[str], say, seconds: float, each=None) -> None:
+        """Run a job and send what it writes as it writes it, in chunks. ``each(line)`` sees each line it wrote."""
         say("starting")
         job = subprocess.Popen(  # noqa: S603 - fixed command, the file and the request are arguments
-            job_command(path, body),
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
@@ -523,7 +670,7 @@ class Handler(BaseHTTPRequestHandler):
             timed_out.set()
             job.kill()
 
-        clock = threading.Timer(JOB_SECONDS + 60, stop)
+        clock = threading.Timer(seconds, stop)
         clock.daemon = True
         clock.start()
         self.send_response(200)
@@ -536,6 +683,8 @@ class Handler(BaseHTTPRequestHandler):
             size = 0
             last = time.monotonic()
             for line in job.stdout:
+                if each is not None:
+                    each(line)
                 held.append(line)
                 size += len(line)
                 sent += 1

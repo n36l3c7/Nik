@@ -1,16 +1,18 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, List, Plus } from 'lucide-react'
+import { Archive, FolderOpen, List, Plus } from 'lucide-react'
 import { useCanWrite } from '../../../lib/useCanWrite.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
 import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
+import { useHostFileSender } from '../../../lib/useHostFileSender.js'
 import { normalizeOs } from '../../../config/os.js'
 import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
 import { Button, EmptyState, ErrorBoundary, Wait } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import SystemDialog from './SystemDialog.jsx'
+import CollectionsBlock from '../../evidence/CollectionsBlock.jsx'
 
 /*
  * ============================================================================
@@ -57,6 +59,8 @@ const ROW =
  */
 export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }) {
   const fileInput = useRef(null)
+  const collectionInput = useRef(null)
+  const sendHostFile = useHostFileSender()
   const pane = useResizablePane('incident.evidence', { initial: 260, min: 200, max: 480 })
   const [query, setQuery] = useState('')
   const menu = useObjectMenu()
@@ -129,6 +133,28 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
                   const file = event.target.files?.[0]
                   event.target.value = ''
                   if (file) onAddFile(file)
+                }}
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Archive}
+                className="w-full justify-center"
+                title="A triage zip (KAPE, Velociraptor) or a psort export: Nik lists what it holds and you choose what to import"
+                onClick={() => collectionInput.current?.click()}
+              >
+                Import a collection…
+              </Button>
+              <input
+                ref={collectionInput}
+                type="file"
+                accept=".zip,.jsonl,.csv"
+                className="hidden"
+                aria-label="A collection to import"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) sendHostFile(file, incident.id)
                 }}
               />
             </>
@@ -231,6 +257,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
       </nav>
       <ResizeHandle {...pane.handle} label="Resize the list of evidence" className="hidden md:block" />
       <div className="min-w-0 flex-1 md:pl-4">
+        <CollectionsBlock incident={incident} canWrite={canWrite} />
         {Viewer ? (
           <Suspense fallback={<Wait>Loading…</Wait>}>
             <ErrorBoundary resetKey={`${incident.id}:${shownKind.id}:${focus ?? ''}`}>

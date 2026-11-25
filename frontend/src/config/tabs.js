@@ -3,6 +3,7 @@ import {
   Braces,
   Bug,
   Crosshair,
+  Database,
   FolderSearch,
   Globe,
   HardDrive,
@@ -52,6 +53,7 @@ const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'
 const BrowserAnalysisTab = lazy(() => import('../components/tabs/browser/BrowserAnalysisTab.jsx'))
 const CommandHistoryTab = lazy(() => import('../components/tabs/commands/CommandHistoryTab.jsx'))
 const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
+const DiskTab = lazy(() => import('../components/tabs/disk/DiskTab.jsx'))
 const EventLogsTab = lazy(() => import('../components/tabs/eventlogs/EventLogsTab.jsx'))
 const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/MalwareAnalysisTab.jsx'))
 const MailAnalysisTab = lazy(() => import('../components/tabs/mail/MailAnalysisTab.jsx'))
@@ -210,6 +212,16 @@ export const ANALYSIS_TABS = [
     group: 'host',
     icon: HardDrive,
     component: EndpointArtifactsTab,
+    // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
+  },
+  {
+    id: 'disk',
+    evidence: true,
+    label: 'Disk (NTFS)',
+    short: 'Disk',
+    group: 'host',
+    icon: Database,
+    component: DiskTab,
     // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
   },
   {

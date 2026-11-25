@@ -15,7 +15,9 @@ into the parse report:
 
     {"t": "source", "parser", "version", "kind", "source", "host", "username"}
     {"t": "r", "key", "type", "ts", "seq", "host", "username", "event_id", "channel", "summary",
-     "data", "loc", "trunc", "ioc"}
+     "data", "loc", "trunc", "ioc", "src", "k"}         ("src" only when a record belongs to another source than the
+                                                         file's own: a registry hive holds several; "k" its section,
+                                                         when it is not the file's: a Plaso export)
     {"t": "skip", "reason", "offset", "length", "lost", "detail"}
     {"t": "note", "reason", "count", "detail"}
     {"t": "det", "key", "rule"}                                     (a rule matched the record before it; "records",
@@ -134,6 +136,8 @@ class Context:
         data: dict[str, Any] | None = None,
         loc: dict[str, Any] | None = None,
         ioc: list[tuple[str, str]] | tuple = (),
+        source: str = "",
+        kind: str = "",
     ) -> None:
         held, cut = self._cut(data or {})
         event = {
@@ -152,6 +156,10 @@ class Context:
             "trunc": cut,
             "ioc": [[str(kind)[:16], str(value)[:1024]] for kind, value in ioc if value],
         }
+        if source:
+            event["src"] = str(source)[:80]
+        if kind:
+            event["k"] = str(kind)[:16]
         self.seq += 1
         if not self._write(event):
             # Too large to send even with its values cut: the backend is told it was there.
@@ -163,7 +171,7 @@ class Context:
             self.last_ts = ts if self.last_ts is None else max(self.last_ts, ts)
         if self.detector is not None:
             for rule in self.detector.see(
-                self.kind,
+                kind or self.kind,
                 event["key"],
                 event["type"],
                 event["ts"],
@@ -173,7 +181,7 @@ class Context:
                 str(channel or ""),
                 str(summary or ""),
                 data or {},
-                self.source_name,
+                source or self.source_name,
             ):
                 self._write({"t": "det", "key": event["key"], "rule": rule})
 

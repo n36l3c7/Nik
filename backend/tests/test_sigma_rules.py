@@ -97,14 +97,14 @@ def test_without_the_worker_a_rule_cannot_be_saved_and_says_why(admin: TestClien
 
 
 def test_a_rule_the_worker_cannot_run_is_listed_with_why_and_is_not_switched_on(admin: TestClient, fake: FakeSigma):
-    made = save(admin, rule_text(ID_A, product="linux", service="auditd", title="Auditd"))
+    made = save(admin, rule_text(ID_A, product="linux", service="", category="network_connection", title="Auditd"))
     (shown,) = made.json()["rules"]
     assert shown["supported"] is False and shown["enabled"] is False
-    assert shown["reason"] == "Nik reads no records of this log source: linux/auditd"
+    assert shown["reason"] == "Nik reads no records of this log source: linux/network_connection"
     refused = admin.patch(f"{URL}/{ID_A}", json={"enabled": True})
-    assert refused.status_code == 409 and "linux/auditd" in refused.json()["detail"]
+    assert refused.status_code == 409 and "linux/network_connection" in refused.json()["detail"]
     # Asked to be on when saved, it still is not.
-    again = save(admin, rule_text(ID_B, product="linux", service="auditd"), enabled=True)
+    again = save(admin, rule_text(ID_B, product="linux", service="", category="network_connection"), enabled=True)
     assert again.json()["rules"][0]["enabled"] is False
     assert admin.post(f"{URL}/bulk", json={"enabled": True, "ids": [ID_A]}).json() == {"matched": 0, "changed": 0}
 
@@ -154,7 +154,15 @@ def many(admin: TestClient, fake: FakeSigma) -> list[str]:
         rule_text(ids[3], title="Delta low", level="low", event=4, status="experimental"),
         rule_text(ids[4], title="Epsilon info", level="informational", event=5),
         rule_text(ids[5], title="Zeta process", level="high", event=6, category="process_creation", service=""),
-        rule_text(ids[6], title="Eta auditd", level="high", event=7, product="linux", service="auditd"),
+        rule_text(
+            ids[6],
+            title="Eta auditd",
+            level="high",
+            event=7,
+            product="linux",
+            service="",
+            category="network_connection",
+        ),
     ]
     assert save(admin, "---\n".join(texts)).status_code == 201
     return ids
@@ -319,18 +327,18 @@ def test_the_rules_nik_ships_are_seeded_as_the_pack_nik_and_follow_a_release(
     admin: TestClient, fake: FakeSigma, tmp_path, monkeypatch
 ):
     shipped = seed.shipped()
-    assert len(shipped) == 53  # the files of backend/app/sigma/pack, one rule each
+    assert len(shipped) == 60  # the files of backend/app/sigma/pack, one rule each
     with SessionLocal() as db:
-        assert seed.seed(db) == 53
+        assert seed.seed(db) == 60
         db.commit()
         assert seed.seed(db) == 0  # once
     listed = admin.get(URL, params={"pack": "nik", "order": "title", "limit": 100}).json()
     shown = [r["title"] for r in listed["rules"]]
-    assert len(shown) == 53
+    assert len(shown) == 60
     expected = {"New Service Installed", "Windows Security Event Log Cleared", "Windows System Event Log Cleared"}
     assert expected <= set(shown)
     assert all(r["pack"] == "nik" and r["enabled"] and r["supported"] and not r["edited"] for r in listed["rules"])
-    assert fake.of("/sigma/check") and len(fake.of("/sigma/check")[0]["documents"]) == 53
+    assert fake.of("/sigma/check") and len(fake.of("/sigma/check")[0]["documents"]) == 60
     cleared = next(r for r in listed["rules"] if r["title"] == "Windows Security Event Log Cleared")
     assert (cleared["level"], cleared["author"], cleared["service"]) == (4, "Nik", "security")
     assert "attack.t1070.001" in cleared["tags"]
@@ -352,7 +360,7 @@ def test_the_rules_nik_ships_are_seeded_as_the_pack_nik_and_follow_a_release(
         assert seed.seed(db) == 3  # one added, two gone
         db.commit()
     after = titles(admin, pack="nik")
-    assert len(after) == 52 and "A new rule of Nik" in after and "Windows System Event Log Cleared" in after
+    assert len(after) == 59 and "A new rule of Nik" in after and "Windows System Event Log Cleared" in after
     assert "New Service Installed" not in after and "Windows Security Event Log Cleared" not in after
 
 
@@ -401,22 +409,22 @@ def test_a_rule_of_the_pack_a_person_changed_keeps_their_text_and_can_be_reset(
 def test_rules_stored_while_the_worker_was_away_are_checked_when_it_answers(admin: TestClient, monkeypatch):
     monkeypatch.setattr(settings, "FORENSICS_URL", "")
     with SessionLocal() as db:
-        assert seed.seed(db) == 53
+        assert seed.seed(db) == 60
         db.commit()
     unchecked = admin.get(URL, params={"limit": 100}).json()["rules"]
-    assert [r["checked"] for r in unchecked] == [False] * 53 and [r["supported"] for r in unchecked] == [False] * 53
+    assert [r["checked"] for r in unchecked] == [False] * 60 and [r["supported"] for r in unchecked] == [False] * 60
     assert all(r["reason"] == rules.NOT_CHECKED for r in unchecked)
     with SessionLocal() as db:
         assert ruleset.current(db) is None  # a rule not checked is not run
         assert recheck.run_once() == 0
     fake = FakeSigma(monkeypatch, engine="7")
-    assert recheck.run_once() == 53
+    assert recheck.run_once() == 60
     checked = admin.get(URL, params={"limit": 100}).json()["rules"]
     assert all(r["checked"] and r["supported"] and r["enabled"] for r in checked)
     assert row(checked[0]["id"]).engine == "7" and admin.get(f"{URL}/summary").json()["engine"] == "7"
     assert recheck.run_once() == 0  # nothing to do twice
     with SessionLocal() as db:
-        assert ruleset.current(db).count == 53
+        assert ruleset.current(db).count == 60
     # The worker is updated: every rule is checked again, and one of them can no longer be run.
     fake.engine = "8"
     worker.forget()
@@ -429,7 +437,7 @@ def test_rules_stored_while_the_worker_was_away_are_checked_when_it_answers(admi
         return found
 
     monkeypatch.setattr(fake, "info", narrower)
-    assert recheck.run_once() == 53
+    assert recheck.run_once() == 60
     after = {r["title"]: r for r in admin.get(URL, params={"limit": 100}).json()["rules"]}
     assert after["New Service Installed"]["supported"] is False and after["New Service Installed"]["reason"].startswith(
         "The modifier"
@@ -438,20 +446,20 @@ def test_rules_stored_while_the_worker_was_away_are_checked_when_it_answers(admi
     assert row(after["New Service Installed"]["id"]).engine == "8"
     assert after["New Service Installed"]["enabled"] is True  # a person's choice stays; the set leaves it out
     with SessionLocal() as db:
-        assert ruleset.current(db).count == 52
+        assert ruleset.current(db).count == 59
 
 
 def test_a_rule_never_checked_that_turns_out_unsupported_is_switched_off(admin: TestClient, monkeypatch):
     monkeypatch.setattr(settings, "FORENSICS_URL", "")
     with SessionLocal() as db:
-        info = rules.quick(rule_text(ID_A, product="linux", service="auditd"))
+        info = rules.quick(rule_text(ID_A, product="linux", service="", category="network_connection"))
         rules.add(db, info, "", "tester")
         db.commit()
     assert admin.get(f"{URL}/{ID_A}").json()["enabled"] is True  # as it will be when it can run
     FakeSigma(monkeypatch)
     assert recheck.run_once() == 1
     shown = admin.get(f"{URL}/{ID_A}").json()
-    assert shown["supported"] is False and shown["enabled"] is False and "linux/auditd" in shown["reason"]
+    assert shown["supported"] is False and shown["enabled"] is False and "linux/network_connection" in shown["reason"]
 
 
 def test_the_recheck_route_starts_the_check_and_needs_the_worker(admin: TestClient, monkeypatch):

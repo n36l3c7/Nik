@@ -40,10 +40,13 @@ def _refused(error: uploads.UploadError) -> JSONResponse:
 @router.post("", status_code=201)
 def open_upload(body: UploadIn, caller: Principal = Depends(writer_principal), db: OrmSession = Depends(get_db)):
     """Open a session for a file of ``size`` bytes. ``params.kind`` is the section (``eventlog``,
-    ``endpoint``, ``browser``, ``commands``, ``disk``, ``syslog``, ``collection``); ``source``, ``host``,
-    ``user`` and ``profile`` are optional. Give ``sha256`` to have the file checked when it is whole."""
-    if str(body.params.get("kind") or "") not in imports.KINDS:
-        raise HTTPException(status_code=400, detail="params.kind must be one of " + ", ".join(imports.KINDS))
+    ``endpoint``, ``browser``, ``commands``, ``disk``, ``syslog``, ``collection``) or ``auto`` (or none): a file sent
+    without a section is recognised by the server when it is whole and filed under its section and source, a zip is a
+    collection, and anything else ends the session with ``recognised`` false and a sentence in ``error``. ``source``,
+    ``host``, ``user`` and ``profile`` are optional. Give ``sha256`` to have the file checked when it is whole.
+    Once it is filed the session says where the file went: ``kind``, ``source``, ``sourceId``."""
+    if str(body.params.get("kind") or "") not in ("", "auto", *imports.KINDS):
+        raise HTTPException(status_code=400, detail="params.kind must be one of " + ", ".join(("auto", *imports.KINDS)))
     try:
         row = uploads.open_session(
             db, caller.actor, body.incidentId, body.fileName, body.size, body.sha256, dict(body.params)

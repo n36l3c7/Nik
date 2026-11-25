@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { density, fromLocalInput, recordLabel, toLocalInput } from './timeline.js'
+import { HOST_KIND_META, KINDS_OFF_BY_DEFAULT, density, fromLocalInput, recordLabel, toLocalInput } from './timeline.js'
 
 test('the density adds the events of the document to the buckets of the server', () => {
   assert.deepEqual(density(null, []), { from: null, width: 0, bars: [], peak: 0 })
@@ -48,4 +48,11 @@ test('the range inputs are local time and give back what they were given', () =>
   const ms = new Date(2026, 10, 25, 14, 30).getTime()
   assert.equal(toLocalInput(ms), '2026-11-25T14:30')
   assert.equal(fromLocalInput('2026-11-25T14:30'), ms)
+})
+
+test('the disk is a kind of the timeline that is off until the Kind filter asks for it', () => {
+  assert.deepEqual(KINDS_OFF_BY_DEFAULT, ['disk'])
+  for (const kind of ['syslog', 'disk']) assert.ok(HOST_KIND_META[kind].label && HOST_KIND_META[kind].tab, kind)
+  assert.equal(HOST_KIND_META.syslog.tab, 'eventlogs')
+  assert.equal(HOST_KIND_META.disk.tab, 'disk')
 })

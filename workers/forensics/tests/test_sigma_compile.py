@@ -295,14 +295,18 @@ def test_the_nik_product_reads_the_sections_of_its_own_records():
 
 
 def test_a_log_source_nik_has_no_records_for_is_unsupported_with_the_sentence():
-    with pytest.raises(logsource.NoRecords, match="^Nik reads no records of this log source: linux/auditd$"):
-        logsource.places("linux", None, "auditd")
+    with pytest.raises(
+        logsource.NoRecords, match="^Nik reads no records of this log source: linux/network_connection$"
+    ):
+        logsource.places("linux", "network_connection", None)
+    with pytest.raises(logsource.NoRecords, match="^Nik reads no records of this log source: macos/process_creation$"):
+        logsource.places("macos", "process_creation", None)
     with pytest.raises(logsource.NoRecords, match="windows/unheard_of"):
         logsource.places("windows", "unheard_of", None)
     with pytest.raises(logsource.NoRecords, match="nik"):
         logsource.places("nik", None, "mail")
-    engine = Engine([rule("l", {"s": {"a": "b"}, "condition": "s"}, product="linux", category=None, service="auditd")])
-    assert engine.not_evaluated() == [(engine.slots[0].rid, "Nik reads no records of this log source: linux/auditd")]
+    engine = Engine([rule("l", {"s": {"a": "b"}, "condition": "s"}, product="linux", category=None, service="ftpd2")])
+    assert engine.not_evaluated() == [(engine.slots[0].rid, "Nik reads no records of this log source: linux/ftpd2")]
 
 
 def test_a_data_name_that_collided_is_also_seen_without_the_prefix():
@@ -346,3 +350,23 @@ def test_a_value_the_rule_reads_is_the_whole_of_it_not_the_cut_one():
         engine, {"ScriptBlockText": long}, channel="Microsoft-Windows-PowerShell/Operational", event_id=4104
     ) == {"tail"}
     assert SYSMON  # (the helper's name is used elsewhere)
+
+
+def test_the_linux_and_macos_log_sources_are_placed_in_the_syslog_section():
+    kind, found = logsource.places("linux", None, "auditd")
+    assert kind == "syslog" and found == (("audit", None, None),)
+    assert {place[0] for place in logsource.places("linux", None, None)[1]} == {"auth", "journal", "audit"}
+    assert {place[0] for place in logsource.places("linux", None, "sshd")[1]} == {"auth", "journal"}
+    assert logsource.places("linux", None, "sshd")[1][0][2] == {"program": ["sshd", "sshd-session", "sshd-auth"]}
+    assert [place[0] for place in logsource.places("linux", "process_creation", None)[1]] == ["audit"]
+    assert [place[0] for place in logsource.places("linux", "process_creation", "auditd")[1]] == ["audit"]
+    assert logsource.places("macos", None, None) == ("syslog", (("unifiedlog", None, None),))
+    for product, category, service in (
+        ("linux", "file_event", None),
+        ("linux", None, "guacamole"),
+        ("linux", "file_event", "auditd"),
+        ("macos", "process_creation", None),
+        ("macos", None, "sshd"),
+    ):
+        with pytest.raises(logsource.NoRecords, match="Nik reads no records of this log source"):
+            logsource.places(product, category, service)

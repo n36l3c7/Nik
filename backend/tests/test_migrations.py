@@ -1791,3 +1791,33 @@ def test_migration_0057_on_a_server_that_never_had_keywords_changes_nothing_else
     command.upgrade(cfg, "0057_sigma")  # no settings row at all
     with engine.connect() as conn:
         assert conn.execute(sa.text("SELECT count(*) FROM sigma_rules")).scalar() == 0
+
+
+def test_migration_0058_adds_the_members_of_a_collection_and_the_source_of_a_record(tmp_path, monkeypatch):
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE evidence_members"))
+        conn.execute(sa.text("ALTER TABLE evidence_records DROP COLUMN source"))
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0057_sigma")
+    command.upgrade(cfg, "0058_collections")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "evidence_members" in inspector.get_table_names()
+        assert {"collection_id", "n", "path", "sha256", "kind", "source", "executable", "skip", "source_id"} <= {
+            column["name"] for column in inspector.get_columns("evidence_members")
+        }
+        assert "source" in {column["name"] for column in inspector.get_columns("evidence_records")}
+    command.stamp(cfg, "0057_sigma")
+    command.upgrade(cfg, "0058_collections")  # again: both are there, nothing to do
+    command.downgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "evidence_members" not in inspector.get_table_names()
+        assert "source" not in {column["name"] for column in inspector.get_columns("evidence_records")}

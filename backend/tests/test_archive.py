@@ -29,7 +29,7 @@ from app.core.models import (
     Incident,
     WarRoomEntry,
 )
-from app.evidence import originals, parse
+from app.evidence import imports, originals, parse
 from app.main import app as fastapi_app
 from tests.conftest import make_key
 from tests.test_automation_engine import (  # noqa: F401 - test_actions is a fixture
@@ -294,6 +294,63 @@ def test_taking_an_incident_out_reads_its_files_again_and_the_flags_are_on_the_r
     # And it is written to again.
     assert admin.post(f"/api/incidents/{INCIDENT}/notes", json={"text": "back"}).status_code == 201
     assert admin.patch(f"/api/incidents/{INCIDENT}", json={"status": "open"}).status_code == 200
+
+
+def test_a_plaso_export_is_archived_and_read_again_like_any_file_and_a_collection_zip_has_nothing_to_drop(
+    admin, world, monkeypatch
+):
+    plaso = b'{"data_type": "windows:evtx:record"}' + bytes([10])
+    sha256 = originals.keep_bytes(plaso)
+    zipped = originals.keep_bytes(b"PK" + bytes([3, 4]) + b" a collection")
+    with SessionLocal() as db:
+        export = imports.accept(
+            db, INCIDENT, sha256, len(plaso), "timeline.jsonl", {"kind": "collection", "source": "plaso.jsonl"}, "t"
+        )
+        zip_row = imports.accept(
+            db, INCIDENT, zipped, 20, "triage.zip", {"kind": "collection", "source": "collection.zip"}, "t"
+        )
+        zip_row.state = "listed"
+        db.commit()
+        export_id, zip_id = export.id, zip_row.id
+    worker_says(
+        monkeypatch,
+        [
+            {**SOURCE, "kind": "collection", "source": "plaso.jsonl"},
+            record(5, key="plaso:1", kind="eventlog", source="evtx"),
+            record(6, key="plaso:2", kind="eventlog", source="evtx"),
+            record(7, key="plaso:3", kind="eventlog", source="evtx"),
+            end(3, in_file=3),
+        ],
+    )
+    parse.read(export_id)
+    assert records_of(export_id) == 3
+    shown = archive_it(admin)
+    assert shown["done"] == {"files": 2, "records": 5, "kept": 5}
+    assert records_of(export_id) == 0
+    with SessionLocal() as db:
+        assert db.get(EvidenceSource, export_id).state == "archived"
+        assert db.get(EvidenceSource, export_id).kept == 3
+        assert db.get(EvidenceSource, zip_id).state == "listed", "the zip row has no records and is left as it is"
+    world.started.clear()
+    answer = admin.delete(f"/api/incidents/{INCIDENT}/archive")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["done"] == {"reading": 2}
+    assert set(world.started) == {world.source, export_id}
+    worker_says(
+        monkeypatch,
+        [
+            {**SOURCE, "kind": "collection", "source": "plaso.jsonl"},
+            record(5, key="plaso:1", kind="eventlog", source="evtx"),
+            record(6, key="plaso:2", kind="eventlog", source="evtx"),
+            record(7, key="plaso:3", kind="eventlog", source="evtx"),
+            end(3, in_file=3),
+        ],
+    )
+    parse.read(export_id)
+    assert records_of(export_id) == 3
+    with SessionLocal() as db:
+        assert db.get(EvidenceSource, export_id).state == "done"
+        assert db.get(EvidenceSource, zip_id).state == "listed"
 
 
 # --------------------------------------------------------------------------- #

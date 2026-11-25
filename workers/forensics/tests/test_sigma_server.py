@@ -45,7 +45,7 @@ def test_the_rule_set_is_asked_for_given_and_its_detections_follow_their_records
             service="application",
         ),
         rule("refused", {"s": {"Data|re": "(?=a)b"}, "condition": "s"}, category=None, service="application"),
-        rule("linux", {"s": {"a": "b"}, "condition": "s"}, product="linux", category=None, service="auditd"),
+        rule("linux", {"s": {"a": "b"}, "condition": "s"}, product="linux", category=None, service="ftpd2"),
         rule("elsewhere", {"s": {"EventID": 1003}, "condition": "s"}, category=None, service="security"),
     ]
     body, digest = ndjson(rules)

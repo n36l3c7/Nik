@@ -160,7 +160,8 @@ def _expression(field: str) -> tuple[Any, bool, bool]:
     if field == "eventId":
         return record.event_id, False, False
     if field == "source":
-        return EvidenceSource.source, True, True
+        # The source a record says it is of, else its file's.
+        return func.coalesce(record.source, EvidenceSource.source), True, True
     if field.startswith("data."):
         return json_text(record.data, field[5:]), True, False
     raise BadQuery("field is one of " + ", ".join(COLUMNS) + ", or data.<Key>")

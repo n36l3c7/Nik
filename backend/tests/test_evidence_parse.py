@@ -273,3 +273,81 @@ def test_the_report_counts_the_channels_of_a_file_up_to_the_cap():
     assert len(report.channels) == parse.CHANNELS_CAP and report.channels["c0"] == 2
     assert "c54" not in report.channels and "" not in report.channels
     assert report.out(True)["channels"] is report.channels
+
+
+def test_the_files_own_time_is_kept_with_its_source_and_sent_to_the_worker(incident, monkeypatch):
+    sha256 = originals.keep_bytes(b"Nov  5 10:00:01 h sshd[1]: x")
+    stamp = 1_700_000_000_000
+    with SessionLocal() as db:
+        rows = [
+            imports.accept(db, incident, sha256, 28, "auth.log", {"kind": "syslog", "fileTime": value}, "tester")
+            for value in (stamp,)
+        ]
+        db.commit()
+        kept = rows[0].id
+    assert source_of(kept).file_time == stamp
+    asked = worker_says(monkeypatch, [SOURCE, record(1), end(1, in_file=1)])
+    parse.read(kept)
+    assert asked[0]["params"]["file_time"] == stamp
+    # Absent or not a plausible time: nothing is sent, the worker uses the date it has.
+    for index, value in enumerate((None, "yesterday", 0, -1, True, 10**18)):
+        other = originals.keep_bytes(b"line %d" % index)
+        with SessionLocal() as db:
+            row = imports.accept(db, incident, other, 6, "auth.log", {"kind": "syslog", "fileTime": value}, "tester")
+            db.commit()
+            row_id = row.id
+        assert source_of(row_id).file_time is None, value
+        asked = worker_says(monkeypatch, [SOURCE, end(0, in_file=0)])
+        parse.read(row_id)
+        assert "file_time" not in asked[0]["params"]
+
+
+def test_a_file_sent_while_the_worker_is_full_waits_its_turn_and_is_not_failed(monkeypatch):
+    import io
+    import urllib.error
+
+    calls: list[str] = []
+    waits: list[float] = []
+
+    class Answer:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def __iter__(self):
+            return iter([b'{"t": "end", "in_file": 0, "read": 0}\n'])
+
+    def urlopen(request, timeout):
+        calls.append(request.full_url)
+        if len(calls) <= 3:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                503,
+                "busy",
+                {},
+                io.BytesIO(b'{"detail": "The forensics worker is busy; try again later"}'),
+            )
+        return Answer()
+
+    monkeypatch.setattr(settings, "FORENSICS_URL", "http://forensics.test")
+    monkeypatch.setattr(parse.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(parse.time, "sleep", waits.append)
+    events = list(parse._events("a" * 64, {"fileName": "x"}, "job"))
+    assert [event["t"] for event in events] == ["end"] and len(calls) == 4 and waits == [parse.BUSY_WAIT] * 3
+    # After the tries it gives up with the worker's own sentence; another refusal fails at once.
+    calls.clear()
+    monkeypatch.setattr(parse, "BUSY_TRIES", 2)
+    with pytest.raises(parse.ParseError, match="busy"):
+        list(parse._events("a" * 64, {"fileName": "x"}, "job"))
+    assert len(calls) == 3
+
+    def refused(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 422, "no", {}, io.BytesIO(b'{"detail": "not a file"}'))
+
+    monkeypatch.setattr(parse.urllib.request, "urlopen", refused)
+    waits.clear()
+    with pytest.raises(parse.ParseError, match="not a file"):
+        list(parse._events("a" * 64, {"fileName": "x"}, "job"))
+    assert waits == []

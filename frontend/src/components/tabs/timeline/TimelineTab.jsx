@@ -11,6 +11,7 @@ import { ARCHIVED_RECORDS_NOTE } from '../../../domain/archive.js'
 import { hostCounts } from '../../../domain/evidence.js'
 import {
   HOST_KIND_META,
+  KINDS_OFF_BY_DEFAULT,
   TIMELINE_SOURCE_META,
   buildTimelineEvents,
   density,
@@ -38,7 +39,7 @@ import { evidence } from '../../../services/api.js'
 
 const NIGHT_TOOLTIP = 'Outside configured business hours'
 const NO_FLAGS = {}
-const HOST_TABS = ['eventlogs', 'browser', 'commands', 'endpoint']
+const HOST_TABS = ['eventlogs', 'browser', 'commands', 'endpoint', 'disk']
 // The detection level has a select of its own in the toolbar.
 const HIDDEN_CHIPS = ['level']
 
@@ -57,7 +58,7 @@ const SOURCE_FILTER_OPTIONS = [
 ]
 
 const KIND_OPTIONS = [
-  { value: '', label: 'All kinds' },
+  { value: '', label: 'All kinds (not the disk)' },
   ...Object.entries(HOST_KIND_META).map(([value, meta]) => ({ value, label: meta.label })),
 ]
 
@@ -224,6 +225,8 @@ export default function TimelineTab({ incident }) {
   const flaggedDocs = useMemo(() => events.reduce((sum, event) => sum + (flags[event.id] ? 1 : 0), 0), [events, flags])
 
   // ---- The server's view of the host records: their density and how many are flagged ----
+  // Without a kind chosen the disk is left out: its $MFT and $J hold millions of records (the Kind filter switches it on).
+  const kindScope = useMemo(() => (filters.kind ? {} : { kindNot: KINDS_OFF_BY_DEFAULT.join(',') }), [filters.kind])
   const [histogram, setHistogram] = useState(null)
   const [flaggedHost, setFlaggedHost] = useState(0)
   const hostTotal = HOST_TABS.reduce((sum, tab) => sum + hostCounts(summary, tab).records, 0)
@@ -232,7 +235,7 @@ export default function TimelineTab({ incident }) {
     if (!incident?.id || archived) return undefined
     const controller = new AbortController()
     evidence
-      .histogram(incident.id, { filters, buckets: 120, signal: controller.signal })
+      .histogram(incident.id, { filters: { ...filters, ...kindScope }, buckets: 120, signal: controller.signal })
       .then((answer) => setHistogram(answer))
       .catch(() => {})
     evidence
@@ -240,7 +243,7 @@ export default function TimelineTab({ incident }) {
       .then((answer) => setFlaggedHost(answer?.total ?? 0))
       .catch(() => {})
     return () => controller.abort()
-  }, [incident?.id, archived, filters, hostTotal, marked])
+  }, [incident?.id, archived, filters, kindScope, hostTotal, marked])
 
   const strip = useMemo(() => density(histogram, shown), [histogram, shown])
   const spanLabel = useMemo(() => {
@@ -251,7 +254,7 @@ export default function TimelineTab({ incident }) {
   }, [strip])
 
   // ---- The table of host records ----
-  const load = useMemo(() => evidence.recordsLoader(incident?.id), [incident?.id])
+  const load = useMemo(() => evidence.recordsLoader(incident?.id, kindScope), [incident?.id, kindScope])
   const toggleMark = useCallback(
     async (record) => {
       await evidence.putMark(incident.id, { key: record.key, flagged: !record.flagged, note: record.note })
@@ -496,6 +499,9 @@ export default function TimelineTab({ incident }) {
                     onChange={(kind) => setFilters((held) => ({ ...held, kind: kind || undefined }))}
                     options={KIND_OPTIONS}
                   />{' '}
+                  <span className="text-xs text-fg-muted">
+                    Disk records ($MFT, $J) are millions: they show when the Kind filter is Disk.
+                  </span>{' '}
                   <LevelFilter
                     filters={filters}
                     onChange={(level) => setFilters((held) => ({ ...held, level: level || undefined }))}

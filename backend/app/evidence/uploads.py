@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session as OrmSession
 from .. import archive, work
 from ..core import store
 from ..core.config import settings
-from ..core.models import Incident, UploadSession
+from ..core.models import EvidenceSource, Incident, UploadSession
 from ..core.security import now_iso
 from . import originals
 
@@ -61,9 +61,17 @@ class UploadError(Exception):
         self.status, self.received = status, received
 
 
+def is_auto(params: dict[str, Any]) -> bool:
+    """A file sent without saying what it is (no section, ``auto``, or a collection with no source named): the
+    worker says what it is when it is whole."""
+    kind = str(params.get("kind") or "")
+    return kind in ("", "auto") or (kind == "collection" and not params.get("source"))
+
+
 def limit_of(params: dict[str, Any]) -> int:
-    """The largest file a session may announce, in bytes: a collection has a limit of its own."""
-    megabytes = settings.COLLECTION_MAX_MB if params.get("kind") == "collection" else settings.EVIDENCE_MAX_MB
+    """The largest file a session may announce, in bytes: a collection has a limit of its own, and a file that may
+    be one (it is not said what it is) has it until the worker has said."""
+    megabytes = settings.COLLECTION_MAX_MB if is_auto(params) else settings.EVIDENCE_MAX_MB
     return megabytes * 1024 * 1024
 
 
@@ -76,6 +84,11 @@ def _chunk_path(upload_id: str, offset: int) -> Path:
 
 
 def shown(db: OrmSession, row: UploadSession) -> dict[str, Any]:
+    """The session as the screen reads it. Once the file is filed, ``kind``, ``source`` and ``sourceId`` say where it
+    went (a file sent without a section: the one the worker recognised it as); ``recognised`` is false for a file that
+    nothing reads, and ``error`` then says why and how to turn it into something that is read."""
+    placed = db.get(EvidenceSource, row.source_id) if row.source_id else None
+    params = row.params or {}
     return {
         "id": row.id,
         "incidentId": row.incident_id,
@@ -84,8 +97,11 @@ def shown(db: OrmSession, row: UploadSession) -> dict[str, Any]:
         "received": row.received,
         "state": row.state,
         "sourceId": row.source_id,
-        "duplicate": bool((row.params or {}).get("duplicate")),
-        "error": (row.params or {}).get("error"),
+        "duplicate": bool(params.get("duplicate")),
+        "error": params.get("error"),
+        "kind": placed.kind if placed is not None else (str(params.get("kind") or "") or None),
+        "source": placed.source if placed is not None else (str(params.get("source") or "") or None),
+        "recognised": params.get("recognised"),
         "chunk": CHUNK,
         "work": work.describe(db, WORK, row.id) if row.state == "finishing" else None,
     }
@@ -207,10 +223,14 @@ def finish(upload_id: str) -> None:
             db.commit()
             store.remove_tree(folder_of(upload_id))
             return
+    existed = originals.has(sha256)
     originals.keep(_parts(upload_id), sha256)
     with SessionLocal() as db:
         row = db.get(UploadSession, upload_id)
         if row is None or row.state != "finishing":
+            return
+        if is_auto(row.params or {}) and not _recognised(db, row, sha256, existed):
+            store.remove_tree(folder_of(upload_id))
             return
         try:
             duplicate = imports.is_duplicate(db, row.incident_id, sha256, row.file_name, row.params or {})
@@ -223,15 +243,18 @@ def finish(upload_id: str) -> None:
             return
         if duplicate and source.state == "failed":
             # A file that could not be read is read again when it is sent again, as the other way in does.
-            from . import parse
+            from . import collections, parse
 
-            parse.again(db, source)
+            if collections.is_collection(source):
+                collections.again(db, source)
+            else:
+                parse.again(db, source)
             duplicate = False
         row.state, row.sha256, row.source_id = "complete", sha256, source.id
         # Said by the session, which is all the screen asks after the last part.
         row.params = {**(row.params or {}), "duplicate": duplicate}
         row.updated_epoch = time.time()
-        wanted = source.state == "queued"
+        wanted, listing = source.state == "queued", source.state == "listing"
         source_id = source.id
         db.commit()
     store.remove_tree(folder_of(upload_id))
@@ -240,6 +263,45 @@ def finish(upload_id: str) -> None:
         from . import parse
 
         parse.start(source_id)
+    elif listing:
+        from . import collections
+
+        collections.start_unpack(source_id)
+
+
+def _recognised(db: OrmSession, row: UploadSession, sha256: str, existed: bool) -> bool:
+    """Say where a file sent without a section goes (``params``: ``kind`` and ``source``). When nothing of Nik reads it
+    the session ends (``recognised`` false, ``error`` the sentence) and the file is kept nowhere: the original goes
+    unless it was kept already, or an incident holds it. The caller commits."""
+    from . import collections, imports
+
+    head = b""
+    try:
+        with store.open(originals.path_of(sha256)) as handle:
+            head = handle.read(8)
+    except (OSError, originals.EvidenceError):
+        pass
+    where = collections.recognise(sha256, row.file_name, head)
+    if (
+        not where.sentence
+        and where.source != imports.COLLECTION_ZIP
+        and row.size > settings.EVIDENCE_MAX_MB * 1024 * 1024
+    ):
+        where = collections.Route(
+            "",
+            "",
+            f"The file is larger than the limit of {settings.EVIDENCE_MAX_MB} MB for a file that is not a collection",
+        )
+    if where.sentence:
+        row.state = "aborted"
+        row.params = {**(row.params or {}), "recognised": False, "error": where.sentence}
+        row.updated_epoch = time.time()
+        if not existed and not originals.holders(db, sha256):
+            originals.remove(sha256)
+        db.commit()
+        return False
+    row.params = {**(row.params or {}), "kind": where.kind, "source": where.source, "recognised": True}
+    return True
 
 
 def start(upload_id: str) -> None:

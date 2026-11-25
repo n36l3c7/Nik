@@ -72,12 +72,13 @@ export const hexOffset = (offset, width = 8) =>
 /**
  * The expected sources a page has none of, in their order. `match(source)` gives the `key` of the
  * expected source a file satisfies (null for a file that is none of them), or the list of them for a
- * file that holds several (an export of event logs with more than one channel).
+ * file that holds several (an export of event logs with more than one channel). `satisfied` are the keys that
+ * are there without a file of their own (the records of a registry hive).
  */
 const keysOf = (found) => (Array.isArray(found) ? found : [found]).filter(Boolean)
 
-export function missingExpected(expected = [], sources = [], match = () => null) {
-  const present = new Set(sources.flatMap((source) => keysOf(match(source))))
+export function missingExpected(expected = [], sources = [], match = () => null, satisfied = []) {
+  const present = new Set([...sources.flatMap((source) => keysOf(match(source))), ...satisfied])
   return expected.filter((item) => !present.has(item.key))
 }
 

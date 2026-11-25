@@ -21,3 +21,17 @@ test('only the filters the API knows are kept', () => {
   })
   assert.deepEqual(recordFilters(undefined), {})
 })
+
+test('a list repeats its name, and the data filters may be lists', () => {
+  assert.equal(
+    queryString({
+      dataKey: ['inUse', 'ads'],
+      dataValue: ['false', 'true'],
+      dataHas: ['reasons:CLOSE'],
+      kindNot: 'disk',
+    }),
+    '?dataKey=inUse&dataKey=ads&dataValue=false&dataValue=true&dataHas=reasons%3ACLOSE&kindNot=disk',
+  )
+  assert.equal(queryString({ dataKey: [] }), '')
+  assert.deepEqual(recordFilters({ dataHas: ['a:b'], dataKey: [] }), { dataHas: ['a:b'] })
+})

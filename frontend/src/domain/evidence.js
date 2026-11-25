@@ -55,14 +55,27 @@ export function resolveTab(tabs, asked) {
  * The section of the server a tab of host evidence reads (`kind` of a source and of a record). The
  * counts of these kinds come from `evidence.summary`, not from the document.
  */
-export const SERVER_KIND = { endpoint: 'endpoint', eventlogs: 'eventlog', browser: 'browser', commands: 'commands' }
+export const SERVER_KIND = {
+  endpoint: 'endpoint',
+  eventlogs: 'eventlog',
+  browser: 'browser',
+  commands: 'commands',
+  disk: 'disk',
+}
+
+/** The page of Event Logs also reads the logs of Linux and macOS: their section is `syslog`. */
+const MORE_KINDS = { eventlogs: ['syslog'] }
 
 const NO_COUNTS = { sources: 0, records: 0, partial: 0, failed: 0, parsing: 0, absent: 0 }
 
 /** What the summary holds of a tab of host evidence (zeros while it is not read, or for another kind). */
 export function hostCounts(summary, tabId) {
   const server = SERVER_KIND[tabId]
-  return server ? { ...NO_COUNTS, ...(summary?.kinds?.[server] ?? {}) } : NO_COUNTS
+  if (!server) return NO_COUNTS
+  const held = [server, ...(MORE_KINDS[tabId] ?? [])].map((kind) => summary?.kinds?.[kind] ?? {})
+  const total = { ...NO_COUNTS }
+  for (const part of held) for (const name of Object.keys(NO_COUNTS)) total[name] += Number(part[name]) || 0
+  return total
 }
 
 /** The files of each kind that has files of its own: `{ key, name, detail }`. */
@@ -163,5 +176,6 @@ export function firstPartialSource(sources) {
 
 /** The tab (id) that shows a section of the server: `eventlog` -> `eventlogs`. */
 export function tabOfKind(serverKind) {
-  return Object.keys(SERVER_KIND).find((tab) => SERVER_KIND[tab] === serverKind) ?? null
+  const own = Object.keys(SERVER_KIND).find((tab) => SERVER_KIND[tab] === serverKind)
+  return own ?? Object.keys(MORE_KINDS).find((tab) => MORE_KINDS[tab].includes(serverKind)) ?? null
 }

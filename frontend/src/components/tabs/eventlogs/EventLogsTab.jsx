@@ -5,8 +5,10 @@ import SourceFiles from '../../evidence/SourceFiles.jsx'
 import DetectionsSection from '../../evidence/DetectionsSection.jsx'
 import ScriptBlock from '../endpoint/ScriptBlock.jsx'
 import CoverageChart from './CoverageChart.jsx'
+import SyslogLogs from './SyslogLogs.jsx'
 import EventsSection from './EventsSection.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
+import { normalizeOs } from '../../../config/os.js'
 import { EVENTLOG_COLLECTION_SCRIPT, EVENT_CHANNELS } from '../../../config/eventLogs.js'
 import {
   EVENTLOG_KIND,
@@ -16,6 +18,9 @@ import {
   matchSource,
 } from '../../../domain/eventLogSources.js'
 import { detectionTone, levelsText } from '../../../domain/detections.js'
+import { hostCounts } from '../../../domain/evidence.js'
+import { logFamilies } from '../../../domain/syslogSources.js'
+import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
 import { useDetections } from '../../../lib/useDetections.js'
 import { evidence } from '../../../services/api.js'
 
@@ -26,7 +31,8 @@ import { evidence } from '../../../services/api.js'
  *   - the events are read from the server a page at a time (EventsSection).
  * Detections (the Sigma rules that matched events) is the second part; processes and logons come as more
  * section tabs: one item of SECTIONS each.
- * Linux and macOS logs are not covered yet.
+ * The logs of Linux and macOS are the page of SyslogLogs.jsx; this file picks the one that fits the incident's
+ * system (both when it names none, as two tabs).
  */
 
 const NO_SOURCES = []
@@ -73,11 +79,10 @@ function Help() {
   )
 }
 
-export default function EventLogsTab({ incident }) {
+function WindowsLogs({ incident }) {
   const { can } = useAuth()
   const archived = Boolean(incident.archivedAt)
   const canWrite = can('write') && !archived
-  const isWindows = (incident.os || 'windows') === 'windows'
   const [version, setVersion] = useState(0)
   const [sources, setSources] = useState(NO_SOURCES)
   const [counts, setCounts] = useState({ records: 0, sources: 0, channels: 0, flagged: 0, matter: 0 })
@@ -140,14 +145,6 @@ export default function EventLogsTab({ incident }) {
           Archived: the records are not loaded. Take the incident out of the archive to read them again.
         </p>
       )}
-      {!isWindows && (
-        <p className="flex items-start gap-2 border border-dashed border-line p-3 text-xs text-fg-muted">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          This incident's host is not Windows. Only Windows event logs are supported for now; journald, auth.log and the
-          macOS unified log will follow.
-        </p>
-      )}
-
       <SourceFiles
         incidentId={incident.id}
         kind={EVENTLOG_KIND}
@@ -224,6 +221,39 @@ export default function EventLogsTab({ incident }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+const FAMILIES = [
+  { id: 'windows', label: 'Windows' },
+  { id: 'syslog', label: 'Linux and macOS' },
+]
+
+/** The event logs of the incident's system: Windows as it was, Linux and macOS from 7.0. */
+export default function EventLogsTab({ incident }) {
+  const os = normalizeOs(incident.os)
+  const families = logFamilies(os)
+  const { summary } = useEvidenceSummary(incident.id)
+  const [chosen, setChosen] = useState('')
+  if (!families.syslog) return <WindowsLogs incident={incident} />
+  if (!families.windows) return <SyslogLogs incident={incident} os={os} />
+  // No system said: both groups, the one that has records first.
+  const windows = summary?.kinds?.eventlog?.sources ?? 0
+  const syslog = hostCounts(summary, 'eventlogs').sources - windows
+  const family = chosen || (syslog > 0 && windows === 0 ? 'syslog' : 'windows')
+  const items = FAMILIES.map((item) => ({ ...item, count: item.id === 'windows' ? windows : syslog }))
+  return (
+    <div className="space-y-6">
+      <Tabs
+        variant="selector"
+        label="Logs of"
+        idPrefix="eventlogs-family"
+        items={items}
+        value={family}
+        onChange={setChosen}
+      />
+      {family === 'windows' ? <WindowsLogs incident={incident} /> : <SyslogLogs incident={incident} os="" />}
     </div>
   )
 }

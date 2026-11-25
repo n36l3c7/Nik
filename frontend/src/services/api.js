@@ -397,6 +397,33 @@ export const evidence = {
 }
 
 /*
+ * The collections of host evidence (routers/evidence_collections.py): a triage zip listed first, imported on
+ * request. The collection itself is a source of kind `collection` (evidence.sources); these read its members.
+ */
+const collectionPath = (incidentId, sourceId, rest = '') =>
+  evidencePath(incidentId, `/collections/${encodeURIComponent(sourceId)}${rest}`)
+
+export const collections = {
+  /**
+   * The collection and a page of its members: `{ collection, members, next, total, counts }`. `status` is
+   * `all`, `importable`, `imported`, `skipped`, `executables` or `unrecognised`; `kind` the sections (a list).
+   */
+  members: (
+    incidentId,
+    sourceId,
+    { status = 'all', kind = [], q = '', limit = 100, cursor = '', signal, background } = {},
+  ) =>
+    api.get(collectionPath(incidentId, sourceId, queryString({ status, kind: kind.join(','), q, limit, cursor })), {
+      signal,
+      background,
+    }),
+  /** Import some members (`{ members: [n] }`) or all of them (`{ all: true }`, optionally `kinds`): 202 `{ collection, selected }`. */
+  importMembers: (incidentId, sourceId, body) => api.post(collectionPath(incidentId, sourceId, '/import'), body),
+  /** Send a program of the collection to Malware Analysis: `{ sample, iocs, strings }`. */
+  analyse: (incidentId, sourceId, member) => api.post(collectionPath(incidentId, sourceId, '/analyse'), { member }),
+}
+
+/*
  * The Sigma rules (routers/sigma_rules.py). A list takes the filters of `domain/sigma.js`; a text the worker
  * refuses comes back as an error with `data.errors` (`{ line, column, message }`).
  */

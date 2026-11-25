@@ -106,7 +106,7 @@ class Given:
     def clear(self) -> None:
         """Nothing a stopped worker left is kept: at start the folders are emptied."""
         for folder in [self.folder] + ([self.large] if self.large else []):
-            for part in ("files", "incoming"):
+            for part in ("files", "incoming", "unpack"):
                 shutil.rmtree(os.path.join(folder, part), ignore_errors=True)
         self._used.clear()
 
@@ -184,6 +184,12 @@ class Given:
             raise Refused(
                 507, f"The worker has no room for this file: it is {size} bytes and {free} are free where it works"
             )
+
+    def make_room(self, size: int) -> None:
+        """Room for ``size`` more bytes of files the worker makes itself (a collection unpacked): the least
+        recently used files go, as for a file it is given. Raises ``Refused`` (507) when there is none."""
+        with self._lock:
+            self._make_room(self.folder, size)
 
     def take(self, name: str, stream, length: int) -> None:
         """Read ``length`` bytes of ``stream`` as the file ``name``."""

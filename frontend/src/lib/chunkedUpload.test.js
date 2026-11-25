@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { backoffMs, isRetryable, nextPart, overallSent, receivedOf, uploadFile } from './chunkedUpload.js'
+import { backoffMs, isRetryable, nextPart, overallSent, receivedOf, uploadFile, withFileTime } from './chunkedUpload.js'
 
 test('the parts follow each other and the last one is the rest', () => {
   assert.deepEqual(nextPart(0, 10, 4), { offset: 0, length: 4 })
@@ -77,6 +77,30 @@ function fakeServer(size, { chunk = 4, failures = [] } = {}) {
 
 const file = (size) => Object.assign(new Blob([new Uint8Array(size)]), { name: 'a.evtx' })
 const fast = { sleep: async () => {}, pollMs: 0 }
+test('the time of the file goes with every upload, and what the server made of an auto file comes back', async () => {
+  const server = fakeServer(10)
+  const opened = []
+  const open = server.open
+  server.open = async (body, options) => {
+    opened.push(body.params)
+    return open(body, options)
+  }
+  server.status = async () => ({
+    state: 'complete',
+    received: 10,
+    sourceId: 's9',
+    kind: 'eventlog',
+    source: 'windows.evtx',
+  })
+  const dated = Object.assign(file(10), { lastModified: 1_700_000_000_123 })
+  const done = await uploadFile(dated, { incidentId: 'i1', params: { kind: 'auto' }, api: server, ...fast })
+  assert.deepEqual(opened, [{ kind: 'auto', fileTime: 1_700_000_000_123 }])
+  assert.equal(done.kind, 'eventlog')
+  assert.equal(done.source, 'windows.evtx')
+  assert.deepEqual(withFileTime({ kind: 'x' }, {}), { kind: 'x' })
+  assert.deepEqual(withFileTime({ kind: 'x' }, { lastModified: 0 }), { kind: 'x' })
+})
+
 const puts = (server) => server.log.filter((entry) => entry[0] === 'put')
 
 test('a file goes up part by part and ends with its source', async () => {
@@ -89,7 +113,7 @@ test('a file goes up part by part and ends with its source', async () => {
     onProgress: (p) => phases.push(p.phase),
     ...fast,
   })
-  assert.deepEqual(done, { uploadId: 'u1', sourceId: 's1' })
+  assert.deepEqual(done, { uploadId: 'u1', sourceId: 's1', kind: null, source: null, duplicate: false })
   assert.deepEqual(puts(server), [
     ['put', 0, 4],
     ['put', 4, 4],

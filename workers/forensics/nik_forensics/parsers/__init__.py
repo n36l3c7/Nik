@@ -44,7 +44,23 @@ import importlib
 from types import ModuleType
 
 # In the order they are tried when a file comes without a source.
-NAMES: tuple[str, ...] = ("evtx", "browser", "endpoint", "eventlog_json", "history")
+NAMES: tuple[str, ...] = (
+    "evtx",
+    "browser",
+    "endpoint",
+    "eventlog_json",
+    "history",
+    # 7.0, stage 6: a module that is not there yet is simply not one that reads the file.
+    "mft",
+    "usnjrnl",
+    "hive",
+    "prefetch",
+    "lnk",
+    "jumplist",
+    "srum",
+    "syslog",
+    "plaso",
+)
 
 
 class UnknownParser(Exception):
@@ -67,6 +83,19 @@ def load(name: str) -> ModuleType:
     if module not in NAMES:
         raise UnknownParser(f"No parser is called {name}")
     return importlib.import_module(f"{__name__}.{module}")
+
+
+def by_source(kind: str, source: str) -> ModuleType | None:
+    """The parser of a section that reads the source named: the one whose ``KIND`` is ``kind`` and whose
+    ``SOURCES`` holds ``source``. None when no parser says so (the file is then recognised by what it is)."""
+    for name in NAMES:
+        try:
+            module = load(name)
+        except Exception:  # noqa: BLE001, S112 - a parser that cannot be loaded reads nothing
+            continue
+        if getattr(module, "KIND", None) == kind and source in getattr(module, "SOURCES", ()):
+            return module
+    return None
 
 
 def recognise(path: str, file_name: str) -> tuple[ModuleType, str]:

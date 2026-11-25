@@ -128,7 +128,10 @@ export const INDICATOR_FILE_MAX_BYTES = 5_000_000
 /** A file small and textual enough to be read as a list of indicators. */
 export function mayHoldIndicators({ name = '', size = 0, route = null } = {}) {
   if (size <= 0 || size > INDICATOR_FILE_MAX_BYTES) return false
-  if (route && route.tab !== 'endpoint') return false // an executable, a capture, an e-mail…
+  // A file of host evidence (a CSV export of a tool) may be a list of indicators too; an executable, a capture, an e-mail may not.
+  if (route && route.tab !== 'endpoint' && route.tab !== 'host') return false
+  // A hive or a $MFT is binary: only a name that says text can be a list.
+  if (route?.tab === 'host') return INDICATOR_FILE.test(name)
   return INDICATOR_FILE.test(name) || !String(name).includes('.')
 }
 

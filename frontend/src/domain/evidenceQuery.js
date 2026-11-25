@@ -6,6 +6,8 @@
 /** The filters the API knows, by their names there (`from` and `to` are in ms). */
 export const RECORD_FILTERS = [
   'kind',
+  // Sections left out (comma-separated): the Timeline leaves the disk out until it is asked for.
+  'kindNot',
   'type',
   'sourceId',
   'source',
@@ -20,20 +22,26 @@ export const RECORD_FILTERS = [
   'flagged',
   'dated',
   'matter',
+  // `dataKey` and `dataValue` may be lists (up to 4, paired by position); `dataHas` is `key:value` (a list too):
+  // the array `data.<key>` holds the value.
   'dataKey',
   'dataValue',
+  'dataHas',
   'q',
   'from',
   'to',
 ]
 
-const empty = (value) => value === undefined || value === null || value === '' || value === false
+const empty = (value) =>
+  value === undefined || value === null || value === '' || value === false || (Array.isArray(value) && !value.length)
 
-/** `?a=1&b=x` from an object; what is empty (null, '', false) is left out, true is `true`. '' with nothing left. */
+/** `?a=1&b=x` from an object; what is empty (null, '', false, []) is left out, true is `true`, a list repeats its name. */
 export function queryString(params = {}) {
   const query = new URLSearchParams()
   for (const [name, value] of Object.entries(params)) {
-    if (!empty(value)) query.set(name, String(value))
+    if (empty(value)) continue
+    if (Array.isArray(value)) for (const one of value) query.append(name, String(one))
+    else query.set(name, String(value))
   }
   const text = query.toString()
   return text ? `?${text}` : ''

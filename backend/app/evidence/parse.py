@@ -56,7 +56,7 @@ from ..core.security import now_iso
 from ..sigma import detections as sigma_detections
 from ..sigma import ruleset as sigma_ruleset
 from ..workers import handover, watching
-from . import originals
+from . import imports, originals
 from .imports import PARSE_WORK as WORK
 
 logger = logging.getLogger("nik.evidence.parse")
@@ -69,6 +69,11 @@ INDICATORS = 20_000
 CHANNELS_CAP = 50  # distinct channels a report counts
 # How long the worker may say nothing: a pass over a file of gigabytes before the first record.
 READ_TIMEOUT = 1800
+# The worker reads a few files at a time (FORENSICS_MAX_JOBS) and answers 503 "busy" to the others: a file
+# that was sent while it was full waits its turn instead of failing (a take-out of the archive, or ten files
+# sent together, start one reading each).
+BUSY_WAIT = 3.0
+BUSY_TRIES = 600
 NOT_CONFIGURED = "The forensics worker is not configured (FORENSICS_URL): the file is kept, and is read once it is"
 
 
@@ -83,9 +88,10 @@ def configured() -> bool:
 # --------------------------------------------------------------------------- #
 # The worker                                                                  #
 # --------------------------------------------------------------------------- #
-def _events(sha256: str, body: dict[str, Any], job: str) -> Iterator[dict[str, Any]]:
-    """The events of a parse, as the worker sends them. The original is given to the worker when it
-    says it does not hold it, and so is the set of rules (``body["rules"]``, a digest) when it lacks it;
+def _events(sha256: str, body: dict[str, Any], job: str, route: str = "/parse") -> Iterator[dict[str, Any]]:
+    """The events of a parse (``route``: or of another that answers in lines, ``/unpack``), as the worker sends
+    them. The original is given to the worker when it says it does not hold it, and so is the set of rules
+    (``body["rules"]``, a digest) when it lacks it;
     then the question is asked again, each of them once. Raises ``ParseError`` when the worker cannot be
     asked; a stream that is cut is simply over (the caller sees that no ``end`` came).
 
@@ -94,10 +100,11 @@ def _events(sha256: str, body: dict[str, Any], job: str) -> Iterator[dict[str, A
     name = f"{sha256}.bin"
     url, token = settings.FORENSICS_URL, settings.FORENSICS_TOKEN
     gave_file = gave_rules = False
+    busy = 0
     while True:
         data = json.dumps({**body, "name": name}).encode("utf-8")
         request = urllib.request.Request(  # noqa: S310 - operator-configured URL
-            f"{url}/parse",
+            f"{url}{route}",
             data=data,
             method="POST",
             headers={HEADER: token, "Content-Type": "application/json", watching.HEADER: job},
@@ -126,6 +133,10 @@ def _events(sha256: str, body: dict[str, Any], job: str) -> Iterator[dict[str, A
                     yield {"t": "note", "reason": "rules not applied", "count": 1, "detail": refused_rules}
                 continue
             detail = answer.get("detail") if isinstance(answer, dict) else None
+            if error.code == 503 and "busy" in str(detail) and busy < BUSY_TRIES:
+                busy += 1
+                time.sleep(BUSY_WAIT)
+                continue
             raise ParseError(str(detail or f"The forensics worker answered {error.code}")) from None
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise ParseError(f"The forensics worker cannot be reached: {getattr(error, 'reason', error)}") from None
@@ -211,10 +222,14 @@ def _row(event: dict[str, Any], source: EvidenceSource) -> dict[str, Any] | None
         return None
     ts = event.get("ts")
     event_id = event.get("event_id")
+    # A record may be of another section and source than its file (an export of Plaso, a registry hive): it says so.
+    kind = event.get("k")
+    own = event.get("src")
     return {
         "incident_id": source.incident_id,
         "source_id": source.id,
-        "kind": source.kind,
+        "kind": kind if isinstance(kind, str) and kind in imports.KINDS and kind != "collection" else source.kind,
+        "source": own[:60] if isinstance(own, str) and own else None,
         "type": str(event.get("type") or "")[:40],
         "key": key,
         "ts": int(ts) if isinstance(ts, (int, float)) and not isinstance(ts, bool) else None,
@@ -284,6 +299,7 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
         hours = sigma_ruleset.hours(db, db.get(Incident, source.incident_id)) if rules_now else None
     body: dict[str, Any] = {
         "fileName": source.file_name,
+        "kind": source.kind,
         "parser": source.parser or None,
         "source": source.source or None,
         "params": {
@@ -293,6 +309,8 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
             "file_name": source.file_name,
         },
     }
+    if source.file_time:
+        body["params"]["file_time"] = source.file_time
     if rules_now is not None:
         body["rules"] = rules_now.digest
         body["params"]["hours"] = hours

@@ -87,9 +87,13 @@ def main(argv: list[str]) -> int:
     ctx = Context(out, request.get("params") or {})
     detector(request, ctx)
     try:
-        if request.get("parser"):
-            module, source = parsers.load(str(request["parser"])), str(request.get("source") or "")
-        else:
+        # The section and the source the person named choose the parser; then the parser the API names;
+        # a file that comes with neither is recognised by what it is.
+        source, kind = str(request.get("source") or ""), str(request.get("kind") or "")
+        module = parsers.by_source(kind, source) if source and kind else None
+        if module is None and request.get("parser"):
+            module = parsers.load(str(request["parser"]))
+        if module is None:
             module, source = parsers.recognise(path, str(request.get("fileName") or ""))
     except parsers.UnknownParser as error:
         ctx.skip("no parser reads this file", lost=0, detail=str(error))

@@ -1,4 +1,4 @@
-import { CirclePlay, HardDrive, KeyRound, Usb } from 'lucide-react'
+import { CirclePlay, HardDrive, KeyRound, Usb, Wifi } from 'lucide-react'
 import {
   EXEC_WIN_BAM,
   PERS_WIN_RUN,
@@ -30,9 +30,10 @@ import {
  *                     (registry, service manager, kernel journal) that is not a
  *                     simple file to copy.
  *
- * Artifacts that can only be recovered with third-party DFIR tools (Prefetch,
- * Amcache, ShimCache, UserAssist, LNK, JumpLists, ShellBags, RecentDocs) are
- * intentionally NOT included — there is no fully-custom way to collect them.
+ * Since 7.0 the server reads the files themselves (Prefetch, LNK, Jump lists, SRUDB.dat) and the registry
+ * hives (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache.hve): the person copies the file with the tool they have and
+ * adds it. A source that comes out of a hive or of SRUDB.dat has `via`: it is not a file of its own, the file
+ * fills several sources at once, and its row of the list is satisfied by records of that source existing.
  *
  * Category shape:
  *   id / label / icon / accent
@@ -45,7 +46,18 @@ import {
  *   mode           'file' | 'script'
  *   script         (script) { lang, code } shown with copy/download
  *   tool           short label describing the method
+ *   via            'hive' | 'srudb': the source is filled by a registry hive / by SRUDB.dat, not by a file of its own
+ *   timeLabel      the title of the Time column when only this source is shown (ShimCache: "File modified")
+ *   note           a sentence the page shows when the source has records (what its time is not)
  */
+
+export const HIVE_SOURCE = 'windows.registry.hive'
+/** The file-level source SRUDB.dat is sent as; the worker writes its records under `srum-network` and `srum-apps`. */
+export const SRUM_SOURCE = 'windows.network.srum-network'
+export const HIVE_OPTION = 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)'
+export const SRUM_OPTION = 'SRUDB.dat (SRUM)'
+export const HIVE_HELP =
+  'A registry hive is added once: one hive fills several rows of this list (the rows "from a registry hive" turn into records as its keys are read). Windows locks these files: copy them with KAPE, Velociraptor, FTK Imager, reg save or from a shadow copy. A hive that was not closed cleanly is read without its .LOG1 and .LOG2 files: the newest changes may be missing, and the report says so.'
 
 /* ---- Program execution -------------------------------------------------- */
 const EXECUTION = {
@@ -62,6 +74,47 @@ const EXECUTION = {
         mode: 'script',
         script: EXEC_WIN_BAM,
         tool: 'native PowerShell',
+      },
+      {
+        key: 'bam-hive',
+        name: 'BAM (hive)',
+        path: 'SYSTEM → …\\Services\\bam\\State\\UserSettings',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
+        key: 'prefetch',
+        name: 'Prefetch',
+        path: 'C:\\Windows\\Prefetch\\*.pf (often disabled on servers)',
+        mode: 'file',
+        tool: 'upload the .pf files',
+      },
+      {
+        key: 'amcache',
+        name: 'Amcache',
+        path: 'C:\\Windows\\appcompat\\Programs\\Amcache.hve',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
+        key: 'shimcache',
+        name: 'ShimCache',
+        path: 'SYSTEM → …\\Control\\Session Manager\\AppCompatCache',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+        timeLabel: 'File modified',
+        note: 'ShimCache: the time is when the file was last modified, not when it ran: it is not an execution time.',
+      },
+      {
+        key: 'userassist',
+        name: 'UserAssist',
+        path: 'NTUSER.DAT → …\\Explorer\\UserAssist',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
       },
     ],
     macos: [
@@ -94,6 +147,14 @@ const PERSISTENCE = {
         tool: 'native PowerShell',
       },
       {
+        key: 'runkeys-hive',
+        name: 'Run keys (hive)',
+        path: 'SOFTWARE and NTUSER.DAT → …\\CurrentVersion\\Run',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
         key: 'tasks',
         name: 'Scheduled Tasks',
         path: 'C:\\Windows\\System32\\Tasks\\',
@@ -108,6 +169,14 @@ const PERSISTENCE = {
         mode: 'script',
         script: PERS_WIN_SERVICES,
         tool: 'native PowerShell',
+      },
+      {
+        key: 'services-hive',
+        name: 'Services (hive)',
+        path: 'SYSTEM → …\\Services',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
       },
       {
         key: 'startup',
@@ -182,10 +251,32 @@ const FILE_ACCESS = {
   label: 'File & Folder Access',
   icon: HardDrive,
   accent: 'text-info',
-  // Windows/macOS file-access forensics (LNK, JumpLists, ShellBags, sfl) can
-  // only be parsed with third-party tools, so no custom source is offered.
+  // The shortcuts, the jump lists and the RecentDocs of the registry are read by the server (7.0).
   sources: {
-    windows: [],
+    windows: [
+      {
+        key: 'lnk',
+        name: 'LNK shortcuts',
+        path: 'C:\\Users\\<user>\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\*.lnk (also Office\\Recent, Start Menu, Desktop)',
+        mode: 'file',
+        tool: 'upload the .lnk files',
+      },
+      {
+        key: 'jumplist',
+        name: 'Jump lists',
+        path: '…\\Recent\\AutomaticDestinations\\*.automaticDestinations-ms and …\\CustomDestinations\\*.customDestinations-ms (keep the file name: it is the application’s id)',
+        mode: 'file',
+        tool: 'upload the jump list files',
+      },
+      {
+        key: 'recentdocs',
+        name: 'RecentDocs',
+        path: 'NTUSER.DAT → …\\Explorer\\RecentDocs',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+    ],
     macos: [],
     linux: [
       {
@@ -216,6 +307,22 @@ const USB = {
         tool: 'native PowerShell',
       },
       {
+        key: 'usbstor-hive',
+        name: 'USBSTOR (hive)',
+        path: 'SYSTEM → …\\Enum\\USBSTOR',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
+        key: 'mounteddevices',
+        name: 'Mounted devices',
+        path: 'SYSTEM → \\MountedDevices',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
         key: 'setupapi',
         name: 'setupapi log',
         path: 'C:\\Windows\\INF\\setupapi.dev.log',
@@ -237,7 +344,38 @@ const USB = {
   },
 }
 
-export const ARTIFACT_CATEGORIES = [EXECUTION, PERSISTENCE, FILE_ACCESS, USB]
+/* ---- Network usage (SRUM) ----------------------------------------------- */
+const NETWORK = {
+  id: 'network',
+  label: 'Network usage',
+  icon: Wifi,
+  accent: 'text-info',
+  // One file, SRUDB.dat, gives both sources: each row is an hour of use of a program.
+  sources: {
+    windows: [
+      {
+        key: 'srum-network',
+        name: 'SRUM network usage',
+        path: 'C:\\Windows\\System32\\sru\\SRUDB.dat (locked on a live system: KAPE, Velociraptor, a shadow copy)',
+        mode: 'file',
+        via: 'srudb',
+        tool: 'SRUDB.dat',
+      },
+      {
+        key: 'srum-apps',
+        name: 'SRUM applications',
+        path: 'C:\\Windows\\System32\\sru\\SRUDB.dat',
+        mode: 'file',
+        via: 'srudb',
+        tool: 'SRUDB.dat',
+      },
+    ],
+    macos: [],
+    linux: [],
+  },
+}
+
+export const ARTIFACT_CATEGORIES = [EXECUTION, PERSISTENCE, FILE_ACCESS, USB, NETWORK]
 
 /** Returns a category definition from its id. */
 export function getArtifactCategoryById(id) {

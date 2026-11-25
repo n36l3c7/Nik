@@ -109,8 +109,13 @@ class FakeSigma:
         where = doc.get("logsource") if isinstance(doc.get("logsource"), dict) else {}
         product = str(where.get("product") or "")
         reason = ""
-        if product == "linux":
-            reason = "Nik reads no records of this log source: linux/auditd"
+        category = str(where.get("category") or "")
+        # What the real worker answers (sigma/logsource.py): the Linux syslog records are read, but only the process
+        # creation of the categories; the macOS ones only with no category and no service.
+        if (product == "linux" and category not in ("", "process_creation")) or (
+            product == "macos" and (category or where.get("service"))
+        ):
+            reason = f"Nik reads no records of this log source: {product}/{category or where.get('service')}"
         elif "unsupported" in yaml.safe_dump(doc.get("detection") or {}):
             reason = "The modifier |unsupported is not run by Nik"
         return {

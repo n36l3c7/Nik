@@ -129,7 +129,10 @@ export function readSettings(raw, columns = []) {
   } catch {
     // Nothing stored, or something else wrote there: the defaults.
   }
-  const hidden = Array.isArray(parsed?.hidden) ? parsed.hidden.filter((key) => known.has(key)) : []
+  // Nothing stored yet: the columns that say `hiddenByDefault` start hidden (the Columns menu shows them).
+  const hidden = Array.isArray(parsed?.hidden)
+    ? parsed.hidden.filter((key) => known.has(key))
+    : columns.filter((column) => column.hideable && column.hiddenByDefault).map((column) => column.key)
   const pageSize = PAGE_SIZES.includes(parsed?.pageSize) ? parsed.pageSize : DEFAULT_PAGE_SIZE
   return { hidden, pageSize }
 }

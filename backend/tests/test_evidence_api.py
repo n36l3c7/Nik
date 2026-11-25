@@ -595,6 +595,57 @@ def test_a_key_of_the_data_is_compared_as_text(mixed):
     assert get(mixed, "ev-api/evidence/records", dataKey="Ip", dataValue="x" * 501).status_code == 422
 
 
+def test_kind_not_leaves_sections_out_in_the_list_the_histogram_and_the_stack(mixed):
+    assert summaries(mixed, kindNot="endpoint,browser") == [
+        "curated logon",
+        "no channel",
+        "other security",
+        "sysmon one",
+        "system one",
+    ]
+    assert summaries(mixed, kindNot="nothing") == summaries(mixed)
+    assert summaries(mixed, kindNot="eventlog,endpoint,browser") == []
+    assert summaries(mixed, kindNot="endpoint", kind="endpoint") == []
+    assert get(mixed, "ev-api/evidence/records", kindNot="a," * 11).status_code == 400
+    stacked = get(mixed, "ev-api/evidence/stack", field="kind", kindNot="eventlog").json()
+    assert sorted(row["value"] for row in stacked["values"]) == ["browser", "endpoint"]
+    histogram = get(mixed, "ev-api/evidence/histogram", kindNot="eventlog,endpoint").json()
+    assert histogram["total"] == 1
+
+
+def test_several_keys_of_the_data_are_compared_at_once_by_position(env):
+    held = {"a": "1", "b": True, "n": 7}
+    make_source(env, [SOURCE, event(1, data=held), event(2, data={"a": "1", "b": False, "n": 7}), end(2)])
+    both = {"dataKey": ["a", "b"], "dataValue": ["1", "true"]}
+    assert summaries(env, **both) == ["logon 1"]
+    assert summaries(env, dataKey=["a", "n"], dataValue=["1", "7"]) == ["logon 1", "logon 2"]
+    assert summaries(env, dataKey=["a", "b"], dataValue=["1", "false"]) == ["logon 2"]
+    assert summaries(env, dataKey=["a", "n"], dataValue=["1", "8"]) == []
+    for bad in (
+        {"dataKey": ["a", "b"], "dataValue": ["1"]},
+        {"dataKey": list("abcde"), "dataValue": list("abcde")},
+        {"dataKey": ["a", "b c"], "dataValue": ["1", "2"]},
+    ):
+        assert get(env, "ev-api/evidence/records", **bad).status_code == 400
+
+
+def test_data_has_asks_whether_an_array_of_the_data_holds_a_value(env):
+    one = {"reasons": ["FILE_CREATE", "CLOSE"], "other": "FILE_CREATE"}
+    two = {"reasons": ["DATA_EXTEND"]}
+    three = {"reasons": "CLOSE"}
+    make_source(env, [SOURCE, event(1, data=one), event(2, data=two), event(3, data=three), event(4, data={}), end(4)])
+    assert summaries(env, dataHas="reasons:CLOSE") == ["logon 1"]
+    assert summaries(env, dataHas="reasons:CLOSE") == ["logon 1"]
+    assert summaries(env, dataHas=["reasons:CLOSE", "reasons:FILE_CREATE"]) == ["logon 1"]
+    assert summaries(env, dataHas=["reasons:CLOSE", "reasons:DATA_EXTEND"]) == []
+    assert summaries(env, dataHas="reasons:CLOS") == []
+    assert summaries(env, dataHas="other:FILE_CREATE") == []
+    assert summaries(env, dataHas="reasons:DATA_EXTEND", dataKey="reasons", dataValue="x") == []
+    for bad in ("reasons", "a b:x", ":x"):
+        assert get(env, "ev-api/evidence/records", dataHas=bad).status_code == 400
+    assert get(env, "ev-api/evidence/records", dataHas=["a:1"] * 5).status_code == 400
+
+
 def test_matter_keeps_the_event_log_records_the_curated_list_names(mixed):
     # The channel is compared in lower case, and a record with no channel is not matched.
     assert summaries(mixed, matter="true") == ["curated logon", "sysmon one"]

@@ -11,8 +11,10 @@ import {
   shortHash,
   uploadText,
 } from '../../domain/sourceFiles.js'
+import { fromCollection, looksLikeCollection } from '../../domain/collections.js'
 import { percentOf } from '../../domain/transfers.js'
 import { uploadFile } from '../../lib/chunkedUpload.js'
+import { openCollection } from '../../lib/collectionDialog.js'
 import { holdAppDrop } from '../../lib/dropOwner.js'
 import { noteEvidenceChanged } from '../../lib/useEvidenceSummary.js'
 import { evidence } from '../../services/api.js'
@@ -29,7 +31,8 @@ const noMatch = () => null
  * SourceFiles: the source files of a page of host evidence, as a table. Each row is a file with what
  * became of it (records kept and in the file, how it was read, its SHA-256); the report opens under it.
  * Sources the page expects and does not have are grey rows with where to find them. Files are added
- * with "Add files" or dropped anywhere on the window; each is sent in parts (lib/chunkedUpload.js) with a
+ * with "Add files" or dropped anywhere on the window (a zip or a psort export is sent as it is, for the server to
+ * list as a collection: its dialog opens); each is sent in parts (lib/chunkedUpload.js) with a
  * row of its own and can be cancelled.
  *
  * Props:
@@ -38,6 +41,8 @@ const noMatch = () => null
  *  - `uploadParams?`: sent with every file besides `kind` (`source`, `host`, `user`, `profile`); a function of
  *    the file (it may return a promise) when the source depends on it (a browser's History and Bookmarks).
  *  - `expected?: [{ key, label, hint }]` and `match(source) => key | null`: what the page expects.
+ *  - `present?`: keys of expected sources that are satisfied without a file of their own (the records of a source
+ *    that came out of a registry hive exist): they are not grey rows.
  *  - `labelOf?(source)`: the text of the Source column, when the page knows better than the expected row
  *    (the channels of an event-log file).
  *  - `showUser`: a User column in place of Source (the files whose user is given at upload: command histories).
@@ -54,6 +59,7 @@ export default function SourceFiles({
   uploadParams = null,
   expected = [],
   match = noMatch,
+  present = null,
   labelOf = null,
   title = 'Sources',
   help = null,
@@ -182,14 +188,17 @@ export default function SourceFiles({
       const startedAt = Date.now()
       const known = new Set(sourcesRef.current.map((source) => source.id))
       try {
+        // A zip or a psort export is not this page's: the server says what it is (a collection) and its list opens.
+        const auto = looksLikeCollection(item.name)
         // A function may ask the person first (a file the page cannot place): its refusal is an AbortError.
-        const given = typeof uploadParams === 'function' ? await uploadParams(item.file) : uploadParams
-        const { sourceId } = await uploadFile(item.file, {
+        const given = auto ? null : typeof uploadParams === 'function' ? await uploadParams(item.file) : uploadParams
+        const { sourceId, kind: went } = await uploadFile(item.file, {
           incidentId,
-          params: { kind, ...given },
+          params: auto ? { kind: 'auto' } : { kind, ...given },
           signal: controller.signal,
           onProgress: ({ phase, sent, total }) => patch(item.key, { state: phase, sent, total }),
         })
+        if (auto && went === 'collection' && sourceId) openCollection(incidentId, sourceId)
         const list = await refresh()
         const found = list?.find((source) => source.id === sourceId) ?? null
         patch(item.key, { state: 'done', sourceId, already: alreadyImported(found, known, startedAt) })
@@ -287,7 +296,7 @@ export default function SourceFiles({
   }, [canWrite, addFiles])
 
   const pick = () => inputRef.current?.click()
-  const missing = missingExpected(expected, shown, match)
+  const missing = missingExpected(expected, shown, match, present ?? [])
   const columns = 7
 
   return (
@@ -442,6 +451,11 @@ export default function SourceFiles({
                       title={source.filePath || source.fileName}
                     >
                       {source.fileName}
+                      {fromCollection(source) && (
+                        <span className="block font-sans text-xs text-fg-muted" title={fromCollection(source)}>
+                          {fromCollection(source)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 font-mono [overflow-wrap:anywhere]">{source.host || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums">

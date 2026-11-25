@@ -511,10 +511,10 @@ def test_a_try_is_run_in_pages_and_stops_at_its_limits_and_says_so(trial: FakeSi
 
 
 def test_a_rule_that_cannot_run_is_not_sent_and_a_bad_text_says_where(trial: FakeSigma, admin: TestClient):
-    linux = tried(admin, rule_text(RULE_B, product="linux", service="auditd"))
+    linux = tried(admin, rule_text(RULE_B, product="linux", service="", category="network_connection"))
     body = linux.json()
     assert linux.status_code == 200 and body["ran"] == [] and body["scanned"] == 0 and body["matches"] == []
-    assert body["rules"][0]["reason"] == "Nik reads no records of this log source: linux/auditd"
+    assert body["rules"][0]["reason"] == "Nik reads no records of this log source: linux/network_connection"
     assert trial.of("/sigma/try") == []
     bad = tried(admin, "title: no id\n")
     assert bad.status_code == 400 and bad.json()["errors"][0]["line"] == 1

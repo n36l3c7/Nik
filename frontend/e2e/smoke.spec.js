@@ -9384,6 +9384,342 @@ test('the business hours are told in a time zone, which the rules and the timers
     .toBe('UTC')
 })
 
+/* ---- 7.0, stage 6: the Disk page, the registry hives, the logs of Linux, the collections, and the files that find their page ---- */
+
+/** A picture of what is wide: the facts of the incident are folded so that the page has the room, then shown again. */
+async function shotWide(name, show) {
+  if (!process.env.SHOTS_DIR) return
+  const fold = page.getByRole('button', { name: "Hide the incident's facts" })
+  const folded = await fold.isVisible().catch(() => false)
+  if (folded) await fold.click()
+  await shot(name, show)
+  if (folded) await page.getByRole('button', { name: "Show the incident's facts" }).click()
+}
+
+/** An incident of a system made through the API, the way a script would, and opened by its address. */
+async function openFreshIncidentOf(id, host, os) {
+  expect((await page.request.post('/api/incidents', { data: { id, host, os, data: {} } })).status()).toBe(201)
+  await openIncidentAt(`/incident/${id}`)
+}
+
+/** An auth.log of a host that was guessed at: failed logons, a logon, a sudo, a new account. */
+const AUTH_LOG = [
+  ...Array.from(
+    { length: 12 },
+    (_, n) =>
+      `Nov 24 03:1${n % 10}:0${n % 6} web01 sshd[2${n}]: Failed password for root from 198.51.100.9 port 42${n} ssh2`,
+  ),
+  'Nov 24 03:20:01 web01 sshd[300]: Accepted password for root from 198.51.100.9 port 4300 ssh2',
+  'Nov 24 03:21:00 web01 sudo:    root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow',
+  'Nov 24 03:22:00 web01 useradd[400]: new user: name=support2, UID=1001, GID=1001, home=/home/support2, shell=/bin/bash',
+  '',
+].join('\n')
+
+test('Disk (NTFS): a $MFT is read, its deleted entries are filtered, a record opens its original, and the $J has its own tab', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-disk', 'E2E-DISK', 'windows')
+  await openEvidence('Disk (NTFS)')
+  const files = page.getByRole('tablist', { name: 'Disk files' })
+  await expect(files.getByRole('tab', { name: /^\$MFT/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(files.getByRole('tab', { name: /^\$J/ })).toBeVisible()
+  // Nothing is there yet: the grey row of the file, with where to find it, is the empty state.
+  await expect(sourcesTable()).toContainText('Not imported')
+  await expect(sourcesTable()).toContainText('KAPE')
+
+  const row = await addEvidence('MFT', fixture('stage6/MFT'), /read in part|complete/)
+  await expect(row).toContainText('$MFT')
+  const entries = page.locator('.truncate.text-xs', { hasText: /^Entries$/ }).locator('xpath=..')
+  await expect(entries).toContainText(/\d/, { timeout: 30_000 })
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('columnheader', { name: /Created \(SI\)/ })).toBeVisible()
+  // The other seven times are columns the person asks for, not on by default.
+  await expect(page.getByRole('columnheader', { name: /Accessed \(FN\)/ })).toHaveCount(0)
+  const everything = await page
+    .getByRole('status')
+    .filter({ hasText: /of \d+/ })
+    .first()
+    .innerText()
+  const total = Number(/of ([\d,]+)/.exec(everything)[1].replace(/,/g, ''))
+  expect(total).toBeGreaterThan(10)
+  await shotWide('disk-mft', page.getByRole('tablist', { name: 'Parts of the disk page' }))
+
+  // The filters are independent: State, Type, Alternate stream and Zone. The server filters, and the count is the card's.
+  const deleted = page.locator('.truncate.text-xs', { hasText: /^Deleted$/ }).locator('xpath=..')
+  await expect(deleted).toContainText(/[1-9]/)
+  const counted = page
+    .getByRole('status')
+    .filter({ hasText: /of \d+/ })
+    .first()
+  await page.getByRole('combobox', { name: 'State', exact: true }).selectOption({ label: 'Deleted' })
+  await expect(counted).not.toHaveText(everything, { timeout: 20_000 })
+  const rows = recordsTable().locator('tbody tr')
+  await expect(rows.first()).toBeVisible()
+  expect(await rows.filter({ hasText: 'deleted' }).count()).toBe(await rows.count())
+  // A second filter narrows it further instead of replacing the first.
+  const deletedCount = await counted.innerText()
+  await page.getByRole('combobox', { name: 'Entry type', exact: true }).selectOption({ label: 'Directory' })
+  await expect(page.getByRole('combobox', { name: 'State', exact: true })).toHaveValue('deleted')
+  await expect(counted).not.toHaveText(deletedCount, { timeout: 20_000 })
+  await page.getByRole('combobox', { name: 'State', exact: true }).selectOption({ label: 'Any state' })
+  await expect(rows.first()).toBeVisible({ timeout: 20_000 })
+  expect(await rows.filter({ hasText: 'directory' }).count()).toBe(await rows.count())
+  // The alternate stream and the zone are filters of their own, and "any" gives everything back.
+  await page
+    .getByRole('combobox', { name: 'Alternate stream', exact: true })
+    .selectOption({ label: 'Has an alternate stream' })
+  await page.getByRole('combobox', { name: 'Zone', exact: true }).selectOption({ label: 'Internet (3)' })
+  await expect(page.getByRole('combobox', { name: 'Entry type', exact: true })).toHaveValue('directory')
+  await page.getByRole('combobox', { name: 'Alternate stream', exact: true }).selectOption({ label: 'Any' })
+  await page.getByRole('combobox', { name: 'Zone', exact: true }).selectOption({ label: 'Any zone' })
+  await page.getByRole('combobox', { name: 'Entry type', exact: true }).selectOption({ label: 'Any type' })
+  await expect(counted).toHaveText(everything, { timeout: 20_000 })
+
+  // A record's drawer lists every field, and the original is the whole file as bytes.
+  await recordsTable().getByRole('button', { name: 'Source' }).first().click()
+  const drawer = page.getByRole('dialog', { name: 'Source of the record' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer.getByRole('region', { name: 'What Nik extracted' })).toContainText('siCreated')
+  await drawer.getByRole('group', { name: 'What to show' }).getByRole('button', { name: 'Whole file' }).click()
+  await expect(drawer.getByRole('heading', { name: 'Source file' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(drawer).toHaveCount(0)
+
+  // The $J is the other tab: its own grey row, then its records with the reasons as chips.
+  await files.getByRole('tab', { name: /^\$J/ }).click()
+  await expect(sourcesTable()).toContainText('sparse')
+  await addEvidence('UsnJrnl_J', fixture('stage6/UsnJrnl_J'), /read in part|complete/)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable()).toContainText('setup.exe')
+  await expect(recordsTable().getByText('FILE_CREATE').first()).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Reason', exact: true })).toBeVisible()
+  // The Reason filter lists the single reasons, and a record holding one of them is kept (a list of reasons is asked,
+  // not a combination).
+  const reasons = page.getByRole('combobox', { name: 'Reason', exact: true })
+  await expect(reasons.locator('option', { hasText: /^CLOSE$/ })).toHaveCount(1)
+  const usnCount = page
+    .getByRole('status')
+    .filter({ hasText: /of \d+/ })
+    .first()
+  const usnAll = await usnCount.innerText()
+  await reasons.selectOption({ label: 'FILE_CREATE' })
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable().locator('tbody tr').filter({ hasNotText: 'FILE_CREATE' })).toHaveCount(0)
+  await reasons.selectOption({ label: 'Any reason' })
+  await expect(usnCount).toHaveText(usnAll, { timeout: 20_000 })
+  await shotWide('disk-usn', page.getByRole('tablist', { name: 'Parts of the disk page' }))
+  // The Timeline leaves the disk out until the Kind filter asks for it.
+  await expect(page.getByRole('tab', { name: /^Records/ })).toBeVisible()
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-disk')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a registry hive added on Endpoint Artifacts fills several rows: ShimCache with its own time, Run keys, services, and the SRUM page', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-hive', 'E2E-HIVE', 'windows')
+  await openEvidence('Endpoint Artifacts')
+  await page.getByRole('tab', { name: /^Program Execution/ }).click()
+  // The page says one hive fills several rows, and the rows that come out of a hive say so.
+  await expect(page.getByText('one hive fills several rows')).toBeVisible()
+  await expect(sourcesTable()).toContainText('from a registry hive')
+  const choices = page.getByLabel('Add files as')
+  await expect(
+    choices.locator('option', { hasText: 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)' }),
+  ).toHaveCount(1)
+  await choices.selectOption({ label: 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)' })
+  const hive = await addEvidence('SYSTEM', fixture('stage6/SYSTEM'), /complete|read in part/)
+  // The row of the hive is named by what it gave, and the rows it fills are no longer grey.
+  await expect(hive).toContainText('ShimCache', { timeout: 30_000 })
+  await expect(
+    sourcesTable().locator('tbody tr').filter({ hasText: 'Not imported' }).filter({ hasText: 'ShimCache' }),
+  ).toHaveCount(0)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable()).toContainText('cmd.exe')
+  // ShimCache's time is the time of the file, and the page says it is not a time of execution.
+  const source = page.getByRole('combobox', { name: 'Source', exact: true })
+  await source.selectOption(await source.locator('option', { hasText: /^ShimCache/ }).getAttribute('value'))
+  await expect(page.getByRole('columnheader', { name: /File modified/ })).toBeVisible()
+  await expect(page.getByText('not an execution time')).toBeVisible()
+  await shotWide('endpoint-hive', page.getByRole('tablist', { name: 'Artifact category' }))
+
+  // The same hive's services are in Persistence; a SOFTWARE hive adds the Run keys.
+  await page.getByRole('tab', { name: /^Persistence/ }).click()
+  await expect(recordsTable()).toContainText('Spooler', { timeout: 30_000 })
+  await page.getByLabel('Add files as').selectOption({ label: 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)' })
+  await addEvidence('SOFTWARE', fixture('stage6/SOFTWARE'), /complete|read in part/)
+  await expect(sourcesTable().locator('tbody tr').filter({ hasText: 'SOFTWARE' })).toContainText('Run keys', {
+    timeout: 30_000,
+  })
+
+  // Network usage: one file, SRUDB.dat, gives two rows; there is none here, so the page says where to find it.
+  await page.getByRole('tab', { name: /^Network usage/ }).click()
+  await expect(sourcesTable()).toContainText('from SRUDB.dat')
+  await expect(page.getByLabel('Add files as').locator('option', { hasText: 'SRUDB.dat (SRUM)' })).toHaveCount(1)
+  await shotWide('endpoint-network-usage', page.getByRole('tablist', { name: 'Artifact category' }))
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-hive')).status()).toBe(204)
+  await backToMain()
+})
+
+test('Event Logs of a Linux incident: the sources of Linux, an auth.log read, its events that matter, and a detection of the Nik pack', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-linux', 'web01', 'linux')
+  await openEvidence('Event Logs')
+  // Linux expects the auth log, the journal and the audit log, with where each is; nothing of Windows.
+  await expect(sourcesTable()).toContainText('Linux logs')
+  await expect(sourcesTable()).toContainText('/var/log/auth.log')
+  await expect(sourcesTable()).toContainText('journalctl')
+  await expect(sourcesTable()).toContainText('/var/log/audit/audit.log')
+  await expect(sourcesTable()).not.toContainText('winevt')
+  const row = await addEvidence('auth.log', AUTH_LOG, /complete|read in part/)
+  await expect(row).toContainText('Auth log')
+  const parts = page.getByRole('tablist', { name: 'Parts of the logs' })
+  await expect(parts.getByRole('tab', { name: /^Events/ })).toBeVisible({ timeout: 30_000 })
+  // "Events that matter" keeps the logons, the failed logons, sudo, accounts and processes.
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable()).toContainText('Failed logon')
+  await expect(recordsTable()).toContainText('sshd')
+  await expect(recordsTable()).toContainText('198.51.100.9')
+  await page
+    .getByRole('tabpanel', { name: 'Events' })
+    .getByRole('combobox', { name: 'Type', exact: true })
+    .selectOption({ label: 'sudo' })
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(1, { timeout: 20_000 })
+  await expect(recordsTable()).toContainText('/etc/shadow')
+  await page
+    .getByRole('tabpanel', { name: 'Events' })
+    .getByRole('combobox', { name: 'Type', exact: true })
+    .selectOption({ label: 'All types' })
+  await expect(parts.getByRole('tab', { name: /^Detections\s*[1-9]/ })).toBeVisible({ timeout: 60_000 })
+  await shotWide('eventlogs-linux', parts)
+  await parts.getByRole('tab', { name: /^Detections/ }).click()
+  await expect(page.getByRole('tabpanel', { name: 'Detections' })).toContainText('Rule by Nik', { timeout: 30_000 })
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-linux')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a collection is listed, three of its files are imported, their pages show them, and a program is listed for Malware Analysis', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-zip', 'E2E-ZIP', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page
+    .getByLabel('A collection to import')
+    .setInputFiles({ name: 'triage.zip', mimeType: 'application/zip', buffer: fixture('stage6/triage.zip') })
+  const dialog = page.getByRole('dialog', { name: /^Collection: triage\.zip/ })
+  await expect(dialog).toBeVisible({ timeout: 30_000 })
+  // The member list: tabs with counts, a search, the sections as checkboxes.
+  const tabs = dialog.getByRole('tablist', { name: 'Files of the collection' })
+  await expect(tabs.getByRole('tab', { name: /^All\s*6/ })).toBeVisible({ timeout: 60_000 })
+  await expect(tabs.getByRole('tab', { name: /^Importable\s*[1-9]/ })).toBeVisible()
+  await expect(tabs.getByRole('tab', { name: /^Programs\s*1/ })).toBeVisible()
+  await expect(dialog.getByRole('table')).toContainText('payload.exe')
+  await shot('collection-dialog-list', dialog)
+  // A program is listed with "Analyse" and never imported as evidence.
+  await expect(
+    dialog.getByRole('row').filter({ hasText: 'payload.exe' }).getByRole('button', { name: 'Analyse' }),
+  ).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: /Pick .*payload\.exe/ })).toBeDisabled()
+
+  // Three files are picked and imported; the progress is what the server says.
+  for (const name of [/Pick .*config\/SYSTEM$/, /Pick .*config\/SOFTWARE$/, /Pick .*\$MFT$/]) {
+    await dialog.getByRole('checkbox', { name }).check()
+  }
+  await page.route('**/evidence/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const body = await response.json()
+    body.collection.state = 'importing'
+    body.collection.members = {
+      ...(body.collection.members ?? {}),
+      importing: {
+        total: 3,
+        done: 1,
+        already: 0,
+        failed: 0,
+        current: 'C/Windows/System32/config/SOFTWARE',
+        error: null,
+      },
+    }
+    return route.fulfill({ response, json: body })
+  })
+  await dialog.getByRole('button', { name: 'Import 3 files' }).click()
+  await expect(dialog.getByText('1 of 3 imported')).toBeVisible({ timeout: 20_000 })
+  await shot('collection-dialog-importing', dialog)
+  await page.unroute('**/evidence/collections/*')
+  await expect(tabs.getByRole('tab', { name: /^Already imported\s*3/ })).toBeVisible({ timeout: 90_000 })
+  await dialog.getByRole('button', { name: 'Close' }).last().click()
+
+  // The collection has its row in the block of the Evidence page, and the files its row in their pages.
+  const block = page.getByRole('region', { name: 'Collections' })
+  await expect(block).toContainText('triage.zip')
+  await expect(block).toContainText('3 imported')
+  await shot('evidence-collections-block', block)
+  await openEvidence('Disk (NTFS)')
+  await expect(sourcesTable()).toContainText('from triage.zip', { timeout: 30_000 })
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 60_000 })
+  await openEvidence('Endpoint Artifacts')
+  await page.getByRole('tab', { name: /^Program Execution/ }).click()
+  await expect(sourcesTable()).toContainText('from triage.zip', { timeout: 30_000 })
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-zip')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a disk image is refused with the sentence that says what to do', async () => {
+  test.setTimeout(120_000)
+  await openFreshIncidentOf('e2e-s6-vhdx', 'E2E-VHDX', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page.getByLabel('A collection to import').setInputFiles({
+    name: 'disk.vhdx',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from('vhdxfile' + 'x'.repeat(600)),
+  })
+  const toast = page.getByRole('status').filter({ hasText: 'disk.vhdx' })
+  await expect(toast).toContainText('disk image', { timeout: 30_000 })
+  await expect(toast).toContainText('Mount the image')
+  await shot('collection-refused', toast)
+  // Nothing was kept: no collection row, no source.
+  await expect(page.getByRole('region', { name: 'Collections' })).toHaveCount(0)
+  expect((await page.request.delete('/api/incidents/e2e-s6-vhdx')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a file dropped on the Summary page goes to its section, and the toast says where', async () => {
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-drop', 'E2E-DROP', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  const transfer = await page.evaluateHandle((content) => {
+    const data = new DataTransfer()
+    data.items.add(new File([content], 'nik-eventlogs.json', { type: 'application/json' }))
+    return data
+  }, fixture('nik-eventlogs.json').toString())
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  // The app asks where it goes (this incident), and does not ask what it is: the server recognises it.
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toContainText('Host evidence')
+  await dialog.getByRole('button', { name: 'Import', exact: true }).click()
+  const toast = page.getByRole('status').filter({ hasText: 'nik-eventlogs.json → Event Logs' })
+  await expect(toast).toBeVisible({ timeout: 60_000 })
+  await shot('drop-auto-toast', toast)
+  await toast.getByRole('button', { name: /Open Event Logs/ }).click()
+  await expect(page.getByRole('region', { name: /^Sources/ })).toBeVisible()
+  await waitRead('nik-eventlogs.json')
+  expect((await page.request.delete('/api/incidents/e2e-s6-drop')).status()).toBe(204)
+  await backToMain()
+})
+
+/** Back to the incident the other tests work on (nothing to go back to when only some tests run). */
+async function backToMain() {
+  if (mainIncident) await openIncidentAt(mainIncident)
+}
+
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {
   const headers = (await request.get('/')).headers()
   expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'")
@@ -9398,4 +9734,36 @@ test('the API is reachable through the same origin', async ({ request }) => {
   expect(health.ok()).toBeTruthy()
   const ready = await request.get('/api/ready')
   expect(ready.ok()).toBeTruthy()
+})
+
+test('a zip dropped on the Summary page is a sample; the same zip through "Import a collection…" is a collection', async () => {
+  test.setTimeout(240_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-zipdrop', 'E2E-ZIPDROP', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  const zip = fixture('stage6/triage.zip').toString('base64')
+  const transfer = await page.evaluateHandle((base64) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    const data = new DataTransfer()
+    data.items.add(new File([bytes], 'triage.zip', { type: 'application/zip' }))
+    return data
+  }, zip)
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  // As in 6.x: a zip is how samples arrive, so it goes to Malware Analysis, not to the collections.
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toContainText('Malware Analysis')
+  await expect(dialog.locator('#add-file-tab')).toHaveValue('malware')
+  await dialog.getByRole('button', { name: 'Import', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('triage.zip', { timeout: 60_000 })
+
+  // The same file, on purpose: a collection.
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page
+    .getByLabel('A collection to import')
+    .setInputFiles({ name: 'triage.zip', mimeType: 'application/zip', buffer: fixture('stage6/triage.zip') })
+  await expect(page.getByRole('dialog', { name: /^Collection: triage\.zip/ })).toBeVisible({ timeout: 30_000 })
+  await page.keyboard.press('Escape')
+  expect((await page.request.delete('/api/incidents/e2e-s6-zipdrop')).status()).toBe(204)
+  await backToMain()
 })

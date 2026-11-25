@@ -372,6 +372,8 @@ class Engine:
             orig["source"] = source
             orig["host"] = host
             orig["user"] = username
+            if kind == logsource.SYSLOG:
+                logsource.syslog_fields(channel.lower(), rtype, orig)
         if hours and self.hours is not None and ts is not None:
             orig["nikoffhours"] = "true" if self.hours.off(ts) else "false"
         record = {

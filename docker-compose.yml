@@ -543,6 +543,8 @@ services:
       FORENSICS_TOKEN_FILE: /run/secrets/forensics_token
       FORENSICS_MAX_JOBS: ${FORENSICS_MAX_JOBS:-2}
       FORENSICS_JOB_MEMORY_MB: ${FORENSICS_JOB_MEMORY_MB:-1536}
+      # The bound on a collection (a zip of a triage): the same value as the API's COLLECTION_MAX_MB.
+      FORENSICS_COLLECTION_MB: ${COLLECTION_MAX_MB:-20480}
     volumes:
       - forensics-work:/work
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/forensics_token:/run/secrets/forensics_token:ro,z

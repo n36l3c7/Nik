@@ -55,6 +55,8 @@ export const SUPPORTED_OPTIONS = [
 export const TRY_KINDS = [
   { value: '', label: 'Every section' },
   { value: 'eventlog', label: 'Event logs' },
+  { value: 'syslog', label: 'Linux and macOS logs' },
+  { value: 'disk', label: 'Disk (NTFS)' },
   { value: 'endpoint', label: 'Endpoint artifacts' },
   { value: 'browser', label: 'Browser forensics' },
   { value: 'commands', label: 'Command history' },

@@ -25,6 +25,7 @@ import { formatRelative } from '../../lib/time.js'
  */
 
 const TABS = [
+  { id: 'host', label: 'Host evidence (Nik recognises it)' },
   { id: 'malware', label: 'Malware Analysis' },
   { id: 'mail', label: 'Mail Analysis' },
   { id: 'network', label: 'Network Analysis' },
@@ -224,6 +225,12 @@ export default function AddFileDialog({ drop, activeIncident, onClose, onConfirm
             }}
             options={TABS.map((t) => ({ value: t.id, label: t.label }))}
           />
+          {tab === 'host' && (
+            <p className="self-end text-xs text-fg-muted">
+              Nik asks the worker what the file is and files it under its page; a zip becomes a collection you choose
+              from. It says where the file went, or why it cannot be read.
+            </p>
+          )}
           {tab === 'browser' && (
             <Select
               id="add-file-browser"

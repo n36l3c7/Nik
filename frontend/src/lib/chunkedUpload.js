@@ -20,6 +20,12 @@ export const BACKOFF_BASE_MS = 500
 export const BACKOFF_CAP_MS = 15000
 export const POLL_MS = 1000
 
+/** The params of an upload with the file's own last-modified time (ms), when the browser knows it. */
+export function withFileTime(params, file) {
+  const time = Number(file?.lastModified)
+  return Number.isFinite(time) && time > 0 ? { ...params, fileTime: Math.round(time) } : { ...params }
+}
+
 /** The next part to send: `{ offset, length }`, or null when the whole file is there. */
 export function nextPart(received, size, chunk) {
   if (!(chunk > 0) || !(size > 0) || received >= size) return null
@@ -80,14 +86,17 @@ function pause(ms, signal) {
  * @param {File} file
  * @param {object} options
  * @param {string} options.incidentId
- * @param {object} options.params  `{ kind, source?, host?, user?, profile? }` (what `POST /uploads` takes)
+ * @param {object} options.params  `{ kind, source?, host?, user?, profile? }` (what `POST /uploads` takes); the
+ *   file's own last-modified time goes with it as `fileTime` (ms), which the parsers of logs use to date lines
+ *   that carry no year
  * @param {(p: { phase: 'sending'|'keeping', sent: number, total: number, work?: object|null }) => void} [options.onProgress]
  * @param {AbortSignal} [options.signal]
  * @param {object} [options.api]       `uploads` of services/api.js (given by the tests)
  * @param {number} [options.retries]   failed parts in a row before it gives up
  * @param {(ms: number, signal?: AbortSignal) => Promise<void>} [options.sleep]
  * @param {number} [options.pollMs]    how often it asks whether the server has kept the file
- * @returns {Promise<{ uploadId: string, sourceId: string|null }>} `sourceId` is the file's report
+ * @returns {Promise<{ uploadId: string, sourceId: string|null, kind: string|null, source: string|null, duplicate: boolean }>}
+ *   `sourceId` is the file's report; `kind` and `source` say where the file went (the server's guess for `kind: "auto"`)
  * @throws an Error with the server's sentence; an AbortError when cancelled (the session is given up)
  */
 export async function uploadFile(
@@ -96,7 +105,10 @@ export async function uploadFile(
 ) {
   const server = api ?? (await import('../services/api.js')).uploads
   const size = file.size
-  const session = await server.open({ incidentId, fileName: file.name, size, params }, { signal })
+  const session = await server.open(
+    { incidentId, fileName: file.name, size, params: withFileTime(params, file) },
+    { signal },
+  )
   const id = session.id
   const chunk = session.chunk
   let received = session.received ?? 0
@@ -143,7 +155,13 @@ export async function uploadFile(
     if (shown.state !== 'complete') {
       throw new Error(shown.error || `The upload ended ${shown.state}`)
     }
-    return { uploadId: id, sourceId: shown.sourceId ?? null }
+    return {
+      uploadId: id,
+      sourceId: shown.sourceId ?? null,
+      kind: shown.kind ?? null,
+      source: shown.source ?? null,
+      duplicate: Boolean(shown.duplicate),
+    }
   } catch (error) {
     // Given up (cancelled, refused, out of retries): the server removes the parts it holds.
     try {

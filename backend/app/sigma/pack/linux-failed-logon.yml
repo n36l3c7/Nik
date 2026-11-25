@@ -1,0 +1,16 @@
+title: 'Failed Logon (Linux)'
+id: 2a6286d2-1006-43df-b96d-0973453fad1b
+name: nik_linux_failed_logon
+status: stable
+description: 'A logon failed: sshd (Failed password, Invalid user), PAM, su, login, sudo with wrong passwords, or a failed login of the audit log. It is the base of the correlations of brute force and of a logon after failures.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: linux
+detection:
+    selection:
+        recordtype: logon_failed
+    condition: selection
+falsepositives:
+    - A mistyped password
+level: informational

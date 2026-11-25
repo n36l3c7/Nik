@@ -26,6 +26,9 @@ from ..core.security import now_iso
 from . import originals
 
 PARSE_WORK = "evidence-parse"
+# A collection (a triage zip) is a source whose files are listed first (``collections.py``).
+UNPACK_WORK = "evidence-unpack"
+COLLECTION_ZIP = "collection.zip"
 # The state of a file an imported incident lists and does not hold: its name, hash and report came
 # with the export, its original did not.
 ABSENT = "absent"
@@ -73,12 +76,21 @@ def is_duplicate(db: OrmSession, incident_id: str, sha256: str, file_name: str, 
     return found is not None and found.state != ABSENT
 
 
+def _file_time(value: Any) -> int | None:
+    """The file's own last-modified time (ms since the epoch) as sent, or None when it is not a plausible one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    moved = int(value)
+    return moved if 946684800000 < moved < 4102444800000 else None
+
+
 def accept(
     db: OrmSession, incident_id: str, sha256: str, size: int, file_name: str, params: dict[str, Any], actor: str
 ) -> EvidenceSource:
     """The source of an original just kept (the caller commits). ``params``: ``kind`` (the section),
     ``source`` (what it is to the section, or empty: the worker recognises it), ``host``, ``user``,
-    ``profile``, ``collectionId``, ``filePath``. Raises ``archive.Archived`` for an incident that is
+    ``profile``, ``collectionId``, ``filePath``,
+    ``fileTime`` (the file's own last-modified time, ms). Raises ``archive.Archived`` for an incident that is
     archived: nothing is added to it."""
     archive.guard_id(db, incident_id)
     kind = str(params.get("kind") or "")
@@ -88,6 +100,7 @@ def accept(
     found = _held(db, incident_id, sha256, kind, source)
     if found is not None and found.state != ABSENT:
         return found
+    listed = kind == "collection" and source == COLLECTION_ZIP
     incident = db.get(Incident, incident_id)
     if incident is None:
         raise ValueError("Incident not found")
@@ -109,7 +122,8 @@ def accept(
         username=str(params.get("user") or "")[:255],
         profile=str(params.get("profile") or "")[:120],
         parser=parser,
-        state="queued",
+        file_time=_file_time(params.get("fileTime")),
+        state="listing" if listed else "queued",
         read="unknown",
         report={},
         created_at=now_iso(),
@@ -132,7 +146,7 @@ def accept(
             incident_name=(incident.doc or {}).get("name"),
         )
     )
-    work.want(db, PARSE_WORK, row.id)
+    work.want(db, UNPACK_WORK if listed else PARSE_WORK, row.id)
     return row
 
 

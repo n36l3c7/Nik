@@ -117,6 +117,13 @@ test('what was stored is read defensively', () => {
   assert.deepEqual(readSettings('{"pageSize":7}', columns), { hidden: [], pageSize: 50 })
   assert.deepEqual(readSettings('not json', columns), { hidden: [], pageSize: 50 })
   assert.deepEqual(readSettings(null, columns), { hidden: [], pageSize: 50 })
+  // A column that starts hidden is hidden until a choice is stored (then the choice is the person's).
+  const quiet = [
+    { key: 'b', hideable: true, hiddenByDefault: true },
+    { key: 'c', hiddenByDefault: true },
+  ]
+  assert.deepEqual(readSettings(null, quiet), { hidden: ['b'], pageSize: 50 })
+  assert.deepEqual(readSettings('{"hidden":[]}', quiet), { hidden: [], pageSize: 50 })
 })
 
 test('a cell is filtered on when it holds a plain value', () => {

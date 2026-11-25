@@ -233,6 +233,7 @@ const TYPE_ICONS = {
   command: Terminal,
   sample: Bug,
   eventlog: ScrollText,
+  syslog: ScrollText,
   mail: Mail,
   network: Network,
 }
@@ -254,7 +255,13 @@ function MarkTimelineItem({ record, canWrite, onOpen, onUnflag }) {
       <div className="border border-line border-l-2 border-l-accent-strong bg-accent-soft p-3">
         <div className="flex items-start gap-2">
           <TypeIcon
-            type={record.kind === 'eventlog' ? 'eventlog' : record.kind === 'commands' ? 'command' : record.type}
+            type={
+              record.kind === 'eventlog' || record.kind === 'syslog'
+                ? 'eventlog'
+                : record.kind === 'commands'
+                  ? 'command'
+                  : record.type
+            }
           />
           <span className="min-w-0 flex-1 break-words text-sm font-medium text-fg">{recordLabel(record)}</span>
         </div>

@@ -127,7 +127,24 @@ test('the counts of host evidence come from the summary of the server', () => {
   const group = evidenceGroups(KINDS, INCIDENT, SUMMARY).find((item) => item.id === 'commands')
   assert.equal(group.partial, 1)
   assert.equal(tabOfKind('eventlog'), 'eventlogs')
-  assert.equal(tabOfKind('disk'), null)
+  assert.equal(tabOfKind('disk'), 'disk')
+  assert.equal(tabOfKind('nothing'), null)
+})
+
+test('the event logs page counts the logs of Linux and macOS with those of Windows', () => {
+  const summary = {
+    kinds: {
+      eventlog: { sources: 2, records: 10, partial: 1, failed: 0, parsing: 0, absent: 0 },
+      syslog: { sources: 1, records: 5, partial: 0, failed: 1, parsing: 0, absent: 0 },
+      disk: { sources: 1, records: 7 },
+    },
+  }
+  assert.deepEqual(
+    ['sources', 'records', 'partial', 'failed'].map((name) => hostCounts(summary, 'eventlogs')[name]),
+    [3, 15, 1, 1],
+  )
+  assert.equal(hostCounts(summary, 'disk').records, 7)
+  assert.equal(tabOfKind('syslog'), 'eventlogs')
 })
 
 test('the pill of the header and where it leads', () => {

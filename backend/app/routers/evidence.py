@@ -15,13 +15,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import archive, artifacts, war_room, work
+from .. import archive, artifacts, war_room
 from ..core import audit
 from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import ArtifactLink, EvidenceMark, EvidenceSource, Incident, WorkClaim
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
-from ..evidence import browse, imports, originals, parse
+from ..evidence import browse, collections, imports, originals, parse
 from .evidence_filters import filters, keys_of
 
 router = APIRouter(prefix="/incidents/{incident_id}/evidence", tags=["incidents/evidence"])
@@ -58,8 +58,12 @@ def _source(db: OrmSession, incident_id: str, source_id: str) -> EvidenceSource:
 
 
 def _shown(db: OrmSession, row: EvidenceSource) -> dict[str, Any]:
-    running = row.state in ("queued", "parsing")
-    return browse.source_of(row, work.describe(db, imports.PARSE_WORK, row.id) if running else None)
+    answer = browse.source_of(row, collections.work_of(db, row))
+    if row.collection_id:
+        # The collection a file was taken out of, while the collection is there.
+        held = db.get(EvidenceSource, row.collection_id)
+        answer["collectionName"] = held.file_name if held is not None else None
+    return answer
 
 
 def _whole(db: OrmSession, row: EvidenceSource) -> dict[str, Any]:
@@ -111,8 +115,16 @@ def read_again(
         raise HTTPException(status_code=409, detail=LEGACY)
     if not row.sha256 or not originals.has(row.sha256):
         raise HTTPException(status_code=409, detail=NO_ORIGINAL)
-    if row.state in ("queued", "parsing"):
+    if row.state in ("queued", "parsing", "listing", "importing"):
         raise HTTPException(status_code=409, detail="This file is already being read")
+    if collections.is_collection(row):
+        # A collection is listed again, not read: what was imported from it stays.
+        collections.again(db, row)
+        audit.record(db, caller.actor, "evidence.again", f"Listed {row.file_name} again", None, target=row.file_name)
+        db.commit()
+        collections.start_unpack(source_id)
+        db.refresh(row)
+        return _shown(db, row)
     parse.again(db, row)
     audit.record(db, caller.actor, "evidence.again", f"Read {row.file_name} again", None, target=row.file_name)
     db.commit()
@@ -183,20 +195,26 @@ def remove_source(
     db: OrmSession = Depends(get_db),
 ):
     """Remove a file and its records from the incident. The flags and notes stay (they are by
-    key). The original stays in the store as its artifact until no incident holds it."""
+    key). The original stays in the store as its artifact until no incident holds it. A collection
+    is removed alone: the files that were imported from it stay, and no longer name it."""
     incident = _incident(db, incident_id, lock=True)
     row = _source(db, incident_id, source_id)
-    # A collection goes with the files taken out of it.
-    gone = [row, *db.scalars(select(EvidenceSource).where(EvidenceSource.collection_id == row.id))]
-    if any(item.state == "parsing" for item in gone):
+    gone = [row]
+    if row.state in ("parsing", "listing", "importing"):
         raise HTTPException(status_code=409, detail="This file is being read: wait for it to end")
     for item in gone:
         parse.clear(db, item.id)
-        db.execute(delete(WorkClaim).where(WorkClaim.kind == imports.PARSE_WORK, WorkClaim.ref == item.id))
+        db.execute(
+            delete(WorkClaim).where(
+                WorkClaim.kind.in_((imports.PARSE_WORK, imports.UNPACK_WORK, collections.IMPORT_WORK)),
+                WorkClaim.ref == item.id,
+            )
+        )
+    if collections.is_collection(row):
+        collections.clear_members(db, row.id)
     names = ", ".join(item.file_name for item in gone[:3])
     ids = {item.id for item in gone}
     hashes = {item.sha256 for item in gone if item.sha256}
-    # Children first: the collection's own row owns the foreign key.
     for item in reversed(gone):
         db.delete(item)
     db.flush()

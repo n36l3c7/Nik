@@ -72,6 +72,11 @@ test('an expected source is missing until a file satisfies it', () => {
     ['shortcuts'],
   )
   assert.equal(missingExpected(expected, [], match).length, 2)
+  // A row the records of a hive satisfy is not grey, with no file of its name.
+  assert.deepEqual(
+    missingExpected(expected, [], match, ['history']).map((item) => item.key),
+    ['shortcuts'],
+  )
   assert.equal(expectedOf({ source: 'History' }, expected, match).label, 'History')
   assert.equal(expectedOf({ source: 'Other' }, expected, match), null)
 })

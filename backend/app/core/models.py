@@ -2212,6 +2212,9 @@ class EvidenceSource(Base):
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
     created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     parsed_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    # The file's own last-modified time as the browser saw it (ms since the epoch): the syslog parser takes the year
+    # of lines that carry none from it, not from the date the file reached the worker.
+    file_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
 
 class EvidenceRecord(Base):
@@ -2264,6 +2267,37 @@ class EvidenceRecord(Base):
     truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     locator: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # The source the record is of when it is not its file's: an export of Plaso holds records of every
+    # section. None: the source of the file (``evidence_sources.source``).
+    source: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+
+
+class EvidenceMember(Base):
+    """A file inside a collection (a KAPE or Velociraptor zip), as the worker listed it: what the person chooses
+    from when importing. ``kind`` and ``source`` are what a parser of the worker reads it as (empty: nothing does),
+    ``skip`` why it cannot be (an encrypted member, one too large, an archive inside); ``executable`` a program, listed
+    for "Analyse" and never imported as evidence. ``source_id`` is the source it became, when it was imported."""
+
+    __tablename__ = "evidence_members"
+    __table_args__ = (Index("ix_evidence_members_sha256", "collection_id", "sha256"),)
+
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_sources.id", ondelete="CASCADE"), primary_key=True
+    )
+    n: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    kind: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    parser: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    profile: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    executable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    skip: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    source_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
 
 class EvidenceMark(Base):
@@ -2496,3 +2530,7 @@ EVIDENCE_TABLES = (
     "sigma_rules",
 )
 EVIDENCE_COLUMNS: dict[str, tuple[str, ...]] = {"incidents": ("tz", "archived_at", "archived_by")}
+
+# Created by migration 0058_collections where missing: the members of a collection, and the source a record
+# of a file that holds several kinds of record (an export of Plaso) is of.
+COLLECTION_TABLES = ("evidence_members",)

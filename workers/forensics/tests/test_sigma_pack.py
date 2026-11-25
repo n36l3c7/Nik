@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
+from nik_forensics.parsers import syslog
 from nik_forensics.sigma import check
 from nik_forensics.sigma.engine import Engine
 from sigma_support import SYSMON, record
@@ -422,9 +423,67 @@ def logon(event_id: int, user: str, stamp: str, key: str, **data) -> tuple:
 
 
 # --------------------------------------------------------------------------- #
+# Linux: the records of the syslog parser                                      #
+# --------------------------------------------------------------------------- #
+def auth(message: str, program: str = "sshd", stamp: str = "2026-05-05 10:00:00", key: str | None = None) -> tuple:
+    """A line of auth.log as the parser reads it: the message is decoded by the parser's own code."""
+    rtype, user, data, _ioc = syslog._typed(program, message, {"program": program, "message": message})
+    return record(
+        data,
+        channel="auth",
+        event_id=None,
+        kind="syslog",
+        rtype=rtype,
+        key=key or f"{program}:{stamp}:{message}",
+        ts=at(stamp),
+        host="web01",
+        username=user,
+        summary=f"{program}: {message}",
+        source="linux.auth",
+    )
+
+
+def failed_from(address: str, stamp: str, key: str, user: str = "root") -> tuple:
+    return auth(f"Failed password for {user} from {address} port 22 ssh2", stamp=stamp, key=key)
+
+
+SUDO = "  alice : TTY=pts/0 ; PWD=/home/alice ; USER={runas} ; COMMAND={command}"
+SINGLE["linux-sudo-to-root-shell"] = (
+    [
+        auth(SUDO.format(runas="root", command=command), "sudo")
+        for command in ("/bin/bash", "/usr/bin/zsh -l", "/usr/bin/su -", "/bin/sh", "/usr/bin/bash --login")
+    ],
+    [
+        auth(SUDO.format(runas="root", command="/usr/bin/cat /etc/hosts"), "sudo"),
+        auth(SUDO.format(runas="root", command="/usr/bin/bash -c id"), "sudo"),
+        auth(SUDO.format(runas="bob", command="/bin/bash"), "sudo"),
+        auth("Accepted password for alice from 192.0.2.1 port 22 ssh2"),
+    ],
+)
+SINGLE["linux-new-account"] = (
+    [
+        auth("new user: name=bob, UID=1001, GID=1001, home=/home/bob, shell=/bin/bash", "useradd"),
+        record(
+            {"MESSAGE": "new user: name=eve", "program": "useradd", "facility": "authpriv", "action": "user_added"},
+            channel="journal",
+            event_id=None,
+            kind="syslog",
+            rtype="account",
+            source="linux.journal",
+        ),
+    ],
+    [
+        auth("pam_unix(passwd:chauthtok): password changed for bob", "passwd"),
+        auth("delete user 'bob'", "userdel"),
+        auth("Accepted password for alice from 192.0.2.1 port 22 ssh2"),
+    ],
+)
+
+
+# --------------------------------------------------------------------------- #
 # The tests                                                                    #
 # --------------------------------------------------------------------------- #
-def test_the_pack_is_the_fifty_three_rules_and_each_has_a_case():
+def test_the_pack_is_the_sixty_rules_and_each_has_a_case():
     shipped = {name for name in TEXTS}
     cases = (
         set(SINGLE)
@@ -435,10 +494,15 @@ def test_the_pack_is_the_fifty_three_rules_and_each_has_a_case():
             "windows-logon-after-failures",
             "windows-repeated-failed-logons",
             "windows-rdp-logon-off-hours",
+            "linux-failed-logon",
+            "linux-successful-logon",
+            "linux-ssh-brute-force",
+            "linux-repeated-failed-logons",
+            "linux-logon-after-failures",
         }
         | set(PROCESS)
     )
-    assert len(shipped) == 53
+    assert len(shipped) == 60
     assert shipped == cases, f"no case for {sorted(shipped - cases)}, a case for no file: {sorted(cases - shipped)}"
 
 
@@ -608,3 +672,120 @@ def test_rdp_outside_working_hours_reads_the_hours_of_the_request():
     assert hits(stem, [late], hours)[0] == {stem[0]: 1} and hits(stem, [late], new_york)[0] == {}
     # Without hours no record has the field: nothing matches.
     assert hits(stem, [night])[0] == {}
+
+
+# --------------------------------------------------------------------------- #
+# Linux logons                                                                 #
+# --------------------------------------------------------------------------- #
+LINUX_LOGON = [
+    "linux-failed-logon",
+    "linux-successful-logon",
+    "linux-repeated-failed-logons",
+    "linux-logon-after-failures",
+    "linux-ssh-brute-force",
+]
+
+
+def test_the_linux_failed_and_successful_logon_are_bases_that_say_nothing_alone():
+    failed = failed_from("198.51.100.9", "2026-05-05 10:00:00", "f1")
+    ok = auth("Accepted publickey for alice from 203.0.113.7 port 22 ssh2", key="o1")
+    assert hits(["linux-failed-logon"], [failed, ok])[0] == {"linux-failed-logon": 1}
+    assert hits(["linux-successful-logon"], [failed, ok])[0] == {"linux-successful-logon": 1}
+    assert hits(LINUX_LOGON, [failed, ok])[0] == {}
+    # They read the other channels as well: a failed login of the audit log, one of the journal.
+    audit_failed = record(
+        {"types": ["USER_LOGIN"], "source_ip": "198.51.100.9", "res": "failed"},
+        channel="audit",
+        event_id=None,
+        kind="syslog",
+        rtype="logon_failed",
+        source="linux.audit",
+    )
+    journal_failed = record(
+        {"MESSAGE": "x", "program": "sshd", "source_ip": "198.51.100.9"},
+        channel="journal",
+        event_id=None,
+        kind="syslog",
+        rtype="logon_failed",
+        source="linux.journal",
+    )
+    assert hits(["linux-failed-logon"], [audit_failed, journal_failed])[0] == {"linux-failed-logon": 2}
+    windows = logon(4625, "alice", "2026-05-05 10:00:00", "w1")
+    assert hits(["linux-failed-logon"], [windows])[0] == {}
+
+
+def test_ssh_brute_force_is_ten_failed_logons_from_one_address_in_ten_minutes():
+    stems = ["linux-failed-logon", "linux-ssh-brute-force"]
+    ten = [failed_from("198.51.100.9", f"2026-05-05 10:0{n}:00", f"f{n}", user=f"u{n}") for n in range(10)]
+    _, found = hits(stems, ten)
+    assert [(d["key"], d["count"]) for d in found] == [("f9", 10)]
+    assert found[0]["rule"] == line_of(TEXTS["linux-ssh-brute-force"])["id"]
+    assert hits(stems, ten[:9])[1] == []
+    slow = [failed_from("198.51.100.9", f"2026-05-05 10:{n * 2:02d}:00", f"s{n}") for n in range(10)]  # 18 minutes
+    assert hits(stems, slow)[1] == []
+    mixed = [failed_from(f"198.51.100.{n % 2}", f"2026-05-05 10:0{n}:00", f"m{n}") for n in range(10)]
+    assert hits(stems, mixed)[1] == []
+    # A failure that names no address (a failed su) is not counted for any address.
+    local = [auth("FAILED su for root by bob", "su", f"2026-05-05 10:0{n}:00", f"l{n}") for n in range(10)]
+    assert hits(stems, local)[1] == []
+
+
+def linux_failures(user: str, count: int, first_minute: int = 0, prefix: str = "f") -> list[tuple]:
+    return [
+        failed_from(f"198.51.100.{n}", f"2026-05-05 10:{first_minute + n:02d}:00", f"{prefix}{n}", user=user)
+        for n in range(count)
+    ]
+
+
+def test_a_linux_logon_after_failures_is_five_failures_of_an_account_then_a_success_of_it():
+    stems = [s for s in LINUX_LOGON if s != "linux-ssh-brute-force"]
+    me = line_of(TEXTS["linux-logon-after-failures"])["id"]
+    ok = auth("Accepted password for alice from 192.0.2.50 port 22 ssh2", stamp="2026-05-05 10:20:00", key="o1")
+    assert hits(stems, [*linux_failures("alice", 4), ok])[1] == []
+    (found,) = hits(stems, [*linux_failures("alice", 5), ok])[1]
+    assert (found["rule"], found["key"]) == (me, "o1")
+    assert found["records"] == ["f0", "f1", "f2", "f3", "f4", "o1"] and found["count"] == 2
+    other = auth("Accepted password for bob from 192.0.2.50 port 22 ssh2", stamp="2026-05-05 10:20:00", key="o2")
+    assert hits(stems, [*linux_failures("alice", 5), other])[1] == []
+    late = auth("Accepted password for alice from 192.0.2.50 port 22 ssh2", stamp="2026-05-05 10:35:00", key="o4")
+    assert hits(stems, [*linux_failures("alice", 5), late])[1] == []
+    first = auth("Accepted password for alice from 192.0.2.50 port 22 ssh2", stamp="2026-05-05 09:50:00", key="o3")
+    assert hits(stems, [first, *linux_failures("alice", 5)])[1] == []
+    # A session opened through sudo or su is rights taken, not a logon of the account; one of login or a display
+    # manager is a logon.
+    session = auth(
+        "pam_unix(sudo:session): session opened for user alice(uid=1000) by bob(uid=1001)",
+        "sudo",
+        "2026-05-05 10:20:00",
+        "o5",
+    )
+    assert hits(stems, [*linux_failures("alice", 5), session])[1] == []
+    desktop = auth(
+        "pam_unix(gdm-password:session): session opened for user alice(uid=1000) by (uid=0)",
+        "gdm-password",
+        "2026-05-05 10:20:00",
+        "o6",
+    )
+    assert [d["key"] for d in hits(stems, [*linux_failures("alice", 5), desktop])[1]] == ["o6"]
+    assert [d["rule"] for d in hits(stems[:3], linux_failures("alice", 5))[1]] == [
+        line_of(TEXTS["linux-repeated-failed-logons"])["id"]
+    ]
+
+
+def test_the_levels_of_the_linux_logon_rules_and_their_names():
+    levels = {stem: yaml.safe_load(TEXTS[stem])["level"] for stem in LINUX_LOGON}
+    assert levels == {
+        "linux-failed-logon": "informational",
+        "linux-successful-logon": "informational",
+        "linux-repeated-failed-logons": "low",
+        "linux-logon-after-failures": "high",
+        "linux-ssh-brute-force": "high",
+    }
+    names = {yaml.safe_load(TEXTS[stem]).get("name") for stem in LINUX_LOGON}
+    assert names == {
+        "nik_linux_failed_logon",
+        "nik_linux_successful_logon",
+        "nik_linux_repeated_failed_logons",
+        "nik_linux_logon_after_failures",
+        "nik_linux_ssh_brute_force",
+    }

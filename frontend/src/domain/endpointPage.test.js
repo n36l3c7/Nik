@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   ENDPOINT_COLUMNS,
   OTHER,
+  addOptions,
+  categoriesOfFile,
   categoryItems,
   categoryOfSource,
   categoryTotals,
@@ -13,13 +15,20 @@ import {
   expectedSources,
   fieldsOf,
   incidentRange,
+  isMultiSource,
+  labelOfFile,
+  notesOf,
   otherOptions,
   otherSources,
   partialCategories,
+  presentKeys,
   sourceFilter,
   sourceKeyOf,
+  sourceLabelOf,
   sourceOptions,
   statFilters,
+  timeLabelOf,
+  valueOf,
   withData,
   withoutData,
 } from './endpointPage.js'
@@ -50,17 +59,54 @@ const categories = [persistence, usb]
 
 test('the columns of a category are keys the worker writes in the data of its records', () => {
   // workers/forensics/nik_forensics/parsers/endpoint.py, CATEGORIES.
-  const written = {
-    execution: ['name', 'path', 'runCount', 'source'],
-    persistence: ['name', 'kind', 'command', 'location'],
-    fileaccess: ['name', 'target', 'kind'],
-    usb: ['device', 'serial', 'vendor', 'connection'],
+  // The columns of a category read the keys of every source of it (a prefetch file has executable, an Amcache
+  // entry name): the first key of each column, and the others it falls back on.
+  const first = {
+    execution: ['name', 'path', 'runCount', 'sha1', 'source', 'ts_is'],
+    persistence: ['name', 'kind', 'command', 'location', 'ts_is'],
+    fileaccess: ['name', 'target', 'kind', 'ts_is'],
+    usb: ['device', 'serial', 'vendor', 'connection', 'ts_is'],
+    network: [
+      'app',
+      'user',
+      'interface_type',
+      'bytes_sent',
+      'bytes_received',
+      'bytes_total',
+      'foreground_bytes_read',
+      'foreground_bytes_written',
+    ],
   }
-  assert.deepEqual(Object.keys(ENDPOINT_COLUMNS).sort(), Object.keys(written).sort())
-  for (const [id, keys] of Object.entries(written)) assert.deepEqual(fieldsOf(id), keys)
-  assert.ok(Object.values(ENDPOINT_COLUMNS).every((columns) => columns.length <= 12))
+  assert.deepEqual(Object.keys(ENDPOINT_COLUMNS).sort(), Object.keys(first).sort())
+  for (const [id, keys] of Object.entries(first)) {
+    assert.deepEqual(
+      columnsOf(id).map((column) => column.key),
+      keys,
+    )
+  }
+  // The server gives twelve keys of data at most.
+  for (const id of Object.keys(first)) assert.ok(fieldsOf(id).length <= 12, id)
+  assert.ok(fieldsOf('execution').includes('run_count'))
+  assert.ok(fieldsOf('usb').includes('product'))
   assert.deepEqual(columnsOf(OTHER), [])
   assert.deepEqual(fieldsOf(OTHER), [])
+})
+
+test('a column shows the first of its keys that holds something, and sizes as sizes', () => {
+  const [executable, , runs] = columnsOf('execution')
+  assert.equal(valueOf({ data: { executable: 'CMD.EXE' } }, executable), 'CMD.EXE')
+  assert.equal(valueOf({ data: { name: 'a.exe', executable: 'b.exe' } }, executable), 'a.exe')
+  assert.equal(valueOf({ data: { run_count: 3 } }, runs), '3')
+  const vendor = columnsOf('usb')[2]
+  assert.equal(valueOf({ data: { vendor: 'SanDisk', product: 'Cruzer' } }, vendor), 'SanDisk Cruzer')
+  assert.equal(valueOf({ data: { product: 'Cruzer' } }, vendor), 'Cruzer')
+  const sent = columnsOf('network')[3]
+  assert.equal(
+    valueOf({ data: { bytes_sent: 2048 } }, sent, (n) => String(n / 1024) + ' KB'),
+    '2 KB',
+  )
+  assert.equal(valueOf({ data: {} }, sent), '')
+  assert.equal(sent.align, 'right')
 })
 
 test('dataOf reads a key of the data and is empty when there is none', () => {
@@ -195,4 +241,90 @@ test('incidentRange is null without a window', () => {
     from: 5,
     to: null,
   })
+})
+
+const hived = {
+  id: 'execution',
+  label: 'Program execution',
+  sources: {
+    windows: [
+      { key: 'prefetch', name: 'Prefetch', path: 'C:\\Windows\\Prefetch', mode: 'file' },
+      {
+        key: 'shimcache',
+        name: 'ShimCache',
+        path: 'SYSTEM',
+        mode: 'file',
+        via: 'hive',
+        timeLabel: 'File modified',
+        note: 'not a run',
+      },
+      { key: 'amcache', name: 'Amcache', path: 'Amcache.hve', mode: 'file', via: 'hive' },
+    ],
+  },
+}
+const network = {
+  id: 'network',
+  label: 'Network usage',
+  sources: { windows: [{ key: 'srum-network', name: 'SRUM network', path: 'SRUDB.dat', mode: 'file', via: 'srudb' }] },
+}
+const all = [hived, network]
+
+test('the rows that come out of a hive say so, and records satisfy them', () => {
+  assert.deepEqual(
+    expectedSources(hived, 'windows').map((item) => item.hint),
+    ['C:\\Windows\\Prefetch', 'from a registry hive: SYSTEM', 'from a registry hive: Amcache.hve'],
+  )
+  assert.equal(expectedSources(network, 'windows')[0].hint, 'from SRUDB.dat: SRUDB.dat')
+  const counts = { 'windows.execution.shimcache': 4, 'windows.execution.prefetch': 9, 'windows.execution.amcache': 0 }
+  // Prefetch has a file of its own: only the hive sources are satisfied by records.
+  assert.deepEqual(presentKeys(hived, 'windows', counts), ['shimcache'])
+  assert.deepEqual(presentKeys(hived, 'macos', counts), [])
+})
+
+test('"Add files as" offers the files with their own source, then the hive and SRUDB.dat', () => {
+  const names = {
+    hiveSource: 'windows.registry.hive',
+    hiveLabel: 'Registry hive',
+    srumSource: 'windows.network.srum-network',
+    srumLabel: 'SRUDB',
+  }
+  assert.deepEqual(addOptions(hived, 'windows', names), [
+    { key: 'prefetch', label: 'Prefetch', source: 'windows.execution.prefetch' },
+    { key: 'hive', label: 'Registry hive', source: 'windows.registry.hive' },
+  ])
+  assert.deepEqual(addOptions(network, 'windows', names), [
+    { key: 'srudb', label: 'SRUDB', source: 'windows.network.srum-network' },
+  ])
+  assert.deepEqual(addOptions(network, 'linux', names), [])
+})
+
+test('a hive is one file in the categories of the sources it gave, and is named by them', () => {
+  const hive = { id: 'h1', source: 'windows.registry.hive' }
+  const gave = { h1: ['windows.execution.shimcache', 'windows.execution.amcache'] }
+  assert.equal(isMultiSource('windows.registry.hive'), true)
+  assert.equal(isMultiSource('windows.network.srum-apps'), true)
+  assert.equal(isMultiSource('windows.execution.prefetch'), false)
+  assert.deepEqual(categoriesOfFile(hive, 'windows', all, gave), ['execution'])
+  // Nothing gave yet, or nothing known: it waits in Other.
+  assert.deepEqual(categoriesOfFile(hive, 'windows', all, {}), [OTHER])
+  assert.deepEqual(categoriesOfFile({ id: 'p', source: 'windows.execution.prefetch' }, 'windows', all), ['execution'])
+  assert.deepEqual(otherSources([hive], 'windows', all, gave), [])
+  assert.deepEqual(otherSources([hive], 'windows', all, {}), [hive])
+  assert.equal(labelOfFile(hive, 'windows', all, gave), 'ShimCache, Amcache')
+  assert.equal(labelOfFile(hive, 'windows', all, {}), 'Registry hive')
+  assert.equal(labelOfFile({ id: 's', source: 'windows.network.srum-network' }, 'windows', all, {}), 'SRUDB.dat')
+  assert.equal(labelOfFile({ id: 'p', source: 'windows.execution.prefetch' }, 'windows', all, gave), '')
+  assert.equal(sourceLabelOf('windows.execution.amcache', 'windows', all), 'Amcache')
+  assert.equal(sourceLabelOf('unknown.name', 'windows', all), 'unknown.name')
+  // A hive read in part dots the categories it gave.
+  const partial = { ...hive, read: 'partial', seen: null, state: 'done' }
+  assert.deepEqual([...partialCategories([partial], 'windows', all, gave)], ['execution'])
+})
+
+test('ShimCache has its own title for the time and a note on what it is not', () => {
+  assert.equal(timeLabelOf(hived, 'windows', 'windows.execution.shimcache'), 'File modified')
+  assert.equal(timeLabelOf(hived, 'windows', ''), 'Time')
+  assert.equal(timeLabelOf(hived, 'windows', 'windows.execution.prefetch'), 'Time')
+  assert.deepEqual(notesOf(hived, 'windows', { 'windows.execution.shimcache': 2 }), ['not a run'])
+  assert.deepEqual(notesOf(hived, 'windows', { 'windows.execution.shimcache': 0 }), [])
 })

@@ -33,7 +33,15 @@ export const HOST_KIND_META = {
   commands: { label: 'Command', color: 'violet', tab: 'commands' },
   endpoint: { label: 'Endpoint', color: 'emerald', tab: 'endpoint' },
   eventlog: { label: 'Event log', color: 'amber', tab: 'eventlogs' },
+  syslog: { label: 'Linux/macOS log', color: 'amber', tab: 'eventlogs' },
+  disk: { label: 'Disk', color: 'slate', tab: 'disk' },
 }
+
+/**
+ * The kinds the Timeline shows until the person asks for more: a disk holds millions of $MFT and $J records
+ * that would bury everything else, so the Kind filter switches them on.
+ */
+export const KINDS_OFF_BY_DEFAULT = ['disk']
 
 function hasTime(event) {
   return Number.isFinite(event.time)

@@ -10,6 +10,8 @@ from fastapi import HTTPException, Query
 from ..evidence.browse import KEY
 
 TYPES_MAX = 40
+DATA_MAX = 4  # pairs of dataKey/dataValue, and dataHas, at once
+KIND_NOT_MAX = 10
 
 
 def keys_of(text: str, most: int, what: str) -> list[str]:
@@ -38,8 +40,10 @@ def filters(
     flagged: bool = False,
     dated: bool | None = None,
     matter: bool | None = None,
-    dataKey: str | None = Query(default=None, max_length=80),  # noqa: N803
-    dataValue: str | None = Query(default=None, max_length=500),  # noqa: N803
+    kindNot: str = Query(default="", max_length=200),  # noqa: N803 - a comma-separated list of sections to leave out
+    dataKey: list[str] | None = Query(default=None),  # noqa: N803
+    dataValue: list[str] | None = Query(default=None),  # noqa: N803
+    dataHas: list[str] | None = Query(default=None),  # noqa: N803
     q: str = Query(default="", max_length=200),
     from_: int | None = Query(default=None, alias="from"),
     to: int | None = None,
@@ -48,10 +52,22 @@ def filters(
     types = [name.strip() for name in type.split(",") if name.strip()]
     if len(types) > TYPES_MAX or any(len(name) > 40 for name in types):
         raise HTTPException(status_code=400, detail=f"type is {TYPES_MAX} values at most, 40 characters each")
-    if (dataKey is None) != (dataValue is None):
-        raise HTTPException(status_code=400, detail="dataKey and dataValue come together")
-    if dataKey is not None and not KEY.fullmatch(dataKey):
+    keys, values, has = dataKey or [], dataValue or [], dataHas or []
+    if len(keys) != len(values) or len(keys) > DATA_MAX or len(has) > DATA_MAX:
+        raise HTTPException(
+            status_code=400, detail=f"dataKey and dataValue come together, {DATA_MAX} pairs at most (dataHas too)"
+        )
+    if any(len(text) > 500 for text in values):
+        raise HTTPException(status_code=422, detail="dataValue is 500 characters at most")
+    if not all(KEY.fullmatch(key) for key in keys):
         raise HTTPException(status_code=400, detail="dataKey is made of letters, digits and _ . : - (80 at most)")
+    if any(not KEY.fullmatch(held.partition(":")[0]) or ":" not in held or len(held) > 580 for held in has):
+        raise HTTPException(
+            status_code=400, detail="dataHas is key:value, the key of letters, digits and _ . - (80 at most)"
+        )
+    not_kinds = [name.strip() for name in kindNot.split(",") if name.strip()]
+    if len(not_kinds) > KIND_NOT_MAX or any(len(name) > 16 for name in not_kinds):
+        raise HTTPException(status_code=400, detail=f"kindNot is {KIND_NOT_MAX} sections at most")
     return {
         "kind": kind,
         "type": types,
@@ -68,8 +84,10 @@ def filters(
         "flagged": flagged,
         "dated": dated,
         "matter": matter,
-        "dataKey": dataKey,
-        "dataValue": dataValue,
+        "kindNot": not_kinds,
+        "dataKey": keys,
+        "dataValue": values,
+        "dataHas": has,
         "q": q,
         "from": from_,
         "to": to,

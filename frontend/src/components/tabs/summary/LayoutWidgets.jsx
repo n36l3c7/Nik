@@ -137,6 +137,7 @@ function Stats({ incident }) {
   const figures = useMemo(
     () => [
       ['Event logs', hostCounts(summary, 'eventlogs').records],
+      ['Disk records', hostCounts(summary, 'disk').records],
       ['Browser records', hostCounts(summary, 'browser').records],
       ['Commands', hostCounts(summary, 'commands').records],
       ['Endpoint artifacts', hostCounts(summary, 'endpoint').records],
