@@ -2509,9 +2509,12 @@ test('an incident deleted while it is open in this window sends the person back 
   await openFreshIncident('e2e-gone', 'E2E-GONE')
   await openEvidence('Event Logs')
   await expect(sourcesTable()).toBeVisible()
-  // Somebody else deletes it. The first request this page makes about it (it polls, saves and reads) finds it
-  // gone; one that is not awaited with a catch would throw, and the page fails the test on any uncaught error.
+  // Somebody else deletes it. The first request this page makes about it finds it gone: one of its own, when
+  // one is due, or the files of another page of evidence, asked for here as a person opening it would (the
+  // click is the page's own, at once: when the page has already left the incident there is nothing to press).
+  // A request that is not awaited with a catch would throw, and the page fails the test on any uncaught error.
   expect((await page.request.delete('/api/incidents/e2e-gone')).status()).toBe(204)
+  await page.evaluate(() => document.querySelector('[aria-label="Evidence"] button[aria-label="Disk (NTFS)"]')?.click())
   await expect(page.getByRole('status').filter({ hasText: 'The incident was deleted' })).toBeVisible({
     timeout: 30_000,
   })
