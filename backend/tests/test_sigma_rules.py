@@ -327,9 +327,10 @@ def test_the_rules_nik_ships_are_seeded_as_the_pack_nik_and_follow_a_release(
     admin: TestClient, fake: FakeSigma, tmp_path, monkeypatch
 ):
     shipped = seed.shipped()
-    assert len(shipped) == 60  # the files of backend/app/sigma/pack, one rule each
+    # The files of backend/app/sigma/pack (60) and of pack_chains (16), one rule each.
+    assert len(shipped) == 76
     with SessionLocal() as db:
-        assert seed.seed(db) == 60
+        assert seed.seed(db) == 76
         db.commit()
         assert seed.seed(db) == 0  # once
     listed = admin.get(URL, params={"pack": "nik", "order": "title", "limit": 100}).json()
@@ -338,14 +339,23 @@ def test_the_rules_nik_ships_are_seeded_as_the_pack_nik_and_follow_a_release(
     expected = {"New Service Installed", "Windows Security Event Log Cleared", "Windows System Event Log Cleared"}
     assert expected <= set(shown)
     assert all(r["pack"] == "nik" and r["enabled"] and r["supported"] and not r["edited"] for r in listed["rules"])
-    assert fake.of("/sigma/check") and len(fake.of("/sigma/check")[0]["documents"]) == 60
+    assert fake.of("/sigma/check") and len(fake.of("/sigma/check")[0]["documents"]) == 76
     cleared = next(r for r in listed["rules"] if r["title"] == "Windows Security Event Log Cleared")
     assert (cleared["level"], cleared["author"], cleared["service"]) == (4, "Nik", "security")
     assert "attack.t1070.001" in cleared["tags"]
     # A pack rule is switched off, not deleted.
     assert admin.delete(f"{URL}/{cleared['id']}").status_code == 409
     assert admin.patch(f"{URL}/{cleared['id']}", json={"enabled": False}).json()["enabled"] is False
-    assert admin.get(f"{URL}/summary").json()["packs"][0]["id"] == "nik"
+    packs = admin.get(f"{URL}/summary").json()["packs"]
+    assert [(pack["id"], pack["name"], pack["total"]) for pack in packs] == [
+        ("nik", "Nik", 60),
+        ("nik-process-chains", "Nik process chains", 16),
+    ]
+    # The chain pack is Nik's too: its rules are on, supported, in the log source of the chains, and not edited.
+    chains = admin.get(URL, params={"pack": "nik-process-chains", "limit": 100}).json()["rules"]
+    assert len(chains) == 16 and all(r["enabled"] and r["supported"] and not r["edited"] for r in chains)
+    assert {(r["product"], r["service"]) for r in chains} == {("nik", "process-chain")}
+    assert {r["author"] for r in chains} == {"Nik"} and all(r["tags"] and r["level"] >= 3 for r in chains)
 
     # A release improves one rule and drops another: the one nobody changed follows, the other goes.
     folder = tmp_path / "pack"
@@ -355,7 +365,7 @@ def test_the_rules_nik_ships_are_seeded_as_the_pack_nik_and_follow_a_release(
         if rule_id not in (cleared["id"], installed["id"]):
             (folder / f"{rule_id}.yml").write_text(text, encoding="utf-8")
     (folder / "new.yml").write_text(rule_text(ID_C, title="A new rule of Nik", author="Nik"), encoding="utf-8")
-    monkeypatch.setattr(seed, "FOLDER", folder)
+    monkeypatch.setattr(seed, "FOLDERS", {**seed.FOLDERS, "nik": folder})
     with SessionLocal() as db:
         assert seed.seed(db) == 3  # one added, two gone
         db.commit()
@@ -384,7 +394,7 @@ def test_a_rule_of_the_pack_a_person_changed_keeps_their_text_and_can_be_reset(
     folder.mkdir()
     for other_id, text in seed.shipped().items():
         (folder / f"{other_id}.yml").write_text(new_text if other_id == rule_id else text, encoding="utf-8")
-    monkeypatch.setattr(seed, "FOLDER", folder)
+    monkeypatch.setattr(seed, "FOLDERS", {**seed.FOLDERS, "nik": folder})
     with SessionLocal() as db:
         assert seed.seed(db) == 1
         db.commit()
@@ -409,22 +419,22 @@ def test_a_rule_of_the_pack_a_person_changed_keeps_their_text_and_can_be_reset(
 def test_rules_stored_while_the_worker_was_away_are_checked_when_it_answers(admin: TestClient, monkeypatch):
     monkeypatch.setattr(settings, "FORENSICS_URL", "")
     with SessionLocal() as db:
-        assert seed.seed(db) == 60
+        assert seed.seed(db) == 76
         db.commit()
     unchecked = admin.get(URL, params={"limit": 100}).json()["rules"]
-    assert [r["checked"] for r in unchecked] == [False] * 60 and [r["supported"] for r in unchecked] == [False] * 60
+    assert [r["checked"] for r in unchecked] == [False] * 76 and [r["supported"] for r in unchecked] == [False] * 76
     assert all(r["reason"] == rules.NOT_CHECKED for r in unchecked)
     with SessionLocal() as db:
         assert ruleset.current(db) is None  # a rule not checked is not run
         assert recheck.run_once() == 0
     fake = FakeSigma(monkeypatch, engine="7")
-    assert recheck.run_once() == 60
+    assert recheck.run_once() == 76
     checked = admin.get(URL, params={"limit": 100}).json()["rules"]
     assert all(r["checked"] and r["supported"] and r["enabled"] for r in checked)
     assert row(checked[0]["id"]).engine == "7" and admin.get(f"{URL}/summary").json()["engine"] == "7"
     assert recheck.run_once() == 0  # nothing to do twice
     with SessionLocal() as db:
-        assert ruleset.current(db).count == 60
+        assert ruleset.current(db).count == 60  # the 16 rules of chains are run over processes, not given with a file
     # The worker is updated: every rule is checked again, and one of them can no longer be run.
     fake.engine = "8"
     worker.forget()
@@ -437,7 +447,7 @@ def test_rules_stored_while_the_worker_was_away_are_checked_when_it_answers(admi
         return found
 
     monkeypatch.setattr(fake, "info", narrower)
-    assert recheck.run_once() == 60
+    assert recheck.run_once() == 76
     after = {r["title"]: r for r in admin.get(URL, params={"limit": 100}).json()["rules"]}
     assert after["New Service Installed"]["supported"] is False and after["New Service Installed"]["reason"].startswith(
         "The modifier"

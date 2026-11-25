@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -351,3 +351,24 @@ def test_a_file_sent_while_the_worker_is_full_waits_its_turn_and_is_not_failed(m
     with pytest.raises(parse.ParseError, match="not a file"):
         list(parse._events("a" * 64, {"fileName": "x"}, "job"))
     assert waits == []
+
+
+def test_an_incident_deleted_while_its_file_is_read_ends_the_reading_quietly(admin, monkeypatch):
+    monkeypatch.setattr(settings, "FORENSICS_URL", "http://forensics.test")
+    assert admin.post("/api/incidents", json={"id": "gone", "host": "H"}).status_code == 201
+    source_id = a_source("gone", b"ElfFile\x00 read while its incident goes")
+
+    def fake(sha256, body, job):
+        yield SOURCE
+        yield record(1)
+        # Somebody deletes the incident while the worker is still sending.
+        assert admin.delete("/api/incidents/gone").status_code == 204
+        yield record(2)
+        yield end(2, in_file=2)
+
+    monkeypatch.setattr(parse, "_events", fake)
+    parse.read(source_id)  # no error: the records have nothing to be stored under any more
+    assert source_of(source_id) is None
+    with SessionLocal() as db:
+        kept = select(func.count()).select_from(EvidenceRecord).where(EvidenceRecord.source_id == source_id)
+        assert db.scalar(kept) == 0

@@ -94,7 +94,7 @@ def by_type(found: list[dict]) -> dict[str, list[dict]]:
 
 
 def test_the_module_says_what_it_reads():
-    assert syslog.KIND == "syslog" and syslog.NAME == "syslog" and syslog.VERSION == "1"
+    assert syslog.KIND == "syslog" and syslog.NAME == "syslog" and syslog.VERSION == "2"
     assert set(syslog.SOURCES) == {"linux.auth", "linux.journal", "linux.audit", "macos.unifiedlog"}
     assert parsers.by_source("syslog", "linux.audit") is syslog
     assert callable(syslog.view)

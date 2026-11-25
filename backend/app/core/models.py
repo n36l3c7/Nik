@@ -2353,6 +2353,11 @@ class EvidenceProcess(Base):
         Index("ix_evidence_processes_guid", "incident_id", "host", "guid"),
         Index("ix_evidence_processes_parent", "incident_id", "host", "parent_guid"),
         Index("ix_evidence_processes_time", "incident_id", "start_ts"),
+        # One host's processes in start order (the list, the linking), and the ones of a pid (a parent).
+        Index("ix_evidence_processes_host_time", "incident_id", "host", "start_ts", "id"),
+        Index("ix_evidence_processes_pid", "incident_id", "host", "pid", "start_ts"),
+        Index("ix_evidence_processes_parent_id", "parent_id"),
+        Index("ix_evidence_processes_record", "record_id"),
     )
 
     id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
@@ -2377,6 +2382,16 @@ class EvidenceProcess(Base):
     end_ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     # The highest level of the process-chain rules that matched it.
     level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # The process that started it, when the evidence holds it (linking, ``evidence/processes.py``); none for a
+    # process whose parent is not in the evidence: then ``parent_image`` and ``parent_command_line`` are what the
+    # log said of it (a "ghost" parent, shown and not stored as a row).
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        ROW_ID, ForeignKey("evidence_processes.id", ondelete="SET NULL"), nullable=True
+    )
+    parent_image: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    parent_command_line: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # The hashes the log gave (Sysmon): ``{"SHA256": "..."}``.
+    hashes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
 class EvidenceLogon(Base):
@@ -2387,6 +2402,8 @@ class EvidenceLogon(Base):
     __table_args__ = (
         Index("ix_evidence_logons_time", "incident_id", "ts"),
         Index("ix_evidence_logons_edge", "incident_id", "source_ip", "host"),
+        Index("ix_evidence_logons_host", "incident_id", "host", "ts"),
+        Index("ix_evidence_logons_record", "record_id"),
     )
 
     id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
@@ -2409,6 +2426,10 @@ class EvidenceLogon(Base):
     # success | failure | logoff | explicit (4648) | privileged (4672)
     outcome: Mapped[str] = mapped_column(String(12), nullable=False)
     method: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    # What a failure said (the status and sub-status of a 4625), as text.
+    status: Mapped[str] = mapped_column(String(120), nullable=False, default="", server_default="")
+    # The server an explicit-credentials logon (4648) went to; empty where the log does not say or it is the host.
+    target_host: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
 
 
 class UploadSession(Base):

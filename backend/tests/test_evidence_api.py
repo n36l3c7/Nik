@@ -495,6 +495,8 @@ def test_the_summary_counts_per_section(env):
         "parsing": 0,
         "absent": 0,
         "detections": none_found,
+        "processes": 0,
+        "logons": 0,
     }
     assert summary["kinds"]["endpoint"] == {
         "sources": 2,
@@ -504,6 +506,8 @@ def test_the_summary_counts_per_section(env):
         "parsing": 0,
         "absent": 0,
         "detections": none_found,
+        "processes": 0,
+        "logons": 0,
     }
     assert summary["kinds"]["browser"]["parsing"] == 1
     assert summary["partialUnseen"] == 1

@@ -3,10 +3,12 @@ import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
   alreadyImported,
+  canReadAgain,
   expectedOf,
   keptText,
   missingExpected,
   needsPolling,
+  readBeforeProcesses,
   readPill,
   shortHash,
   uploadText,
@@ -465,6 +467,11 @@ export default function SourceFiles({
                       <Badge color={pill.color} title={pill.title} className="whitespace-normal!">
                         {pill.label}
                       </Badge>
+                      {readBeforeProcesses(source) && (
+                        <p className="mt-1 max-w-48 text-xs text-fg-muted">
+                          Read before processes and logons were extracted
+                        </p>
+                      )}
                     </td>
                     <td className="whitespace-nowrap invisible w-0 max-w-0 overflow-hidden p-0 min-[1280px]:visible min-[1280px]:w-auto min-[1280px]:max-w-none min-[1280px]:px-3 min-[1280px]:py-2">
                       <span className="inline-flex items-center gap-1 font-mono text-fg-muted" title={source.sha256}>
@@ -480,16 +487,30 @@ export default function SourceFiles({
                           Import again
                         </Button>
                       ) : (
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          icon={isOpen ? ChevronDown : ChevronRight}
-                          aria-expanded={isOpen}
-                          aria-controls={`report-${source.id}`}
-                          onClick={() => setOpenId(isOpen ? null : source.id)}
-                        >
-                          Report
-                        </Button>
+                        <>
+                          {readBeforeProcesses(source) && canWrite && canReadAgain(source) && (
+                            <Button
+                              variant="secondary"
+                              size="xs"
+                              disabled={busy}
+                              title="Read the original again: its processes and logons are added, the flags and notes stay"
+                              onClick={() => actions.onAgain(source)}
+                              className="mr-1"
+                            >
+                              Analyse again
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={isOpen ? ChevronDown : ChevronRight}
+                            aria-expanded={isOpen}
+                            aria-controls={`report-${source.id}`}
+                            onClick={() => setOpenId(isOpen ? null : source.id)}
+                          >
+                            Report
+                          </Button>
+                        </>
                       )}
                     </td>
                   </tr>

@@ -1,0 +1,35 @@
+title: Explorer Starts a Hidden or Encoded PowerShell
+id: cecdc262-f97a-4a06-bf52-4e69fe57ae3c
+name: nik_chain_explorer_starts_hidden_powershell
+status: test
+description: explorer.exe started PowerShell with an encoded command or a hidden window. A shortcut, a double-clicked script or a pasted command that does this runs something its user was not meant to see.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1059.001
+- attack.t1027
+- attack.t1204.002
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith: \explorer.exe
+  selection_child:
+    Image|endswith:
+    - \powershell.exe
+    - \pwsh.exe
+  selection_odd:
+    CommandLine|contains:
+    - ' -enc'
+    - ' -ec '
+    - ' -encodedcommand'
+    - ' -w hidden'
+    - ' -windowstyle hidden'
+    - ' -win hidden'
+    - ' -w 1 '
+  condition: selection_parent and selection_child and selection_odd
+falsepositives:
+- An administrator's shortcut that starts a script with a hidden window
+level: high

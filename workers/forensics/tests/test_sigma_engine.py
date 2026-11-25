@@ -555,3 +555,79 @@ def test_a_linux_rule_is_supported_and_a_macos_process_rule_says_why_not():
     assert (
         mac["supported"] is False and mac["reason"] == "Nik reads no records of this log source: macos/process_creation"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The process-chain log source                                                #
+# --------------------------------------------------------------------------- #
+def chain(name: str, detection: dict, **more) -> dict:
+    return rule(name, detection, product="nik", category=None, service="process-chain", **more)
+
+
+def process(**fields) -> tuple:
+    """One record of the process-chain log source, as the API makes it: the fields of the process by their names."""
+    data = {"Image": "C:\\Windows\\System32\\cmd.exe", "CommandLine": "cmd /c whoami", "Host": "WKS-1", "User": "alice"}
+    data.update(fields)
+    return record(data, channel="", event_id=None, kind="process-chain", rtype="process", source="", host="WKS-1")
+
+
+def test_a_process_chain_rule_reads_the_fields_of_the_process():
+    engine = Engine(
+        [
+            chain(
+                "office-shell",
+                {
+                    "child": {"Image|endswith": "\\cmd.exe"},
+                    "parent": {"ParentImage|endswith": "\\winword.exe"},
+                    "condition": "child and parent",
+                },
+            ),
+            chain("deep", {"s": {"Depth|gte": 3}, "condition": "s"}),
+            chain("system", {"s": {"IntegrityLevel": "System", "Platform": "windows"}, "condition": "s"}),
+        ]
+    )
+    by_id = {slot.rid: slot.line["title"] for slot in engine.slots}
+
+    def hits(**fields):
+        return {by_id[found] for found in engine.see(*process(**fields))}
+
+    assert hits() == set()
+    assert hits(ParentImage="C:\\Program Files\\winword.exe", Depth=3) == {"office-shell", "deep"}
+    assert hits(IntegrityLevel="system", Platform="windows") == {"system"}
+    # the fields that are not given are not a match for a rule that needs them
+    assert hits(Image="C:\\x.exe") == set()
+
+
+def test_ancestors_is_a_list_and_contains_matches_any_element():
+    engine = Engine(
+        [
+            chain("anc", {"s": {"Ancestors|contains": "winword"}, "condition": "s"}),
+            chain("none", {"s": {"Ancestors|contains": "excel"}, "condition": "s"}),
+            chain("grand", {"s": {"GrandParentImage|endswith": "\\explorer.exe"}, "condition": "s"}),
+        ]
+    )
+    by_id = {slot.rid: slot.line["title"] for slot in engine.slots}
+    found = engine.see(
+        *process(
+            Ancestors=[
+                "C:\\x\\EXCELish.txt".replace("EXCELish.txt", "powershell.exe"),
+                "C:\\Office\\WINWORD.EXE",
+                "C:\\Windows\\explorer.exe",
+            ],
+            GrandParentImage="C:\\Windows\\explorer.exe",
+        )
+    )
+    assert {by_id[rule_id] for rule_id in found} == {"anc", "grand"}
+    assert engine.see(*process(Ancestors=[])) == []
+
+
+def test_the_host_and_the_user_of_a_process_record_are_the_fields_it_was_given():
+    engine = Engine([chain("who", {"s": {"Host": "wks-1", "User": "alice", "Summary": ""}, "condition": "s"})])
+    assert engine.see(*process()) == [engine.slots[0].rid]
+    other = record(
+        {"Image": "x"}, channel="", event_id=None, kind="process-chain", rtype="process", host="OTHER", username="bob"
+    )
+    assert engine.see(*other) == []
+    # the arguments fill in what the fields lack
+    engine = Engine([chain("arg", {"s": {"Host": "other", "User": "bob"}, "condition": "s"})])
+    assert engine.see(*other) == [engine.slots[0].rid]

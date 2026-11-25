@@ -21,7 +21,7 @@ from ..core.db import get_db
 from ..core.locking import lock_incident
 from ..core.models import ArtifactLink, EvidenceMark, EvidenceSource, Incident, WorkClaim
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
-from ..evidence import browse, collections, imports, originals, parse
+from ..evidence import browse, collections, imports, originals, parse, processes
 from .evidence_filters import filters, keys_of
 
 router = APIRouter(prefix="/incidents/{incident_id}/evidence", tags=["incidents/evidence"])
@@ -202,7 +202,9 @@ def remove_source(
     gone = [row]
     if row.state in ("parsing", "listing", "importing"):
         raise HTTPException(status_code=409, detail="This file is being read: wait for it to end")
+    hosts: set[str] = set()
     for item in gone:
+        hosts |= processes.hosts_of(db, item.id)
         parse.clear(db, item.id)
         db.execute(
             delete(WorkClaim).where(
@@ -230,7 +232,11 @@ def remove_source(
                 )
             )
     audit.record(db, caller.actor, "evidence.remove", f"Removed {names} and its records", incident)
+    if hosts:
+        processes.want(db, incident_id, hosts)  # what the other files hold of these hosts is linked again
     db.commit()
+    if hosts:
+        processes.start(incident_id)
     return {"removed": len(gone)}
 
 

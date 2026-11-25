@@ -370,3 +370,24 @@ def test_the_linux_and_macos_log_sources_are_placed_in_the_syslog_section():
     ):
         with pytest.raises(logsource.NoRecords, match="Nik reads no records of this log source"):
             logsource.places(product, category, service)
+
+
+def test_the_process_chain_log_source_is_the_section_of_the_records_the_api_makes():
+    assert logsource.places("nik", None, "process-chain") == ("process-chain", ((None, None, None),))
+    with pytest.raises(logsource.NoRecords, match="nik/process_creation/process-chain"):
+        logsource.places("nik", "process_creation", "process-chain")
+    with pytest.raises(logsource.NoRecords, match="must say its service: commands, endpoint, browser or process-chain"):
+        logsource.places("nik", None, None)
+    # a rule of the log source is indexed and compiled like any other, and is not listed as one Nik cannot run
+    engine = Engine(
+        [
+            rule(
+                "chain",
+                {"s": {"Image|endswith": "\\cmd.exe"}, "condition": "s"},
+                product="nik",
+                category=None,
+                service="process-chain",
+            )
+        ]
+    )
+    assert engine.not_evaluated() == []

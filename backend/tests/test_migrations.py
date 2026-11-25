@@ -1821,3 +1821,110 @@ def test_migration_0058_adds_the_members_of_a_collection_and_the_source_of_a_rec
         inspector = sa.inspect(conn)
         assert "evidence_members" not in inspector.get_table_names()
         assert "source" not in {column["name"] for column in inspector.get_columns("evidence_records")}
+
+
+OLD_PROCESSES = (
+    "CREATE TABLE evidence_processes (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " incident_id VARCHAR NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,"
+    " source_id VARCHAR(32) NOT NULL REFERENCES evidence_sources(id) ON DELETE CASCADE,"
+    " record_id INTEGER REFERENCES evidence_records(id) ON DELETE CASCADE, host VARCHAR(255) NOT NULL,"
+    " guid VARCHAR(80) NOT NULL, parent_guid VARCHAR(80) NOT NULL, pid BIGINT, ppid BIGINT,"
+    " image VARCHAR(1000) NOT NULL, command_line TEXT NOT NULL, username VARCHAR(255) NOT NULL,"
+    " logon_id VARCHAR(40) NOT NULL, integrity VARCHAR(20) NOT NULL, start_ts BIGINT, end_ts BIGINT, level INTEGER)"
+)
+OLD_LOGONS = (
+    "CREATE TABLE evidence_logons (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " incident_id VARCHAR NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,"
+    " source_id VARCHAR(32) NOT NULL REFERENCES evidence_sources(id) ON DELETE CASCADE,"
+    " record_id INTEGER REFERENCES evidence_records(id) ON DELETE CASCADE, ts BIGINT,"
+    " host VARCHAR(255) NOT NULL, source_host VARCHAR(255) NOT NULL, source_ip VARCHAR(64) NOT NULL,"
+    " username VARCHAR(255) NOT NULL, domain VARCHAR(255) NOT NULL, logon_type INTEGER,"
+    " logon_id VARCHAR(40) NOT NULL, outcome VARCHAR(12) NOT NULL, method VARCHAR(40) NOT NULL)"
+)
+NEW_INDEXES = {
+    "evidence_processes": {
+        "ix_evidence_processes_host_time",
+        "ix_evidence_processes_pid",
+        "ix_evidence_processes_parent_id",
+        "ix_evidence_processes_record",
+    },
+    "evidence_logons": {"ix_evidence_logons_host", "ix_evidence_logons_record"},
+}
+NEW_COLUMNS = {"parent_id", "parent_image", "parent_command_line", "hashes"}
+
+
+def _names(conn, table: str, what: str) -> set[str]:
+    inspector = sa.inspect(conn)
+    found = inspector.get_columns(table) if what == "columns" else inspector.get_indexes(table)
+    return {item["name"] for item in found}
+
+
+def test_migration_0059_adds_what_linking_and_the_screens_need_to_the_processes_and_logons(tmp_path, monkeypatch):
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        # The two tables as 0056 made them, with a process and a logon in them.
+        conn.execute(sa.text("DROP TABLE evidence_processes"))
+        conn.execute(sa.text("DROP TABLE evidence_logons"))
+        conn.execute(sa.text(OLD_PROCESSES))
+        conn.execute(sa.text(OLD_LOGONS))
+        conn.execute(sa.text("CREATE INDEX ix_evidence_processes_guid ON evidence_processes (incident_id, host, guid)"))
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_processes (incident_id, source_id, host, guid, parent_guid, image, command_line,"
+                " username, logon_id, integrity) VALUES ('i', 's', 'h', 'g', '', 'a.exe', '', '', '', '')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_logons (incident_id, source_id, host, source_host, source_ip, username, domain,"
+                " logon_id, outcome, method) VALUES ('i', 's', 'h', '', '', 'u', '', '', 'success', '')"
+            )
+        )
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0058_collections")
+    command.upgrade(cfg, "0059_processes")
+    with engine.connect() as conn:
+        assert NEW_COLUMNS <= _names(conn, "evidence_processes", "columns")
+        assert "status" in _names(conn, "evidence_logons", "columns")
+        for table, wanted in NEW_INDEXES.items():
+            assert wanted <= _names(conn, table, "indexes")
+        # What was there stays, with the defaults of the new columns.
+        row = conn.execute(
+            sa.text("SELECT image, parent_id, parent_image, parent_command_line, hashes FROM evidence_processes")
+        ).one()
+        assert tuple(row) == ("a.exe", None, "", "", "{}")
+        assert conn.execute(sa.text("SELECT status FROM evidence_logons")).scalar() == ""
+    command.stamp(cfg, "0058_collections")
+    command.upgrade(cfg, "0059_processes")  # again: everything is there, nothing to do
+    command.downgrade(cfg, "0058_collections")
+    with engine.connect() as conn:
+        assert not NEW_COLUMNS & _names(conn, "evidence_processes", "columns")
+        assert "status" not in _names(conn, "evidence_logons", "columns")
+        for table, wanted in NEW_INDEXES.items():
+            assert not wanted & _names(conn, table, "indexes")
+        assert conn.execute(sa.text("SELECT count(*) FROM evidence_processes")).scalar() == 1
+
+
+def test_migration_0059_on_a_database_made_by_the_models_downgrades_and_upgrades_again(tmp_path, monkeypatch):
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "new.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0059_processes")
+    command.downgrade(cfg, "0058_collections")  # the foreign key of parent_id goes with its column
+    with engine.connect() as conn:
+        assert "parent_id" not in _names(conn, "evidence_processes", "columns")
+    command.upgrade(cfg, "0059_processes")
+    with engine.connect() as conn:
+        assert NEW_COLUMNS <= _names(conn, "evidence_processes", "columns")
+        assert NEW_INDEXES["evidence_processes"] <= _names(conn, "evidence_processes", "indexes")

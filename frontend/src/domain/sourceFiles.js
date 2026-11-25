@@ -155,3 +155,18 @@ export function uploadText(item) {
   if (item.state === 'done') return item.already ? 'Already imported' : 'Added: the worker is reading it'
   return ''
 }
+
+/** The parsers that, from their version 2, also write the processes and the logons of the log (the worker's NAME and VERSION). */
+const PROCESS_PARSERS = ['evtx', 'eventlog-json', 'syslog', 'plaso']
+const PROCESS_PARSER_VERSION = 2
+
+/**
+ * Whether a file was read by a parser that did not yet extract processes and logons (an event log, a Linux or
+ * macOS log or a Plaso export read before 7.0 stage 7): reading it again fills the Processes and Logons pages.
+ * A file imported before 7.0 has no original to read again and is not this.
+ */
+export const readBeforeProcesses = (source) =>
+  !source.legacy &&
+  source.state === 'done' &&
+  PROCESS_PARSERS.includes(source.parser) &&
+  Number(source.parserVersion) < PROCESS_PARSER_VERSION

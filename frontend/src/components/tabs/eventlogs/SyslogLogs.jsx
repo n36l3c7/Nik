@@ -16,6 +16,8 @@ import SourceFiles from '../../evidence/SourceFiles.jsx'
 import SourceViewer from '../../evidence/SourceViewer.jsx'
 import StackPanel from '../../evidence/StackPanel.jsx'
 import DetectionsSection from '../../evidence/DetectionsSection.jsx'
+import LogonsSection from './LogonsSection.jsx'
+import ProcessesSection from './ProcessesSection.jsx'
 import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
 import { FLAG_HIGHLIGHT, FilterInput, FlagCell, useMarks, useStackValues } from '../../evidence/hostTable.jsx'
 import { useAuth } from '../../../context/AuthContext.jsx'
@@ -51,6 +53,8 @@ const NO_SOURCES = []
 const SECTIONS = [
   { id: 'events', label: 'Events' },
   { id: 'detections', label: 'Detections' },
+  { id: 'processes', label: 'Processes' },
+  { id: 'logons', label: 'Logons' },
 ]
 const BASE = { kind: SYSLOG_KIND }
 const HIDDEN_CHIPS = ['level', 'type', 'dataKey', 'dataValue']
@@ -362,7 +366,15 @@ export default function SyslogLogs({ incident, os }) {
   const canWrite = can('write') && !archived
   const [version, setVersion] = useState(0)
   const [sources, setSources] = useState(NO_SOURCES)
-  const [counts, setCounts] = useState({ records: 0, sources: 0, channels: 0, flagged: 0, matter: 0 })
+  const [counts, setCounts] = useState({
+    records: 0,
+    sources: 0,
+    channels: 0,
+    flagged: 0,
+    matter: 0,
+    processes: 0,
+    logons: 0,
+  })
   const [matter, setMatter] = useState(true)
   const [section, setSection] = useState(SECTIONS[0].id)
   const [focusRule, setFocusRule] = useState('')
@@ -395,6 +407,8 @@ export default function SyslogLogs({ incident, os }) {
         channels: channels?.distinct ?? before.channels,
         flagged: flagged?.count ?? before.flagged,
         matter: mattering?.count ?? before.matter,
+        processes: mine?.processes ?? before.processes,
+        logons: mine?.logons ?? before.logons,
       }))
     })
     return () => controller.abort()
@@ -410,7 +424,12 @@ export default function SyslogLogs({ incident, os }) {
   }, [])
   const items = SECTIONS.map((item) => ({
     ...item,
-    count: item.id === 'events' ? (matter ? counts.matter : counts.records) : found.data.total,
+    count: {
+      events: matter ? counts.matter : counts.records,
+      detections: found.data.total,
+      processes: counts.processes,
+      logons: counts.logons,
+    }[item.id],
   }))
   const expected = useMemo(() => expectedSyslog(os), [os])
 
@@ -475,6 +494,12 @@ export default function SyslogLogs({ incident, os }) {
                 onOpen={openRule}
                 noun="events"
               />
+            )}
+            {section === 'processes' && (
+              <ProcessesSection incident={incident} sources={sources} reload={version} group="syslog" />
+            )}
+            {section === 'logons' && (
+              <LogonsSection incident={incident} sources={sources} reload={version} group="syslog" />
             )}
             {section === 'events' && (
               <Events

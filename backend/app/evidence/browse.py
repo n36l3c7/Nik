@@ -543,6 +543,14 @@ def summary(db: OrmSession, incident_id: str) -> dict[str, Any]:
     ).all()
     for item in kinds.values():
         item["detections"] = dict.fromkeys(("1", "2", "3", "4", "5"), 0)
+        item["processes"] = item["logons"] = 0
+    # The processes and the logons the files gave, as their reports count them (no scan of the tables).
+    for kind, report in db.execute(select(s.kind, s.report).where(s.incident_id == incident_id, s.state != "archived")):
+        if kind in kinds and isinstance(report, dict):
+            for name in ("processes", "logons"):
+                held = report.get(name)
+                if isinstance(held, int) and not isinstance(held, bool):
+                    kinds[kind][name] += held
     for kind, level, n in levels:
         if kind in kinds and str(level) in kinds[kind]["detections"]:
             kinds[kind]["detections"][str(level)] = int(n)

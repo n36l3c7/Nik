@@ -1,4 +1,5 @@
-"""The rules Nik ships: the files of ``pack/``, one rule each, kept as the pack ``nik``.
+"""The rules Nik ships: the files of ``pack/`` (the pack ``nik``) and of ``pack_chains/`` (the pack
+``nik-process-chains``, the rules of process chains), one rule each.
 
 At start, a rule that is not here is added; one that is here and that nobody changed follows the file
 (a release may improve it); one a person changed keeps their text, and ``original`` takes the file's, so
@@ -20,39 +21,46 @@ from ..core.security import now_iso
 from . import checking, rules, worker
 
 logger = logging.getLogger("nik.sigma")
-FOLDER = Path(__file__).parent / "pack"
+FOLDERS = {rules.NIK: Path(__file__).parent / "pack", "nik-process-chains": Path(__file__).parent / "pack_chains"}
 CHECK_SECONDS = 20  # a worker that does not answer must not hold the start of the server
 
 
-def shipped() -> dict[str, str]:
-    """The rules of the pack, by id, with their text."""
-    found: dict[str, str] = {}
-    for path in sorted(FOLDER.glob("*.yml")):
-        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
-        held = rules.quick(text)
-        if held is None:
-            logger.warning("The rule %s of the Nik pack has no id: it is left out", path.name)
-            continue
-        found[held["id"]] = text
+def shipped_by_pack() -> dict[str, tuple[str, str]]:
+    """Every rule Nik ships, by id: the pack it is of, and its text."""
+    found: dict[str, tuple[str, str]] = {}
+    for pack, folder in FOLDERS.items():
+        for path in sorted(folder.glob("*.yml")):
+            text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+            held = rules.quick(text)
+            if held is None:
+                logger.warning("The rule %s of the pack %s has no id: it is left out", path.name, pack)
+                continue
+            found[held["id"]] = (pack, text)
     return found
+
+
+def shipped() -> dict[str, str]:
+    """The rules Nik ships, by id, with their text."""
+    return {rule_id: text for rule_id, (_pack, text) in shipped_by_pack().items()}
 
 
 def seed(db: OrmSession) -> int:
     """Add and bring up to date the rules Nik ships (the caller commits). Returns how many changed."""
-    wanted = shipped()
+    by_pack = shipped_by_pack()
+    wanted = {rule_id: text for rule_id, (_pack, text) in by_pack.items()}
     here = {row.id: row for row in db.scalars(select(SigmaRule).where(SigmaRule.id.in_(list(wanted) or [""])))}
-    held = {row.id: row for row in db.scalars(select(SigmaRule).where(SigmaRule.pack == rules.NIK))}
+    held = {row.id: row for row in db.scalars(select(SigmaRule).where(SigmaRule.pack.in_(list(FOLDERS))))}
     todo = [
         rule_id
-        for rule_id, text in wanted.items()
+        for rule_id, (pack, text) in by_pack.items()
         if rule_id not in here
         or (
-            here[rule_id].pack == rules.NIK
+            here[rule_id].pack == pack
             and here[rule_id].source.strip() != text.strip()
             and not rules.edited(here[rule_id])
         )
         or (
-            here[rule_id].pack == rules.NIK
+            here[rule_id].pack == pack
             and rules.edited(here[rule_id])
             and (here[rule_id].original or "").strip() != text.strip()
         )
@@ -80,7 +88,7 @@ def seed(db: OrmSession) -> int:
         info = info or rules.quick(text)
         row = here.get(rule_id)
         if row is None:
-            rules.add(db, info, used, "nik", pack=rules.NIK)
+            rules.add(db, info, used, "nik", pack=by_pack[rule_id][0])
         elif rules.edited(row):
             row.original = text  # what Reset puts back: the file as it is now
         else:

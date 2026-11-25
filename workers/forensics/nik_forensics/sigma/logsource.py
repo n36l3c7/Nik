@@ -8,7 +8,9 @@ event_id)``: ``kind`` is the section of the evidence the parser says it fills (`
     ``product: windows``  event log records. A category names the Sysmon event (and the Security event that
                           is its equivalent, whose fields are given the Sysmon names when the record is read:
                           ``engine.py``); a service names the channels.
-    ``product: nik``      the records Nik makes itself: ``service: commands | endpoint | browser`` is the section.
+    ``product: nik``      the records Nik makes itself: ``service: commands | endpoint | browser`` is the section;
+                          ``service: process-chain`` is one record per process that the API builds after the processes
+                          of a host are linked (``Image``, ``CommandLine``, ``ParentImage``, ``Ancestors`` (a list)…).
     ``product: linux``    the ``syslog`` section (``parsers/syslog.py``): channels ``auth`` (auth.log, secure, any
                           syslog file), ``journal`` (``journalctl -o json``) and ``audit`` (audit.log, an event
                           per record). ``service: auth | sshd | sudo | syslog | cron | vsftpd | clamav`` name the
@@ -146,12 +148,13 @@ SERVICE: dict[str, tuple[str, ...]] = {
 }
 
 # The sections of the records Nik makes itself (``product: nik``).
-NIK_SERVICES = ("commands", "endpoint", "browser")
+NIK_SERVICES = ("commands", "endpoint", "browser", "process-chain")
 
 # ``product: linux`` and ``product: macos``: the places of the ``syslog`` section. A place is a channel and an extra
 # condition on lower-case fields of the record (``program`` is the program that wrote the message, ``facility`` the
 # syslog facility of a journal entry, ``recordtype`` the type Nik gave the record).
 SYSLOG = "syslog"
+PROCESS_CHAIN = "process-chain"
 _AUTH_FACILITY = {"facility": ["auth", "authpriv"]}
 
 
@@ -257,7 +260,7 @@ def places(product: str | None, category: str | None, service: str | None) -> tu
         if category or service not in (None, *NIK_SERVICES):
             raise sorry
         if service is None:
-            raise NoRecords("a rule for product nik must say its service: commands, endpoint or browser")
+            raise NoRecords("a rule for product nik must say its service: commands, endpoint, browser or process-chain")
         return service, ((None, None, None),)
     if product == "linux":
         return SYSLOG, _linux_places(category, service, sorry)

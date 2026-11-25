@@ -1,0 +1,28 @@
+title: Service Control Manager Starts a Shell
+id: 0a425950-a643-4103-b79e-dfe2bfacbf4a
+name: nik_chain_service_starts_shell
+status: test
+description: 'services.exe started cmd or PowerShell. It is how a service made to run one command works: PsExec and tools like it, and sc create with a command as the binary.'
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.lateral-movement
+- attack.t1021.002
+- attack.execution
+- attack.t1569.002
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith: \services.exe
+  selection_child:
+    Image|endswith:
+    - \cmd.exe
+    - \powershell.exe
+    - \pwsh.exe
+  condition: selection_parent and selection_child
+falsepositives:
+- A service of a management product that starts a script
+- Software that installs services through cmd
+level: high

@@ -1,0 +1,34 @@
+title: mshta, regsvr32 or rundll32 Starts a Network Tool
+id: c2563a68-46b6-4d9f-a1ab-b6696ee313fe
+name: nik_chain_signed_binary_starts_network_tool
+status: test
+description: A binary that Windows ships and that attackers use to run their code (mshta, regsvr32, rundll32) started a tool that downloads or encodes files (curl, certutil, bitsadmin, PowerShell).
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.defense-evasion
+- attack.t1218.005
+- attack.t1218.010
+- attack.t1218.011
+- attack.command-and-control
+- attack.t1105
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - \mshta.exe
+    - \regsvr32.exe
+    - \rundll32.exe
+  selection_child:
+    Image|endswith:
+    - \curl.exe
+    - \certutil.exe
+    - \bitsadmin.exe
+    - \powershell.exe
+    - \pwsh.exe
+  condition: selection_parent and selection_child
+falsepositives:
+- An installer that runs rundll32 and then PowerShell to finish its work
+level: high

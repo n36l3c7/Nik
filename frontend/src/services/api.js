@@ -358,6 +358,28 @@ export const evidence = {
     api.get(evidencePath(incidentId, `/stack${queryString({ ...recordFilters(filters), field, order, limit })}`), {
       signal,
     }),
+  /**
+   * One page of the processes (routers/evidence_processes.py): `{ processes, next, count, countCapped }`.
+   * `filters`: `host, q, user, image, level, parentId, roots, sourceId, from, to`; `order` is `time` or `-time`.
+   */
+  processes: (incidentId, { filters = {}, order = 'time', limit = 100, cursor = '', signal } = {}) =>
+    api.get(evidencePath(incidentId, `/processes${queryString({ ...filters, order, limit, cursor })}`), { signal }),
+  /** The ancestors and the descendants of a process: `{ node, ancestors, ghost, descendants, cut, caps }`. */
+  processTree: (incidentId, processId, { up = 32, down = 6, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/processes/${encodeURIComponent(processId)}/tree${queryString({ up, down })}`), {
+      signal,
+    }),
+  /** The hosts that have processes: `{ hosts: [{ host, processes, firstTs, lastTs, roots, detections, level }], cut }`. */
+  processHosts: (incidentId, { signal } = {}) => api.get(evidencePath(incidentId, '/processes/hosts'), { signal }),
+  /**
+   * One page of logons: `{ logons, next, count, countCapped }`. `filters`: `host, user, sourceIp, sourceHost, sourceId,
+   * logonType, outcome` (a list, or `a,b`), `q, from, to`.
+   */
+  logons: (incidentId, { filters = {}, order = '-time', limit = 100, cursor = '', signal } = {}) =>
+    api.get(evidencePath(incidentId, `/logons${queryString({ ...filters, order, limit, cursor })}`), { signal }),
+  /** The lateral movement the logons show: `{ nodes, edges, cut, caps }` (`from, to, logonType, outcome, user, minCount`). */
+  logonGraph: (incidentId, { filters = {}, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/logons/graph${queryString(filters)}`), { signal }),
   /** The fields the records have: `{ fields: [{ name, seen }] }`. */
   fields: (incidentId, { kind, type, sourceId, signal } = {}) =>
     api.get(evidencePath(incidentId, `/fields${queryString({ kind, type, sourceId })}`), { signal }),

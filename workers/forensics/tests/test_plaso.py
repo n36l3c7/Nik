@@ -359,7 +359,7 @@ def test_a_psort_json_line_file_is_recognised_by_what_a_worker_recognises_with(t
     assert parsers.by_source("collection", "plaso.csv").NAME == "plaso"
     assert triage.what_is(path, "whatever.dat") == {
         "parser": "plaso",
-        "version": "1",
+        "version": "2",
         "kind": "collection",
         "source": "plaso.jsonl",
     }

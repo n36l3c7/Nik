@@ -46,9 +46,10 @@ from datetime import datetime, timezone
 from typing import Any, NamedTuple
 
 from nik_forensics import viewing
+from nik_forensics.parsers import evtx
 
 NAME = "plaso"
-VERSION = "1"
+VERSION = "2"  # 2: the lines of processes and logons of the events of an event log
 KIND = "collection"
 SOURCES = ("plaso.jsonl", "plaso.csv")
 
@@ -332,6 +333,7 @@ class _Reader:
         summary = message or str(event.get("display_name") or event.get("filename") or data_type)
         event_id: int | None = None
         channel = route.channel
+        lines: list = []
         if route.source == "evtx":
             xml = str(event.get("xml_string") or "")
             channel = _evtx_channel(xml, event)
@@ -340,7 +342,8 @@ class _Reader:
             event_id = _int(event.get("event_identifier") if event.get("event_identifier") is not None else None)
             if event_id is not None:
                 event_id &= 0xFFFF
-            data.update(_evtx_data(xml))
+            fields = _evtx_data(xml)
+            data.update(fields)
             data.setdefault("EventID", event_id)
             data["Channel"], data["Computer"] = channel, computer
             data["Provider"] = event.get("source_name") or event.get("provider_identifier") or ""
@@ -350,6 +353,7 @@ class _Reader:
                 else self._key(route, host, event, stamp, desc, message)
             )
             host = computer or host
+            lines = evtx.evidence(channel, event_id, str(data["Provider"]), host, fields)
         else:
             key = self._key(route, host, event, stamp, desc, message)
             if route.kind == "browser":
@@ -375,6 +379,7 @@ class _Reader:
             source=route.source,
             kind=route.kind,
         )
+        evtx.say(self.ctx, key, ts, host, lines)
 
     def _key(self, route: Route, host: str, event: dict[str, Any], stamp: Any, desc: str, message: str) -> str:
         identity = _digest(

@@ -366,6 +366,11 @@ class Engine:
                     orig[name] = orig[read]
             if username and "user" not in orig:
                 orig["user"] = username
+        elif kind == logsource.PROCESS_CHAIN:
+            # The API gives the fields of a process by their own names (``Host``, ``User``): the arguments fill in.
+            orig.setdefault("summary", summary)
+            orig.setdefault("host", host)
+            orig.setdefault("user", username)
         else:
             orig["summary"] = summary
             orig["type"] = rtype

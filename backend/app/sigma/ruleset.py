@@ -18,12 +18,13 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, not_, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..core.models import Incident, SigmaRule
 from . import rules, worker
 
+CHAIN_PRODUCT, CHAIN_SERVICE = "nik", "process-chain"  # the log source of the rules of process chains
 KEPT = 3  # the sets whose bytes are held, for a worker that asks for the one of a file read a moment ago
 GIVE_TIMEOUT = 300
 DAYS_ALL = [1, 2, 3, 4, 5, 6, 7]
@@ -51,8 +52,61 @@ def forget() -> None:
         _recent.clear()
 
 
+def is_chain():
+    """The condition on ``SigmaRule`` that selects the rules of process chains: they run over the processes of
+    a host once they are linked (``evidence/chains.py``), never over the records of a file."""
+    return and_(SigmaRule.product == CHAIN_PRODUCT, SigmaRule.service == CHAIN_SERVICE)
+
+
+def chains(db: OrmSession) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], set[str]]:
+    """The rules of process chains as the worker is given them (the enabled and supported ones, as rule lines),
+    what a detection copies of each (title, author, level, tags), and the ids of every such rule, switched on
+    or not (the detections of a rule that was switched off are the ones a new run takes away)."""
+    row = SigmaRule
+    found = db.execute(
+        select(
+            row.id,
+            row.title,
+            row.author,
+            row.level,
+            row.kind,
+            row.product,
+            row.category,
+            row.service,
+            row.tags,
+            row.source,
+            row.enabled,
+            row.supported,
+        )
+        .where(is_chain())
+        .order_by(row.id)
+    ).all()
+    lines: list[dict[str, Any]] = []
+    meta: dict[str, dict[str, Any]] = {}
+    every: set[str] = set()
+    for rule_id, title, author, level, kind, product, category, service, tags, source, enabled, supported in found:
+        every.add(rule_id)
+        if not (enabled and supported):
+            continue
+        lines.append(
+            {
+                "id": rule_id,
+                "title": title,
+                "level": level,
+                "kind": kind,
+                "product": product,
+                "category": category,
+                "service": service,
+                "source": source,
+            }
+        )
+        meta[rule_id] = {"title": title, "author": author, "level": level, "tags": list(tags or [])}
+    return lines, meta, every
+
+
 def build(db: OrmSession) -> Set | None:
-    """The set as the database has it now; None when no rule is both enabled and supported."""
+    """The set as the database has it now; None when no rule is both enabled and supported. The rules of
+    process chains are not in it: no file has records of theirs."""
     row = SigmaRule
     found = db.execute(
         select(
@@ -67,7 +121,7 @@ def build(db: OrmSession) -> Set | None:
             row.tags,
             row.source,
         )
-        .where(row.enabled.is_(True), row.supported.is_(True))
+        .where(row.enabled.is_(True), row.supported.is_(True), not_(is_chain()))
         .order_by(row.id)
     ).all()
     if not found:

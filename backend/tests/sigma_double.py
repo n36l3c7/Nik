@@ -145,9 +145,53 @@ class FakeSigma:
         for line in body["rules"]:
             if line["kind"] == "correlation":
                 continue
-            wanted = yaml.safe_load(line["source"])["detection"]["selection"]
+            detection = yaml.safe_load(line["source"])["detection"]
+            if (line["product"], line["service"]) == ("nik", "process-chain"):
+                # The log source of the chains: the records of kind process-chain, the conditions of the shipped
+                # rules (names joined by and/or, parentheses), the modifiers they use.
+                for record in body["records"]:
+                    if record["kind"] == "process-chain" and chain_matches(detection, record["data"]):
+                        matches.append({"rule": line["id"], "key": record["key"]})
+                continue
+            wanted = detection["selection"]
             for record in body["records"]:
                 held = {"EventID": record["event_id"], "Channel": record["channel"], **record["data"]}
                 if all(held.get(field) == value for field, value in wanted.items()):
                     matches.append({"rule": line["id"], "key": record["key"]})
         return {"matches": matches, "notEvaluated": left}
+
+
+def _field_matches(held: Any, modifier: str, wanted: Any) -> bool:
+    """One field of a selection against a record (a list of wanted values: any of them; a list held: any element)."""
+    values = held if isinstance(held, list) else [held]
+    for wanted_one in wanted if isinstance(wanted, list) else [wanted]:
+        for value in values:
+            have, want = str(value).lower(), str(wanted_one).lower()
+            if modifier == "endswith" and have.endswith(want):
+                return True
+            if modifier == "startswith" and have.startswith(want):
+                return True
+            if modifier == "contains" and want in have:
+                return True
+            if modifier == "" and have == want:
+                return True
+    return False
+
+
+def chain_matches(detection: dict[str, Any], data: dict[str, Any]) -> bool:
+    """What the real worker does with a rule of the log source ``nik/process-chain``, as far as these tests need:
+    the fields are the ones of the design (``Image``, ``ParentImage``, ``Ancestors``…), each selection is an AND of
+    its fields, and the condition joins selections with ``and``, ``or``, ``not`` and parentheses."""
+    done: dict[str, bool] = {}
+    for name, selection in detection.items():
+        if name == "condition":
+            continue
+        ok = True
+        for field, wanted in selection.items():
+            key, _, modifier = field.partition("|")
+            ok = ok and _field_matches(data.get(key), modifier, wanted)
+        done[name] = ok
+    expression = detection["condition"]
+    for name in sorted(done, key=len, reverse=True):
+        expression = expression.replace(name, str(done[name]))
+    return bool(eval(expression, {"__builtins__": {}}, {}))  # noqa: S307 - the text is a rule of a test

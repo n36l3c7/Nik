@@ -124,7 +124,7 @@ def test_the_sample_is_a_log_of_one_chunk_and_the_parser_is_the_one_that_is_load
     assert parser.sniff(SAMPLE, "x.evtx", b"MZ\x90\x00") is None
     assert parser.sniff(SAMPLE, "x.evtx", b"") is None
     assert parsers.load("evtx") is parser
-    assert (parser.NAME, parser.VERSION, parser.KIND, parser.SOURCES) == ("evtx", "1", "eventlog", ("evtx",))
+    assert (parser.NAME, parser.VERSION, parser.KIND, parser.SOURCES) == ("evtx", "2", "eventlog", ("evtx",))
 
 
 def test_a_whole_log_gives_every_record_with_its_place_and_nothing_else(tmp_path):

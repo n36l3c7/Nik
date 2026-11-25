@@ -1,0 +1,49 @@
+title: Command Over SSH Pipes a Download Into a Shell
+id: 4a027ad7-81a5-461b-a6f9-92c9562b2e2c
+name: nik_chain_ssh_shell_pipes_download_to_shell
+status: test
+description: A shell that sshd started ran curl or wget and gave what it downloaded to another shell or to an interpreter. It is how an intruder who signed in runs a script from the internet without leaving a file.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1059.004
+- attack.command-and-control
+- attack.t1105
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_sshd:
+    Ancestors|contains: sshd
+  selection_shell:
+    Image|endswith:
+    - /sh
+    - /bash
+    - /dash
+    - /zsh
+    - /ksh
+    - /ash
+    - /csh
+    - /tcsh
+  selection_download:
+    CommandLine|contains:
+    - 'curl '
+    - 'wget '
+  selection_piped:
+    CommandLine|contains:
+    - '| sh'
+    - '|sh'
+    - '| bash'
+    - '|bash'
+    - '| /bin/sh'
+    - '| /bin/bash'
+    - '| python'
+    - '|python'
+    - '| perl'
+    - '| sudo sh'
+    - '| sudo bash'
+  condition: selection_sshd and selection_shell and selection_download and selection_piped
+falsepositives:
+- An administrator who installs software with the one-line installer its vendor publishes
+level: high

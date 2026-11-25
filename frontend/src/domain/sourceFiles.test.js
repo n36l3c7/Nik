@@ -11,6 +11,7 @@ import {
   missingExpected,
   needsPolling,
   noteRows,
+  readBeforeProcesses,
   readPill,
   reasonRows,
   shortHash,
@@ -152,4 +153,17 @@ test('the reasons of a report come largest loss first, with the first example', 
   assert.deepEqual(noteRows(report), [{ reason: 'recovered after clear', count: 2, detail: 'slack of chunk 301' }])
   assert.deepEqual(reasonRows({}), [])
   assert.deepEqual(noteRows(undefined), [])
+})
+
+test('a log read by a parser older than version 2 is offered to be analysed again for its processes and logons', () => {
+  const read = (parser, parserVersion, extra = {}) => ({ parser, parserVersion, state: 'done', ...extra })
+  for (const parser of ['evtx', 'eventlog-json', 'syslog', 'plaso']) {
+    assert.equal(readBeforeProcesses(read(parser, '1')), true, parser)
+    assert.equal(readBeforeProcesses(read(parser, '2')), false, parser)
+  }
+  assert.equal(readBeforeProcesses(read('evtx', '10')), false)
+  // Other parsers have nothing to extract; a file not read yet or imported before 7.0 has nothing to read again.
+  assert.equal(readBeforeProcesses(read('browser', '1')), false)
+  assert.equal(readBeforeProcesses(read('evtx', '1', { state: 'parsing' })), false)
+  assert.equal(readBeforeProcesses(read('evtx', '1', { legacy: true })), false)
 })

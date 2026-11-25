@@ -3,6 +3,8 @@ import { Activity, FileSearch, Flag, HelpCircle, Info, ScrollText, Server, Shiel
 import { Button, Card, Modal, StatCard, Tabs } from '../../ui/index.js'
 import SourceFiles from '../../evidence/SourceFiles.jsx'
 import DetectionsSection from '../../evidence/DetectionsSection.jsx'
+import LogonsSection from './LogonsSection.jsx'
+import ProcessesSection from './ProcessesSection.jsx'
 import ScriptBlock from '../endpoint/ScriptBlock.jsx'
 import CoverageChart from './CoverageChart.jsx'
 import SyslogLogs from './SyslogLogs.jsx'
@@ -41,6 +43,8 @@ const NO_SOURCES = []
 const SECTIONS = [
   { id: 'events', label: 'Events' },
   { id: 'detections', label: 'Detections' },
+  { id: 'processes', label: 'Processes' },
+  { id: 'logons', label: 'Logons' },
 ]
 
 function Help() {
@@ -85,7 +89,15 @@ function WindowsLogs({ incident }) {
   const canWrite = can('write') && !archived
   const [version, setVersion] = useState(0)
   const [sources, setSources] = useState(NO_SOURCES)
-  const [counts, setCounts] = useState({ records: 0, sources: 0, channels: 0, flagged: 0, matter: 0 })
+  const [counts, setCounts] = useState({
+    records: 0,
+    sources: 0,
+    channels: 0,
+    flagged: 0,
+    matter: 0,
+    processes: 0,
+    logons: 0,
+  })
   const [matter, setMatter] = useState(true) // "Events that matter": on until the person asks for all
   const [section, setSection] = useState(SECTIONS[0].id)
   const [focusRule, setFocusRule] = useState('') // a rule opened from Detections: Events shows only its events
@@ -118,6 +130,8 @@ function WindowsLogs({ incident }) {
         channels: channels?.distinct ?? before.channels,
         flagged: flagged?.count ?? before.flagged,
         matter: mattering?.count ?? before.matter,
+        processes: mine?.processes ?? before.processes,
+        logons: mine?.logons ?? before.logons,
       }))
     })
     return () => controller.abort()
@@ -134,7 +148,12 @@ function WindowsLogs({ incident }) {
   }, [])
   const items = SECTIONS.map((item) => ({
     ...item,
-    count: item.id === 'events' ? (matter ? counts.matter : counts.records) : found.data.total,
+    count: {
+      events: matter ? counts.matter : counts.records,
+      detections: found.data.total,
+      processes: counts.processes,
+      logons: counts.logons,
+    }[item.id],
   }))
 
   return (
@@ -206,6 +225,8 @@ function WindowsLogs({ incident }) {
                 noun="events"
               />
             )}
+            {section === 'processes' && <ProcessesSection incident={incident} sources={sources} reload={version} />}
+            {section === 'logons' && <LogonsSection incident={incident} sources={sources} reload={version} />}
             {section === 'events' && (
               <EventsSection
                 incident={incident}

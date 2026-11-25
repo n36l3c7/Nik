@@ -1,0 +1,40 @@
+title: Web Browser Starts a Script Host or a Shell
+id: 8c468f3e-819a-4b06-992c-005b4258f1c5
+name: nik_chain_browser_starts_shell
+status: test
+description: A web browser started a command interpreter or a script host. A page that makes the user download and run something, or a browser exploit, ends this way.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1189
+- attack.t1204.001
+- attack.t1059
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - \chrome.exe
+    - \msedge.exe
+    - \firefox.exe
+    - \iexplore.exe
+    - \brave.exe
+    - \opera.exe
+    - \vivaldi.exe
+  selection_child:
+    Image|endswith:
+    - \cmd.exe
+    - \powershell.exe
+    - \pwsh.exe
+    - \wscript.exe
+    - \cscript.exe
+    - \mshta.exe
+    - \rundll32.exe
+    - \regsvr32.exe
+  condition: selection_parent and selection_child
+falsepositives:
+- Developer tools and extensions with a native helper
+- A web application that opens a command window on purpose
+level: medium

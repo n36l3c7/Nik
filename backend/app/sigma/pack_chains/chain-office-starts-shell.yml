@@ -1,0 +1,40 @@
+title: Office Application Starts a Script Host or a Shell
+id: c87dbda0-bdf3-4616-8136-4cd5cd9e742c
+name: nik_chain_office_starts_shell
+status: test
+description: A Word, Excel, PowerPoint, Outlook or Access process started a command interpreter, a script host or a binary that runs code for an attacker (rundll32, regsvr32, mshta). It is how a macro or an exploit in a document starts its payload.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1204.002
+- attack.t1059.005
+- attack.t1059.001
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - \winword.exe
+    - \excel.exe
+    - \powerpnt.exe
+    - \outlook.exe
+    - \msaccess.exe
+    - \onenote.exe
+    - \visio.exe
+  selection_child:
+    Image|endswith:
+    - \cmd.exe
+    - \powershell.exe
+    - \pwsh.exe
+    - \wscript.exe
+    - \cscript.exe
+    - \mshta.exe
+    - \rundll32.exe
+    - \regsvr32.exe
+  condition: selection_parent and selection_child
+falsepositives:
+- Add-ins and macros of the organisation that start a script
+- An Outlook rule or a mail merge that runs a command
+level: high

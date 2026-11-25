@@ -1,0 +1,36 @@
+title: LSASS Memory Dump Run From a Shell
+id: 038a3eed-7c92-4382-b2d9-aefcfd94cd6b
+name: nik_chain_lsass_dump_under_shell
+status: test
+description: A shell started rundll32 with comsvcs.dll MiniDump, or procdump against lsass. The memory of lsass.exe holds the credentials of the people who signed in.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.credential-access
+- attack.t1003.001
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - \cmd.exe
+    - \powershell.exe
+    - \pwsh.exe
+  selection_comsvcs:
+    Image|endswith: \rundll32.exe
+    CommandLine|contains: comsvcs
+  selection_comsvcs_dump:
+    CommandLine|contains:
+    - minidump
+    - '#24'
+    - ' full'
+  selection_procdump:
+    Image|endswith:
+    - \procdump.exe
+    - \procdump64.exe
+    CommandLine|contains: lsass
+  condition: selection_parent and ((selection_comsvcs and selection_comsvcs_dump) or selection_procdump)
+falsepositives:
+- A person who captures a dump of lsass for a support case
+level: critical

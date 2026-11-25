@@ -67,3 +67,66 @@ export function matchActions(actions, query) {
     return words.every((word) => haystack.includes(word))
   })
 }
+
+/**
+ * The summary of a record of the server's Evidence group, cut to `max` characters around the first place the words are,
+ * and split in segments `{ text, hit }` so the words can be marked. The server matches the typed text as it is (any
+ * case), so that is looked for first; words are marked one by one only when the text as a whole is not there.
+ */
+export function markWords(summary, query, max = 140) {
+  const text = String(summary ?? '').replace(/\s+/g, ' ')
+  const lower = text.toLowerCase()
+  const typed = norm(query).trim()
+  const ranges = []
+  const find = (needle) => {
+    for (let at = lower.indexOf(needle); at >= 0 && needle; at = lower.indexOf(needle, at + needle.length)) {
+      ranges.push([at, at + needle.length])
+    }
+  }
+  find(typed)
+  if (ranges.length === 0) for (const word of typed.split(/\s+/)) if (word.length >= 2) find(word)
+  ranges.sort((a, b) => a[0] - b[0])
+  const merged = []
+  for (const range of ranges) {
+    const last = merged[merged.length - 1]
+    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1])
+    else merged.push([...range])
+  }
+  // A window around the first hit, with an ellipsis where the text was cut.
+  let start = 0
+  if (text.length > max) start = Math.max(0, Math.min((merged[0]?.[0] ?? 0) - 40, text.length - max))
+  const end = Math.min(text.length, start + max)
+  const pieces = []
+  let at = start
+  for (const [from, to] of merged) {
+    if (to <= start || from >= end) continue
+    const a = Math.max(from, start)
+    const b = Math.min(to, end)
+    if (a > at) pieces.push({ text: text.slice(at, a), hit: false })
+    pieces.push({ text: text.slice(a, b), hit: true })
+    at = b
+  }
+  if (at < end) pieces.push({ text: text.slice(at, end), hit: false })
+  if (start > 0) pieces.unshift({ text: '…', hit: false })
+  if (end < text.length) pieces.push({ text: '…', hit: false })
+  return pieces
+}
+
+/**
+ * What choosing a record of the Evidence group asks of the app: the tab of its section (`eventlogs` for event
+ * logs and for the logs of Linux and macOS; the Evidence page when the section is none of the pages) and the
+ * request the page reads once: the record to open in the Source viewer.
+ */
+export function evidenceTarget(hit, tabOf) {
+  return {
+    tab: tabOf(hit.section) ?? 'evidence',
+    request: {
+      record: {
+        id: hit.recordId,
+        incidentId: hit.incidentId,
+        sourceId: hit.sourceId,
+        fileName: hit.source ?? '',
+      },
+    },
+  }
+}

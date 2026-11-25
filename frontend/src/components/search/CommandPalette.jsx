@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bug, ChevronRight, Crosshair, FolderOpen, StickyNote, Zap } from 'lucide-react'
+import { Bug, ChevronRight, Crosshair, FolderOpen, ScrollText, StickyNote, Zap } from 'lucide-react'
 import { Badge } from '../ui/index.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
+import { useNavigation } from '../../context/NavigationContext.jsx'
 import { useIocLookup } from '../../context/IocLookupContext.jsx'
 import { NO_DETECTION_ENGINE } from '../../domain/soc.js'
 import { api } from '../../services/api.js'
 import { IOC_TYPES } from '../../domain/iocs.js'
-import { matchActions, searchIncident, tabForSource } from '../../domain/search.js'
+import { evidenceTarget, markWords, matchActions, searchIncident, tabForSource } from '../../domain/search.js'
+import { tabOfKind } from '../../domain/evidence.js'
+import { getTabById } from '../../config/tabs.js'
 import { buildTimelineEvents, TIMELINE_SOURCE_META } from '../../domain/timeline.js'
 import { formatDateTime } from '../../lib/time.js'
 import { useLayer } from '../../lib/layers.js'
@@ -15,13 +18,17 @@ import { MicroSkull } from '../ui/index.js'
 
 /*
  * Global search palette (Ctrl/Cmd+K or "/"): a `nik>` prompt that searches
- * incidents, indicators from every incident and samples on the server, plus
+ * incidents, indicators from every incident, samples and the records of host evidence on the server (the
+ * Evidence group: the summary with the words marked, the incident, the file and the time; choosing one opens the
+ * page of its section with the record in the Source viewer), plus
  * the events of the open incident's document, its notes and samples in memory. A query starting
  * with ">" lists actions. ↑/↓ move, Enter runs, Esc closes.
  */
 
 const DEBOUNCE_MS = 200
-const NO_RESULTS = { incidents: [], iocs: [], samples: [] }
+const NO_RESULTS = { incidents: [], iocs: [], samples: [], evidence: [], evidenceCut: false }
+// The server answers 20 records at most; the palette lists this many (the list scrolls).
+const EVIDENCE_SHOWN = 12
 
 function Group({ title, children }) {
   return (
@@ -35,6 +42,7 @@ function Group({ title, children }) {
 export default function CommandPalette({ open, onClose, actions, onOpenTab, initialQuery = '' }) {
   const { activeIncident, selectIncident } = useIncidents()
   const { openIoc } = useIocLookup()
+  const { goTo } = useNavigation()
   const listRef = useRef(null)
   const [query, setQuery] = useState('')
   const [remote, setRemote] = useState({ loading: false, data: NO_RESULTS, error: null })
@@ -74,8 +82,8 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
     }
   }, [open, isAction, text])
 
-  // The events of the open incident's document (built only while the palette is open). Host records are not
-  // here: a server "Evidence" group goes beside the others once the server can search them.
+  // The events of the open incident's document (built only while the palette is open). Host records are the
+  // server's "Evidence" group.
   const events = useMemo(
     () => (open && activeIncident ? buildTimelineEvents(activeIncident.data, NO_DETECTION_ENGINE) : []),
     [open, activeIncident],
@@ -153,6 +161,43 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
         })),
       })
     }
+    if (remote.data.evidence.length) {
+      out.push({
+        title: 'Evidence — all incidents',
+        items: remote.data.evidence.slice(0, EVIDENCE_SHOWN).map((hit) => {
+          const target = evidenceTarget(hit, tabOfKind)
+          return {
+            key: `evidence:${hit.recordId}`,
+            icon: getTabById(target.tab)?.icon ?? ScrollText,
+            primaryNode: (
+              <>
+                {markWords(hit.summary, text).map((piece, at) =>
+                  piece.hit ? (
+                    <mark key={at} className="bg-accent-soft text-accent-fg">
+                      {piece.text}
+                    </mark>
+                  ) : (
+                    <span key={at}>{piece.text}</span>
+                  ),
+                )}
+              </>
+            ),
+            primary: hit.summary,
+            secondary: [
+              numberedName({ name: hit.incidentName, number: hit.incidentNumber }),
+              hit.source,
+              hit.ts ? formatDateTime(hit.ts) : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            run: run(() => {
+              if (hit.incidentId !== activeIncident?.id) selectIncident(hit.incidentId)
+              goTo(target.tab, target.request)
+            }),
+          }
+        }),
+      })
+    }
     if (local.events.length) {
       out.push({
         title: 'Events — this incident',
@@ -180,7 +225,7 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
       })
     }
     return out
-  }, [isAction, text, actions, remote.data, local, onClose, selectIncident, openIoc, onOpenTab])
+  }, [isAction, text, actions, remote.data, local, onClose, selectIncident, openIoc, onOpenTab, goTo, activeIncident])
 
   const flat = useMemo(() => groups.flatMap((group) => group.items), [groups])
 
@@ -233,7 +278,7 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="search incidents, indicators, samples, events… or > for actions"
+            placeholder="search incidents, indicators, samples, evidence… or > for actions"
             aria-label="Search"
             aria-controls="palette-results"
             aria-activedescendant={flat[cursor] ? `palette-${flat[cursor].key}` : undefined}
@@ -273,7 +318,12 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
                     <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-accent' : 'text-fg-muted'}`} />
                     {item.badge && <Badge color={item.badgeColor ?? 'slate'}>{item.badge}</Badge>}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-sm text-fg">{item.primary}</span>
+                      <span
+                        className="block truncate font-mono text-sm text-fg"
+                        title={item.primaryNode ? item.primary : undefined}
+                      >
+                        {item.primaryNode ?? item.primary}
+                      </span>
                       {item.secondary && (
                         <span className="block truncate text-[11px] text-fg-muted">{item.secondary}</span>
                       )}
@@ -283,6 +333,11 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
               })}
             </Group>
           ))}
+          {searching && !remote.loading && remote.data.evidenceCut && (
+            <p role="status" className="px-4 py-2 font-mono text-xs text-med-fg">
+              The search of evidence was cut short: narrow the words.
+            </p>
+          )}
           {searching && !remote.loading && flat.length === 0 && (
             <p className="px-4 py-6 text-center font-mono text-sm text-fg-muted">
               {remote.error ? remote.error : `no match for "${text}"`}
@@ -293,7 +348,7 @@ export default function CommandPalette({ open, onClose, actions, onOpenTab, init
           <span>↑↓ move</span>
           <span>↵ open</span>
           <span>&gt; actions</span>
-          <span>indicators: every incident · events and notes: open incident</span>
+          <span>indicators and evidence: every incident · events and notes: open incident</span>
         </div>
       </div>
     </div>

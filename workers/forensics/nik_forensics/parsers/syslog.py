@@ -24,6 +24,11 @@ log: the events, and the lines that belong to none). A line that cannot be read 
 twice in one file is the same record twice (it has the same key) and is a note. Text before the first JSON record or
 after the last (a header and a footer) is a note; a truncated object is a skip.
 
+A ``process`` record of the audit log is also said as a ``proc`` line (pid, ppid, exe, command line, the account) and a
+``logon`` or ``logon_failed`` record of any of the four sources as a ``logon`` line (success or failure, the address
+or name it came from, the method), right after the record; a log of this kind has no logon type, and a process
+record without a pid is a note (its record is kept).
+
 The file is read a line at a time and never whole. Standard library only.
 """
 
@@ -44,7 +49,7 @@ from nik_forensics.parsers import BadLocator, ViewError
 from nik_forensics.parsers.syslog_parts import audit, messages
 
 NAME = "syslog"
-VERSION = "1"
+VERSION = "2"  # 2: the lines of processes (audit execve) and logons
 KIND = "syslog"
 SOURCES = ("linux.auth", "linux.journal", "linux.audit", "macos.unifiedlog")
 CHANNEL = {"linux.auth": "auth", "linux.journal": "journal", "linux.audit": "audit", "macos.unifiedlog": "unifiedlog"}
@@ -204,6 +209,7 @@ class _Out:
         self.duplicates = 0
         self.tracking_stopped = False
         self.no_time = 0
+        self.no_pid = 0
 
     def give(
         self,
@@ -238,8 +244,47 @@ class _Out:
             loc=loc,
             ioc=ioc,
         )
+        self._lines(key, rtype, ts, host or self.host, username, data)
+
+    def _lines(self, key: str, rtype: str, ts: int | None, host: str, username: str, data: dict[str, Any]) -> None:
+        """The ``logon`` line of a logon record and the ``proc`` line of an execve, after the record."""
+        if rtype in _TYPES_WITH_ADDRESS:
+            failed = rtype == "logon_failed"
+            status = "unknown user" if data.get("invalid_user") else str(data.get("error") or "")
+            self.ctx.logon(
+                key,
+                ts=ts,
+                host=host,
+                user=username,
+                source_ip=str(data.get("source_ip") or ""),
+                source_host=str(data.get("source_host") or ""),
+                outcome="failure" if failed else "success",
+                method=str(data.get("method") or ""),
+                status=status if failed else "",
+            )
+        elif rtype == "process":
+            pid, ppid = _id(data.get("pid")), _id(data.get("ppid"))
+            if pid is None:
+                self.no_pid += 1
+                return
+            self.ctx.process(
+                key,
+                ts=ts,
+                host=host,
+                pid=pid,
+                ppid=ppid,
+                image=str(data.get("exe") or ""),
+                command_line=str(data.get("CommandLine") or ""),
+                user=username or str(data.get("auid_name") or "") or _unset(data.get("auid")),
+            )
 
     def notes(self) -> None:
+        if self.no_pid:
+            self.ctx.note(
+                "process record without a pid",
+                count=self.no_pid,
+                detail="the record is kept; it has no process line, so it is not in the tree of processes",
+            )
         if self.duplicates:
             self.ctx.note(
                 "line that comes twice in the file",
@@ -253,6 +298,17 @@ class _Out:
             )
         if self.no_time:
             self.ctx.note("record without a time", count=self.no_time, detail="kept, with no place on the timeline")
+
+
+def _id(value: Any) -> int | None:
+    text = str(value if value is not None else "").strip()
+    return int(text) if text.isascii() and text.isdigit() else None
+
+
+def _unset(value: Any) -> str:
+    """An audit uid: ``4294967295`` (and ``-1``) say the login uid was never set."""
+    text = str(value if value is not None else "")
+    return "" if text in ("4294967295", "-1", "unset") else text
 
 
 def _digest(raw: bytes | str) -> str:

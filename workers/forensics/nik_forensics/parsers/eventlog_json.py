@@ -4,8 +4,9 @@ One record per event, in the shape the ``evtx`` parser gives for the same event:
 (``evtx:<computer>:<channel>:<record id>``, the same for a record number that comes
 twice, as in evtx.py, so an ``.evtx`` of the same log imported later counts these
 events as the same), the same summary, user name and indicators (``evtx.normalise`` and its helpers are
-used, not copied), the same ``data`` (``provider``, ``level``, then the event's fields). The JSON holds
-less than the ``.evtx`` does: no ``task``, ``opcode``, ``keywords``, process or thread.
+used, not copied), the same ``data`` (``provider``, ``level``, then the event's fields) and the same ``proc``,
+``proc_end`` and ``logon`` lines (``evtx.evidence``). The JSON holds less than the ``.evtx`` does: no ``task``,
+``opcode``, ``keywords``, process or thread.
 
 The file is a document ``{"format": "nik-eventlogs", "host", "logs": [...], "events": [...]}``, or just an
 array of events (a plain ``Get-WinEvent | ConvertTo-Json``), or one event. An event is
@@ -36,7 +37,7 @@ from nik_forensics import viewing
 from nik_forensics.parsers import ViewError, evtx
 
 NAME = "eventlog-json"
-VERSION = "1"
+VERSION = "2"  # 2: the lines of processes and logons
 KIND = "eventlog"
 SOURCES = ("nik-eventlogs.json",)
 
@@ -159,6 +160,7 @@ def normalise_event(raw: dict, host: str = "") -> dict[str, Any]:
         "summary": evtx._summary(channel, event_id, provider, fields),
         "data": data,
         "ioc": evtx._indicators(channel, event_id, fields),
+        "lines": evtx.evidence(channel, event_id, provider, computer, fields),
         "script": None,
     }
 
@@ -325,6 +327,7 @@ def parse(path: str, ctx, source: str) -> None:
                     loc={"index": index},
                     ioc=event["ioc"],
                 )
+                evtx.say(ctx, key, event["ts"], event["computer"], event["lines"])
         except (ValueError, RecursionError) as exc:  # JSONDecodeError is a ValueError
             failure = exc
             ctx.skip("the file stops being JSON", lost=0, offset=None, detail=f"after {count} events: {str(exc)[:200]}")

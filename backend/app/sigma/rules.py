@@ -32,6 +32,8 @@ from .checking import LEVEL_NAMES, level_of
 
 SETTINGS_ID = 110
 NIK = "nik"
+# The packs Nik ships (``seed.py``), with the name the screens show: the rules of each follow a release.
+BUILTIN = {NIK: "Nik", "nik-process-chains": "Nik process chains"}
 ID_MAX = 64
 CHUNK = 500
 NOT_CHECKED = "Not checked yet: the forensics worker was not reached"
@@ -107,7 +109,7 @@ def keep_setting(db: OrmSession, key: str, value: Any) -> None:
 # --------------------------------------------------------------------------- #
 def marker(pack: str) -> str:
     """What ``updated_by`` holds for the text a pack gave."""
-    return NIK if pack == NIK else f"pack:{pack}"
+    return NIK if pack in BUILTIN else f"pack:{pack}"
 
 
 def edited(row: SigmaRule) -> bool:
@@ -287,11 +289,19 @@ def summary(db: OrmSession) -> dict[str, Any]:
         "packs": [
             {
                 "id": pack,
-                "name": names.get(pack) or (pack or "Written here"),
+                "name": names.get(pack) or BUILTIN.get(pack) or (pack or "Written here"),
                 "total": n,
                 "enabled": int(held or 0),
             }
-            for pack, n, held in sorted(packs, key=lambda item: (item[0] != NIK, item[0] == "", item[0]))
+            for pack, n, held in sorted(
+                packs,
+                key=lambda item: (
+                    item[0] not in BUILTIN,
+                    list(BUILTIN).index(item[0]) if item[0] in BUILTIN else 0,
+                    item[0] == "",
+                    item[0],
+                ),
+            )
         ],
     }
 
@@ -307,7 +317,7 @@ def check_id(rule_id: str) -> None:
 def default_enabled(info: dict[str, Any], engine: str, pack: str) -> bool:
     """Whether a rule is switched on when it arrives (see the module's text)."""
     known = bool(info.get("supported", True)) or not engine
-    if pack and pack != NIK:
+    if pack and pack not in BUILTIN:
         return known and str(info.get("status") or "") in PACK_STATUS and level_of(info.get("level")) >= PACK_LEVEL
     return known
 

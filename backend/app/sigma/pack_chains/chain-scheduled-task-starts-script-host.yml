@@ -1,0 +1,32 @@
+title: Scheduled Task Starts a Script Host
+id: b5422319-365a-4bb3-8e15-ea32522e736e
+name: nik_chain_scheduled_task_starts_script_host
+status: test
+description: The task scheduler (taskeng.exe, or svchost.exe running the Schedule service) started wscript, cscript or mshta. A task that runs a script from a user's folder is a way to stay on the machine.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.persistence
+- attack.t1053.005
+- attack.execution
+- attack.t1059.005
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_taskeng:
+    ParentImage|endswith:
+    - \taskeng.exe
+    - \taskhostw.exe
+  selection_schedule:
+    ParentImage|endswith: \svchost.exe
+    ParentCommandLine|contains: schedule
+  selection_child:
+    Image|endswith:
+    - \wscript.exe
+    - \cscript.exe
+    - \mshta.exe
+  condition: (selection_taskeng or selection_schedule) and selection_child
+falsepositives:
+- Logon scripts and maintenance tasks written as VBScript or JScript
+level: medium

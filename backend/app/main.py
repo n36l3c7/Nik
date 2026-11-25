@@ -55,6 +55,7 @@ from .routers import (
     enrichment,
     evidence,
     evidence_collections,
+    evidence_processes,
     evidence_views,
     fetch,
     fields,
@@ -473,6 +474,7 @@ app.include_router(uploads.router, prefix="/api")
 app.include_router(evidence.router, prefix="/api")
 app.include_router(evidence_views.router, prefix="/api")
 app.include_router(evidence_collections.router, prefix="/api")
+app.include_router(evidence_processes.router, prefix="/api")
 app.include_router(ioc_library.router, prefix="/api")
 app.include_router(indicators_found.router, prefix="/api")
 app.include_router(mailboxes.router, prefix="/api")

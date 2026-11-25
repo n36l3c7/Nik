@@ -24,6 +24,11 @@ the same keys, and two logs of the same machine that overlap give the same keys
 for the same events. PowerShell script blocks (4104) are also put together by
 their ``ScriptBlockId`` into one ``script`` record each, from all its parts.
 
+Processes (Security 4688/4689, Sysmon 1/5) and logons (Security 4624, 4625, 4634, 4647, 4648, 4672, 4778, 4779,
+TerminalServices 21/24/25, RemoteConnectionManager 1149) are also said as ``proc``, ``proc_end`` and ``logon``
+lines after the record of the event (``evidence`` makes them, ``say`` writes them; ``eventlog_json`` and ``plaso``
+call the same two).
+
 Indicators come only from fields that are declared as such (a logon's source
 address, Sysmon's destination, DNS query and hashes). Standard library and the
 ``evtx`` package.
@@ -48,7 +53,7 @@ from nik_forensics import evtxscan, viewing
 from nik_forensics.parsers import BadLocator, ViewError
 
 NAME = "evtx"
-VERSION = "1"
+VERSION = "2"  # 2: the lines of processes and logons (``evidence``)
 KIND = "eventlog"
 SOURCES = ("evtx",)
 
@@ -352,6 +357,319 @@ def _indicators(channel: str, event_id: int | None, fields: dict) -> list[tuple[
     return list(dict.fromkeys(found))
 
 
+# -- processes and logons: the lines that follow a record --------------------- #
+_SYSMON = "microsoft-windows-sysmon/operational"
+_TS_LSM = "microsoft-windows-terminalservices-localsessionmanager/operational"
+_TS_RCM = "microsoft-windows-terminalservices-remoteconnectionmanager/operational"
+_INTEGRITY_SIDS = {
+    "0": "untrusted",
+    "4096": "low",
+    "8192": "medium",
+    "8448": "medium plus",
+    "12288": "high",
+    "16384": "system",
+    "20480": "protected",
+}
+# What TokenElevationType says when the event has no integrity level: not an integrity, a hint of it.
+_ELEVATION = {"%%1936": "full", "%%1937": "elevated", "%%1938": "limited"}
+# The documented short text of a failed logon's Status / SubStatus; any other code stays as the hex the log has.
+_FAILURES = {
+    0xC000006A: "wrong password",
+    0xC0000064: "unknown user",
+    0xC0000234: "account locked",
+    0xC0000072: "account disabled",
+    0xC0000071: "password expired",
+    0xC0000193: "account expired",
+    0xC000006F: "outside allowed hours",
+}
+_LOCAL_SESSION = {"", "LOCAL", "-"}
+
+
+def _number(text: str) -> int | None:
+    """``0x1a2c`` (Security 4688/4689 write the IDs of a process in hex) or ``6700`` (the same read from a Get-WinEvent
+    property, or Sysmon's own decimal) → the number; None for anything else."""
+    text = str(text or "").strip()
+    try:
+        if text[:2].lower() == "0x":
+            return int(text[2:], 16)
+        return int(text) if text.isascii() and text.isdigit() else None
+    except ValueError:
+        return None
+
+
+def _login_id(text: str) -> str:
+    """A logon ID is a number the log writes in hex (``0x3e7``): a decimal one (Get-WinEvent) is written so too."""
+    value = _number(text)
+    return hex(value) if value is not None else str(text or "")
+
+
+def _integrity(fields: dict) -> str:
+    level = _v(fields, "IntegrityLevel")  # Sysmon: Low, Medium, High, System
+    if level:
+        return level.strip().lower()
+    label = _v(fields, "MandatoryLabel").strip().upper()
+    if label.startswith("S-1-16-"):
+        rid = label[7:]
+        if rid.isdigit():
+            return _INTEGRITY_SIDS.get(str(int(rid)), f"S-1-16-{rid}")
+    return _ELEVATION.get(_v(fields, "TokenElevationType").strip(), "")
+
+
+def _hashes(text: str) -> dict[str, str]:
+    """``SHA256=..,MD5=..,IMPHASH=..`` → ``{"sha256": ..., "md5": ...}`` (a digest of the wrong size is left out)."""
+    held: dict[str, str] = {}
+    for part in text.split(","):
+        name, _, digest = part.strip().partition("=")
+        digest = digest.strip()
+        kind = _HASHES.get(name.strip().upper())
+        if kind and len(digest) == kind[1] and _HEX.match(digest):
+            held[kind[0]] = digest.lower()
+        elif name.strip().upper() == "IMPHASH" and len(digest) == 32 and _HEX.match(digest):
+            held["imphash"] = digest.lower()
+    return held
+
+
+def _failure(fields: dict) -> str:
+    """The reason of a failed logon: the sub-status when it says more than the status, as short text, else the hex."""
+    for name in ("SubStatus", "Status"):
+        code = _number(_v(fields, name))
+        if code:
+            return _FAILURES.get(code, f"0x{code:x}")
+    return ""
+
+
+def _source(fields: dict, host: str, address: str = "", name: str = "") -> dict[str, str]:
+    """Where a logon came from: the address (never the host's own loopback or ``-``) and the name of the machine
+    (never the host itself: a logon of the host to itself is not a way in from another)."""
+    found: dict[str, str] = {}
+    address = address.strip()
+    if address and address not in _NO_ADDRESS and address.upper() != "LOCAL":
+        found["source_ip"] = address
+    name = name.strip().lstrip("\\")
+    if name and name != "-" and name.lower() != host.lower() and name.lower() != host.split(".")[0].lower():
+        found["source_host"] = name
+    return found
+
+
+def _target(fields: dict, host: str) -> str:
+    """The server an explicit-credentials logon (4648) went to: not ``localhost``, not the host itself, not empty."""
+    name = _v(fields, "TargetServerName").strip().lstrip("\\")
+    own = {host.lower(), host.split(".")[0].lower(), "localhost", "-", ""}
+    return "" if name.lower() in own or name.lower().split(".")[0] in own else name
+
+
+def _logon_line(
+    outcome: str, user: str, domain: str, host: str, logon_id: str = "", logon_type: str = "", **more: Any
+) -> dict[str, Any]:
+    line: dict[str, Any] = {"outcome": outcome, "user": user, "domain": domain, "logon_id": _login_id(logon_id)}
+    kind = _number(logon_type)
+    if kind is not None:
+        line["logon_type"] = kind
+    line.update(more)
+    return {name: value for name, value in line.items() if value not in (None, "")}
+
+
+def _split_account(text: str) -> tuple[str, str]:
+    domain, sep, user = text.rpartition("\\")
+    return (user, domain) if sep else (text, "")
+
+
+def _process_lines(channel: str, event_id: int | None, fields: dict) -> list[tuple[str, dict[str, Any]]]:
+    if channel == "security" and event_id == 4688:
+        return [
+            (
+                "proc",
+                {
+                    "pid": _number(_v(fields, "NewProcessId")),
+                    "ppid": _number(_v(fields, "ProcessId")),
+                    "image": _v(fields, "NewProcessName"),
+                    "command_line": _v(fields, "CommandLine"),
+                    "user": _v(fields, "SubjectUserName"),
+                    "logon_id": _login_id(_v(fields, "SubjectLogonId")),
+                    "integrity": _integrity(fields),
+                    "parent_image": _v(fields, "ParentProcessName"),
+                },
+            )
+        ]
+    if channel == "security" and event_id == 4689:
+        return [("proc_end", {"pid": _number(_v(fields, "ProcessId"))})]
+    if channel == _SYSMON and event_id == 1:
+        return [
+            (
+                "proc",
+                {
+                    "pid": _number(_v(fields, "ProcessId")),
+                    "ppid": _number(_v(fields, "ParentProcessId")),
+                    "image": _v(fields, "Image"),
+                    "command_line": _v(fields, "CommandLine"),
+                    "user": _v(fields, "User"),
+                    "logon_id": _login_id(_v(fields, "LogonId")),
+                    "integrity": _integrity(fields),
+                    "guid": _v(fields, "ProcessGuid"),
+                    "parent_guid": _v(fields, "ParentProcessGuid"),
+                    "parent_image": _v(fields, "ParentImage"),
+                    "parent_command_line": _v(fields, "ParentCommandLine"),
+                    "hashes": _hashes(_v(fields, "Hashes")),
+                },
+            )
+        ]
+    if channel == _SYSMON and event_id == 5:
+        return [("proc_end", {"pid": _number(_v(fields, "ProcessId")), "guid": _v(fields, "ProcessGuid")})]
+    return []
+
+
+def _logon_lines(channel: str, event_id: int | None, host: str, fields: dict) -> list[tuple[str, dict[str, Any]]]:
+    if channel == "security":
+        if event_id in (4624, 4625):
+            method = _v(fields, "LmPackageName") or _v(fields, "AuthenticationPackageName")
+            return [
+                (
+                    "logon",
+                    _logon_line(
+                        "success" if event_id == 4624 else "failure",
+                        _v(fields, "TargetUserName"),
+                        _v(fields, "TargetDomainName"),
+                        host,
+                        _v(fields, "TargetLogonId"),
+                        _v(fields, "LogonType"),
+                        method=method,
+                        status=_failure(fields) if event_id == 4625 else "",
+                        **_source(fields, host, _v(fields, "IpAddress"), _v(fields, "WorkstationName")),
+                    ),
+                )
+            ]
+        if event_id in (4634, 4647):
+            return [
+                (
+                    "logon",
+                    _logon_line(
+                        "logoff",
+                        _v(fields, "TargetUserName"),
+                        _v(fields, "TargetDomainName"),
+                        host,
+                        _v(fields, "TargetLogonId"),
+                        _v(fields, "LogonType"),
+                    ),
+                )
+            ]
+        if event_id == 4648:
+            return [
+                (
+                    "logon",
+                    _logon_line(
+                        "explicit",
+                        _v(fields, "TargetUserName"),
+                        _v(fields, "TargetDomainName"),
+                        host,
+                        _v(fields, "SubjectLogonId"),
+                        "",
+                        target_host=_target(fields, host),
+                        **_source(fields, host, _v(fields, "IpAddress")),
+                    ),
+                )
+            ]
+        if event_id == 4672:
+            return [
+                (
+                    "logon",
+                    _logon_line(
+                        "privileged",
+                        _v(fields, "SubjectUserName"),
+                        _v(fields, "SubjectDomainName"),
+                        host,
+                        _v(fields, "SubjectLogonId"),
+                    ),
+                )
+            ]
+        if event_id in (4778, 4779):
+            rdp = _v(fields, "SessionName").upper().startswith("RDP")
+            return [
+                (
+                    "logon",
+                    _logon_line(
+                        "success" if event_id == 4778 else "logoff",
+                        _v(fields, "AccountName"),
+                        _v(fields, "AccountDomain"),
+                        host,
+                        _v(fields, "LogonID"),
+                        "10" if rdp else "",
+                        **_source(fields, host, _v(fields, "ClientAddress"), _v(fields, "ClientName")),
+                    ),
+                )
+            ]
+    if channel == _TS_LSM and event_id in (21, 24, 25):
+        user, domain = _split_account(_v(fields, "User"))
+        address = _v(fields, "Address")
+        return [
+            (
+                "logon",
+                _logon_line(
+                    "logoff" if event_id == 24 else "success",
+                    user,
+                    domain,
+                    host,
+                    "",
+                    "" if address in _LOCAL_SESSION else "10",
+                    **_source(fields, host, address),
+                ),
+            )
+        ]
+    if channel == _TS_RCM and event_id == 1149:
+        address = _v(fields, "Param3")
+        found = _source(fields, host, address)
+        if address and address not in _NO_ADDRESS and not _is_address(address):
+            found = {"source_host": address}  # a name where an address was expected: kept as the name it is
+        return [
+            (
+                "logon",
+                _logon_line("success", _v(fields, "Param1"), _v(fields, "Param2"), host, "", "10", **found),
+            )
+        ]
+    return []
+
+
+def _is_address(text: str) -> bool:
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(text.strip().split("%")[0])
+    except ValueError:
+        return False
+    return True
+
+
+def evidence(channel: str, event_id: int | None, provider: str, host: str, fields: dict) -> list[tuple[str, dict]]:
+    """The ``proc``, ``proc_end`` and ``logon`` lines an event gives, as ``(line type, members)`` (members a log lacks
+    are left out). ``fields`` are the event's data by name (placeholders such as ``-`` are read as absent). Empty for
+    any other event. The same function serves ``.evtx``, the JSON export and the events Plaso read from a log."""
+    if event_id is None:
+        return []
+    low = channel.lower()
+    if provider == "Microsoft-Windows-Sysmon":
+        low = _SYSMON
+    if low not in ("security", _SYSMON, _TS_LSM, _TS_RCM):
+        return []
+    fields = {name: text for name, text in fields.items() if _value(text) is not None}
+    if low == "security" and event_id in (4688, 4689) or low == _SYSMON and event_id in (1, 5):
+        found = _process_lines(low, event_id, fields)
+    else:
+        found = _logon_lines(low, event_id, host, fields)
+    return [
+        (kind, {name: value for name, value in more.items() if value not in (None, "", {})}) for kind, more in found
+    ]
+
+
+def say(ctx, key: str, ts: int | None, host: str, lines: list[tuple[str, dict]]) -> None:
+    """Writes the lines ``evidence`` made after the ``r`` line of ``key``."""
+    for kind, members in lines:
+        if kind == "proc":
+            ctx.process(key, ts=ts, host=host, **members)
+        elif kind == "proc_end":
+            ctx.process_end(key, ts=ts, host=host, **members)
+        else:
+            ctx.logon(key, ts=ts, host=host, **members)
+
+
 def normalise(record: dict) -> dict[str, Any]:
     """One record of the parser (``{"event_record_id", "timestamp", "data": <JSON text>, "recovered"}``)
     → what Nik keeps of the event. Raises ``ValueError``/``KeyError``/``TypeError`` when it has not the
@@ -422,6 +740,7 @@ def normalise(record: dict) -> dict[str, Any]:
         "summary": _summary(channel, event_id, provider, fields),
         "data": data,
         "ioc": _indicators(channel, event_id, fields),
+        "lines": evidence(channel, event_id, provider, computer, fields),
         "script": script,
     }
 
@@ -1089,6 +1408,7 @@ def _give(ctx, locator: _Locator, scripts: _Scripts, record: dict, stats: dict) 
         loc=loc,
         ioc=norm["ioc"],
     )
+    say(ctx, ctx.key_of(key), norm["ts"], norm["computer"], norm["lines"])
     if norm["script"] is not None and not recovered:
         scripts.add(norm, loc)
 

@@ -206,8 +206,9 @@ def test_a_file_that_stops_being_json_keeps_what_came_before_and_fails(tmp_path)
     with pytest.raises(ValueError):
         eventlog_json.parse(path, Context(out), "nik-eventlogs.json")
     lines = [json.loads(line) for line in out.getvalue().splitlines()]
-    assert [line["t"] for line in lines if line["t"] != "note"] == ["source", "r", "skip"]
-    assert lines[2]["reason"] == "the file stops being JSON" and "after 1 events" in lines[2]["detail"]
+    # the first event is a 4624: its record is followed by the line of its logon
+    assert [line["t"] for line in lines if line["t"] != "note"] == ["source", "r", "logon", "skip"]
+    assert lines[3]["reason"] == "the file stops being JSON" and "after 1 events" in lines[3]["detail"]
     assert not any(line["t"] == "end" for line in lines)
 
 

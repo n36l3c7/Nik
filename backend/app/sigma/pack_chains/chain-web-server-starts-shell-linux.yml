@@ -1,0 +1,43 @@
+title: Web Server Starts a Shell (Linux)
+id: 8f99c3fc-2cd6-498f-8df2-91fcdb083da7
+name: nik_chain_web_server_starts_shell_linux
+status: test
+description: Apache, nginx, PHP-FPM or Tomcat started a shell. A web shell uploaded to the site runs its commands as the web user this way.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.persistence
+- attack.t1505.003
+- attack.execution
+- attack.t1059.004
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_server:
+    ParentImage|endswith:
+    - /apache2
+    - /httpd
+    - /nginx
+    - /php-cgi
+    - /lighttpd
+    - /caddy
+  selection_php_fpm:
+    ParentImage|contains: /php-fpm
+  selection_java:
+    ParentImage|endswith: /java
+    Ancestors|contains: tomcat
+  selection_child:
+    Image|endswith:
+    - /sh
+    - /bash
+    - /dash
+    - /zsh
+    - /ksh
+    - /ash
+    - /csh
+    - /tcsh
+  condition: (selection_server or selection_php_fpm or selection_java) and selection_child
+falsepositives:
+- A web application that calls a shell script on purpose (backup, deploy)
+level: high

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, CalendarClock, Clock, ExternalLink, Flag, ListTree, RotateCcw, ShieldAlert } from 'lucide-react'
 import { Badge, Button, Card, DataTable, EmptyState, Select, ServerTable, StatCard } from '../../ui/index.js'
+import { GapControls, GapList } from './GapsBursts.jsx'
 import { useSocEngine } from '../../../context/SettingsContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useRowMenu } from '../../menu/useRowMenu.js'
@@ -8,6 +9,7 @@ import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { detectionTone, levelsText, summedByLevel, totalOf } from '../../../domain/detections.js'
 import { ARCHIVED_RECORDS_NOTE } from '../../../domain/archive.js'
+import { burstBars, durationText, gapBands, onGrid } from '../../../domain/gapsBursts.js'
 import { hostCounts } from '../../../domain/evidence.js'
 import {
   HOST_KIND_META,
@@ -22,6 +24,7 @@ import {
 import { formatDateTime } from '../../../lib/time.js'
 import { truncate } from '../../../lib/url.js'
 import { useCanWrite } from '../../../lib/useCanWrite.js'
+import { useGapThresholds } from '../../../lib/useGapThresholds.js'
 import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
 import { evidence } from '../../../services/api.js'
 
@@ -34,7 +37,8 @@ import { evidence } from '../../../services/api.js'
  *     of time: nothing here ever holds more than a page of them;
  *   - the events of the document, as before.
  *
- * One range (from, to) is for all three. Gaps and bursts are not drawn yet.
+ * One range (from, to) is for all three. The gaps (no record for a while) and the bursts (a slice far above the
+ * usual) the server finds in the host records are marked on the density, and listed under it: each sets the range.
  */
 
 const NIGHT_TOOLTIP = 'Outside configured business hours'
@@ -90,31 +94,64 @@ function FlagButton({ flagged, onToggle, disabled = false }) {
   )
 }
 
-/** The density strip: one bar per slice of time, host records under the events of the document. */
-function Density({ strip, onPick }) {
+/**
+ * The density strip: one bar per slice of time (the empty ones too, so the bars are in their place on the time
+ * axis), host records under the events of the document. A gap is a hatched band across the bars with its length;
+ * a burst is a red bar.
+ */
+function Density({ strip, onPick, gaps = [], bursts = new Map() }) {
   if (strip.bars.length === 0) return null
+  const last = strip.from + strip.bars.length * strip.width
   return (
-    <div
-      role="group"
-      aria-label="Events in time"
-      className="flex h-16 items-end gap-px border border-line bg-canvas p-1"
-    >
-      {strip.bars.map((bar) => {
-        const title = `${formatDateTime(bar.t)}: ${bar.host} host records, ${bar.docs} other events`
-        return (
-          <button
-            key={bar.t}
-            type="button"
-            title={title}
-            aria-label={title}
-            onClick={() => onPick({ start: bar.t, end: bar.t + strip.width - 1 })}
-            className="flex h-full min-w-[3px] flex-1 flex-col justify-end focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    <div>
+      <div
+        role="group"
+        aria-label="Events in time"
+        className="relative flex h-16 items-end gap-px border border-line bg-canvas p-1"
+      >
+        {strip.bars.map((bar, index) => {
+          const burst = bursts.get(index)
+          const title = `${formatDateTime(bar.t)}: ${bar.host} host records, ${bar.docs} other events${
+            burst ? ` · burst, ${burst.factor}× the usual` : ''
+          }`
+          return (
+            <button
+              key={bar.t}
+              type="button"
+              title={title}
+              aria-label={title}
+              onClick={() => onPick({ start: bar.t, end: bar.t + strip.width - 1 })}
+              className="relative z-10 flex h-full min-w-[3px] flex-1 flex-col justify-end focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className="block w-full bg-accent" style={{ height: `${(bar.docs / strip.peak) * 100}%` }} />
+              <span
+                className={`block w-full ${burst ? 'bg-high-line' : 'bg-info'}`}
+                style={{ height: `${(bar.host / strip.peak) * 100}%` }}
+              />
+            </button>
+          )
+        })}
+        {gaps.map((band) => (
+          <div
+            key={band.key}
+            data-gap={band.minutes}
+            title={`${formatDateTime(band.from)} – ${formatDateTime(band.to)}: no records for ${durationText(band.minutes)}`}
+            className="pointer-events-none absolute inset-y-1 z-0 flex items-center justify-center overflow-hidden border-x border-med-line text-[10px] text-med-fg"
+            style={{
+              // The bars start 0.25rem in from the edge (the padding): the band follows them.
+              left: `calc(${band.left}% + ${0.5 * (0.5 - band.left / 100)}rem)`,
+              width: `calc(${band.width}% - ${0.5 * (band.width / 100)}rem)`,
+              backgroundImage: 'repeating-linear-gradient(135deg, var(--color-med-soft) 0 4px, transparent 4px 8px)',
+            }}
           >
-            <span className="block w-full bg-accent" style={{ height: `${(bar.docs / strip.peak) * 100}%` }} />
-            <span className="block w-full bg-info" style={{ height: `${(bar.host / strip.peak) * 100}%` }} />
-          </button>
-        )
-      })}
+            {band.width > 9 && <span className="bg-canvas px-1 font-mono">gap · {durationText(band.minutes)}</span>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between font-mono text-[11px] text-fg-subtle">
+        <span>{formatDateTime(strip.from)}</span>
+        <span>{formatDateTime(last)}</span>
+      </div>
     </div>
   )
 }
@@ -228,6 +265,7 @@ export default function TimelineTab({ incident }) {
   // Without a kind chosen the disk is left out: its $MFT and $J hold millions of records (the Kind filter switches it on).
   const kindScope = useMemo(() => (filters.kind ? {} : { kindNot: KINDS_OFF_BY_DEFAULT.join(',') }), [filters.kind])
   const [histogram, setHistogram] = useState(null)
+  const [thresholds, setThresholds] = useGapThresholds()
   const [flaggedHost, setFlaggedHost] = useState(0)
   const hostTotal = HOST_TABS.reduce((sum, tab) => sum + hostCounts(summary, tab).records, 0)
   const found = summedByLevel(summary) // what the Sigma rules found in the host records, by level
@@ -235,7 +273,13 @@ export default function TimelineTab({ incident }) {
     if (!incident?.id || archived) return undefined
     const controller = new AbortController()
     evidence
-      .histogram(incident.id, { filters: { ...filters, ...kindScope }, buckets: 120, signal: controller.signal })
+      .histogram(incident.id, {
+        filters: { ...filters, ...kindScope },
+        buckets: 120,
+        gapMinutes: thresholds.gap,
+        burstFactor: thresholds.burst,
+        signal: controller.signal,
+      })
       .then((answer) => setHistogram(answer))
       .catch(() => {})
     evidence
@@ -243,9 +287,18 @@ export default function TimelineTab({ incident }) {
       .then((answer) => setFlaggedHost(answer?.total ?? 0))
       .catch(() => {})
     return () => controller.abort()
-  }, [incident?.id, archived, filters, kindScope, hostTotal, marked])
+  }, [incident?.id, archived, filters, kindScope, hostTotal, marked, thresholds.gap, thresholds.burst])
 
-  const strip = useMemo(() => density(histogram, shown), [histogram, shown])
+  const strip = useMemo(() => onGrid(density(histogram, shown)), [histogram, shown])
+  const marks = useMemo(
+    () => ({
+      gaps: thresholds.show ? (histogram?.gaps ?? []) : [],
+      bursts: thresholds.show ? (histogram?.bursts ?? []) : [],
+    }),
+    [histogram, thresholds.show],
+  )
+  const bands = useMemo(() => gapBands(marks.gaps, strip), [marks, strip])
+  const burstMarks = useMemo(() => burstBars(marks.bursts, strip), [marks, strip])
   const spanLabel = useMemo(() => {
     if (strip.bars.length === 0) return '—'
     const last = strip.bars[strip.bars.length - 1].t + strip.width
@@ -462,10 +515,14 @@ export default function TimelineTab({ incident }) {
       <Card title="Events in time" icon={ListTree}>
         <div className="space-y-3">
           {rangeBar}
-          <Density strip={strip} onPick={setRange} />
+          <GapControls thresholds={thresholds} onChange={setThresholds} />
+          <Density strip={strip} onPick={setRange} gaps={bands} bursts={burstMarks} />
+          {thresholds.show && strip.bars.length > 0 && (
+            <GapList gaps={marks.gaps} bursts={marks.bursts} width={histogram?.width ?? 0} onPick={setRange} />
+          )}
           <p className="text-xs text-fg-muted">
-            Host records (blue) and the other events of the incident (green) in the range. A bar sets the range to its
-            slice.
+            Host records (blue) and the other events of the incident (green) in the range; a red bar is a burst and a
+            hatched band a gap with no host record. A bar sets the range to its slice.
           </p>
         </div>
       </Card>

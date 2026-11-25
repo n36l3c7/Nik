@@ -13,6 +13,7 @@ import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import SystemDialog from './SystemDialog.jsx'
 import CollectionsBlock from '../../evidence/CollectionsBlock.jsx'
+import SourceViewer from '../../evidence/SourceViewer.jsx'
 
 /*
  * ============================================================================
@@ -47,6 +48,31 @@ const VERDICT_DOTS = { high: 'bg-high', phishing: 'bg-high', medium: 'bg-med', s
 
 const ROW =
   'flex w-full items-baseline gap-2 px-3 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
+
+/**
+ * The record the global search chose (CommandPalette, group Evidence): the Source viewer opens over the page of its
+ * section. The request is `{ record: { id, incidentId, sourceId, fileName } }` of the tab asked for; it is taken
+ * only here, by the page of the incident it names (the incident may still be loading when it is made).
+ */
+function OpenedRecord({ incident, kindId }) {
+  const { requests, take } = useNavigation()
+  const [record, setRecord] = useState(null)
+  const asked = requests[kindId]?.record
+  useEffect(() => {
+    if (!asked || asked.incidentId !== incident.id) return
+    take(kindId)
+    setRecord(asked)
+  }, [asked, incident.id, kindId, take])
+  if (!record) return null
+  return (
+    <SourceViewer
+      incidentId={incident.id}
+      source={{ id: record.sourceId, fileName: record.fileName }}
+      record={{ id: record.id }}
+      onClose={() => setRecord(null)}
+    />
+  )
+}
 
 /**
  * @param {{
@@ -285,6 +311,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
           />
         )}
       </div>
+      <OpenedRecord key={incident.id} incident={incident} kindId={kind?.id ?? EVIDENCE_TAB} />
     </div>
   )
 }

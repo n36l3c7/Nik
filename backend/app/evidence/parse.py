@@ -39,6 +39,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import work
@@ -56,7 +57,7 @@ from ..core.security import now_iso
 from ..sigma import detections as sigma_detections
 from ..sigma import ruleset as sigma_ruleset
 from ..workers import handover, watching
-from . import imports, originals
+from . import imports, originals, processes
 from .imports import PARSE_WORK as WORK
 
 logger = logging.getLogger("nik.evidence.parse")
@@ -171,6 +172,9 @@ class Report:
         self.channels: dict[str, int] = {}
         # What the rules matched, when the file was read with rules: ``Detected.report()``.
         self.detections: dict[str, Any] | None = None
+        # How many processes and logons the file gave (rows stored): the screens of them say what a file holds.
+        self.processes = 0
+        self.logons = 0
 
     def skip(self, event: dict[str, Any]) -> None:
         reason = str(event.get("reason") or "not read")[:120]
@@ -210,6 +214,10 @@ class Report:
         }
         if self.detections is not None:
             held["detections"] = self.detections
+        if self.processes:
+            held["processes"] = self.processes
+        if self.logons:
+            held["logons"] = self.logons
         return held
 
 
@@ -266,6 +274,7 @@ def _insert(db: OrmSession, rows: list[dict[str, Any]]) -> int:
 def clear(db: OrmSession, source_id: str) -> None:
     """Remove what a reading stored for the source (the caller commits). Marks stay: they are by key."""
     records = select(EvidenceRecord.id).where(EvidenceRecord.source_id == source_id)
+    processes.detach(db, source_id)
     db.execute(delete(EvidenceDetection).where(EvidenceDetection.record_id.in_(records)))
     db.execute(delete(EvidenceProcess).where(EvidenceProcess.source_id == source_id))
     db.execute(delete(EvidenceLogon).where(EvidenceLogon.source_id == source_id))
@@ -279,7 +288,21 @@ def _fail(db: OrmSession, source_id: str, sentence: str) -> None:
         row.parsed_at = now_iso()
 
 
+class _Gone(Exception):
+    """The source was removed while its file was being read (its incident was deleted): nothing is left to
+    store the records under, and nothing to say."""
+
+
 def read(source_id: str, claim: work.Claim | None = None) -> None:
+    """Read the original of a source and keep what comes. Run held (``work``). A source that goes away
+    while it is read (its incident was deleted) ends the reading quietly."""
+    try:
+        _read(source_id, claim)
+    except _Gone:
+        return
+
+
+def _read(source_id: str, claim: work.Claim | None = None) -> None:
     """Read the original of a source and keep what comes. Run held (``work``)."""
     with SessionLocal() as db:
         source = db.get(EvidenceSource, source_id)
@@ -289,6 +312,8 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
             _fail(db, source_id, NOT_CONFIGURED)
             db.commit()
             return
+        # What the file's earlier reading made of processes is linked again when this one ends.
+        old_hosts = processes.hosts_of(db, source_id)
         clear(db, source_id)
         source.state, source.error = "parsing", None
         db.commit()
@@ -315,6 +340,7 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
         body["rules"] = rules_now.digest
         body["params"]["hours"] = hours
     detected = sigma_detections.Detected(rules_now, source.incident_id)
+    held = processes.Held(source)
     began = time.monotonic()
     report = Report()
     counts = {"read": 0, "kept": 0, "truncated": 0}
@@ -326,13 +352,21 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
     job = watching.job_name(WORK, source_id, getattr(claim, "attempts", 1) or 1)
 
     def flush() -> None:
-        if not batch and not detected.pending:
+        if not batch and not detected.pending and not held:
             return
         with SessionLocal() as db:
-            if batch:
-                counts["kept"] += _insert(db, batch)
-            detected.write(db)  # after the records they are of
-            db.commit()
+            try:
+                if batch:
+                    counts["kept"] += _insert(db, batch)
+                detected.write(db)  # after the records they are of
+                held.write(db)  # so are the processes and the logons
+                db.commit()
+            except IntegrityError:
+                # The rows these belong to are gone: the incident was deleted under the reading.
+                db.rollback()
+                if db.get(EvidenceSource, source_id) is None:
+                    raise _Gone from None
+                raise
         batch.clear()
         if claim is not None:
             claim.progress(f"{counts['read']} records read")
@@ -363,6 +397,9 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
                 detected.add(event)
                 if detected.full():
                     flush()
+            elif held.add(event):
+                if held.full():
+                    flush()
             elif kind == "skip":
                 report.skip(event)
             elif kind == "note":
@@ -375,6 +412,9 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
             elif kind == "end":
                 ended = event
         flush()
+        with SessionLocal() as db:
+            held.retry(db)  # the ends of processes that were met before their start
+            db.commit()
     except ParseError as error:
         flush()
         with SessionLocal() as db:
@@ -384,6 +424,7 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
                 db.commit()
                 if claim is not None:
                     claim.failed = True  # type: ignore[attr-defined]
+                processes.after(source.incident_id, old_hosts)
                 return
             db.commit()
         report.skip({"reason": "the worker stopped answering", "lost": 0, "detail": str(error)})
@@ -398,6 +439,8 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
         ):
             if count:
                 report.note({"reason": reason, "count": count})
+    report.processes, report.logons = held.processes, held.logon_rows
+    hosts = old_hosts | held.hosts
     if undeclared:
         report.note(
             {
@@ -431,19 +474,55 @@ def read(source_id: str, claim: work.Claim | None = None) -> None:
         row.report = report.out(ended is not None, round(time.monotonic() - began, 1))
         nothing = counts["read"] == 0 and ended is None
         row.read = "failed" if nothing else "complete" if ended is not None and not report.skips else "partial"
-        row.state = "failed" if nothing else "done"
+        # A file that gave processes is not finished until their tree and the chain rules are: it stays "parsing"
+        # (with "linking processes" as its progress) and is closed by ``_finish`` below.
+        linking = bool(hosts) and not nothing
+        row.state = "failed" if nothing else "parsing" if linking else "done"
         row.error = _first_reason(report) if nothing else None
         row.parsed_at = now_iso()
         row.seen_by, row.seen_at, row.seen_note = None, None, ""
-        from .. import war_room
-
-        # One line for the file, whatever it held: what was read of it, and whether anything was not.
-        war_room.add(db, row.incident_id, "system", {"text": sentence(row), "evidence": {"source": row.id}}, "nik")
-        if detected and detected.total:
-            _detected(db, row, detected)
+        if not linking:
+            _said(db, row, detected)
         db.commit()
     if claim is not None and nothing:
         claim.failed = True  # type: ignore[attr-defined]
+    # The processes of the hosts this file touched, and those it touched before, are linked, and the chain rules
+    # run over them; then the file is finished, with the detections of the chains in its report, its War Room line
+    # and its event.
+    if linking and claim is not None:
+        claim.progress("linking processes")
+    try:
+        processes.after(source.incident_id, hosts)
+    finally:
+        if linking:
+            _finish(source_id)
+
+
+def _said(db: OrmSession, row: EvidenceSource, detected: sigma_detections.Detected | None) -> None:
+    """The lines a finished file leaves: one in the War Room for what was read, and what the rules found."""
+    from .. import war_room
+
+    # One line for the file, whatever it held: what was read of it, and whether anything was not.
+    war_room.add(db, row.incident_id, "system", {"text": sentence(row), "evidence": {"source": row.id}}, "nik")
+    if detected is not None and detected.total:
+        _detected(db, row, detected)
+
+
+def _finish(source_id: str) -> None:
+    """The tree and the chain rules of a file's hosts are done (or were not run): the file is done. What it found is
+    counted from the table, so that the chain rules' detections are in the report, the War Room line and the event."""
+    with SessionLocal() as db:
+        row = db.get(EvidenceSource, source_id)
+        if row is None or row.state != "parsing":
+            return
+        found = sigma_detections.Detected.from_table(db, row.incident_id, source_id)
+        report = dict(row.report or {})
+        if found.total or "detections" in report:
+            report["detections"] = found.report()
+            row.report = report
+        row.state = "done"
+        _said(db, row, found)
+        db.commit()
 
 
 def _detected(db: OrmSession, source: EvidenceSource, found: sigma_detections.Detected) -> None:

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session as OrmSession
 
@@ -40,6 +40,26 @@ class Detected:
         self.by_level = dict.fromkeys(range(1, 6), 0)
         self.unknown = 0
         self.unplaced = 0
+        # What a rule said of itself, for the rules a table gave (``from_table``): the set has no word of them.
+        self.titles: dict[str, tuple[str, int]] = {}
+
+    @classmethod
+    def from_table(cls, db: OrmSession, incident_id: str, source_id: str) -> Detected:
+        """What the table holds for the records of a source, whatever rule found it (the rules of the file's reading
+        and the process-chain rules that ran after it): the totals a report and the line of the War Room speak of."""
+        found = cls(None, incident_id)
+        d, r = EvidenceDetection, EvidenceRecord
+        rows = db.execute(
+            select(d.rule_id, d.rule_title, d.level, func.count())
+            .join(r, r.id == d.record_id)
+            .where(r.source_id == source_id)
+            .group_by(d.rule_id, d.rule_title, d.level)
+        )
+        for rule_id, title, level, count in rows:
+            found.counts[rule_id] = found.counts.get(rule_id, 0) + int(count)
+            found.by_level[level] = found.by_level.get(level, 0) + int(count)
+            found.titles[rule_id] = (title, int(level))
+        return found
 
     def __bool__(self) -> bool:
         return self.set is not None
@@ -125,6 +145,8 @@ class Detected:
     def top(self, most: int = TOP) -> list[dict[str, Any]]:
         """The rules that matched most, with their count: ``[{"id", "title", "level", "count"}]``."""
         meta = self.set.meta if self.set is not None else {}
+        for rule, (title, level) in self.titles.items():
+            meta = {**meta, rule: {"title": title, "level": level}}
         ranked = sorted(
             self.counts,
             key=lambda rule: (-self.counts[rule], -meta[rule]["level"], rule),
