@@ -28,7 +28,9 @@ AUDIT_READ = "audit.read"
 LISTS_MANAGE = "lists.manage"
 DASHBOARDS_SHARE = "dashboards.share"
 INCIDENTS_CONFIGURE = "incidents.configure"  # types, fields, layouts, SLA
+INCIDENTS_ARCHIVE = "incidents.archive"  # archive a closed incident, take it out, the rule that does it
 CONTENT_MANAGE = "content.manage"  # content packs
+EVIDENCE_DOWNLOAD = "evidence.download"  # download the original of a file of host evidence
 ADMIN = "admin"  # accounts, API keys, storage, backup, settings
 
 PERMISSIONS: tuple[str, ...] = (
@@ -44,7 +46,9 @@ PERMISSIONS: tuple[str, ...] = (
     LISTS_MANAGE,
     DASHBOARDS_SHARE,
     INCIDENTS_CONFIGURE,
+    INCIDENTS_ARCHIVE,
     CONTENT_MANAGE,
+    EVIDENCE_DOWNLOAD,
     ADMIN,
 )
 ALL: frozenset[str] = frozenset(PERMISSIONS)
@@ -63,12 +67,25 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "rules": frozenset({RULES_MANAGE}),
     "audit": frozenset({AUDIT_READ}),
     "dashboards": frozenset({DASHBOARDS_SHARE}),
+    "archive": frozenset({INCIDENTS_ARCHIVE}),
+    "evidence": frozenset({EVIDENCE_DOWNLOAD}),
     "admin": ALL,
     SYSTEM_ROLE: frozenset({READ, WRITE}),
 }
 
 # The roles an admin can give, in the order they are shown.
-ROLES: tuple[str, ...] = ("viewer", "analyst", "playbooks", "connectors", "rules", "audit", "dashboards", "admin")
+ROLES: tuple[str, ...] = (
+    "viewer",
+    "analyst",
+    "playbooks",
+    "connectors",
+    "rules",
+    "audit",
+    "dashboards",
+    "archive",
+    "evidence",
+    "admin",
+)
 
 
 class RoleError(ValueError):

@@ -1,212 +1,110 @@
 /*
  * ============================================================================
- * SUPER-TIMELINE AGGREGATION
+ * TIMELINE: the events of the document, and the host records of the server
  * ============================================================================
  *
- * Merges every TIMESTAMPED event of an incident — browser history/downloads,
- * shell commands, endpoint artifacts, Windows event logs and sample imports —
- * into a single chronological stream.
- * Entries without a usable timestamp are deliberately left out (a timeline row
- * with no time is meaningless).
+ * Two streams make the timeline (7.0):
+ *   - the events of the DOCUMENT (samples, e-mails, captures, scanned addresses): timestamped entries
+ *     built here from `incident.data`, as before;
+ *   - the HOST RECORDS (browser, commands, endpoint, event logs): they are never loaded whole, the
+ *     Timeline asks the server for a page of them (`evidence.records`, order time) and for their density
+ *     (`evidence.histogram`). The pure helpers for that side are at the end of this file.
  *
- * Each timeline event carries:
- *   { id, time, sourceType, sourceLabel, eventType, label, detail, soc,
- *     flaggable }
- * where `flaggable` is the exact payload toggleFlag() expects, so a row can be
- * flagged/unflagged straight from the timeline.
+ * Each document event carries:
+ *   { id, time, sourceType, sourceLabel, eventType, label, detail, soc, flaggable }
+ * where `flaggable` is the exact payload toggleFlag() expects.
  */
 
-import { BROWSERS } from '../config/browsers.js'
-import { SHELLS } from '../config/shells.js'
-import { ARTIFACT_CATEGORIES } from '../config/artifacts.js'
-import { buildEvents } from './events.js'
-import { buildCommandEvents } from './commands.js'
-import { buildArtifactEvents, combineCategoryRecords } from './artifacts.js'
-import { extractDomain, truncate } from '../lib/url.js'
-import { profileLabel } from './browserProfiles.js'
 import { sampleEvents } from './malware.js'
 import { mailEvents } from './mail.js'
 import { networkEvents } from './network.js'
 import { urlEvents } from './urlscan.js'
-import { buildEventLogEvents } from './eventLogs.js'
 
 /** Source-type metadata: badge color used by the timeline UI. */
 export const TIMELINE_SOURCE_META = {
-  browser: { label: 'Browser', color: 'cyan' },
-  command: { label: 'Command', color: 'violet' },
-  endpoint: { label: 'Endpoint', color: 'emerald' },
-  eventlog: { label: 'Event log', color: 'amber' },
   sample: { label: 'Sample', color: 'red' },
   mail: { label: 'E-mail', color: 'cyan' },
   network: { label: 'Network', color: 'violet' },
 }
 
+/** The kinds of host records (the `kind` of a record) as the timeline names and colours them. */
+export const HOST_KIND_META = {
+  browser: { label: 'Browser', color: 'cyan', tab: 'browser' },
+  commands: { label: 'Command', color: 'violet', tab: 'commands' },
+  endpoint: { label: 'Endpoint', color: 'emerald', tab: 'endpoint' },
+  eventlog: { label: 'Event log', color: 'amber', tab: 'eventlogs' },
+  syslog: { label: 'Linux/macOS log', color: 'amber', tab: 'eventlogs' },
+  disk: { label: 'Disk', color: 'slate', tab: 'disk' },
+}
+
+/**
+ * The kinds the Timeline shows until the person asks for more: a disk holds millions of $MFT and $J records
+ * that would bury everything else, so the Kind filter switches them on.
+ */
+export const KINDS_OFF_BY_DEFAULT = ['disk']
+
 function hasTime(event) {
   return Number.isFinite(event.time)
 }
 
-/** Timeline events of one browser profile (history + downloads). */
-function browserProfileEvents(browser, slot, profile, engine) {
-  const sourceLabel = profileLabel(browser.label, slot, profile)
-  const { allEvents } = buildEvents({
-    history: profile.history ?? [],
-    downloads: profile.downloads ?? [],
-    engine,
-  })
-  return allEvents.filter(hasTime).map((event) => {
-    const isDownload = event.kind === 'download'
-    return {
-      id: event.id,
-      time: event.time,
-      sourceType: 'browser',
-      sourceLabel,
-      eventType: event.eventType,
-      label: isDownload ? event.fileName : event.title || event.url || '(no title)',
-      detail: isDownload
-        ? `from ${extractDomain(event.referrer || event.url) || '—'}`
-        : event.domain || truncate(event.url, 60),
-      soc: event.soc,
-      flaggable: {
-        key: event.id,
-        browserId: browser.id,
-        profileId: profile.id,
-        profileName: profile.name,
-        section: 'events',
-        eventType: event.eventType,
-        title: event.title || event.fileName || '',
-        url: event.url || '',
-        time: event.time,
-      },
-    }
-  })
-}
-
 /**
- * Build the merged, time-sorted (desc) timeline for an incident.
- * It takes `incident.data` rather than the incident: flags, notes and
- * metadata do not affect the timeline, so callers can memoize on `data`
- * alone and a flag toggle does not rebuild it.
+ * The time-sorted (desc) events of the document of an incident, those with a timestamp only.
+ * It takes `incident.data` rather than the incident: flags, notes and metadata do not affect
+ * the timeline, so callers can memoize on `data` alone.
  * @param {object} data `incident.data`
  * @param {object} engine SOC engine from useSocEngine()
- * @returns Array of timeline events (only those with a timestamp)
  */
 export function buildTimelineEvents(data = {}, engine) {
   const out = []
-
-  /* ---- Browser history + downloads (per browser, per profile) ---- */
-  const browsers = data.browser?.browsers ?? {}
-  for (const browser of BROWSERS) {
-    const slot = browsers[browser.id]
-    for (const profile of Object.values(slot?.profiles ?? {})) {
-      out.push(...browserProfileEvents(browser, slot, profile, engine))
-    }
-  }
-
-  /* ---- Shell commands (per shell) ---- */
-  const shells = data.commands?.shells ?? {}
-  for (const shell of SHELLS) {
-    const sd = shells[shell.id]
-    if (!sd?.commands?.length) continue
-    const events = buildCommandEvents({ commands: sd.commands, engine })
-    for (const event of events) {
-      if (!hasTime(event)) continue
-      out.push({
-        id: event.id,
-        time: event.time,
-        sourceType: 'command',
-        sourceLabel: shell.label,
-        eventType: 'command',
-        label: event.command,
-        detail: '',
-        soc: event.soc,
-        flaggable: {
-          key: event.id,
-          browserId: shell.id,
-          section: 'commands',
-          eventType: 'command',
-          title: event.command,
-          url: '',
-          time: event.time,
-        },
-      })
-    }
-  }
-
-  /* ---- Endpoint artifacts (per category) ---- */
-  const categories = data.endpoint?.categories ?? {}
-  for (const category of ARTIFACT_CATEGORIES) {
-    const combined = combineCategoryRecords(category, categories[category.id])
-    if (combined.length === 0) continue
-    const events = buildArtifactEvents({ records: combined, category, engine })
-    const [, secondCol] = category.columns
-    for (const event of events) {
-      if (!hasTime(event)) continue
-      out.push({
-        id: event.id,
-        time: event.time,
-        sourceType: 'endpoint',
-        sourceLabel: category.label,
-        eventType: category.id,
-        label: event.fields?.[category.primaryField] || '',
-        detail: secondCol ? event.fields?.[secondCol.key] || '' : '',
-        soc: event.soc,
-        flaggable: {
-          key: event.id,
-          browserId: category.id,
-          section: `endpoint:${category.id}`,
-          eventType: category.id,
-          title: event.fields?.[category.primaryField] || '',
-          url: '',
-          time: event.time,
-        },
-      })
-    }
-  }
-
-  /* ---- Windows event logs (per channel) ---- */
-  for (const event of buildEventLogEvents({ channels: data.eventlogs?.channels ?? {}, engine })) {
-    if (!hasTime(event)) continue
-    out.push({
-      id: event.id,
-      time: event.time,
-      sourceType: 'eventlog',
-      sourceLabel: event.channelLabel,
-      eventType: 'eventlog',
-      label: `${event.eventId} ${event.label}`,
-      detail: event.summary,
-      soc: event.soc,
-      flaggable: {
-        key: event.id,
-        browserId: event.channelLabel,
-        section: 'eventlogs',
-        eventType: 'eventlog',
-        title: event.title,
-        url: '',
-        time: event.time,
-      },
-    })
-  }
-
-  /* ---- Malware samples (import time) ---- */
-  for (const event of sampleEvents(data.malware?.samples ?? [], engine)) {
-    if (hasTime(event)) out.push(event)
-  }
-
-  /* ---- E-mails (time sent, else import time) ---- */
-  /* ---- Network captures: the capture, held submissions, beacons ---- */
-  for (const event of networkEvents(data.network?.captures ?? [], engine)) {
-    if (hasTime(event)) out.push(event)
-  }
-
-  for (const event of mailEvents(data.mail?.messages ?? [], engine)) {
-    if (hasTime(event)) out.push(event)
-  }
-
-  /* ---- Scanned addresses (URL Analysis), at their scan time ---- */
-  for (const event of urlEvents(data.urls?.scans ?? [], engine)) {
-    if (hasTime(event)) out.push(event)
-  }
-
+  for (const event of sampleEvents(data.malware?.samples ?? [], engine)) if (hasTime(event)) out.push(event)
+  for (const event of networkEvents(data.network?.captures ?? [], engine)) if (hasTime(event)) out.push(event)
+  for (const event of mailEvents(data.mail?.messages ?? [], engine)) if (hasTime(event)) out.push(event)
+  for (const event of urlEvents(data.urls?.scans ?? [], engine)) if (hasTime(event)) out.push(event)
   out.sort((a, b) => b.time - a.time)
   return out
+}
+
+/**
+ * The density of the timeline: the server's buckets of host records (`histogram.buckets`, `{ t, count }`
+ * from `histogram.from`, each `histogram.width` ms wide) and the events of the document, on one grid of at
+ * most `max` bars. `{ from, width, bars: [{ t, host, docs }], peak }`; `bars` is empty with nothing dated.
+ */
+export function density(histogram, events = [], max = 120) {
+  const points = []
+  for (const bucket of histogram?.buckets ?? []) points.push({ t: bucket.t, host: bucket.count, docs: 0 })
+  for (const event of events) if (hasTime(event)) points.push({ t: event.time, host: 0, docs: 1 })
+  if (points.length === 0) return { from: null, width: 0, bars: [], peak: 0 }
+  const from = Math.min(...points.map((point) => point.t))
+  const to = Math.max(...points.map((point) => point.t), (histogram?.to ?? 0) || 0)
+  const span = Math.max(1, to - from + 1)
+  const width = Math.max(Number(histogram?.width) || 1, Math.ceil(span / max))
+  const held = new Map()
+  for (const point of points) {
+    const index = Math.floor((point.t - from) / width)
+    const bar = held.get(index) ?? { t: from + index * width, host: 0, docs: 0 }
+    bar.host += point.host
+    bar.docs += point.docs
+    held.set(index, bar)
+  }
+  const bars = [...held.entries()].sort((a, b) => a[0] - b[0]).map(([, bar]) => bar)
+  return { from, width, bars, peak: Math.max(...bars.map((bar) => bar.host + bar.docs)) }
+}
+
+/** What a record says in a line: its summary, else its kind and type. */
+export const recordLabel = (record) =>
+  record?.summary || [record?.kind, record?.type].filter(Boolean).join(' ') || '(no summary)'
+
+/** ms -> the value of an `<input type="datetime-local">` (local time, to the minute); '' for no time. */
+export function toLocalInput(ms) {
+  if (!Number.isFinite(ms)) return ''
+  const date = new Date(ms)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** The value of an `<input type="datetime-local">` -> ms; null for an empty or a bad one. */
+export function fromLocalInput(text) {
+  if (!text) return null
+  const ms = new Date(text).getTime()
+  return Number.isFinite(ms) ? ms : null
 }

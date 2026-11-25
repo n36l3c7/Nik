@@ -67,7 +67,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -95,7 +95,7 @@ SAID_MAX = 200  # things the other side said that one reading takes
 SAID_PATH = "warroom.mirror"
 # The mark, on a session, of an update that is read once when it is whole (``together``).
 _HELD = "indicators_found.together"
-DOORS = ("fetch", "api", "hand", "playbook", "mirror", "asked")
+DOORS = ("fetch", "api", "hand", "playbook", "mirror", "asked", "evidence")
 
 # Keys that are noise by their nature. An entry with no dot is the name of a key, wherever it is;
 # one with dots is a whole path, without the numbers of a list. ``*`` stands for anything.
@@ -393,7 +393,88 @@ def scan(
     db.flush()  # the session does not flush by itself: what the door just wrote is read below
     material = material_of(db, incident)
     material["said"] = list(said or [])[:SAID_MAX]
-    result = read(material, cfg, known_of(db))
+    return keep(db, incident, door, read(material, cfg, known_of(db)), cfg)
+
+
+def texts(values: Iterable[tuple[str, str]], cfg: dict[str, Any], known: recognise.Known) -> dict[str, Any]:
+    """What ``read`` gives, for texts that are not the incident's fields or context: ``(path, text)``
+    of something the incident holds (host evidence kept in its document before 7.0). Bounded like
+    a reading of the incident: what is past the bounds is counted as unread."""
+    wanted = set(cfg["types"])
+    found: dict[tuple[str, str], tuple[recognise.Found, str]] = {}
+    left: dict[tuple[str, str], str] = {}
+    unread = count = size = 0
+    for path, text in values:
+        if not isinstance(text, str) or not text:
+            continue
+        count += 1
+        size += min(len(text), STRING_MAX)
+        if count > STRINGS_MAX or size > BYTES_MAX:
+            unread += 1
+            continue
+        for item in recognise.find(text[:STRING_MAX], known):
+            key = (item.type, item.value)
+            if item.type not in wanted or key in found:
+                continue
+            marks = set(item.marks)
+            why = (
+                "private"
+                if cfg["leaveOutPrivate"] and "private" in marks
+                else "benign"
+                if cfg["leaveOutBenign"] and marks & {"benign", "own", "allowlisted"}
+                else ""
+            )
+            if why:
+                left.setdefault(key, why)
+            else:
+                found[key] = (item, path[:PATH_MAX])
+    counts: dict[str, int] = {}
+    for key, why in left.items():
+        if key not in found:
+            counts[why] = counts.get(why, 0) + 1
+    return {"found": list(found.values()), "leftOut": counts, "unread": unread}
+
+
+def given(values: list[tuple[str, str, str]], cfg: dict[str, Any], known: recognise.Known) -> dict[str, Any]:
+    """What ``read`` gives, for values that are already known to be indicators and of which type:
+    ``(type, value, path)``, as a parser of host evidence declares them (the source address of a
+    logon, the domain of a DNS query). Each is passed through the recogniser all the same, which
+    says what it is to the organisation (private, benign, its own), and is left out by the same
+    rules. A value the recogniser does not take for an indicator of that type is not one."""
+    wanted = set(cfg["types"])
+    found: dict[tuple[str, str], tuple[recognise.Found, str]] = {}
+    left: dict[tuple[str, str], str] = {}
+    for kind, value, path in values:
+        for item in recognise.find(str(value)[:STRING_MAX], known):
+            key = (item.type, item.value)
+            if item.type != kind or item.type not in wanted or key in found:
+                continue
+            marks = set(item.marks)
+            why = (
+                "private"
+                if cfg["leaveOutPrivate"] and "private" in marks
+                else "benign"
+                if cfg["leaveOutBenign"] and marks & {"benign", "own", "allowlisted"}
+                else ""
+            )
+            if why:
+                left.setdefault(key, why)
+            else:
+                found[key] = (item, path[:PATH_MAX])
+    counts: dict[str, int] = {}
+    for key, why in left.items():
+        if key not in found:
+            counts[why] = counts.get(why, 0) + 1
+    return {"found": list(found.values()), "leftOut": counts, "unread": 0}
+
+
+def keep(
+    db: OrmSession, incident: Incident, door: str, result: dict[str, Any], cfg: dict[str, Any], *, whole: bool = True
+) -> dict[str, Any]:
+    """Keep what a reading found (``read`` or ``given``) as indicators of the incident, within the
+    limit of the setting, and say so once (the caller commits). ``whole``: the reading was of the
+    incident itself, and is what "the last reading" of it says from now on; a reading of something
+    the incident holds (a file of host evidence) leaves that as it is."""
     rows = {
         (row.type, row.value): row
         for row in db.scalars(select(FoundIndicator).where(FoundIndicator.incident_id == incident.id))
@@ -441,13 +522,15 @@ def scan(
         "unread": result["unread"],
         "cap": cfg["cap"],
     }
-    state = db.get(FoundScan, incident.id)
-    before = state.summary if state is not None and isinstance(state.summary, dict) else {}
-    if state is None:
-        db.add(FoundScan(incident_id=incident.id, at=stamp, door=door, summary=summary))
-    else:
-        state.at, state.door, state.summary = stamp, door, summary
-        flag_modified(state, "summary")
+    before: dict[str, Any] = {}
+    if whole:
+        state = db.get(FoundScan, incident.id)
+        before = state.summary if state is not None and isinstance(state.summary, dict) else {}
+        if state is None:
+            db.add(FoundScan(incident_id=incident.id, at=stamp, door=door, summary=summary))
+        else:
+            state.at, state.door, state.summary = stamp, door, summary
+            flag_modified(state, "summary")
     # One line for a reading that changed something: new indicators, or more left over the limit.
     if new or over > int(before.get("over") or 0):
         from . import war_room

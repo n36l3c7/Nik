@@ -50,6 +50,13 @@ import { useAudit } from './AuditContext.jsx'
 
 const AuthContext = createContext(null)
 
+const NOT_A_COPY = { copy: false, copyOf: '' }
+
+const serverOf = (answer) => ({
+  copy: Boolean(answer?.copy),
+  copyOf: typeof answer?.copyOf === 'string' ? answer.copyOf : '',
+})
+
 const normalizeUsername = (u) => String(u ?? '').trim()
 
 export function AuthProvider({ children }) {
@@ -65,6 +72,8 @@ export function AuthProvider({ children }) {
   const [sessionExpired, setSessionExpired] = useState(false)
   // The account had to set its second factor up when it signed in: the app waits behind that.
   const [enrolAtEntry, setEnrolAtEntry] = useState(false)
+  // What this server is: { copy, copyOf }. A copy of another server (a restored backup to look at) says so everywhere.
+  const [server, setServer] = useState(NOT_A_COPY)
   // A refusal that concerns everything the person does: { code, message } (not on a listed network).
   const [refusal, setRefusal] = useState(null)
   // What a sign-in said besides who it is: { notice, recoveryCodesLeft }, shown once.
@@ -94,9 +103,10 @@ export function AuthProvider({ children }) {
   /** Ask the server again who is signed in (their roles, their second factor) and how long the session has. */
   const refreshMe = useCallback(async () => {
     try {
-      const { user, session } = await api.get('/auth/me', { background: true })
+      const { user, session, server: where } = await api.get('/auth/me', { background: true })
       currentUserRef.current = user
       setCurrentUser(user)
+      setServer(serverOf(where))
       keepClock(sessionClock(session, Date.now()))
       return user
     } catch {
@@ -195,9 +205,10 @@ export function AuthProvider({ children }) {
 
     // The server is reachable; a failing /auth/me just means "not signed in".
     try {
-      const { user, session } = await api.get('/auth/me')
+      const { user, session, server: where } = await api.get('/auth/me')
       currentUserRef.current = user
       setCurrentUser(user)
+      setServer(serverOf(where))
       keepClock(sessionClock(session, Date.now()))
       setEnrolAtEntry(mustEnrol(user))
       if (!mustEnrol(user)) await refreshUsers()
@@ -237,11 +248,12 @@ export function AuthProvider({ children }) {
 
   /** Somebody is signed in: who, until when, and what the server said besides. */
   const adopt = useCallback(
-    async ({ user, session, notice = null, recoveryCodesLeft = null }) => {
+    async ({ user, session, server: where, notice = null, recoveryCodesLeft = null }) => {
       // Signing in again where one was (the session had ended) keeps the app; a new sign-in waits for the factor.
       const again = currentUserRef.current?.id === user.id
       currentUserRef.current = user
       setCurrentUser(user)
+      setServer(serverOf(where))
       keepClock(sessionClock(session, Date.now()))
       setEnrolAtEntry(mustEnrol(user) && !again)
       setRefusal(null)
@@ -377,6 +389,7 @@ export function AuthProvider({ children }) {
     users,
     currentUser,
     can,
+    server,
     hasUsers,
     // Signed in, and let in: an account that must set its second factor up first is `enrolling`.
     isAuthenticated: currentUser !== null && !enrolAtEntry,

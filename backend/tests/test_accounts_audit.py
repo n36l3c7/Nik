@@ -203,7 +203,7 @@ def test_a_session_is_audited_like_a_key(admin: TestClient):
         {"notes": [{"id": "n1", "text": "first"}]},
         {"notes": [{"id": "n1", "text": "edited"}]},
         {"status": "closed", "assignee": "admin"},
-        {"data": {"browser": {"browsers": {"chrome": {"meta": {"history": {"fileName": "History"}}}}}}},
+        {"data": {"mail": {"messages": [{"fileName": "phish.eml", "sha256": "a" * 64}]}}},
         {"flags": {"k1": None}, "notes": []},
     ]
     for patch in patches:
@@ -229,16 +229,21 @@ def test_a_session_is_audited_like_a_key(admin: TestClient):
     details = {entry["action"]: entry["details"] for entry in entries}
     assert details["flag.add"] == "Flagged: evil.exe"
     assert details["incident.update"] == 'Updated assignee, status of "WKS-01"'
-    assert details["evidence.update"] == "Updated the evidence of browser: History"
+    assert details["evidence.update"] == "Updated the evidence of mail"
 
 
 def test_describe_patch_reads_only_the_tabs_the_patch_names():
-    old = {"name": "n", "data": {"browser": {"a": 1}, "mail": {"messages": []}}}
-    new = {"name": "n", "data": {"browser": {"a": 2}, "mail": {"messages": [1]}}}
-    assert describe_patch(old, new, {"data": {"browser": {"a": 2}}}) == [
-        ("evidence.update", "Updated the evidence of browser")
+    old = {"name": "n", "data": {"mail": {"messages": []}, "network": {"captures": []}}}
+    new = {"name": "n", "data": {"mail": {"messages": [1]}, "network": {"captures": [2]}}}
+    assert describe_patch(old, new, {"data": {"mail": {"messages": [1]}}}) == [
+        ("evidence.update", "Updated the evidence of mail")
     ]
-    assert describe_patch(old, new) == [("evidence.update", "Updated the evidence of browser, mail")]
+    assert describe_patch(old, new) == [("evidence.update", "Updated the evidence of mail, network")]
+    # Host evidence is in tables: a patch cannot change it in the document, and none is described.
+    held = {"name": "n", "data": {"browser": {"a": 1}, "commands": {}, "eventlogs": {}, "endpoint": {}}}
+    moved = {"name": "n", "data": {"browser": {"a": 2}, "commands": {"x": 1}, "eventlogs": {"x": 1}, "endpoint": 1}}
+    assert describe_patch(held, moved) == []
+    assert describe_patch(held, moved, {"data": {"browser": {"a": 2}}}) == []
     assert describe_patch(old, old, {"flags": {}}) == []
     # A document with odd shapes is described, not refused.
     assert describe_patch({"flags": [], "notes": "x"}, {"flags": {"k": "odd"}, "notes": [1]}) == [

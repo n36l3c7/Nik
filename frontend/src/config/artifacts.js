@@ -1,4 +1,4 @@
-import { CirclePlay, HardDrive, KeyRound, Usb } from 'lucide-react'
+import { CirclePlay, HardDrive, KeyRound, Usb, Wifi } from 'lucide-react'
 import {
   EXEC_WIN_BAM,
   PERS_WIN_RUN,
@@ -16,45 +16,48 @@ import {
  * ENDPOINT ARTIFACT REGISTRY — the only file to edit to add a category/source
  * ============================================================================
  *
- * The "Endpoint Artifacts" tab shows a sub-tab per category. Each category is a
+ * The "Endpoint Artifacts" tab shows a selector item per category; the columns of each
+ * are in domain/endpointPage.js. Each category is a
  * flaggable table fed by one or more SOURCES; the table shows the union of
  * every source's records, tagged by which source produced them.
  *
  * A source is imported in one of two ways (never a third-party tool):
- *   - mode 'file'   → upload the EXISTING raw file from the host; a dedicated
- *                     in-browser parser (config: `parser`) turns it into
- *                     records. Used when the data already lives in a plain
- *                     text/XML/log/SQLite file.
+ *   - mode 'file'   → upload the EXISTING raw file from the host; the worker's
+ *                     `endpoint` parser turns it into records. Used when the
+ *                     data already lives in a plain text/XML/log/SQLite file.
  *   - mode 'script' → run the shown native script (OS built-ins only) which
  *                     writes a CSV; import that CSV. Used for live system state
  *                     (registry, service manager, kernel journal) that is not a
  *                     simple file to copy.
  *
- * Artifacts that can only be recovered with third-party DFIR tools (Prefetch,
- * Amcache, ShimCache, UserAssist, LNK, JumpLists, ShellBags, RecentDocs) are
- * intentionally NOT included — there is no fully-custom way to collect them.
+ * Since 7.0 the server reads the files themselves (Prefetch, LNK, Jump lists, SRUDB.dat) and the registry
+ * hives (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache.hve): the person copies the file with the tool they have and
+ * adds it. A source that comes out of a hive or of SRUDB.dat has `via`: it is not a file of its own, the file
+ * fills several sources at once, and its row of the list is satisfied by records of that source existing.
  *
  * Category shape:
  *   id / label / icon / accent
- *   primaryField   record field used as the row title and flag label
- *   columns        [{ key, label, mono?, grow?, align? }] shown in the table
- *   fields         { fieldKey: [aliases] } — lenient mapping for CSV/JSON import
- *   timeAliases    aliases for the record timestamp (CSV/JSON import)
- *   detectFields   record fields concatenated into the SOC keyword haystack
  *   sources        { windows|macos|linux: [source] } driven by the host OS
  *
  * Source shape (per OS):
- *   key            unique within the category (data slot + de-dup)
+ *   key            unique within the category (the `<id>` of the source name `<os>.<category>.<id>`)
  *   name           label shown in the collection list
  *   path           where the data lives (file path or registry location)
  *   mode           'file' | 'script'
- *   parser         (file) one of 'xbel'|'configlines'|'plist'|'setupapi'|'knowledgec'
- *   accept         (file) input accept filter
- *   recordKind     (configlines) the `kind` stamped on each parsed line
- *   recordName     (configlines) the `name` stamped on each parsed line
  *   script         (script) { lang, code } shown with copy/download
  *   tool           short label describing the method
+ *   via            'hive' | 'srudb': the source is filled by a registry hive / by SRUDB.dat, not by a file of its own
+ *   timeLabel      the title of the Time column when only this source is shown (ShimCache: "File modified")
+ *   note           a sentence the page shows when the source has records (what its time is not)
  */
+
+export const HIVE_SOURCE = 'windows.registry.hive'
+/** The file-level source SRUDB.dat is sent as; the worker writes its records under `srum-network` and `srum-apps`. */
+export const SRUM_SOURCE = 'windows.network.srum-network'
+export const HIVE_OPTION = 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)'
+export const SRUM_OPTION = 'SRUDB.dat (SRUM)'
+export const HIVE_HELP =
+  'A registry hive is added once: one hive fills several rows of this list (the rows "from a registry hive" turn into records as its keys are read). Windows locks these files: copy them with KAPE, Velociraptor, FTK Imager, reg save or from a shadow copy. A hive that was not closed cleanly is read without its .LOG1 and .LOG2 files: the newest changes may be missing, and the report says so.'
 
 /* ---- Program execution -------------------------------------------------- */
 const EXECUTION = {
@@ -62,33 +65,6 @@ const EXECUTION = {
   label: 'Program Execution',
   icon: CirclePlay,
   accent: 'text-accent',
-  primaryField: 'name',
-  columns: [
-    { key: 'name', label: 'Executable', mono: true, grow: true },
-    { key: 'path', label: 'Path', mono: true, grow: true },
-    { key: 'runCount', label: 'Runs', align: 'right' },
-    { key: 'source', label: 'Artifact' },
-  ],
-  fields: {
-    name: ['name', 'program', 'executable', 'application', 'filename', 'process', 'value'],
-    path: ['path', 'fullpath', 'full_path', 'file_path', 'image', 'devicepath', 'programpath'],
-    runCount: ['runcount', 'run_count', 'count', 'executioncount', 'timesexecuted'],
-    source: ['source', 'artifact', 'sourcetype', 'type', 'hive'],
-  },
-  timeAliases: [
-    'lastrun',
-    'last_run',
-    'lastexecuted',
-    'last_executed',
-    'runtime',
-    'executiontime',
-    'timestamp',
-    'time',
-    'lastmodified',
-    'date',
-    'lastruntime',
-  ],
-  detectFields: ['name', 'path'],
   sources: {
     windows: [
       {
@@ -99,6 +75,47 @@ const EXECUTION = {
         script: EXEC_WIN_BAM,
         tool: 'native PowerShell',
       },
+      {
+        key: 'bam-hive',
+        name: 'BAM (hive)',
+        path: 'SYSTEM → …\\Services\\bam\\State\\UserSettings',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
+        key: 'prefetch',
+        name: 'Prefetch',
+        path: 'C:\\Windows\\Prefetch\\*.pf (often disabled on servers)',
+        mode: 'file',
+        tool: 'upload the .pf files',
+      },
+      {
+        key: 'amcache',
+        name: 'Amcache',
+        path: 'C:\\Windows\\appcompat\\Programs\\Amcache.hve',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
+        key: 'shimcache',
+        name: 'ShimCache',
+        path: 'SYSTEM → …\\Control\\Session Manager\\AppCompatCache',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+        timeLabel: 'File modified',
+        note: 'ShimCache: the time is when the file was last modified, not when it ran: it is not an execution time.',
+      },
+      {
+        key: 'userassist',
+        name: 'UserAssist',
+        path: 'NTUSER.DAT → …\\Explorer\\UserAssist',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
     ],
     macos: [
       {
@@ -106,9 +123,7 @@ const EXECUTION = {
         name: 'KnowledgeC app usage',
         path: '~/Library/Application Support/Knowledge/knowledgeC.db',
         mode: 'file',
-        parser: 'knowledgec',
-        accept: '.db,.sqlite',
-        tool: 'SQLite (parsed in-browser)',
+        tool: 'SQLite (read by the server)',
       },
     ],
     linux: [],
@@ -121,21 +136,6 @@ const PERSISTENCE = {
   label: 'Persistence',
   icon: KeyRound,
   accent: 'text-med',
-  primaryField: 'name',
-  columns: [
-    { key: 'name', label: 'Name', grow: true },
-    { key: 'kind', label: 'Type' },
-    { key: 'command', label: 'Command / Target', mono: true, grow: true },
-    { key: 'location', label: 'Location', mono: true },
-  ],
-  fields: {
-    name: ['name', 'entry', 'task', 'service', 'key', 'label', 'value'],
-    kind: ['kind', 'type', 'mechanism', 'category'],
-    command: ['command', 'commandline', 'command_line', 'target', 'path', 'action', 'exec', 'data'],
-    location: ['location', 'source', 'hive', 'file', 'registrykey', 'key_path'],
-  },
-  timeAliases: ['created', 'modified', 'lastmodified', 'timestamp', 'time', 'date', 'lastwrite'],
-  detectFields: ['name', 'command', 'location'],
   sources: {
     windows: [
       {
@@ -145,6 +145,14 @@ const PERSISTENCE = {
         mode: 'script',
         script: PERS_WIN_RUN,
         tool: 'native PowerShell',
+      },
+      {
+        key: 'runkeys-hive',
+        name: 'Run keys (hive)',
+        path: 'SOFTWARE and NTUSER.DAT → …\\CurrentVersion\\Run',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
       },
       {
         key: 'tasks',
@@ -161,6 +169,14 @@ const PERSISTENCE = {
         mode: 'script',
         script: PERS_WIN_SERVICES,
         tool: 'native PowerShell',
+      },
+      {
+        key: 'services-hive',
+        name: 'Services (hive)',
+        path: 'SYSTEM → …\\Services',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
       },
       {
         key: 'startup',
@@ -185,10 +201,6 @@ const PERSISTENCE = {
         name: 'cron',
         path: '/etc/crontab, /etc/cron.d/*, /var/spool/cron/*',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'cron',
-        recordName: 'cron entry',
         tool: 'upload the cron file',
       },
       {
@@ -196,10 +208,6 @@ const PERSISTENCE = {
         name: 'SSH authorized_keys',
         path: '~/.ssh/authorized_keys',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'authorized_keys',
-        recordName: 'authorized_key',
         tool: 'upload the file',
       },
       {
@@ -207,10 +215,6 @@ const PERSISTENCE = {
         name: 'shell rc / profile',
         path: '~/.bashrc, ~/.profile, /etc/rc.local',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'shell rc',
-        recordName: 'rc line',
         tool: 'upload the file',
       },
       {
@@ -228,8 +232,6 @@ const PERSISTENCE = {
         name: 'LaunchAgent / LaunchDaemon',
         path: '~/Library/LaunchAgents/*.plist, /Library/Launch*',
         mode: 'file',
-        parser: 'plist',
-        accept: '.plist,.xml',
         tool: 'upload the .plist (XML)',
       },
       {
@@ -237,10 +239,6 @@ const PERSISTENCE = {
         name: 'cron',
         path: '/usr/lib/cron/tabs/*',
         mode: 'file',
-        parser: 'configlines',
-        accept: '',
-        recordKind: 'cron',
-        recordName: 'cron entry',
         tool: 'upload the cron file',
       },
     ],
@@ -253,23 +251,32 @@ const FILE_ACCESS = {
   label: 'File & Folder Access',
   icon: HardDrive,
   accent: 'text-info',
-  primaryField: 'name',
-  columns: [
-    { key: 'name', label: 'Item', grow: true },
-    { key: 'target', label: 'Target path', mono: true, grow: true },
-    { key: 'kind', label: 'Evidence' },
-  ],
-  fields: {
-    name: ['name', 'item', 'file', 'filename', 'document', 'label', 'value'],
-    target: ['target', 'targetpath', 'target_path', 'path', 'localpath', 'href'],
-    kind: ['kind', 'type', 'artifact', 'source'],
-  },
-  timeAliases: ['accessed', 'lastaccessed', 'modified', 'visited', 'timestamp', 'time', 'date'],
-  detectFields: ['name', 'target'],
-  // Windows/macOS file-access forensics (LNK, JumpLists, ShellBags, sfl) can
-  // only be parsed with third-party tools, so no custom source is offered.
+  // The shortcuts, the jump lists and the RecentDocs of the registry are read by the server (7.0).
   sources: {
-    windows: [],
+    windows: [
+      {
+        key: 'lnk',
+        name: 'LNK shortcuts',
+        path: 'C:\\Users\\<user>\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\*.lnk (also Office\\Recent, Start Menu, Desktop)',
+        mode: 'file',
+        tool: 'upload the .lnk files',
+      },
+      {
+        key: 'jumplist',
+        name: 'Jump lists',
+        path: '…\\Recent\\AutomaticDestinations\\*.automaticDestinations-ms and …\\CustomDestinations\\*.customDestinations-ms (keep the file name: it is the application’s id)',
+        mode: 'file',
+        tool: 'upload the jump list files',
+      },
+      {
+        key: 'recentdocs',
+        name: 'RecentDocs',
+        path: 'NTUSER.DAT → …\\Explorer\\RecentDocs',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+    ],
     macos: [],
     linux: [
       {
@@ -277,8 +284,6 @@ const FILE_ACCESS = {
         name: 'GTK recently-used',
         path: '~/.local/share/recently-used.xbel',
         mode: 'file',
-        parser: 'xbel',
-        accept: '.xbel,.xml',
         tool: 'upload the file (XML)',
       },
     ],
@@ -291,32 +296,6 @@ const USB = {
   label: 'USB & Devices',
   icon: Usb,
   accent: 'text-violet',
-  primaryField: 'device',
-  columns: [
-    { key: 'device', label: 'Device', grow: true },
-    { key: 'serial', label: 'Serial', mono: true },
-    { key: 'vendor', label: 'Vendor / Product', grow: true },
-    { key: 'connection', label: 'Event' },
-  ],
-  fields: {
-    device: ['device', 'friendlyname', 'friendly_name', 'devicename', 'description', 'model', 'value'],
-    serial: ['serial', 'serialnumber', 'serial_number', 'iserialnumber', 'guid'],
-    vendor: ['vendor', 'vendorproduct', 'manufacturer', 'product', 'vid_pid', 'vidpid'],
-    connection: ['connection', 'event', 'action', 'kind', 'type'],
-  },
-  timeAliases: [
-    'firstconnected',
-    'first_connected',
-    'lastconnected',
-    'last_connected',
-    'firstinstall',
-    'timestamp',
-    'time',
-    'date',
-    'installdate',
-    'connected',
-  ],
-  detectFields: ['device', 'vendor'],
   sources: {
     windows: [
       {
@@ -328,12 +307,26 @@ const USB = {
         tool: 'native PowerShell',
       },
       {
+        key: 'usbstor-hive',
+        name: 'USBSTOR (hive)',
+        path: 'SYSTEM → …\\Enum\\USBSTOR',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
+        key: 'mounteddevices',
+        name: 'Mounted devices',
+        path: 'SYSTEM → \\MountedDevices',
+        mode: 'file',
+        via: 'hive',
+        tool: 'registry hive',
+      },
+      {
         key: 'setupapi',
         name: 'setupapi log',
         path: 'C:\\Windows\\INF\\setupapi.dev.log',
         mode: 'file',
-        parser: 'setupapi',
-        accept: '.log,.txt',
         tool: 'upload the log file',
       },
     ],
@@ -351,34 +344,42 @@ const USB = {
   },
 }
 
-export const ARTIFACT_CATEGORIES = [EXECUTION, PERSISTENCE, FILE_ACCESS, USB]
+/* ---- Network usage (SRUM) ----------------------------------------------- */
+const NETWORK = {
+  id: 'network',
+  label: 'Network usage',
+  icon: Wifi,
+  accent: 'text-info',
+  // One file, SRUDB.dat, gives both sources: each row is an hour of use of a program.
+  sources: {
+    windows: [
+      {
+        key: 'srum-network',
+        name: 'SRUM network usage',
+        path: 'C:\\Windows\\System32\\sru\\SRUDB.dat (locked on a live system: KAPE, Velociraptor, a shadow copy)',
+        mode: 'file',
+        via: 'srudb',
+        tool: 'SRUDB.dat',
+      },
+      {
+        key: 'srum-apps',
+        name: 'SRUM applications',
+        path: 'C:\\Windows\\System32\\sru\\SRUDB.dat',
+        mode: 'file',
+        via: 'srudb',
+        tool: 'SRUDB.dat',
+      },
+    ],
+    macos: [],
+    linux: [],
+  },
+}
+
+export const ARTIFACT_CATEGORIES = [EXECUTION, PERSISTENCE, FILE_ACCESS, USB, NETWORK]
 
 /** Returns a category definition from its id. */
 export function getArtifactCategoryById(id) {
   return ARTIFACT_CATEGORIES.find((c) => c.id === id) ?? null
-}
-
-/** All source keys of a category across every OS (for the data slots). */
-export function categorySourceKeys(category) {
-  const keys = new Set()
-  for (const os of ['windows', 'macos', 'linux']) {
-    for (const source of category.sources[os] ?? []) keys.add(source.key)
-  }
-  return [...keys]
-}
-
-/** Initial data for a category: an empty { records, meta } slot per source. */
-export function buildDefaultArtifactData(category) {
-  const sources = {}
-  for (const key of categorySourceKeys(category)) sources[key] = { records: [], meta: null }
-  return { sources }
-}
-
-/** Map { [categoryId]: data } with every category initialized empty. */
-export function buildDefaultArtifactsMap() {
-  const map = {}
-  for (const category of ARTIFACT_CATEGORIES) map[category.id] = buildDefaultArtifactData(category)
-  return map
 }
 
 /** Sources available for a category on a given host OS. */

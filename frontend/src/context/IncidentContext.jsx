@@ -1,24 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { api, NOT_MODIFIED } from '../services/api.js'
+import { api, evidence, NOT_MODIFIED } from '../services/api.js'
 import { MERGE_PATCH_CONTENT_TYPE } from '../lib/mergePatch.js'
 import { createSaveQueue } from '../services/saveQueue.js'
 import { buildDefaultIncidentData } from '../config/tabs.js'
-import {
-  BROWSERS,
-  getBrowserById,
-  buildDefaultBrowserData,
-  buildDefaultBrowsersMap,
-  buildDefaultProfileData,
-} from '../config/browsers.js'
-import { normalizeBrowserSlot, profileNameError, sortedProfiles } from '../domain/browserProfiles.js'
-import { SHELLS, getShellById, buildDefaultShellData, buildDefaultShellsMap } from '../config/shells.js'
-import {
-  ARTIFACT_CATEGORIES,
-  getArtifactCategoryById,
-  categorySourceKeys,
-  buildDefaultArtifactData,
-  buildDefaultArtifactsMap,
-} from '../config/artifacts.js'
 import { normalizeOs } from '../config/os.js'
 import { generateId } from '../lib/id.js'
 import { saveBlob } from '../lib/download.js'
@@ -48,7 +32,7 @@ import { transfer } from '../lib/transfers.js'
  *   suspiciousStart,      // Unix ms | null — start of suspicious activity
  *   suspiciousEnd,        // Unix ms | null — end of suspicious activity
  *   createdAt, updatedAt, createdBy,
- *   data: { summary, browser, commands, endpoint, malware, mail, eventlogs, network },
+ *   data: { summary, malware, mail, network, urls },   // host evidence is on the server (evidence sources and records)
  *   flags: { [key]: { key, browserId, profileId?, profileName?, section,
  *                     eventType, title, url, time, flaggedAt, flaggedBy,
  *                     comments: [...] } },
@@ -75,7 +59,6 @@ import { transfer } from '../lib/transfers.js'
  *   - createIncident / import     → POST   /incidents        (full doc)
  *   - deleteIncident              → DELETE /incidents/{id}
  *   - every other mutation        → PATCH  /incidents/{id}   (merge patch)
- *   - setActiveBrowser/Shell      → LOCAL ONLY (a view preference; never sent)
  *
  * The audit trail is written by the server, from the requests it receives:
  * nothing here reports what it did, except an export (a file built in the
@@ -93,100 +76,6 @@ const nowIso = () => new Date().toISOString()
 /** Display name derived from host/username. */
 export { deriveIncidentName }
 
-/* ---- browser data normalization (per-browser, per-profile + legacy migration) ---- */
-function normalizeBrowserData(raw) {
-  const fallback = { activeBrowser: BROWSERS[0].id, browsers: buildDefaultBrowsersMap() }
-  if (!raw || typeof raw !== 'object') return fallback
-
-  if (raw.browsers && typeof raw.browsers === 'object') {
-    const browsers = {}
-    for (const browser of BROWSERS) {
-      browsers[browser.id] = normalizeBrowserSlot(raw.browsers[browser.id], browser)
-    }
-    return {
-      activeBrowser: getBrowserById(raw.activeBrowser) ? raw.activeBrowser : BROWSERS[0].id,
-      browsers,
-    }
-  }
-
-  // Oldest single-browser shape → Chrome's Default profile.
-  if (Array.isArray(raw.history) || Array.isArray(raw.bookmarks) || Array.isArray(raw.shortcuts)) {
-    const browsers = buildDefaultBrowsersMap()
-    browsers.chrome = normalizeBrowserSlot(
-      { history: raw.history, bookmarks: raw.bookmarks, shortcuts: raw.shortcuts, meta: raw.meta },
-      getBrowserById('chrome'),
-    )
-    return { activeBrowser: 'chrome', browsers }
-  }
-
-  return fallback
-}
-
-/** New `data` with one browser slot replaced by `fn(slot, browser)`. */
-function withBrowserSlot(data, browserId, fn) {
-  const browser = getBrowserById(browserId) ?? BROWSERS[0]
-  const slot = data.browser.browsers[browserId] ?? buildDefaultBrowserData(browser)
-  return {
-    ...data,
-    browser: { ...data.browser, browsers: { ...data.browser.browsers, [browserId]: fn(slot, browser) } },
-  }
-}
-
-/** New `data` with one profile of a browser replaced by `fn(profile, browser)`. */
-function withBrowserProfile(data, browserId, profileId, fn) {
-  return withBrowserSlot(data, browserId, (slot, browser) => {
-    const profile = slot.profiles[profileId]
-    if (!profile) return slot
-    return { ...slot, profiles: { ...slot.profiles, [profileId]: fn(profile, browser) } }
-  })
-}
-
-/* ---- command data normalization (per-shell) ---- */
-function normalizeCommandsData(raw) {
-  const fallback = { activeShell: SHELLS[0].id, shells: buildDefaultShellsMap() }
-  if (!raw || typeof raw !== 'object') return fallback
-
-  const shells = buildDefaultShellsMap()
-  if (raw.shells && typeof raw.shells === 'object') {
-    for (const shell of SHELLS) {
-      const rs = raw.shells[shell.id]
-      if (rs && typeof rs === 'object') {
-        const def = buildDefaultShellData()
-        shells[shell.id] = {
-          commands: Array.isArray(rs.commands) ? rs.commands : [],
-          meta: { ...def.meta, ...(rs.meta ?? {}) },
-        }
-      }
-    }
-  }
-  return {
-    activeShell: getShellById(raw.activeShell) ? raw.activeShell : SHELLS[0].id,
-    shells,
-  }
-}
-
-/* ---- endpoint artifact data normalization (per-category, per-source) ---- */
-function normalizeEndpointData(raw) {
-  const categories = buildDefaultArtifactsMap()
-  if (!raw || typeof raw !== 'object') return { categories }
-
-  const src = raw.categories && typeof raw.categories === 'object' ? raw.categories : {}
-  for (const category of ARTIFACT_CATEGORIES) {
-    const rc = src[category.id]
-    if (!rc || typeof rc !== 'object' || !rc.sources) continue
-    for (const key of categorySourceKeys(category)) {
-      const rs = rc.sources[key]
-      if (rs && typeof rs === 'object') {
-        categories[category.id].sources[key] = {
-          records: Array.isArray(rs.records) ? rs.records : [],
-          meta: rs.meta ?? null,
-        }
-      }
-    }
-  }
-  return { categories }
-}
-
 /** Normalize a loaded/imported incident (also migrates old "project" shape). */
 function normalizeIncident(raw) {
   const defaults = buildDefaultIncidentData()
@@ -194,9 +83,8 @@ function normalizeIncident(raw) {
     ...defaults,
     ...(typeof raw.data === 'object' && raw.data !== null ? raw.data : {}),
   }
-  data.browser = normalizeBrowserData(raw.data?.browser)
-  data.commands = normalizeCommandsData(raw.data?.commands)
-  data.endpoint = normalizeEndpointData(raw.data?.endpoint)
+  // Host evidence is not kept in the document any more; an old export still holding some is sent as it is
+  // and the server moves it to its tables (evidence/legacy.py).
 
   const identity = {
     ticketId: typeof raw.ticketId === 'string' ? raw.ticketId.trim() : '',
@@ -237,6 +125,9 @@ function normalizeIncident(raw) {
     // what brought it in when a connector did, with the connector's logo.
     number: Number.isInteger(raw.number) ? raw.number : null,
     source: raw.source && typeof raw.source === 'object' ? raw.source : null,
+    // Archived (7.0): read-only everywhere; given by the server, never changed by an edit made here.
+    archivedAt: typeof raw.archivedAt === 'string' && raw.archivedAt ? raw.archivedAt : null,
+    archivedBy: typeof raw.archivedBy === 'string' && raw.archivedBy ? raw.archivedBy : null,
   }
 }
 
@@ -291,13 +182,15 @@ function toSummary(incident) {
     type: incident.type ?? 'unclassified',
     tags: tagList(incident.fields?.labels),
     source: incident.source ?? null,
+    archivedAt: incident.archivedAt ?? null,
+    archivedBy: incident.archivedBy ?? null,
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt,
   }
 }
 
 /** Normalize a summary row from the server (missing fields become defaults). */
-function normalizeSummary(raw) {
+export function normalizeSummary(raw) {
   const host = typeof raw.host === 'string' ? raw.host.trim() : ''
   const username = typeof raw.username === 'string' ? raw.username.trim() : ''
   const name =
@@ -318,34 +211,10 @@ function normalizeSummary(raw) {
     hasMail: raw.hasMail === true,
     type: typeof raw.type === 'string' && raw.type ? raw.type : 'unclassified',
     tags: tagList(raw.tags),
+    archivedAt: typeof raw.archivedAt === 'string' && raw.archivedAt ? raw.archivedAt : null,
+    archivedBy: typeof raw.archivedBy === 'string' && raw.archivedBy ? raw.archivedBy : null,
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
-  }
-}
-
-/**
- * A version read from the server, with this client's view preferences (the
- * open browser, profile and shell) kept as they are here: they are never
- * saved, so the server's copy must not move them.
- */
-function keepViewPreferences(remote, local) {
-  const browser = remote.data.browser
-  const mine = local.data?.browser
-  const browsers = {}
-  for (const [id, slot] of Object.entries(browser.browsers)) {
-    const wanted = mine?.browsers?.[id]?.activeProfile
-    browsers[id] = wanted && slot.profiles?.[wanted] ? { ...slot, activeProfile: wanted } : slot
-  }
-  return {
-    ...remote,
-    data: {
-      ...remote.data,
-      browser: { ...browser, activeBrowser: mine?.activeBrowser ?? browser.activeBrowser, browsers },
-      commands: {
-        ...remote.data.commands,
-        activeShell: local.data?.commands?.activeShell ?? remote.data.commands.activeShell,
-      },
-    },
   }
 }
 
@@ -410,6 +279,8 @@ export function IncidentProvider({ children }) {
   const activeIncidentIdRef = useRef(activeIncidentId)
   // POST promises of the incidents created in this session (see whenSaved).
   const savedRef = useRef(new Map())
+  // Incidents this window is deleting right now.
+  const deletingRef = useRef(new Set())
   activeIncidentIdRef.current = activeIncidentId
 
   /** Store a full document in the cache (and its summary row in the list). */
@@ -459,7 +330,6 @@ export function IncidentProvider({ children }) {
       },
       getLocal: (incidentId) => documentsRef.current[incidentId] ?? null,
       setLocal: (_incidentId, incident) => storeDocument(incident),
-      prepare: keepViewPreferences,
       onChange: () => {
         const { pending, error } = queueRef.current.status()
         setSaveState((state) => (state.pending === pending && state.error === error ? state : { pending, error }))
@@ -522,12 +392,9 @@ export function IncidentProvider({ children }) {
         const list = Array.isArray(res?.incidents) ? res.incidents : []
         const summaries = list.filter((row) => row && row.id).map(normalizeSummary)
         setIncidents(summaries)
-        // Drop an invalid permalink (unknown id) so the UI shows a clean state.
-        const active = activeIncidentIdRef.current
-        if (active && !summaries.some((i) => i.id === active)) {
-          setActiveIncidentId(null)
-          syncUrl(null, { replace: true })
-        }
+        // An address whose incident is not in the list is not dropped here: an archived incident is
+        // out of the list and still has its address. Its document is asked for below, and only an
+        // id the server does not know is dropped (see the download of the active incident).
         setStorageError(null)
       })
       .catch((err) => {
@@ -604,6 +471,12 @@ export function IncidentProvider({ children }) {
       })
       .catch((err) => {
         if (controller.signal.aborted) return
+        // An address that names no incident (and none of the list): back to a clean state.
+        if (err?.status === 404 && !incidentsRef.current.some((row) => row.id === activeIncidentId)) {
+          setActiveIncidentId(null)
+          syncUrl(null, { replace: true })
+          return
+        }
         setActiveLoadError(err?.message || 'Unable to load the incident.')
       })
       .finally(() => {
@@ -624,21 +497,32 @@ export function IncidentProvider({ children }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [queue])
 
+  /** Read the light list again and put it in place of the one held (rejects when it cannot be read). */
+  const readList = useCallback(async () => {
+    const res = await api.get('/incidents?view=summary')
+    const list = Array.isArray(res?.incidents) ? res.incidents : []
+    setIncidents(list.filter((row) => row && row.id).map(normalizeSummary))
+  }, [])
+
   /**
    * Read the incident list and the assignable accounts again, and check the
    * open incident: an account was renamed, disabled or deleted.
    */
   const refreshIncidents = useCallback(() => {
     setAccountsToken((token) => token + 1)
-    api
-      .get('/incidents?view=summary')
-      .then((res) => {
-        const list = Array.isArray(res?.incidents) ? res.incidents : []
-        setIncidents(list.filter((row) => row && row.id).map(normalizeSummary))
-      })
-      .catch((err) => setStorageError(err?.message || 'Unable to load incidents.'))
+    readList().catch((err) => setStorageError(err?.message || 'Unable to load incidents.'))
     if (activeIncidentIdRef.current) queue.refresh(activeIncidentIdRef.current)
-  }, [queue])
+  }, [queue, readList])
+
+  /**
+   * The same, for a screen that refreshes itself (the list's refresh button and timer): resolves once the
+   * list is read and rejects with why it could not be; no banner is raised, the screen says it itself.
+   */
+  const reloadIncidents = useCallback(async () => {
+    setAccountsToken((token) => token + 1)
+    await readList()
+    if (activeIncidentIdRef.current) queue.refresh(activeIncidentIdRef.current)
+  }, [queue, readList])
 
   const retryActiveIncident = useCallback(() => {
     setActiveLoadError(null)
@@ -691,6 +575,11 @@ export function IncidentProvider({ children }) {
         setStorageError('Your account can read but not change: nothing was changed.')
         return prev
       }
+      if (!local && prev.archivedAt) {
+        // An archived incident is read-only for everybody: the server would refuse the change.
+        setStorageError('The incident is archived: take it out of the archive first. Nothing was changed.')
+        return prev
+      }
       const next = updater(prev)
       storeDocument(next)
       if (local) queue.adopt(incidentId, prev, next)
@@ -705,10 +594,11 @@ export function IncidentProvider({ children }) {
    * what was edited while the POST travelled is sent right after it.
    */
   const saveNew = useCallback(
-    (incident, failure) => {
+    (incident, failure, extra = null) => {
       let etag = null
+      // `extra` goes with the document only (the host evidence of an import): the server takes it apart.
       const saved = api
-        .post('/incidents', incident, {
+        .post('/incidents', extra ? { ...incident, ...extra } : incident, {
           onHeaders: (headers) => {
             etag = headers.get('ETag')
           },
@@ -840,12 +730,16 @@ export function IncidentProvider({ children }) {
   /** Delete an incident: it leaves the list once the server has deleted it. */
   const deleteIncident = useCallback(
     async (incidentId) => {
+      // What this window asks the server to delete is not "found gone" by a poll that arrives meanwhile.
+      deletingRef.current.add(incidentId)
       try {
         await api.del(incidentPath(incidentId))
       } catch (err) {
+        deletingRef.current.delete(incidentId)
         setStorageError(err?.message || 'Unable to delete the incident on the server.')
         return false
       }
+      deletingRef.current.delete(incidentId)
       setStorageError(null)
       queue.forget(incidentId)
       const remaining = incidentsRef.current.filter((i) => i.id !== incidentId)
@@ -857,6 +751,26 @@ export function IncidentProvider({ children }) {
         const next = remaining[0]?.id ?? null
         setActiveIncidentId(next)
         syncUrl(next, { replace: true })
+      }
+      return true
+    },
+    [forgetDocument, queue],
+  )
+
+  /**
+   * Somebody else deleted an incident this window knew (a request about it answered "Incident not found"):
+   * forget it, and leave it if it was open. False for an incident that is not known to be on the server
+   * (a new one still being saved, an address that names nothing), which is not a deletion.
+   */
+  const incidentGone = useCallback(
+    (incidentId) => {
+      if (deletingRef.current.has(incidentId) || !queue.isTracked(incidentId)) return false
+      queue.forget(incidentId)
+      setIncidents(incidentsRef.current.filter((row) => row.id !== incidentId))
+      forgetDocument(incidentId)
+      if (activeIncidentIdRef.current === incidentId) {
+        setActiveIncidentId(null)
+        syncUrl(null, { replace: true })
       }
       return true
     },
@@ -902,316 +816,12 @@ export function IncidentProvider({ children }) {
     [commit],
   )
 
-  /* ---- per-browser, per-profile data ---- */
-
-  /**
-   * Shallow-merge `patch` into ONE profile of a browser (e.g. after an upload).
-   * `patch.meta` lists only the sources it changes: it is merged into the
-   * profile as it is now, so two files parsed at once do not drop each other.
-   */
-  const updateBrowserData = useCallback(
-    (incidentId, browserId, profileId, patch) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const updatedAt = nowIso()
-      const data = withBrowserProfile(prev.data, browserId, profileId, (profile) => ({
-        ...profile,
-        ...patch,
-        meta: patch.meta ? { ...profile.meta, ...patch.meta } : profile.meta,
-      }))
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  // View preference only: update the active browser locally and DO NOT call the
-  // API (avoids re-sending the large `data` blob just to change a tab).
-  const setActiveBrowser = useCallback(
-    (incidentId, browserId) => {
-      commit(
-        incidentId,
-        (i) => ({ ...i, data: { ...i.data, browser: { ...i.data.browser, activeBrowser: browserId } } }),
-        { local: true },
-      )
-    },
-    [commit],
-  )
-
-  // View preference only, like setActiveBrowser: never sent on its own.
-  const setActiveProfile = useCallback(
-    (incidentId, browserId, profileId) => {
-      commit(
-        incidentId,
-        (i) => ({ ...i, data: withBrowserSlot(i.data, browserId, (slot) => ({ ...slot, activeProfile: profileId })) }),
-        { local: true },
-      )
-    },
-    [commit],
-  )
-
-  /** Create a profile in a browser and make it active. Returns its id, or null. */
-  const addBrowserProfile = useCallback(
-    (incidentId, browserId, name) => {
-      const prev = find(incidentId)
-      if (!prev) return null
-      const slot = prev.data.browser.browsers[browserId]
-      if (profileNameError(slot, name)) return null
-      const browser = getBrowserById(browserId) ?? BROWSERS[0]
-      const profile = buildDefaultProfileData(browser, { id: generateId(), name: name.trim(), createdAt: nowIso() })
-      const updatedAt = nowIso()
-      const data = withBrowserSlot(prev.data, browserId, (current) => ({
-        ...current,
-        activeProfile: profile.id,
-        profiles: { ...current.profiles, [profile.id]: profile },
-      }))
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-      return profile.id
-    },
-    [commit],
-  )
-
-  const renameBrowserProfile = useCallback(
-    (incidentId, browserId, profileId, name) => {
-      const prev = find(incidentId)
-      const profile = prev?.data.browser.browsers[browserId]?.profiles[profileId]
-      if (!profile || profileNameError(prev.data.browser.browsers[browserId], name, profileId)) return
-      const updatedAt = nowIso()
-      const newName = name.trim()
-      const data = withBrowserProfile(prev.data, browserId, profileId, (p) => ({ ...p, name: newName }))
-      // Flags remember the profile name, so they stay readable if it is deleted.
-      const flags = { ...prev.flags }
-      for (const [key, flag] of Object.entries(flags)) {
-        if (flag.browserId === browserId && flag.profileId === profileId) {
-          flags[key] = { ...flag, profileName: newName }
-        }
-      }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data, flags }))
-    },
-    [commit],
-  )
-
-  /**
-   * Delete a profile and its data (a browser always keeps at least one).
-   * Flags on its rows are kept: they are investigative decisions, and the
-   * timeline marks them as coming from a deleted profile.
-   */
-  const deleteBrowserProfile = useCallback(
-    (incidentId, browserId, profileId) => {
-      const prev = find(incidentId)
-      const slot = prev?.data.browser.browsers[browserId]
-      const profile = slot?.profiles[profileId]
-      if (!profile || Object.keys(slot.profiles).length < 2) return
-      const updatedAt = nowIso()
-      const data = withBrowserSlot(prev.data, browserId, (current) => {
-        const { [profileId]: _deleted, ...profiles } = current.profiles
-        const rest = { ...current, profiles }
-        return {
-          ...rest,
-          activeProfile: profiles[current.activeProfile] ? current.activeProfile : sortedProfiles(rest)[0].id,
-        }
-      })
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  /** Clear ALL data of one profile (the profile itself stays). */
-  const clearBrowserData = useCallback(
-    (incidentId, browserId, profileId) => {
-      const prev = find(incidentId)
-      const profile = prev?.data.browser.browsers[browserId]?.profiles[profileId]
-      if (!profile) return
-      const updatedAt = nowIso()
-      const data = withBrowserProfile(prev.data, browserId, profileId, (p, browser) =>
-        buildDefaultProfileData(browser, { id: p.id, name: p.name, createdAt: p.createdAt }),
-      )
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  const removeBrowserSource = useCallback(
-    (incidentId, browserId, profileId, sourceKey, producedKeys = []) => {
-      const prev = find(incidentId)
-      const profile = prev?.data.browser.browsers[browserId]?.profiles[profileId]
-      if (!profile) return
-      const updatedAt = nowIso()
-      const data = withBrowserProfile(prev.data, browserId, profileId, (p) => {
-        const cleared = { ...p, meta: { ...p.meta, [sourceKey]: null } }
-        for (const key of producedKeys) cleared[key] = []
-        return cleared
-      })
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  /* ---- per-shell command data (Command History tab) ---- */
-
-  const updateShellData = useCallback(
-    (incidentId, shellId, patch) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const commands = prev.data.commands
-      const current = commands.shells[shellId] ?? buildDefaultShellData()
-      const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        commands: {
-          ...commands,
-          shells: { ...commands.shells, [shellId]: { ...current, ...patch } },
-        },
-      }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  // View preference only (like setActiveBrowser): never re-sends the data blob.
-  const setActiveShell = useCallback(
-    (incidentId, shellId) => {
-      commit(
-        incidentId,
-        (i) => ({ ...i, data: { ...i.data, commands: { ...i.data.commands, activeShell: shellId } } }),
-        { local: true },
-      )
-    },
-    [commit],
-  )
-
-  const clearShellData = useCallback(
-    (incidentId, shellId) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const def = buildDefaultShellData()
-      const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        commands: {
-          ...prev.data.commands,
-          shells: { ...prev.data.commands.shells, [shellId]: def },
-        },
-      }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  /* ---- per-source endpoint artifact data (Endpoint Artifacts tab) ---- */
-
-  /** Replace ONE source's records+meta within a category. */
-  const updateArtifactSource = useCallback(
-    (incidentId, categoryId, sourceKey, patch) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const endpoint = prev.data.endpoint
-      const cat = endpoint.categories[categoryId] ?? { sources: {} }
-      const currentSource = cat.sources[sourceKey] ?? { records: [], meta: null }
-      const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        endpoint: {
-          ...endpoint,
-          categories: {
-            ...endpoint.categories,
-            [categoryId]: {
-              ...cat,
-              sources: { ...cat.sources, [sourceKey]: { ...currentSource, ...patch } },
-            },
-          },
-        },
-      }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  /** Clear ONE source within a category. */
-  const clearArtifactSource = useCallback(
-    (incidentId, categoryId, sourceKey) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const endpoint = prev.data.endpoint
-      const cat = endpoint.categories[categoryId] ?? { sources: {} }
-      const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        endpoint: {
-          ...endpoint,
-          categories: {
-            ...endpoint.categories,
-            [categoryId]: {
-              ...cat,
-              sources: { ...cat.sources, [sourceKey]: { records: [], meta: null } },
-            },
-          },
-        },
-      }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  /** Clear ALL sources of a category. */
-  const clearArtifactCategory = useCallback(
-    (incidentId, categoryId) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const category = getArtifactCategoryById(categoryId)
-      const updatedAt = nowIso()
-      const data = {
-        ...prev.data,
-        endpoint: {
-          ...prev.data.endpoint,
-          categories: {
-            ...prev.data.endpoint.categories,
-            [categoryId]: category ? buildDefaultArtifactData(category) : { sources: {} },
-          },
-        },
-      }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
   /** Save the incident's report options (a top-level `report` key). */
   const updateReportSettings = useCallback(
     (incidentId, report) => {
       const prev = find(incidentId)
       if (!prev) return
       commit(incidentId, (i) => ({ ...i, updatedAt: nowIso(), report: { ...(i.report ?? {}), ...report } }))
-    },
-    [commit],
-  )
-
-  /* ---- Windows event logs (data.eventlogs.channels) ---- */
-
-  /**
-   * Store parsed channels (from the collection script's JSON),
-   * replacing those with the same name. Raw .evtx files are parsed on the
-   * server, which writes the incident itself; see reloadActiveIncident.
-   */
-  const setEventLogChannels = useCallback(
-    (incidentId, channels) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const updatedAt = nowIso()
-      const current = prev.data.eventlogs?.channels ?? {}
-      const data = { ...prev.data, eventlogs: { ...prev.data.eventlogs, channels: { ...current, ...channels } } }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
-    },
-    [commit],
-  )
-
-  /** Remove one channel, or every channel when `channel` is null. */
-  const clearEventLogs = useCallback(
-    (incidentId, channel = null) => {
-      const prev = find(incidentId)
-      if (!prev) return
-      const updatedAt = nowIso()
-      const { [channel]: _removed, ...rest } = prev.data.eventlogs?.channels ?? {}
-      const data = { ...prev.data, eventlogs: { ...prev.data.eventlogs, channels: channel ? rest : {} } }
-      commit(incidentId, (i) => ({ ...i, updatedAt, data }))
     },
     [commit],
   )
@@ -1465,6 +1075,33 @@ export function IncidentProvider({ children }) {
     [commit],
   )
 
+  /* ---- archive (7.0): a closed incident is read-only, its host records leave the database ---- */
+
+  /**
+   * Archive the incident (`true`) or take it out of the archive (`false`). The server answers with the
+   * incident as it is now; rejects with its sentence when it cannot be (not closed, a file being read).
+   */
+  const setArchived = useCallback(
+    async (incidentId, archived) => {
+      const path = `${incidentPath(incidentId)}/archive`
+      const answer = await (archived ? api.post(path) : api.del(path))
+      const state = {
+        archivedAt: typeof answer?.archivedAt === 'string' && answer.archivedAt ? answer.archivedAt : null,
+        archivedBy: typeof answer?.archivedBy === 'string' && answer.archivedBy ? answer.archivedBy : null,
+      }
+      const held = documentsRef.current[incidentId]
+      // The server wrote it: not a change of the document to send back.
+      if (held) {
+        commit(incidentId, (i) => ({ ...i, ...state }), { local: true })
+        // Going into the archive or out of it is a new revision of the incident: the next save
+        // has to carry it, so the incident is read again now.
+        if (queue.isTracked(incidentId)) queue.refresh(incidentId)
+      } else setIncidents((list) => list.map((row) => (row.id === incidentId ? { ...row, ...state } : row)))
+      return answer
+    },
+    [commit, queue],
+  )
+
   /* ---- export / import ---- */
 
   const exportIncident = useCallback(
@@ -1492,15 +1129,26 @@ export function IncidentProvider({ children }) {
         storeDocument(incident)
         queue.track(incident.id, incident, etag)
       }
+      // Its host evidence comes from the server: the files with their reports, the flags and the notes.
+      let carried
+      try {
+        carried = await evidence.exportDocument(incident.id)
+      } catch (err) {
+        setStorageError(err?.message || 'Unable to read the host evidence of the incident to export it.')
+        return
+      }
       const safeName = incident.name
         .toLowerCase()
         .replace(/[^a-z0-9]+/gi, '-')
         .replace(/^-+|-+$/g, '')
+      // Whether it is archived is a state of this Nik, not of the incident: it is not exported.
+      const { archivedAt: _archivedAt, archivedBy: _archivedBy, ...exportable } = incident
       downloadJson(`nik-${safeName || 'incident'}.json`, {
         app: 'Nik',
-        version: 4, // 4 = browser profiles (2.0.0); older versions are still imported
+        version: 5, // 5 = host evidence under `evidence` (7.0); 4 and older are still imported
         exportedAt: nowIso(),
-        incident,
+        incident: exportable,
+        evidence: carried,
       })
       audit('incident.export', `Exported incident "${incident.name}"`, incident)
     },
@@ -1531,13 +1179,17 @@ export function IncidentProvider({ children }) {
         fields: null,
         number: null,
         source: null,
+        archivedAt: null,
+        archivedBy: null,
       })
       storeDocument(incident, { prepend: true })
       setActiveIncidentId(incident.id)
       // Whoever asked for the new incident asked about what is not saved before (see App).
       freely(() => syncUrl(incident.id))
-      // Persist the imported incident as a new document on the server.
-      saveNew(incident, 'Unable to save the imported incident.')
+      // Persist the imported incident as a new document on the server, with the host evidence an export of
+      // 7.0 carries (the files are listed as not here until they are given again).
+      const carried = parsed?.evidence ?? raw?.evidence
+      saveNew(incident, 'Unable to save the imported incident.', carried ? { evidence: carried } : null)
       return incident
     },
     [saveNew, storeDocument],
@@ -1553,11 +1205,10 @@ export function IncidentProvider({ children }) {
     activeLoadProgress,
     retryActiveIncident,
     refreshIncidents,
+    reloadIncidents,
     closeRequest,
     askClose,
     endClose,
-    setEventLogChannels,
-    clearEventLogs,
     updateReportSettings,
     whenSaved,
     loading,
@@ -1570,23 +1221,10 @@ export function IncidentProvider({ children }) {
     setIncidentTriage,
     assignees,
     deleteIncident,
+    incidentGone,
     selectIncident,
     updateTabData,
     clearTabData,
-    updateBrowserData,
-    setActiveBrowser,
-    setActiveProfile,
-    addBrowserProfile,
-    renameBrowserProfile,
-    deleteBrowserProfile,
-    clearBrowserData,
-    removeBrowserSource,
-    updateShellData,
-    setActiveShell,
-    clearShellData,
-    updateArtifactSource,
-    clearArtifactSource,
-    clearArtifactCategory,
     attachSample,
     detachSample,
     attachMail,
@@ -1600,6 +1238,7 @@ export function IncidentProvider({ children }) {
     addNote,
     updateNote,
     removeNote,
+    setArchived,
     exportIncident,
     importIncidentFromFile,
   }

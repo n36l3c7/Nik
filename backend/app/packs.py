@@ -12,6 +12,7 @@ and a folder for each kind of item, one file an item::
     lists/<name>.json            a list, with its items when the pack carries them
     dashboards/<slug>.json       a dashboard
     preprocess_rules/<slug>.json a pre-processing rule
+    sigma/<name>.yml             a Sigma rule: one YAML document, as written (any depth of folders)
 
 Never a connection, a credential, or what a playbook may reach and send:
 those belong to the Nik they were set in.
@@ -76,14 +77,16 @@ from .core.models import (
     PreprocessRule,
     Run,
     Script,
+    SigmaRule,
 )
 from .core.security import now_iso
+from .sigma import pack_items as sigma_items
 
 logger = logging.getLogger("nik.packs")
 
 MAX_BYTES = 20 * 1024 * 1024  # the file
 MAX_UNPACKED = 100 * 1024 * 1024  # what it holds, unpacked
-MAX_ENTRIES = 2000
+MAX_ENTRIES = 5000  # a rule set of Sigma is about 2,700 files
 MAX_ITEM = 5 * 1024 * 1024  # one item
 UPLOAD_SECONDS = 3600  # how long an inspected file waits to be applied
 DIFF_MAX = 8000
@@ -104,6 +107,7 @@ KINDS = (
     "mappers",
     "preprocess_rules",
     "dashboards",
+    "sigma_rules",
 )
 LABELS = {
     "fields": "Field",
@@ -115,9 +119,13 @@ LABELS = {
     "mappers": "Mapper",
     "preprocess_rules": "Pre-processing rule",
     "dashboards": "Dashboard",
+    "sigma_rules": "Sigma rule",
 }
+# The kinds that are kept as the text of a file, not read into a mapping: a connector, a rule of Sigma.
+TEXT_KINDS = frozenset({"connectors", "sigma_rules"})
+NOTICE_MAX = 20_000
 YAML_KINDS = frozenset({"connectors", "scripts"})
-NIK_VERSION = (6, 11, 0)
+NIK_VERSION = (7, 0, 0)
 BUILTIN_ID = "nik"  # the one pack that is part of Nik
 LOGO_NAMES = ("logo.svg", "logo.png")
 CRLF, LF = bytes((13, 10)), bytes((10,))
@@ -200,6 +208,8 @@ def clean_manifest(raw: Any) -> dict[str, Any]:
         "tags": tags,
         "requires": requires[:50],
         "nik": nik.replace(" ", ""),
+        # The licence or the notice of what the pack carries (the rules of a vendor): shown with the pack.
+        "notice": str(raw.get("notice") or "")[:NOTICE_MAX],
     }
 
 
@@ -222,7 +232,7 @@ def _parse(kind: str, path: PurePosixPath, raw: bytes) -> Any:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         raise PackError(f"{path} is not text") from None
-    if kind == "connectors":
+    if kind in TEXT_KINDS:
         return text
     try:
         data = yaml.safe_load(text) if kind in YAML_KINDS else json.loads(text)
@@ -285,6 +295,19 @@ def read(data: bytes) -> PackFile:
                     logo = archive.read(info)
                 continue  # a README beside it is nobody's business
             kind = path.parts[0]
+            if kind == sigma_items.FOLDER:
+                if path.suffix not in (".yml", ".yaml"):
+                    raise PackError(f"{path} is not a .yml file")
+                text = _parse("sigma_rules", path, archive.read(info))
+                try:
+                    found = sigma_items.name_of(text)
+                except ValueError as error:
+                    raise PackError(f"{path} {error}") from None
+                if ("sigma_rules", found.lower()) in seen:
+                    raise PackError(f'The pack holds the Sigma rule "{found}" twice')
+                seen.add(("sigma_rules", found.lower()))
+                items.append(Item("sigma_rules", found, text))
+                continue
             if kind not in KINDS or len(path.parts) != 2:
                 if kind in ("classifiers", "layouts"):
                     continue  # a classifier belongs to a connection, a layout to its type: neither travels alone
@@ -323,6 +346,11 @@ def _name_of(kind: str, data: Any, stem: str) -> str:
         except ConnectorError as error:
             first = error.problems[0].message if error.problems else "it cannot be read"
             raise PackError(f"connectors/{stem}: {first}") from None
+    if kind == "sigma_rules":
+        try:
+            return sigma_items.name_of(str(data))
+        except ValueError as error:
+            raise PackError(f"sigma/{stem} {error}") from None
     if kind == "mappers":
         return str(data.get("connector") or stem)
     if kind == "playbooks" and isinstance(data.get("playbook"), dict):
@@ -366,7 +394,7 @@ _Readable.add_representer(str, _block)
 
 def _text(kind: str, data: Any) -> str:
     """An item as the text of its file: what is written to a pack, and what two versions are compared by."""
-    if kind == "connectors":
+    if kind in TEXT_KINDS:
         return str(data)
     if kind in YAML_KINDS:
         return yaml.dump(data, Dumper=_Readable, sort_keys=False, allow_unicode=True, width=100)
@@ -408,7 +436,9 @@ def write(manifest: dict[str, Any], items: list[Item], logo: bytes | None = None
                 if readme:
                     put(f"connectors/{stem}/README.md", str(readme))
                 continue
-            put(f"{item.kind}/{stem}.{'yml' if item.kind in YAML_KINDS else 'json'}", _text(item.kind, item.data))
+            folder = sigma_items.FOLDER if item.kind == "sigma_rules" else item.kind
+            yml = item.kind in YAML_KINDS or item.kind == "sigma_rules"
+            put(f"{folder}/{stem}.{'yml' if yml else 'json'}", _text(item.kind, item.data))
     return held.getvalue()
 
 
@@ -479,6 +509,8 @@ def current(db: OrmSession, kind: str, name: str, *, with_items: bool = True) ->
     if kind == "connectors":
         row = db.get(Connector, name)
         return row.source if row is not None else None
+    if kind == "sigma_rules":
+        return sigma_items.texts(db, [name]).get(name)
     if kind == "scripts":
         row = _script(db, name)
         if row is None:
@@ -602,6 +634,9 @@ def names(db: OrmSession, kind: str) -> list[dict[str, Any]]:
 
     if kind == "connectors":
         return rows(db.scalars(select(Connector).order_by(Connector.name)), name=lambda row: row.id)
+    if kind == "sigma_rules":
+        found = db.scalars(select(SigmaRule).where(SigmaRule.pack == "").order_by(SigmaRule.title, SigmaRule.id))
+        return rows(found, name=lambda row: row.id, label=lambda row: row.title or row.id, builtin=lambda row: False)
     if kind == "scripts":
         return rows(db.scalars(select(Script).order_by(Script.name)))
     if kind == "playbooks":
@@ -715,7 +750,7 @@ def export(
 def _comparable(kind: str, data: Any) -> Any:
     """An item without what does not make it another item: the envelope of a playbook, the items of a list
     a pack does not carry."""
-    if kind == "connectors":
+    if kind in TEXT_KINDS:
         return str(data).strip()
     data = copy.deepcopy(data)
     if kind == "playbooks":
@@ -929,13 +964,40 @@ def requirement_problems(db: OrmSession, manifest: dict[str, Any], coming: Comin
     return found
 
 
+def _plan_sigma(item: Item, row: Any) -> dict[str, Any]:
+    """What applying a rule of Sigma does: ``add``; ``update`` with the difference; ``same``; or ``conflict``
+    for a rule written here with the id. A rule a person changed is kept as it is (``same``, with a
+    note): the text of the pack is kept beside it, and Reset puts it back."""
+    if row is None:
+        return {"action": "add"}
+    if not row.pack:
+        return {"action": "conflict", "why": "A rule written here has this id: delete it, or change its id"}
+    if sigma_items.kept_by_hand(row):
+        return {
+            "action": "same",
+            "note": "It was changed here: it is kept as it is, and Reset puts the text of the pack back.",
+        }
+    if row.source.strip() == str(item.data).strip():
+        return {"action": "same"}
+    return {"action": "update", "diff": _diff(item.kind, row.source, item.data)}
+
+
 def plan(db: OrmSession, pack: PackFile, coming: Coming | None = None) -> dict[str, Any]:
     """What applying the pack would do, item by item. Nothing is written. ``coming`` is what the packs
     installed before it in the same go bring: what it requires of them is not missing."""
     origin = {(row.kind, row.name.lower()): row.pack_id for row in db.scalars(select(PackItem)).all()}
     items = []
+    # The rules of Sigma are read together: a pack may carry thousands of them.
+    sigma_here = sigma_items.held(db, [item.name for item in pack.items if item.kind == "sigma_rules"])
     for item in pack.items:
         entry: dict[str, Any] = {"kind": item.kind, "name": item.name, "label": LABELS[item.kind]}
+        if item.kind == "sigma_rules":
+            entry.update(_plan_sigma(item, sigma_here.get(item.name)))
+            owner = origin.get((item.kind, item.name.lower()))
+            if owner and owner != pack.manifest["id"]:
+                entry["from"] = owner
+            items.append(entry)
+            continue
         here = current(db, item.kind, item.name, with_items=True)
         wrong = _shape_problem(item)
         theirs = ours = None
@@ -1126,6 +1188,7 @@ def apply(
     actions = {(entry["kind"], entry["name"]): entry for entry in found["items"]}
     done: dict[str, Any] = {"added": 0, "updated": 0, "same": 0, "skipped": 0, "mirroring": []}
     applied: list[Item] = []
+    rules_given: list[tuple[str, str, str]] = []
     for item in pack.items:
         entry = actions[(item.kind, item.name)]
         skipped = choices.get(f"{item.kind}/{item.name}") == "skip"
@@ -1136,6 +1199,12 @@ def apply(
             continue
         if skipped:
             done["skipped"] += 1
+            continue
+        if item.kind == "sigma_rules":
+            # Written together after the loop: the worker reads them 200 at a time, the rows go in by chunks.
+            rules_given.append((item.name, str(item.data), entry["action"]))
+            done["same"] += int(entry["action"] == "same")
+            applied.append(item)
             continue
         if entry["action"] == "same":
             done["same"] += 1
@@ -1163,7 +1232,19 @@ def apply(
             kept = _keep_direction(db, pack, item, named, actor)
             if kept:
                 done["mirroring"].append(kept)
-    remember(db, pack.manifest, [(item.kind, item.name) for item in applied], actor, logo=pack.logo, source=source)
+    if rules_given:
+        written = sigma_items.apply(db, pack.manifest["id"], rules_given, actor)
+        done["added"] += written["added"]
+        done["updated"] += written["updated"]
+    remember(
+        db,
+        pack.manifest,
+        [(item.kind, item.name) for item in applied],
+        actor,
+        logo=pack.logo,
+        source=source,
+        digests={item.name: sigma_items.digest(str(item.data)) for item in applied if item.kind == "sigma_rules"},
+    )
     return {"pack": pack.manifest, **done}
 
 
@@ -1232,6 +1313,8 @@ def digest(db: OrmSession, kind: str, name: str) -> str:
     """What an item is now, as a fingerprint: the same after someone changes it back, another after any
     change that makes it another item. Empty for one that is not here or cannot be read."""
     try:
+        if kind == "sigma_rules":
+            return sigma_items.digests(db, [name]).get(name, "")
         here = current(db, kind, name, with_items=True)
         if here is None:
             return ""
@@ -1262,6 +1345,7 @@ def remember(
     builtin: bool = False,
     logo: bytes | None = None,
     source: str = "file",
+    digests: dict[str, str] | None = None,
 ) -> Pack:
     """Write down that a pack is installed, and which items came from it (an item is of the last pack that
     gave it), each with what it was when the pack gave it: that is how a later change is told."""
@@ -1278,7 +1362,14 @@ def remember(
     db.flush()
     wanted = {(kind, name) for kind, name in items}
     db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
+    # What a pack gave of Sigma rules is written down by chunks, with the fingerprint of the text of the pack.
+    sigma = {name: (digests or {}).get(name) or "" for kind, name in wanted if kind == "sigma_rules"}
+    if sigma:
+        db.flush()
+        sigma_items.remember(db, row.id, sigma)
     for kind, name in sorted(wanted):
+        if kind == "sigma_rules":
+            continue
         db.execute(delete(PackItem).where(PackItem.kind == kind, func.lower(PackItem.name) == name.lower()))
         db.add(PackItem(kind=kind, name=name, pack_id=row.id, digest=digest(db, kind, name)))
     db.flush()
@@ -1291,10 +1382,20 @@ def _order(kind: str) -> int:
 
 def out(db: OrmSession, row: Pack) -> dict[str, Any]:
     items = db.scalars(select(PackItem).where(PackItem.pack_id == row.id)).all()
+    rules_now = sigma_items.digests(db, [item.name for item in items if item.kind == "sigma_rules"])
+
+    def there(item: PackItem) -> bool:
+        if item.kind == "sigma_rules":
+            return item.name in rules_now
+        return current(db, item.kind, item.name, with_items=False) is not None
+
+    def changed(item: PackItem) -> bool:
+        now = rules_now.get(item.name, "") if item.kind == "sigma_rules" else digest(db, item.kind, item.name)
+        return bool(item.digest) and item.digest != now
+
     shown = [
         {"kind": item.kind, "name": item.name, "label": LABELS.get(item.kind, item.kind),
-         "there": current(db, item.kind, item.name, with_items=False) is not None,
-         "changed": bool(item.digest) and item.digest != digest(db, item.kind, item.name)}
+         "there": there(item), "changed": changed(item)}
         for item in sorted(items, key=lambda entry: (_order(entry.kind), entry.name))
     ]  # fmt: skip
     return {
@@ -1304,6 +1405,7 @@ def out(db: OrmSession, row: Pack) -> dict[str, Any]:
         "description": row.description,
         "author": row.author,
         "vendor": (row.manifest or {}).get("vendor") or "",
+        "notice": (row.manifest or {}).get("notice") or "",
         "category": (row.manifest or {}).get("category") or "",
         "tags": (row.manifest or {}).get("tags") or [],
         "source": row.source or "file",
@@ -1338,6 +1440,7 @@ def forget(db: OrmSession, row: Pack) -> None:
     needed = _requiring(db, row)
     if needed:
         raise PackError(f'The pack "{needed[0]}" requires it', 409)
+    sigma_items.release(db, row.id)
     db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
     db.delete(row)
 
@@ -1552,10 +1655,16 @@ def uninstall_plan(db: OrmSession, row: Pack, leaving: Leaving | None = None) ->
                 }
             )
     entries: dict[tuple[str, str], dict[str, Any]] = {}
-    for item in db.scalars(select(PackItem).where(PackItem.pack_id == row.id)).all():
+    gave = db.scalars(select(PackItem).where(PackItem.pack_id == row.id)).all()
+    rules_now = sigma_items.digests(db, [item.name for item in gave if item.kind == "sigma_rules"])
+    for item in gave:
         entry = {"kind": item.kind, "name": item.name, "label": LABELS.get(item.kind, item.kind), "why": ""}
-        now = digest(db, item.kind, item.name)
-        if current(db, item.kind, item.name, with_items=False) is None:
+        if item.kind == "sigma_rules":
+            now, here = rules_now.get(item.name, ""), item.name in rules_now
+        else:
+            now = digest(db, item.kind, item.name)
+            here = current(db, item.kind, item.name, with_items=False) is not None
+        if not here:
             entry.update(action="gone", why="It is not here any more")
         elif item.digest and now != item.digest:
             entry.update(action="keep", why="It was changed here")
@@ -1621,12 +1730,15 @@ def uninstall(db: OrmSession, row: Pack) -> dict[str, Any]:
     if found["held"]:
         raise PackHeld(row.name, found["held"])
     removed = []
+    rules_going: list[str] = []
     # What uses goes before what is used.
     for entry in sorted(found["items"], key=lambda entry: -_order(entry["kind"])):
         if entry["action"] != "remove":
             continue
         kind, name = entry["kind"], entry["name"]
-        if kind == "connectors":
+        if kind == "sigma_rules":
+            rules_going.append(name)  # deleted together below
+        elif kind == "connectors":
             db.delete(db.get(Connector, name))
             mapping.forget_default_classifier(db, name)
         elif kind == "mappers":
@@ -1648,6 +1760,8 @@ def uninstall(db: OrmSession, row: Pack) -> dict[str, Any]:
             db.delete(_rule(db, name))
         db.flush()
         removed.append(entry)
+    sigma_items.remove(db, rules_going)
+    sigma_items.release(db, row.id)
     db.execute(delete(PackItem).where(PackItem.pack_id == row.id))
     db.delete(row)
     db.flush()

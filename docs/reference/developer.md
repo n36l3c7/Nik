@@ -1,6 +1,6 @@
 # Developer guide
 
-Run Nik from source, run its checks, and extend it: a new kind of evidence, detection rules, automation, connectors.
+Run Nik from source, run its checks, and extend it: a parser of host evidence, Sigma rules and log sources, a tab, automation, connectors.
 
 !!! warning "Never run a sample"
     Nothing in this project executes evidence. Never run a sample to see what it does, on your machine or on a server that runs Nik.
@@ -51,7 +51,7 @@ You need **Python 3.12** and **Node.js 22.12 or later** (20.19 also works). No d
     # backend/.env: CAPA_URL=http://127.0.0.1:8710  CAPA_TOKEN=dev-capa-token
     ```
 
-    The others follow the same pattern (`docview` 8720, `browser` 8730, `pcap` 8740, `sandbox` 8750). Each worker has its own checks: `cd workers/<name> && ruff check . && python -m pytest tests`.
+    The others follow the same pattern (`docview` 8720, `browser` 8730, `pcap` 8740, `sandbox` 8750, `forensics` 8760 with `FORENSICS_TOKEN`; the backend's `.env` then has `FORENSICS_URL` and `FORENSICS_TOKEN`: without them host evidence is kept and not read). Each worker has its own checks: `cd workers/<name> && ruff check . && python -m pytest tests`.
 
 ## Checks
 
@@ -98,9 +98,49 @@ In the container, migrations run through `python -m app.backups.upgrade`: snapsh
 3. A migration does not touch the files of the store. One that must says so in its docstring and the release notes, sets `touchesStore` in the facts the upgrade records (`_snapshot` in `backend/app/backups/upgrade.py`) and takes the snapshot as a full backup; otherwise `deploy/rollback.sh` refuses to put the database back alone.
 4. A migration that adds a view, a trigger or a function also teaches the backups to carry it (`backend/app/backups/database.py`).
 
-## Add a new kind of evidence
+## Add a parser of host evidence
 
-`frontend/src/config/tabs.js` is the only existing file to change. Example: "DNS Logs".
+A parser is a module of the forensics worker: `workers/forensics/nik_forensics/parsers/<name>.py`. The worker runs each file in a process of its own and streams what the parser says; the backend turns it into rows and into the parse report. Read `parsers/__init__.py` (the interface), `context.py` (what a parser can say) and one parser near yours: `evtx.py` for a binary format with a scanner and a viewer, `endpoint.py` for CSV and SQLite artifacts, `history.py` for a text log.
+
+| A module has | What it is |
+| --- | --- |
+| `NAME`, `VERSION` | Its name (what `evidence_sources.parser` keeps) and a text that **changes when what it gives for the same file changes**: a file read by an older version offers **Analyse again** |
+| `KIND` | The section its records show in: `eventlog`, `endpoint`, `browser`, `commands`, `disk`, `syslog` |
+| `SOURCES` | Every source it reads, as the section names them (`windows.execution.prefetch`) |
+| `sniff(path, name, head)` | The source the file is, from its first 4,096 bytes and its name, or `None`. Content first, name second; cheap, never raises; **never guess a CSV** |
+| `parse(path, ctx, source)` | Read the file and tell `ctx`: `ctx.source(…)` first, then `ctx.record(…)`, `ctx.skip(…)`, `ctx.note(…)`, and `ctx.end(in_file=…)` |
+| `view(path, source, loc)` | Show the piece of the original a record came from, from the `loc` the parser wrote for it: `{"kind": "xml" \| "fields" \| "text" \| "json", "title", "where", …}`. Read around the place, never the whole file when the format lets it be found |
+
+Add the name to `NAMES` in `parsers/__init__.py`, in the order files are tried when they come with no source. A parser imports a heavy library inside its functions: when it is missing, only that parser fails to load.
+
+### What a parser must do
+
+The integrity contract of 7.0: a file is never reported as read when it was not.
+
+1. **Count what is in the file by a means independent of the library** when the format allows (a scanner over the structure: entries, cells, records) and give it to `ctx.end(in_file=…)`. What the library drops silently is found by comparing the counts, and said.
+2. **`ctx.skip(reason, offset=, length=, lost=, detail=)` only when data was lost** (an unreadable record, a damaged block, a limit hit): the file becomes **read in part**. **`ctx.note(reason, count=, detail=)`** for what loses nothing (rows without a time, empty slots, a state that is dirty but readable). A reason is a short lower-case sentence an analyst understands; reuse the words of the existing parsers.
+3. **Keys are stable natural keys**: the same record read twice, or from an overlapping file, has the same key (`mft:<volume or host>:<entry>:<sequence>`, `usn:<host>:<usn>`, `reg:<host>:<hive>:<key path>:<value>`). Never a counter of the run. 300 characters at most (`ctx.key_of`). Flags and notes are kept by key.
+4. **Times** are epoch milliseconds, UTC. A record with several times uses the one that matters most for a timeline as `ts` and keeps the others in `data` under clear names.
+5. **`loc`** is what `view` needs to find the record again (offsets, entry numbers, a key path): small.
+6. **Indicators** only from fields that are indicators (`ioc=[[type, value]]`: hashes of an Amcache, addresses and domains of a network record), never from free text.
+7. **Limits.** A job has memory and CPU limits ([`FORENSICS_JOB_MEMORY_MB`](configuration.md#FORENSICS_JOB_MEMORY_MB)): stream, never load a whole large file (`mmap`, chunked reads), and when a cap is hit, `skip` with what was left out.
+8. **Every source gets its hint**: where the file is on the system and how to collect it. The pages show it in the empty state ("where to find these files").
+9. A parser that cannot go on raises: what it said is kept, and the file is reported read in part.
+10. A record that also is a process or a logon is said with `ctx.process(…)` and `ctx.logon(…)` (stage 7 parsers: evtx, syslog); the backend links them.
+
+### Tests and fixtures
+
+- Tests are in `workers/forensics/tests/test_<name>.py`; run them with the worker's checks: `cd workers/forensics && ruff check . && python -m pytest tests`, in a container for the worker's own dependencies.
+- **Generated fixtures only**, built by the test or by a small generator kept in `tests/` (`artifact_gen.py`, `hive_builder.py`, `ntfs_fixtures.py`), or a tiny real sample with a permissive licence recorded in `tests/fixtures/README.md` (name, origin, licence, how it was made). No network in tests. Never execute a sample.
+- Test the contract, not only the happy path: the count in the file against the records read, a damaged block that makes a `skip`, a stable key when the file is read twice, `view` from a `loc`, and a record cut by `MAX_VALUE`.
+- **No GPL or AGPL dependency**, and none of the `dissect.*` packages. A new library needs a permissive or LGPL licence, wheels for x86_64 and aarch64, and a line in the changelog.
+- Say in the page's box **What Nik has and has not been tried on** whether the parser was proved on real files or on generated ones.
+
+The page that shows the records is not a new tab: it reads the tables with the shared components (`Tabs`, `SourceFiles`, `ServerTable`, the source viewer, `StackPanel`) and the API under [Host evidence](api.md#host-evidence).
+
+## Add a tab for another kind of data
+
+Evidence that is not host evidence (a kind of your own that lives in the incident document) is registered in `frontend/src/config/tabs.js`. Example: "DNS Logs".
 
 1. **Create the component** `frontend/src/components/tabs/DnsLogsTab.jsx`. It receives the incident and stores its data with `updateTabData`:
 
@@ -161,31 +201,32 @@ In the container, migrations run through `python -m app.backups.upgrade`: snapsh
     },
     ```
 
-3. **Nothing else is needed.** New incidents get the `dataKey`; existing ones get `defaultData` when loaded (`normalizeIncident()`), with no migration. To show a count under the kind's name, add it to `ITEMS` or `COUNTS` in `frontend/src/domain/evidence.js`. For uploads through the API, add a parser in `backend/app/parsing/`.
+3. **Nothing else is needed.** New incidents get the `dataKey`; existing ones get `defaultData` when loaded (`normalizeIncident()`), with no migration. To show a count under the kind's name, add it to `ITEMS` or `COUNTS` in `frontend/src/domain/evidence.js`.
 
-## Detection rules
+!!! note "A tab is not the way for a big file"
+    Data in the incident document is read and written whole with the document. A file that is large, that must keep its original, or that needs a report and a viewer is **host evidence**: a parser, above.
 
-Analysts edit keyword rules and business hours in the app. In code, the engine has three parts:
+## Sigma rules and log sources
 
-| File | Holds |
-| --- | --- |
-| `frontend/src/config/detectionRules.js` | Factory defaults: `DEFAULT_SUSPICIOUS_KEYWORDS`, `DEFAULT_BUSINESS_HOURS` (8 to 18, weekends outside) |
-| `frontend/src/context/SettingsContext.jsx` | Runtime state (`useSettings()`) and `useSocEngine()` |
-| `frontend/src/domain/soc.js` | `createSocEngine({ keywords, businessHours })` and `engine.analyze(entry)` |
+Detection on host evidence is Sigma, run by the worker (`workers/forensics/nik_forensics/sigma/`). Analysts write rules in **Settings › Rule sets › Sigma rules**; the rules Nik ships are the files of `backend/app/sigma/pack/` (the **Nik** pack) and `backend/app/sigma/pack_chains/` (**Nik process chains**).
 
-A default keyword rule is an object; the regex is case-insensitive and applied to URL, title and file name:
+A built-in rule is a Sigma YAML file with a fixed `id` (a UUID: it is how a rule is found again), a `title`, a `level` (`informational` to `critical`; none means medium), and `logsource`. A correlation rule names the rules it counts by a `name` they carry.
 
-```js
-{
-  id: 'rat-tools',
-  label: 'RAT / C2',
-  pattern: '\\brat\\b|cobalt[-_ ]?strike|meterpreter|\\bc2\\b',  // \\b avoids "administrator"
-  severity: 'high',   // 'high' (red) | 'medium' (amber)
-  description: 'References to a Remote Access Trojan or a C2 framework.',
-},
-```
+| Part | Where | What it does |
+| --- | --- | --- |
+| `sigma/logsource.py` | the worker | Which records a `logsource` applies to: `CATEGORY` (Sigma categories to a channel and event ids), `SERVICE` (services to channels), the products `windows`, `linux`, `macos` and Nik's own `nik` (`commands`, `endpoint`, `browser`, `process-chain`). A record is placed by `(kind, channel, event_id)` |
+| `sigma/compile.py`, `engine.py` | the worker | pySigma parses a rule; Nik's evaluator compiles the detection to checks on the record's fields and runs it. The field `NikOffHours` is true outside the working hours |
+| `sigma/correlate.py` | the worker | The correlations `event_count`, `value_count`, `temporal` and `temporal_ordered`, one level of nesting, per file |
+| `backend/app/sigma/` | the backend | The rules in the database, the packs, the `try` and the `recheck`, and the detections it writes |
 
-A new kind of detection is a function in `soc.js`, included in `analyze()`, and shown as a badge in `EventsSection.jsx` (and in `computeSocStats` if it should count).
+To add a **log source**:
+
+1. In `logsource.py`, add the category or service to its table with the channels and event ids (or the `extra` condition on a field) a record has. A log source whose records Nik cannot make raises `NoRecords` with the sentence an analyst reads in the list of rules that cannot run.
+2. If the records come from a new parser, make sure it gives the fields the rules name, with the names of Sigma (the evaluator gives a Security event the field names of the Sysmon event it is equivalent to, so one rule serves both).
+3. Add rules to the pack, a test in `tests/test_sigma_*.py` that runs one record through the rule and one that must not match, and, if the pack grows, the count in the pack test.
+4. **A rule that is a Sigma rule of SigmaHQ is not copied into the repository**: its licence (Detection Rule License 1.1) asks that its author be named. It is a content pack to install, with a `notice`.
+
+A **content pack** carries Sigma rules in a `sigma/` folder, one rule document in each `.yml` ([The pack format](connector-format.md#the-pack-format), `packs/README.md`).
 
 ## Extend automation
 

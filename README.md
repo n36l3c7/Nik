@@ -27,7 +27,9 @@
 ## What it does
 
 - **Incidents worked as a team**: one timeline of every event, a War Room for what was said and done, owners, SLAs and a report at the end.
-- **Evidence analysis**: reported e-mails, malware samples (never executed), network captures, links visited by an isolated browser, host artifacts and event logs.
+- **Evidence analysis**: reported e-mails, malware samples (never executed), network captures, links visited by an isolated browser.
+- **Host evidence**: event logs, registry hives, Prefetch, `$MFT`, browser history and whole triage collections, kept as given, read in an isolated worker, with the original of every record one click away, process trees and a lateral movement graph.
+- **Sigma detection**: run on every record as a file is read; your own rules, with a test on an incident, and the public SigmaHQ rules as two packs you build from your own checkout and install.
 - **Indicators** found by themselves in what comes in, checked against threat intelligence, exported as CSV, STIX 2.1 or MISP.
 - **Playbooks** drawn on a canvas, with approvals and Python scripts in a sandbox.
 - **Connectors** for Jira, ServiceNow, SentinelOne, mailboxes and more, mirrored both ways, or your own written in YAML.

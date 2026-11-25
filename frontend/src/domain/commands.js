@@ -1,67 +1,47 @@
 /*
- * ============================================================================
- * COMMAND EVENT MODEL — Command History tab
- * ============================================================================
- *
- * Shell-history entries are normalized into the same event shape used by the
- * browser sections (`eventType`, `time`, `soc`), so flags, the Summary
- * timeline and the SOC engine work identically for commands.
+ * What the Command History page (components/tabs/commands) works out from the files of the server.
  */
 
 /**
- * Enriches raw command entries with `eventType`, `kind` and `soc`.
- * The command line is passed to the engine as `title`, which is part of the
- * keyword haystack (url + title + fileName).
- * @returns Array sorted by time desc (entries without a time sink last).
+ * The files of a command history, by shell: `{ [shell]: { sources, count, partial } }`. `partial` is a file read
+ * in part that nobody looked at (the yellow dot of the selector); the count is what was kept.
  */
-export function buildCommandEvents({ commands = [], engine }) {
-  const events = commands.map((entry) => {
-    const event = {
-      ...entry,
-      kind: 'command',
-      eventType: 'command',
-      time: Number.isFinite(entry.time) ? entry.time : null,
-      title: entry.command,
-    }
-    event.soc = engine.analyze({ kind: 'command', title: entry.command, time: event.time })
-    return event
-  })
-  return events.sort((a, b) => (b.time ?? -Infinity) - (a.time ?? -Infinity))
+export function groupByShell(sources = []) {
+  const groups = {}
+  for (const source of sources) {
+    const group = (groups[source.source] ??= { sources: [], count: 0, partial: false })
+    group.sources.push(source)
+    group.count += Number.isFinite(source.kept) ? source.kept : 0
+    if (source.state === 'done' && source.read === 'partial' && !source.seen) group.partial = true
+  }
+  return groups
 }
 
-// Leading tokens that wrap the real executable and should be skipped when
-// ranking binaries (plus VAR=value environment assignments).
-const WRAPPER_TOKENS = new Set(['sudo', 'time', 'nohup', 'env', 'doas', 'nice', 'xargs'])
+/** The distinct non-empty values of a field of the files (`username`, `host`), sorted. */
+export function distinctOf(sources = [], field) {
+  return [...new Set(sources.map((source) => source[field]).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+}
 
 /**
- * First "real" executable of a command line: skips sudo/env wrappers and
- * VAR=value assignments, strips the directory part of the path.
+ * The order the commands of a shell open in: the newest first when any file has times, else by time too in
+ * its ascending form, which lists the commands without a time file by file, each in its own order.
  */
-export function extractBinary(command) {
-  const tokens = String(command ?? '')
-    .trim()
-    .split(/\s+/)
-  for (const token of tokens) {
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) continue // env assignment
-    const bare = token.replace(/^["']|["']$/g, '')
-    const base = bare.split(/[\\/]/).pop()?.toLowerCase() ?? ''
-    if (!base) continue
-    if (WRAPPER_TOKENS.has(base)) continue
-    return base
-  }
-  return null
+export function defaultOrderFor(sources = []) {
+  return sources.length > 0 && sources.every((source) => source.firstTs == null && source.lastTs == null)
+    ? 'time'
+    : '-time'
 }
 
-/** Top N executables by frequency: [{ binary, count }] sorted descending. */
-export function topBinaries(commands = [], limit = 5) {
-  const counts = new Map()
-  for (const entry of commands) {
-    const binary = extractBinary(entry.command)
-    if (!binary) continue
-    counts.set(binary, (counts.get(binary) ?? 0) + 1)
-  }
-  return [...counts.entries()]
-    .map(([binary, count]) => ({ binary, count }))
-    .sort((a, b) => b.count - a.count || a.binary.localeCompare(b.binary))
-    .slice(0, limit)
+/** The number shown in "#": the line of the command in its file (the worker's), else its place (`seq` counts from 0). */
+export function lineOf(row) {
+  const line = row?.data?.line
+  if (Number.isFinite(line)) return line
+  return Number.isFinite(row?.seq) ? row.seq + 1 : null
+}
+
+/** The sentence under "With timestamp" when the shell keeps none. */
+export function noTimeText(shellLabel, withTime, total) {
+  return total > 0 && withTime === 0
+    ? `${shellLabel} history keeps none: listed file by file, in file order`
+    : undefined
 }

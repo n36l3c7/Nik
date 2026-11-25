@@ -1,0 +1,24 @@
+title: 'Successful Logon After Failed Logons (Linux)'
+id: 02041455-9968-4ae8-a45a-cc6509888a43
+name: nik_linux_logon_after_failures
+status: stable
+description: 'A successful logon of an account after five or more failed logons of it within thirty minutes.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.credential-access
+    - attack.initial-access
+    - attack.t1110
+    - attack.t1078
+correlation:
+    type: temporal_ordered
+    rules:
+        - nik_linux_repeated_failed_logons
+        - nik_linux_successful_logon
+    group-by:
+        - User
+    timespan: 30m
+    generate: false
+falsepositives:
+    - A person who mistyped the password five times, or a service whose password has just been corrected
+level: high

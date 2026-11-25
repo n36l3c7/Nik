@@ -1,0 +1,21 @@
+title: 'Browser: Mega Cloud Storage'
+id: 57542ad5-e811-4a7c-a091-6adbbc8afc69
+status: stable
+description: 'A page of encrypted cloud storage, a frequent way to send data out or to fetch unauthorised tools.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - 'mega.nz'
+        - title|contains:
+              - 'mega.nz'
+        - fileName|contains:
+              - 'mega.nz'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: medium

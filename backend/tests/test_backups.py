@@ -373,7 +373,7 @@ def test_a_backup_that_fails_leaves_nothing_that_looks_like_one(backups, monkeyp
     folder.mkdir()
     (folder / "nik-20200101-000000.nikbak.partial").write_bytes(b"left by a run that died")
 
-    def breaks(writer, root):
+    def breaks(writer, root, target=None):
         with writer.part("store.tar") as part:
             part.write(b"half")
             raise OSError("the disk went away")
@@ -451,8 +451,8 @@ def test_the_restore_test_fails_a_store_that_is_not_what_was_read(backups, monke
     set_phrase(backups)
     real = store.pack
 
-    def other_index(writer, root):
-        held = real(writer, root)
+    def other_index(writer, root, target=None):
+        held = real(writer, root, target)
         return {**held, "files": held["files"] + 1}
 
     monkeypatch.setattr(store, "pack", other_index)
@@ -651,7 +651,7 @@ def test_a_backup_asked_for_from_the_command_line_is_the_same_backup(backups, ca
     assert (row.state, row.verify_state, row.requested_by) == ("done", "passed", "deploy/backup.sh")
     assert audit_lines("backup.request") == [f"Asked for the backup {row.id}"]
     # One that fails says so, and the script that waits for it exits with 1.
-    monkeypatch.setattr(store, "pack", lambda writer, root: (_ for _ in ()).throw(OSError("no such disk")))
+    monkeypatch.setattr(store, "pack", lambda writer, root, target=None: (_ for _ in ()).throw(OSError("no such disk")))
     assert now.main(wait=60) == 1
     assert "failed: no such disk" in capsys.readouterr().err
 
@@ -674,7 +674,7 @@ def test_one_notice_per_problem_and_one_when_it_is_solved(backups, monkeypatch):
         config._keep(db, {**config.read(db), "scheduleSetAt": 0, "passphraseSetAt": T0 - 60})
         db.commit()
     assert watch.check(T0, usage=roomy) == []
-    monkeypatch.setattr(store, "pack", lambda writer, root: (_ for _ in ()).throw(OSError("no such disk")))
+    monkeypatch.setattr(store, "pack", lambda writer, root, target=None: (_ for _ in ()).throw(OSError("no such disk")))
     runner.take(now=T0 + 10)
     assert watch.check(T0 + 20, usage=roomy) == ["problem:failed"]
     assert watch.check(T0 + 80, usage=roomy) == [], "nothing in between"

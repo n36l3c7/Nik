@@ -3,6 +3,7 @@ import {
   Braces,
   Bug,
   Crosshair,
+  Database,
   FolderSearch,
   Globe,
   HardDrive,
@@ -16,9 +17,6 @@ import {
   ScrollText,
   TerminalSquare,
 } from 'lucide-react'
-import { buildDefaultBrowsersMap, BROWSERS } from './browsers.js'
-import { buildDefaultShellsMap, SHELLS } from './shells.js'
-import { buildDefaultArtifactsMap } from './artifacts.js'
 
 /*
  * ============================================================================
@@ -55,6 +53,7 @@ const SummaryTab = lazy(() => import('../components/tabs/summary/SummaryTab.jsx'
 const BrowserAnalysisTab = lazy(() => import('../components/tabs/browser/BrowserAnalysisTab.jsx'))
 const CommandHistoryTab = lazy(() => import('../components/tabs/commands/CommandHistoryTab.jsx'))
 const EndpointArtifactsTab = lazy(() => import('../components/tabs/endpoint/EndpointArtifactsTab.jsx'))
+const DiskTab = lazy(() => import('../components/tabs/disk/DiskTab.jsx'))
 const EventLogsTab = lazy(() => import('../components/tabs/eventlogs/EventLogsTab.jsx'))
 const MalwareAnalysisTab = lazy(() => import('../components/tabs/malware/MalwareAnalysisTab.jsx'))
 const MailAnalysisTab = lazy(() => import('../components/tabs/mail/MailAnalysisTab.jsx'))
@@ -213,13 +212,17 @@ export const ANALYSIS_TABS = [
     group: 'host',
     icon: HardDrive,
     component: EndpointArtifactsTab,
-    dataKey: 'endpoint',
-    // Endpoint data is organized PER CATEGORY (execution/persistence/
-    // fileaccess/usb): each holds its own records array and imported-file
-    // metadata. See config/artifacts.js.
-    defaultData: {
-      categories: buildDefaultArtifactsMap(),
-    },
+    // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
+  },
+  {
+    id: 'disk',
+    evidence: true,
+    label: 'Disk (NTFS)',
+    short: 'Disk',
+    group: 'host',
+    icon: Database,
+    component: DiskTab,
+    // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
   },
   {
     id: 'eventlogs',
@@ -229,13 +232,7 @@ export const ANALYSIS_TABS = [
     group: 'host',
     icon: ScrollText,
     component: EventLogsTab,
-    dataKey: 'eventlogs',
-    // Windows event logs PER CHANNEL (Security, System, PowerShell…): each
-    // holds its curated events and the imported file's metadata and coverage.
-    // See config/eventLogs.js and domain/eventLogs.js.
-    defaultData: {
-      channels: {},
-    },
+    // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
   },
   {
     id: 'browser',
@@ -245,14 +242,7 @@ export const ANALYSIS_TABS = [
     group: 'host',
     icon: Globe,
     component: BrowserAnalysisTab,
-    dataKey: 'browser',
-    // Browser data is organized PER BROWSER (Chrome/Firefox/Edge/Brave/Opera):
-    // each browser has its own arrays (history, downloads, bookmarks,
-    // shortcuts) and imported-file metadata. See config/browsers.js.
-    defaultData: {
-      activeBrowser: BROWSERS[0].id,
-      browsers: buildDefaultBrowsersMap(),
-    },
+    // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
   },
   {
     id: 'commands',
@@ -262,14 +252,7 @@ export const ANALYSIS_TABS = [
     group: 'host',
     icon: TerminalSquare,
     component: CommandHistoryTab,
-    dataKey: 'commands',
-    // Command data is organized PER SHELL (Bash/Zsh/Fish/PowerShell): each
-    // shell has its own commands array and imported-file metadata. See
-    // config/shells.js.
-    defaultData: {
-      activeShell: SHELLS[0].id,
-      shells: buildDefaultShellsMap(),
-    },
+    // Host evidence lives on the server (evidence sources and records): nothing of it is kept in the document.
   },
 ]
 

@@ -1,0 +1,21 @@
+title: 'Browser: Text Sharing Service'
+id: 1c6add62-b120-464d-b7b8-ade3029d6fcf
+status: stable
+description: 'A page of a text sharing service, often used to send data out or to deliver a payload.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - 'pastebin'
+        - title|contains:
+              - 'pastebin'
+        - fileName|contains:
+              - 'pastebin'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: medium

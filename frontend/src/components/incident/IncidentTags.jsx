@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { useCanWrite } from '../../lib/useCanWrite.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { TAGS_FIELD, addTag, removeTag, suggestTags, tagsInUse } from '../../domain/incidentTags.js'
 import { api } from '../../services/api.js'
@@ -44,9 +44,8 @@ export default function IncidentTags({
   empty = '',
   className = '',
 }) {
-  const { can } = useAuth()
   const { incidents, refreshIncidents, retryActiveIncident } = useIncidents()
-  const canWrite = can('write')
+  const canWrite = useCanWrite()
   const listId = useId()
   const inputRef = useRef(null)
   // What was saved from here and the lists have not caught up with yet.

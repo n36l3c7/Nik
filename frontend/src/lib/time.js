@@ -22,33 +22,6 @@ export function webkitToMs(webkitMicroseconds) {
 }
 
 /**
- * Converts a Firefox "PRTime" timestamp (microseconds since 1970, such as
- * `moz_historyvisits.visit_date` or `moz_bookmarks.dateAdded`) to Unix epoch ms.
- * Unlike Chrome, Firefox does NOT use the 1601 epoch: just divide by 1000.
- * Returns null for missing or non-numeric values.
- */
-export function firefoxToMs(prTimeMicroseconds) {
-  const us = Number(prTimeMicroseconds)
-  if (!Number.isFinite(us) || us <= 0) return null
-  return Math.round(us / 1000)
-}
-
-/** Seconds between the 2001 epoch (Mac absolute / Cocoa time) and the 1970 epoch. */
-export const MAC_EPOCH_OFFSET_S = 978307200
-
-/**
- * Converts a Mac absolute time (seconds since 2001-01-01 UTC, possibly
- * fractional, such as Safari's `history_visits.visit_time` or a plist date) to
- * Unix epoch ms. Returns null for missing or non-numeric values.
- */
-export function macToMs(seconds) {
-  if (seconds === null || seconds === undefined || seconds === '') return null
-  const s = Number(seconds)
-  if (!Number.isFinite(s)) return null
-  return Math.round((s + MAC_EPOCH_OFFSET_S) * 1000)
-}
-
-/**
  * Interprets an "arbitrary" time value coming from CSV/JSON exports of
  * forensic tools and normalizes it to Unix epoch ms:
  *  - number > 1e14  => WebKit microseconds

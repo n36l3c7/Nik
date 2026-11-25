@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import artifacts
+from .. import archive, artifacts
 from ..core.db import get_db
 from ..core.models import Incident, NetworkCapture
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
@@ -117,6 +117,7 @@ async def open_session(
     incident = db.get(Incident, body.incident) if body.incident else None
     if body.incident and incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    archive.guard(incident)
     html, url, target = None, None, ""
     if body.url is not None:
         url = _check_url(body.url)

@@ -144,7 +144,8 @@ def save_reference(db: OrmSession, row: NetworkCapture, remove: bool = False) ->
     if not remove:
         artifacts.register_capture(db, row)
     incident = lock_incident(db, row.incident_id)
-    if incident is None:
+    # An archived incident is not written to; a capture that is deleted leaves it all the same.
+    if incident is None or (incident.archived_at and not remove):
         return
     doc = dict(incident.doc or {})
     refs = [r for r in _refs(doc) if r.get("id") != row.id]

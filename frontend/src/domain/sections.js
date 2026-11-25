@@ -31,7 +31,7 @@ export const RAIL_SECTIONS = [
 ]
 
 /** The section of Settings its entry opens. */
-export const SETTINGS_HOME = 'detection'
+export const SETTINGS_HOME = 'hours'
 
 const pathOnly = (path) => String(path ?? '').split('?')[0]
 // The start and /incidents both show the list of incidents.

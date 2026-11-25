@@ -29,6 +29,7 @@ from .core.models import (
     Artifact,
     ArtifactLink,
     ArtifactRelation,
+    EvidenceSource,
     Incident,
     Mail,
     NetworkCapture,
@@ -39,10 +40,11 @@ from .core.security import now_iso
 
 logger = logging.getLogger("nik.artifacts")
 
-KINDS = ("file", "mail", "pcap", "url", "mailbox")
+# ``hostfile``: the original of a file of host evidence (7.0, ``evidence/originals.py``).
+KINDS = ("file", "mail", "pcap", "url", "mailbox", "hostfile")
 TAG_RE = re.compile(r"[a-z0-9][a-z0-9._:-]{0,39}")
 TAGS_MAX = 12
-_ID_RE = re.compile(r"(file|mail)-[0-9a-f]{64}|(pcap|url|mailbox)-[0-9a-f]{32}")
+_ID_RE = re.compile(r"(file|mail|hostfile)-[0-9a-f]{64}|(pcap|url|mailbox)-[0-9a-f]{32}")
 
 
 def artifact_id(kind: str, ref: str) -> str:
@@ -214,6 +216,14 @@ def sync_links(
         wanted.add(register_capture(db, capture).id)
     for scan in (urls or {}).values():
         wanted.add(register_url(db, scan).id)
+    # The originals of its host evidence are not in the document: its evidence_sources say which.
+    wanted.update(
+        artifact_id("hostfile", sha256)
+        for sha256 in db.scalars(
+            select(EvidenceSource.sha256).where(EvidenceSource.incident_id == incident.id, EvidenceSource.sha256 != "")
+        )
+        if db.get(Artifact, artifact_id("hostfile", sha256)) is not None
+    )
     db.flush()
     current = set(db.scalars(select(ArtifactLink.artifact_id).where(ArtifactLink.incident_id == incident.id)))
     gone = current - wanted

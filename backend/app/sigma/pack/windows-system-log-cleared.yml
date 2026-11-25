@@ -1,0 +1,24 @@
+title: Windows System Event Log Cleared
+id: d05e39f7-ccaa-44af-83a3-c4430fb08b6b
+status: stable
+description: >
+    The System event log was cleared (event 104 of the Eventlog provider). Clearing a log removes the
+    record of what happened on the machine.
+references:
+    - https://learn.microsoft.com/en-us/windows/win32/eventlog/eventlog-key
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1070.001
+logsource:
+    product: windows
+    service: system
+detection:
+    selection:
+        EventID: 104
+        Provider_Name: Microsoft-Windows-Eventlog
+    condition: selection
+falsepositives:
+    - A planned maintenance that clears the log
+level: high

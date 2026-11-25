@@ -1,0 +1,21 @@
+title: 'Windows Audit Policy Changed'
+id: 0b200996-999e-4396-b858-8d6761287cf0
+status: stable
+description: 'The audit policy of the machine was changed (event 4719); attackers turn auditing off to hide what they do.'
+references:
+    - https://attack.mitre.org/techniques/T1562/002/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1562.002
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID: 4719
+    condition: selection
+falsepositives:
+    - An administrator or a Group Policy that changes the audit settings
+level: medium

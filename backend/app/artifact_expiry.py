@@ -9,6 +9,10 @@ before, ``artifact.expiring`` says so once.
 An artifact that an incident which is not closed still references is **not**
 deleted: its date is put off by a week, and the artifact says why. Evidence
 of work in progress does not disappear because a date was set months ago.
+
+The original of host evidence (``hostfile``) never expires while an incident holds
+it as evidence, closed or not: its date is put off the same way. Once no incident
+holds it, it expires like the others and the original is removed.
 """
 
 from __future__ import annotations
@@ -115,6 +119,21 @@ def tick(db: OrmSession, now: float | None = None) -> dict[str, int]:
         if done["expired"] >= PER_TICK:
             break
         held = open_incident(db, row)
+        if row.kind == "hostfile":
+            from .evidence import originals
+
+            count = originals.holders(db, row.ref)
+            if count:
+                later = (current + timedelta(days=PUT_OFF_DAYS)).isoformat()
+                row.expires_at = later
+                row.expiry_noticed = later
+                row.expiry_note = f"Put off to {later}: {count} incident(s) hold it as evidence"
+                said = f"Put off the expiry of {row.kind} {row.name or row.ref[:12]} to {later}"
+                audit.record(db, ACTOR, "artifact.expiry", said, target=row.id)
+                db.commit()
+                done["put_off"] += 1
+                continue
+            held = None
         if held is not None:
             later = (current + timedelta(days=PUT_OFF_DAYS)).isoformat()
             name = str((held.doc or {}).get("name") or held.name or held.id)[:120]

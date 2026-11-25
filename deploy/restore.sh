@@ -53,6 +53,14 @@
 #                      this stack (AUDIT_KEY_PREVIOUS), so that its entries can be checked here
 #   --inspect          only read the file and say what it holds
 #   --no-start         leave the stack stopped at the end
+#   --as-copy          this stack is a copy of the server the backup comes from, to try a release on
+#                      (7.0, docs/admin/try-on-a-copy.md): NIK_COPY=true is written into .env before
+#                      anything else, so the copy reaches nothing outside itself from its first start
+#                      (no fetch, no mirror, no mail, no webhook, no off-site backup, no standby, no
+#                      playbook that starts by itself). NIK_COPY_OF names the original in the banner
+#                      (default: the name of the backup). Refused when .env makes this stack share a
+#                      directory of the host with another (NIK_BACKUP_DIR, NIK_WAL_ARCHIVE_DIR,
+#                      NIK_STANDBY_INBOX) or when it has no COMPOSE_PROJECT_NAME of its own
 #   --yes              do not ask before stopping the stack and before replacing
 #
 # Settings (environment):
@@ -91,6 +99,7 @@ WITH_KEY=0
 INSPECT=0
 START=1
 YES=0
+AS_COPY=0
 BACKUP=""
 TO=""
 FROM=""
@@ -127,9 +136,10 @@ while [ $# -gt 0 ]; do
     --secret-key) WITH_KEY=1 ;;
     --inspect) INSPECT=1 ;;
     --no-start) START=0 ;;
+    --as-copy) AS_COPY=1 ;;
     --yes) YES=1 ;;
     -h | --help)
-      sed -n '2,72p' "$0"
+      sed -n '2,81p' "$0"
       exit 0
       ;;
     -*) die "unknown option: $1 (see --help)" ;;
@@ -143,6 +153,7 @@ done
 
 if [ -n "$TO" ] || [ "$ASIDES" -eq 1 ] || [ -n "$DROP_ASIDE" ] || [ -n "$PUT_BACK" ]; then
   [ -z "$BACKUP" ] || die "--to goes back to a moment of the archive; a backup is restored without it: one or the other"
+  [ "$AS_COPY" -eq 0 ] || die "--as-copy makes a copy out of a backup: it does not go with --to and its options"
   # The recovery to a moment has a file of its own: the same settings, the same engine.
   export NIK_DIR ENGINE COMPOSE
   export PITR_TO="$TO" PITR_FROM="$FROM" PITR_REPLACE="$REPLACE" PITR_ASIDE="$ASIDE" PITR_START="$START" PITR_YES="$YES"
@@ -224,6 +235,27 @@ confirm() { # $1 = question, $2 = the word to type
   IFS= read -r typed
   [ "$typed" = "$2" ] || die "nothing was changed."
 }
+
+env_value() { sed -n "s/^$1=//p" .env | tail -n 1; }
+
+if [ "$AS_COPY" -eq 1 ]; then
+  # A copy holds the real server's settings: what it shares with it on this host it would act on.
+  project=$(env_value COMPOSE_PROJECT_NAME)
+  case "$project" in
+    "" | nik) die "--as-copy: set COMPOSE_PROJECT_NAME in .env to a name of its own (nik-copy), so that the copy has its own containers and volumes: nothing was changed" ;;
+  esac
+  for shared in NIK_BACKUP_DIR NIK_WAL_ARCHIVE_DIR NIK_STANDBY_INBOX; do
+    [ -z "$(env_value "$shared")" ] || die "--as-copy: .env sets $shared: a copy keeps its own, in its volumes. Remove the line and run this again: nothing was changed"
+  done
+  copy_of=${NIK_COPY_OF:-$(basename "${BACKUP%.nikbak}")}
+  # Written by a program that takes the name as it is: no character of it means anything to it.
+  (umask 077 && OF="$copy_of" awk 'BEGIN { c = 0; o = 0 }
+    /^NIK_COPY=/ { print "NIK_COPY=true"; c = 1; next }
+    /^NIK_COPY_OF=/ { print "NIK_COPY_OF=" ENVIRON["OF"]; o = 1; next } { print }
+    END { if (!c) print "NIK_COPY=true"; if (!o) print "NIK_COPY_OF=" ENVIRON["OF"] }' .env >.env.restoring)
+  mv .env.restoring .env
+  log "this stack is a copy of $copy_of from now on (NIK_COPY=true in .env): it reaches nothing outside itself"
+fi
 
 if [ "$REPLACE" -eq 1 ]; then
   what="the database"

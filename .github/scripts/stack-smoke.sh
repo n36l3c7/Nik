@@ -26,7 +26,7 @@ cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
     "${COMPOSE[@]}" ps || true
-    "${COMPOSE[@]}" logs --tail 60 db recovery api web automation sandbox || true
+    "${COMPOSE[@]}" logs --tail 60 db recovery api web automation sandbox forensics || true
   fi
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
   docker rm -f "$PROJECT-stopped" >/dev/null 2>&1 || true
@@ -47,7 +47,7 @@ NIK_EXISTING_INSTALL=0 deploy/init-env.sh "$ENV_FILE"
 grep -Eq '^(SECRET_KEY|STORE_KEY|DB_PASSWORD|[A-Z]+_TOKEN)=.' "$ENV_FILE" &&
   fail "init-env.sh left a secret, or a placeholder, in the env file of a new install"
 SECRETS_DIR="$ENV_FILE.secrets"
-for name in db_password secret_key store_key audit_key analyzer_token capa_token docview_token browser_token pcap_token sandbox_token; do
+for name in db_password secret_key store_key audit_key analyzer_token capa_token docview_token browser_token pcap_token sandbox_token forensics_token; do
   [ "$(wc -c <"$SECRETS_DIR/$name")" -eq 65 ] || fail "init-env.sh did not write the secret $name as a 64-character value"
 done
 if command -v cygpath >/dev/null 2>&1; then
@@ -66,7 +66,7 @@ if docker compose -p "$PROJECT-none" --env-file /dev/null config >/dev/null 2>&1
 fi
 
 # The recovery service is part of the server as it is shipped: without it no base backup is taken.
-"${COMPOSE[@]}" up -d --build --wait db recovery api web automation sandbox
+"${COMPOSE[@]}" up -d --build --wait db recovery api web automation sandbox forensics
 
 base="https://127.0.0.1:$TLS_PORT"
 get() { curl -sk --max-time 20 "$@"; }
@@ -129,6 +129,29 @@ token=$(get -b "$jar" -X POST "$base/api/health/metrics-token" | grep -o '"token
 # a long answer, and the cut reads as a failure.
 metrics=$(get -H "Authorization: Bearer $token" "$base/api/metrics")
 grep -q '^nik_health_state{' <<<"$metrics" || fail "/api/metrics does not answer to its scrape token"
+
+echo "== the forensics worker answers to its token only, unprivileged, on a read-only filesystem, with no way out"
+forensics_container=$("${COMPOSE[@]}" ps -q forensics)
+forensics_token=$(cat "$SECRETS_DIR/forensics_token")
+forensics_get() { docker exec "$forensics_container" python3 -c "
+import sys, urllib.request, urllib.error
+request = urllib.request.Request('http://127.0.0.1:8760' + sys.argv[1], headers={'X-Forensics-Token': sys.argv[2]})
+try:
+    print(urllib.request.urlopen(request, timeout=5).status)
+except urllib.error.HTTPError as error:
+    print(error.code)" "$1" "$2"; }
+[ "$(forensics_get /health "")" = 200 ] || fail "the forensics worker does not answer /health"
+# A route that does not exist: 404 for the token, 401 for anything else.
+[ "$(forensics_get /not-a-route "$forensics_token")" = 404 ] || fail "the forensics worker does not accept its token"
+[ "$(forensics_get /not-a-route "not-the-token")" = 401 ] || fail "the forensics worker answers to a token that is not the one"
+forensics_status=$(docker exec "$forensics_container" cat /proc/1/status)
+grep -q '^Uid:[[:space:]]*1000' <<<"$forensics_status" || fail "the forensics worker is not the unprivileged user"
+grep -q '^CapEff:[[:space:]]*0000000000000000' <<<"$forensics_status" || fail "the forensics worker holds capabilities"
+docker exec "$forensics_container" sh -c 'touch /opt/nik-forensics/probe 2>/dev/null' && fail "the forensics worker's filesystem is writable"
+docker exec "$forensics_container" sh -c 'test ! -e /run/secrets/secret_key && test ! -e /run/secrets/db_password && test ! -e /run/secrets/store_key' ||
+  fail "the forensics worker is given a key it has no use for"
+docker exec "$forensics_container" python3 -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)" 2>/dev/null &&
+  fail "the forensics worker can reach the internet"
 
 echo "== a script runs in the sandbox, which has no way out"
 script=$(get -b "$jar" -X POST "$base/api/automation/scripts" -H 'Content-Type: application/json' -d '{"name":"SmokeTest"}')
@@ -280,7 +303,7 @@ docker rm -f "$PROJECT-stopped" >/dev/null
 echo "== the stack stops politely: every container within its time, the log handed to the archive"
 dbsql "SELECT pg_switch_wal()" >/dev/null
 stopped=()
-for service in db recovery api web automation sandbox; do
+for service in db recovery api web automation sandbox forensics; do
   stopped+=("$service=$("${COMPOSE[@]}" ps -q "$service")")
 done
 before=$(date +%s)

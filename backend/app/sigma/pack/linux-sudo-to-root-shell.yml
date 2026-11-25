@@ -1,0 +1,23 @@
+title: 'Sudo to a Root Shell'
+id: 9fd277bb-df57-4fdc-a5bc-c5d6f81ae142
+status: stable
+description: 'A user runs a shell (or su) as root through sudo (sudo -i, sudo -s, sudo su, sudo bash), which gives a root shell that is not logged command by command.'
+references:
+    - https://attack.mitre.org/techniques/T1548/003/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+logsource:
+    product: linux
+    service: sudo
+detection:
+    selection:
+        recordtype: sudo
+        runas: root
+        command|re: '^(?:\S*/)?(?:(?:ba|da|z|k|a|c|tc|fi)?sh|su)(?:\s+-\S*)*\s*$'
+    condition: selection
+falsepositives:
+    - An administrator who works as root on purpose
+level: medium

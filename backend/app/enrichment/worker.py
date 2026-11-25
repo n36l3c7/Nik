@@ -33,13 +33,15 @@ def acquire(db, holder: str = HOLDER, now: float | None = None, seconds: float =
 
 
 def _loop() -> None:
+    from ..core import copy
     from ..routers.settings import read_settings
 
     leases.wait(15)  # let the API start
     while not leases.stopping():
         try:
             with SessionLocal() as db:
-                if acquire(db):
+                # A copy asks no outside source (its requests would be refused anyway, core/copy.py).
+                if not copy.is_copy() and acquire(db):
                     shared = read_settings(db)
                     # What an analyst asked for comes before the automatic lookups.
                     done = service.run_checks(db, shared, budget_seconds=BUDGET_SECONDS / 2)

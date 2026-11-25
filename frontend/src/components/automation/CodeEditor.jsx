@@ -21,7 +21,10 @@ import {
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { python } from '@codemirror/lang-python'
 import { json } from '@codemirror/lang-json'
+import { yaml } from '@codemirror/lang-yaml'
+import { lintGutter, setDiagnostics } from '@codemirror/lint'
 import { tags } from '@lezer/highlight'
+import { positionOf } from '../../domain/sigma.js'
 import { registerEditor } from '../../lib/textField.js'
 
 /*
@@ -89,17 +92,45 @@ const highlight = HighlightStyle.define([
   { tag: tags.invalid, color: 'var(--color-high)' },
 ])
 
-const LANGUAGES = { python, json }
+const LANGUAGES = { python, json, yaml }
+
+// The marks of a text the worker refused: red lines under the place, and a sign in the gutter.
+const lintTheme = EditorView.theme({
+  '.cm-lintRange-error': { backgroundImage: 'none', textDecoration: 'underline wavy var(--color-high)' },
+  '.cm-lintRange-warning': { backgroundImage: 'none', textDecoration: 'underline wavy var(--color-med)' },
+  '.cm-tooltip': {
+    backgroundColor: 'var(--color-panel)',
+    color: 'var(--color-fg)',
+    border: '1px solid var(--color-line)',
+  },
+})
+
+/** `[{ line, column, message }]` as the marks of the editor, placed in the text it holds now. */
+function marksOf(state, diagnostics) {
+  const text = state.doc.toString()
+  return (diagnostics ?? []).map((error) => {
+    const { from, to } = positionOf(text, error.line, error.column)
+    // A mark with no width shows nothing: take the word, or the rest of the line.
+    return {
+      from,
+      to: to > from ? to : Math.min(from + 1, state.doc.length),
+      severity: 'error',
+      message: error.message,
+    }
+  })
+}
 
 /**
  * @param {{
  *   value: string,
  *   onChange?: (value: string) => void,
- *   language?: 'python' | 'json',
+ *   language?: 'python' | 'json' | 'yaml',
  *   readOnly?: boolean,
  *   label: string,                 // the accessible name of the editor
  *   minHeight?: string,
  *   maxHeight?: string,
+ *   diagnostics?: { line: number, column?: number, message: string }[],  // marks on the lines (lint)
+ *   viewRef?: { current: object | null },   // gets the EditorView, to move the caret from outside
  * }} props
  */
 export default function CodeEditor({
@@ -110,12 +141,16 @@ export default function CodeEditor({
   label,
   minHeight = '8rem',
   maxHeight = '60vh',
+  diagnostics = null,
+  viewRef = null,
 }) {
   const host = useRef(null)
   const view = useRef(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const editable = useRef(new Compartment())
+  const marks = useRef(diagnostics)
+  marks.current = diagnostics
 
   useEffect(() => {
     const state = EditorState.create({
@@ -134,6 +169,7 @@ export default function CodeEditor({
         (LANGUAGES[language] ?? python)(),
         syntaxHighlighting(highlight),
         theme,
+        ...(diagnostics ? [lintGutter(), lintTheme] : []),
         EditorView.contentAttributes.of({ 'aria-label': label, spellcheck: 'false' }),
         editable.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
         EditorView.updateListener.of((update) => {
@@ -143,6 +179,8 @@ export default function CodeEditor({
     })
     const made = new EditorView({ state, parent: host.current })
     view.current = made
+    if (viewRef) viewRef.current = made
+    if (marks.current) made.dispatch(setDiagnostics(made.state, marksOf(made.state, marks.current)))
     const selected = () =>
       made.state.selection.ranges
         .filter((range) => !range.empty)
@@ -170,6 +208,7 @@ export default function CodeEditor({
       forget()
       view.current.destroy()
       view.current = null
+      if (viewRef) viewRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the editor is made once; what changes is applied below
   }, [language, label])
@@ -183,6 +222,13 @@ export default function CodeEditor({
       current.dispatch({ changes: { from: 0, to: current.state.doc.length, insert: text } })
     }
   }, [value])
+
+  // The marks: set again when the answer of the worker changes (or the text it was made for does).
+  useEffect(() => {
+    const current = view.current
+    if (!current || !diagnostics) return
+    current.dispatch(setDiagnostics(current.state, marksOf(current.state, diagnostics)))
+  }, [diagnostics])
 
   useEffect(() => {
     view.current?.dispatch({

@@ -1,0 +1,24 @@
+title: 'Microsoft Defender Detected Malware or Was Turned Off'
+id: 90beeb82-0164-4667-a1c1-9399c4af4524
+status: stable
+description: 'Microsoft Defender detected malware or took an action (1116, 1117) or real-time protection was turned off (5001).'
+references:
+    - https://attack.mitre.org/techniques/T1562/001/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1562.001
+logsource:
+    product: windows
+    service: windefend
+detection:
+    selection:
+        EventID:
+            - 1116
+            - 1117
+            - 5001
+    condition: selection
+falsepositives:
+    - A planned exclusion or a test file
+level: high

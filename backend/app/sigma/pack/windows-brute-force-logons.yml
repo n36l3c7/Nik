@@ -1,0 +1,23 @@
+title: 'Brute Force: Many Failed Logons for One Account'
+id: 6cee57bd-d4fe-4f9c-9dbf-976bb3a8b23d
+name: nik_brute_force
+status: stable
+description: 'Ten or more failed logons (4625) for the same account within ten minutes.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.credential-access
+    - attack.t1110
+correlation:
+    type: event_count
+    rules:
+        - nik_failed_logon
+    group-by:
+        - TargetUserName
+    timespan: 10m
+    generate: false
+    condition:
+        gte: 10
+falsepositives:
+    - A service account with an old password on a machine
+level: high

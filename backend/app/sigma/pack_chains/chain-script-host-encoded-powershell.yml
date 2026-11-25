@@ -1,0 +1,38 @@
+title: Script Host Starts PowerShell With an Encoded Command
+id: 170cf87c-dc79-4952-bf85-7c8fc1319f52
+name: nik_chain_script_host_encoded_powershell
+status: test
+description: wscript, cscript or mshta started PowerShell with a command given in base64. A script that downloads and runs the next stage hides it this way.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1059.001
+- attack.t1059.005
+- attack.t1027
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - \wscript.exe
+    - \cscript.exe
+    - \mshta.exe
+  selection_child:
+    Image|endswith:
+    - \powershell.exe
+    - \pwsh.exe
+  selection_encoded:
+    CommandLine|contains:
+    - ' -enc'
+    - ' -ec '
+    - ' -encodedcommand'
+    - ' /enc'
+    - ' -e jab'
+    - ' -e sqbl'
+    - ' -e aqbl'
+  condition: selection_parent and selection_child and selection_encoded
+falsepositives:
+- A deployment script that passes its command encoded
+level: high

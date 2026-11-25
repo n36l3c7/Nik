@@ -1,0 +1,31 @@
+title: 'Remote Desktop Logon Outside Working Hours'
+id: 9670e6f2-aee3-4e05-80c9-446001d74ff0
+status: stable
+description: 'A remote desktop logon (4624 type 10, 21, 25 or 1149) happened outside the working hours of the settings.'
+references:
+    - https://attack.mitre.org/techniques/T1021/001/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.lateral-movement
+    - attack.t1021.001
+logsource:
+    product: windows
+detection:
+    logon:
+        EventID: 4624
+        LogonType: 10
+    session:
+        Channel: Microsoft-Windows-TerminalServices-LocalSessionManager/Operational
+        EventID:
+            - 21
+            - 25
+    connection:
+        Channel: Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational
+        EventID: 1149
+    off_hours:
+        NikOffHours: 'true'
+    condition: (logon or session or connection) and off_hours
+falsepositives:
+    - Staff on call or in another time zone
+level: high

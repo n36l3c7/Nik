@@ -103,6 +103,15 @@ nav:
           - Network capture: guide/network.md
           - Links: guide/url.md
           - Host evidence: guide/host.md
+          - Event Logs: guide/eventlogs.md
+          - Browser Forensics: guide/browser.md
+          - Command History: guide/command-history.md
+          - Endpoint artifacts: guide/endpoint.md
+          - Disk (NTFS): guide/disk.md
+          - Collections: guide/collections.md
+          - Source viewer: guide/viewer.md
+          - Timeline of host records: guide/timeline.md
+          - Stacking: guide/stacking.md
       - Indicators:
           - Indicators of an incident: guide/indicators.md
           - The Indicators page: guide/indicator-library.md
@@ -133,6 +142,7 @@ nav:
       - Backups and restore: admin/backups.md
       - Recovery and standby: admin/recovery.md
       - Upgrades: admin/upgrades.md
+      - Try a release on a copy: admin/try-on-a-copy.md
       - Health and audit: admin/health.md
       - Install without containers: admin/manual-install.md
   - Reference:

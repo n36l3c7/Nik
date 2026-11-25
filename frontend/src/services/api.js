@@ -33,6 +33,9 @@
 
 import { CUT } from '../domain/transfers.js'
 import { noteForeground, requestIsBackground } from '../lib/activity.js'
+import { reportIncidentGone } from '../lib/incidentGone.js'
+import { queryString, recordFilters } from '../domain/evidenceQuery.js'
+import { saveUrl } from '../lib/download.js'
 
 const BASE = '/api'
 const BACKGROUND_HEADER = 'X-Nik-Background'
@@ -148,6 +151,7 @@ async function request(
       (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
     reportUnauthorized(response.status, path)
     reportRefused(response.status, path, payload)
+    const incidentGone = reportIncidentGone(response.status, detail, path)
     // `query`: for a query that cannot be read, where and why (position, code, suggestion).
     // `data`: whatever else the server said (the problems of a playbook, the result of a script's test).
     throw Object.assign(new Error(detail), {
@@ -155,6 +159,7 @@ async function request(
       code: typeof payload?.code === 'string' ? payload.code : null,
       query: payload?.query ?? null,
       data: payload,
+      incidentGone,
     })
   }
 
@@ -285,4 +290,244 @@ export const api = {
   patch: (path, body, opts) => request('PATCH', path, body, opts),
   put: (path, body, opts) => request('PUT', path, body, opts),
   del: (path, opts) => request('DELETE', path, undefined, opts),
+}
+
+/*
+ * ============================================================================
+ * HOST EVIDENCE (7.0)
+ * ============================================================================
+ *
+ * The files of host evidence of an incident ("sources"), their records, the views over them and the
+ * parts a file is sent in. The shapes are the ones of routers/evidence.py, evidence_views.py and
+ * uploads.py. Every call that lists or reads takes an AbortSignal; `background: true` is for the polls
+ * of a page that waits for the worker (they do not count as the person using the session).
+ */
+
+const evidencePath = (incidentId, rest = '') => `/incidents/${encodeURIComponent(incidentId)}/evidence${rest}`
+const sourcePath = (incidentId, sourceId, rest = '') =>
+  evidencePath(incidentId, `/sources/${encodeURIComponent(sourceId)}${rest}`)
+
+export const evidence = {
+  /** `{ sources }`, newest first, without their reports. `kind`: one section (`eventlog`, `browser`, ...). */
+  sources: (incidentId, { kind = '', signal, background } = {}) =>
+    api.get(evidencePath(incidentId, `/sources${queryString({ kind })}`), { signal, background }),
+  /** One source with its parse `report` and the id of its artifact. */
+  source: (incidentId, sourceId, { signal, background } = {}) =>
+    api.get(sourcePath(incidentId, sourceId), { signal, background }),
+  /** Have the file read again (202): its records are replaced, the marks stay. */
+  readAgain: (incidentId, sourceId) => api.post(sourcePath(incidentId, sourceId, '/again')),
+  /** Say a file read in part was looked at; the note goes to the audit log and the War Room. */
+  seen: (incidentId, sourceId, note = '') => api.post(sourcePath(incidentId, sourceId, '/seen'), { note }),
+  forgetSeen: (incidentId, sourceId) => api.del(sourcePath(incidentId, sourceId, '/seen')),
+  /** Remove the file and its records (`{ removed }`); the flags and notes stay. */
+  remove: (incidentId, sourceId) => api.del(sourcePath(incidentId, sourceId)),
+
+  /**
+   * One page of records: `{ records, next, count, countCapped }` (`count` on the first page only).
+   * `filters` are the names of the API (domain/evidenceQuery.js); `order` is `time`, `-time` or `file`.
+   */
+  records: (incidentId, { filters = {}, order = 'time', limit = 100, cursor = '', fields = [], signal } = {}) =>
+    api.get(
+      evidencePath(
+        incidentId,
+        `/records${queryString({ ...recordFilters(filters), order, limit, cursor, fields: fields.join(',') })}`,
+      ),
+      { signal },
+    ),
+  /** One record whole: `data`, `locator`, its `source` and its `detections`. */
+  record: (incidentId, recordId, { signal } = {}) =>
+    api.get(evidencePath(incidentId, `/records/${encodeURIComponent(recordId)}`), { signal }),
+  /** What the viewer of the worker shows of a record (404 no original, 503 no worker). */
+  view: (incidentId, recordId, { signal } = {}) =>
+    api.get(evidencePath(incidentId, `/records/${encodeURIComponent(recordId)}/view`), { signal }),
+  /** Bytes `[offset, offset + length)` of the original, `as` `hex` or `text`: `{ offset, length, size, as, data }`. */
+  sourcePage: (incidentId, sourceId, { offset = 0, length = 65536, as = 'hex', signal } = {}) =>
+    api.get(sourcePath(incidentId, sourceId, `/page${queryString({ offset, length, as })}`), { signal }),
+  /** Where a text (`as` `text`: UTF-8 and UTF-16, any case) or bytes (`hex`) are in the original, from `from` on:
+   *  `{ matches: [{ offset, length, encoding }], next, cut, size }`. */
+  sourceFind: (incidentId, sourceId, { q, as = 'text', from = 0, limit = 100, signal } = {}) =>
+    api.get(sourcePath(incidentId, sourceId, `/find${queryString({ q, as, from, limit })}`), { signal }),
+  /** The original in an encrypted zip: the browser streams it to the disk (needs evidence.download). */
+  downloadOriginal: (incidentId, source) => {
+    saveUrl(`${BASE}${sourcePath(incidentId, source.id, '/download')}`, `${source.fileName || 'evidence'}.zip`)
+  },
+
+  histogram: (incidentId, { filters = {}, buckets, gapMinutes, burstFactor, signal } = {}) =>
+    api.get(
+      evidencePath(
+        incidentId,
+        `/histogram${queryString({ ...recordFilters(filters), buckets, gapMinutes, burstFactor })}`,
+      ),
+      { signal },
+    ),
+  /** The values of a field with their counts: `{ field, values, distinct, distinctCapped, missing }`. */
+  stack: (incidentId, { field, order = 'rare', limit = 100, filters = {}, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/stack${queryString({ ...recordFilters(filters), field, order, limit })}`), {
+      signal,
+    }),
+  /**
+   * One page of the processes (routers/evidence_processes.py): `{ processes, next, count, countCapped }`.
+   * `filters`: `host, q, user, image, level, parentId, roots, sourceId, from, to`; `order` is `time` or `-time`.
+   */
+  processes: (incidentId, { filters = {}, order = 'time', limit = 100, cursor = '', signal } = {}) =>
+    api.get(evidencePath(incidentId, `/processes${queryString({ ...filters, order, limit, cursor })}`), { signal }),
+  /** The ancestors and the descendants of a process: `{ node, ancestors, ghost, descendants, cut, caps }`. */
+  processTree: (incidentId, processId, { up = 32, down = 6, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/processes/${encodeURIComponent(processId)}/tree${queryString({ up, down })}`), {
+      signal,
+    }),
+  /** The hosts that have processes: `{ hosts: [{ host, processes, firstTs, lastTs, roots, detections, level }], cut }`. */
+  processHosts: (incidentId, { signal } = {}) => api.get(evidencePath(incidentId, '/processes/hosts'), { signal }),
+  /**
+   * One page of logons: `{ logons, next, count, countCapped }`. `filters`: `host, user, sourceIp, sourceHost, sourceId,
+   * logonType, outcome` (a list, or `a,b`), `q, from, to`.
+   */
+  logons: (incidentId, { filters = {}, order = '-time', limit = 100, cursor = '', signal } = {}) =>
+    api.get(evidencePath(incidentId, `/logons${queryString({ ...filters, order, limit, cursor })}`), { signal }),
+  /** The lateral movement the logons show: `{ nodes, edges, cut, caps }` (`from, to, logonType, outcome, user, minCount`). */
+  logonGraph: (incidentId, { filters = {}, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/logons/graph${queryString(filters)}`), { signal }),
+  /** The fields the records have: `{ fields: [{ name, seen }] }`. */
+  fields: (incidentId, { kind, type, sourceId, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/fields${queryString({ kind, type, sourceId })}`), { signal }),
+  /** Per section: its files, records and what needs a look. */
+  summary: (incidentId, { signal, background } = {}) =>
+    api.get(evidencePath(incidentId, '/summary'), { signal, background }),
+  /** Flag a record and annotate it; no flag and no note removes the mark. */
+  putMark: (incidentId, { key, flagged = false, note = '' }) =>
+    api.put(evidencePath(incidentId, '/marks'), { key, flagged, note }),
+  exportDocument: (incidentId, { signal } = {}) => api.get(evidencePath(incidentId, '/export'), { signal }),
+  /**
+   * What the rules found, one row for each rule (highest level first): `{ rules, total, detections, byLevel }`.
+   * `kind` is a section, `sourceId` one file, `source` the kind of file (a shell), `level` the lowest level.
+   */
+  detections: (incidentId, { kind, sourceId, source, level, limit = 200, signal } = {}) =>
+    api.get(evidencePath(incidentId, `/detections${queryString({ kind, sourceId, source, level, limit })}`), {
+      signal,
+    }),
+
+  /**
+   * The `load` of a ServerTable over the records of an incident (components/ui/ServerTable.jsx).
+   * `base` are filters that always apply (the section of the page).
+   */
+  recordsLoader:
+    (incidentId, base = {}, fields = []) =>
+    async ({ cursor, limit, order, filters, signal }) => {
+      const page = await evidence.records(incidentId, {
+        filters: { ...filters, ...base },
+        order,
+        limit,
+        cursor,
+        fields,
+        signal,
+      })
+      return { items: page.records, next: page.next, total: cursor ? undefined : page.count, capped: page.countCapped }
+    },
+}
+
+/*
+ * The collections of host evidence (routers/evidence_collections.py): a triage zip listed first, imported on
+ * request. The collection itself is a source of kind `collection` (evidence.sources); these read its members.
+ */
+const collectionPath = (incidentId, sourceId, rest = '') =>
+  evidencePath(incidentId, `/collections/${encodeURIComponent(sourceId)}${rest}`)
+
+export const collections = {
+  /**
+   * The collection and a page of its members: `{ collection, members, next, total, counts }`. `status` is
+   * `all`, `importable`, `imported`, `skipped`, `executables` or `unrecognised`; `kind` the sections (a list).
+   */
+  members: (
+    incidentId,
+    sourceId,
+    { status = 'all', kind = [], q = '', limit = 100, cursor = '', signal, background } = {},
+  ) =>
+    api.get(collectionPath(incidentId, sourceId, queryString({ status, kind: kind.join(','), q, limit, cursor })), {
+      signal,
+      background,
+    }),
+  /** Import some members (`{ members: [n] }`) or all of them (`{ all: true }`, optionally `kinds`): 202 `{ collection, selected }`. */
+  importMembers: (incidentId, sourceId, body) => api.post(collectionPath(incidentId, sourceId, '/import'), body),
+  /** Send a program of the collection to Malware Analysis: `{ sample, iocs, strings }`. */
+  analyse: (incidentId, sourceId, member) => api.post(collectionPath(incidentId, sourceId, '/analyse'), { member }),
+}
+
+/*
+ * The Sigma rules (routers/sigma_rules.py). A list takes the filters of `domain/sigma.js`; a text the worker
+ * refuses comes back as an error with `data.errors` (`{ line, column, message }`).
+ */
+const RULES = '/sigma/rules'
+
+export const sigmaRules = {
+  list: (params = {}, { signal } = {}) => api.get(`${RULES}${queryString(params)}`, { signal }),
+  summary: ({ signal } = {}) => api.get(`${RULES}/summary`, { signal }),
+  get: (id, { signal } = {}) => api.get(`${RULES}/${encodeURIComponent(id)}`, { signal }),
+  /** Read a text without saving it: `{ ok, engine, errors, rules }`. */
+  validate: (source, { signal } = {}) => api.post(`${RULES}/validate`, { source }, { signal }),
+  /** Run a text over the records of an incident, saving nothing. */
+  tryOn: ({ source, incidentId, kind = '', sourceId = '' }, { signal } = {}) =>
+    api.post(`${RULES}/try`, { source, incidentId, kind, sourceId }, { signal }),
+  create: (source, enabled) => api.post(RULES, enabled === undefined ? { source } : { source, enabled }),
+  update: (id, source, enabled) =>
+    api.put(`${RULES}/${encodeURIComponent(id)}`, enabled === undefined ? { source } : { source, enabled }),
+  setEnabled: (id, enabled) => api.patch(`${RULES}/${encodeURIComponent(id)}`, { enabled }),
+  reset: (id) => api.post(`${RULES}/${encodeURIComponent(id)}/reset`),
+  remove: (id) => api.del(`${RULES}/${encodeURIComponent(id)}`),
+  /** `{ enabled, ids }` or `{ enabled, filters }`: `{ matched, changed }`. */
+  bulk: (body) => api.post(`${RULES}/bulk`, body),
+  recheck: () => api.post(`${RULES}/recheck`),
+}
+
+/**
+ * One part of a file: raw bytes by PUT, with the progress of what goes up. XMLHttpRequest, as `upload`:
+ * fetch cannot report it. A refusal carries `status` and `data` (the 409 of a part that is not where the
+ * server is says `received`).
+ */
+function sendPart(path, blob, { onProgress, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `${BASE}${path}`)
+    xhr.withCredentials = true
+    noteForeground()
+    xhr.responseType = 'json'
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    if (onProgress) xhr.upload.onprogress = (event) => onProgress({ sent: event.loaded, total: event.total })
+    xhr.onerror = () => reject(Object.assign(new Error(CUT), { interrupted: true }))
+    xhr.onabort = () => reject(Object.assign(new Error('Upload cancelled.'), { name: 'AbortError' }))
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response)
+        return
+      }
+      reportUnauthorized(xhr.status, path)
+      reportRefused(xhr.status, path, xhr.response)
+      reject(
+        Object.assign(new Error(xhr.response?.detail || `Request failed (${xhr.status})`), {
+          status: xhr.status,
+          data: xhr.response,
+        }),
+      )
+    }
+    if (signal?.aborted) {
+      xhr.abort()
+      return
+    }
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    xhr.send(blob)
+  })
+}
+
+/** The upload of a file in parts (lib/chunkedUpload.js drives it; evidence/uploads.py says how it works). */
+export const uploads = {
+  /** `{ incidentId, fileName, size, sha256?, params: { kind, source?, host?, user?, profile? } }` -> `{ id, chunk, received, ... }`. */
+  open: (body, { signal } = {}) => api.post('/uploads', body, { signal }),
+  /** How much the server received: where to go on from after a cut. */
+  status: (uploadId, { signal, background } = {}) =>
+    api.get(`/uploads/${encodeURIComponent(uploadId)}`, { signal, background }),
+  /** The bytes from `offset` on (`{ received }`). */
+  putPart: (uploadId, offset, blob, { onProgress, signal } = {}) =>
+    sendPart(`/uploads/${encodeURIComponent(uploadId)}?offset=${offset}`, blob, { onProgress, signal }),
+  /** Every part was sent: the file is kept and read in the background (202). */
+  complete: (uploadId) => api.post(`/uploads/${encodeURIComponent(uploadId)}/complete`),
+  abort: (uploadId) => api.del(`/uploads/${encodeURIComponent(uploadId)}`),
 }

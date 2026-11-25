@@ -548,7 +548,7 @@ def test_the_artifact_list_and_the_audit_log_take_a_query(admin: TestClient, sto
     # The older parameters add to it, and the counts per kind follow the query.
     found, body = ids(q="by:anna", kind="file")
     assert found == ["file-a"] and body["total"] == 1
-    assert body["counts"] == {"file": 1, "mail": 1, "pcap": 0, "url": 1, "mailbox": 0}
+    assert body["counts"] == {"file": 1, "mail": 1, "pcap": 0, "url": 1, "mailbox": 0, "hostfile": 0}
     assert ids(q="tag:phish", linked="true")[0] == ["mail-c"]
     assert ids(tag="c2")[0] == ["file-a"]
     assert admin.get("/api/artifacts", params={"q": "knid:file"}).json()["query"]["suggestion"] == "kind"

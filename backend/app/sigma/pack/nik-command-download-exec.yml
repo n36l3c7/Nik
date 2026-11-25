@@ -1,0 +1,24 @@
+title: 'Command: Remote Content Piped Into a Shell'
+id: 9d37a034-ec67-4817-b41e-6e36cc9192aa
+status: stable
+description: 'Remote content is downloaded and piped straight into a shell interpreter.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.command-and-control
+    - attack.execution
+    - attack.t1105
+    - attack.t1059
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|re|i:
+              - '(curl|wget)[^|;&]*\|\s*(ba|z|da)?sh\b'
+              - 'iwr\b.*\|\s*iex'
+              - 'iex\s*\(.*(iwr|downloadstring)'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: high

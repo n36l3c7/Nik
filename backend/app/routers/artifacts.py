@@ -19,14 +19,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import analysis_links, artifact_convert, artifact_expiry, artifact_transfer, artifacts, query, urlscan
+from .. import analysis_links, archive, artifact_convert, artifact_expiry, artifact_transfer, artifacts, query, urlscan
 from ..core import audit
 from ..core.config import settings
-from ..core.db import get_db
+from ..core.db import after_commit, get_db
 from ..core.models import (
     Artifact,
     ArtifactLink,
     ArtifactRelation,
+    EvidenceSource,
     Incident,
     Mail,
     Mailbox,
@@ -35,6 +36,7 @@ from ..core.models import (
     UrlScan,
 )
 from ..core.security import Principal, admin_principal, now_iso, reader_principal, writer_principal
+from ..evidence import originals
 from ..network import service as captures
 from ..workers import previews
 from . import mails as mail_routes
@@ -153,7 +155,7 @@ def matching(
 
 @router.get("/artifacts")
 def list_artifacts(
-    kind: Optional[Literal["file", "mail", "pcap", "url", "mailbox"]] = None,
+    kind: Optional[Literal["file", "mail", "pcap", "url", "mailbox", "hostfile"]] = None,
     q: str = Query(
         "",
         max_length=2000,
@@ -221,6 +223,7 @@ async def analyse_file(
     """Analyse a file on its own (or link it to an incident at once). Stored
     under its SHA-256, never executed; a file already known reuses its analysis."""
     target = _incident_or_404(db, incident)
+    archive.guard(target)
     data = await file.read()
     sample, _ref = await run_in_threadpool(
         sample_routes.store_sample, db, target, data, file.filename or "", caller, background_tasks
@@ -238,6 +241,7 @@ async def analyse_mail(
 ) -> dict:
     """Analyse an e-mail on its own (or link it to an incident at once)."""
     target = _incident_or_404(db, incident)
+    archive.guard(target)
     mail, _ref = await mail_routes.store_mail(
         db, target, await file.read(), file.filename or "", caller, background_tasks
     )
@@ -255,6 +259,7 @@ async def analyse_capture(
 ) -> dict:
     """Store a packet capture on its own (or in an incident) and analyse it in the background."""
     target = _incident_or_404(db, incident)
+    archive.guard(target)
     capture = await capture_routes.store_capture(db, target, file, keylog, caller, background_tasks)
     return _one(db, _artifact_or_404(db, artifacts.artifact_id("pcap", capture.id)))
 
@@ -388,7 +393,12 @@ def link_artifact(
 
 def link_to(db: OrmSession, row: Artifact, incident: Incident, caller: Principal) -> None:
     """Link an artifact to an incident (the caller commits). What the route does, and what a bulk
-    action does for each artifact."""
+    action does for each artifact. An archived incident is read-only: ``Archived``."""
+    archive.guard(incident)
+    if row.kind == originals.KIND:
+        raise HTTPException(
+            status_code=422, detail="Host evidence is given to an incident when it is imported there, not linked"
+        )
     if row.kind == "file":
         sample_routes.attach_sample(db, incident, db.get(Sample, row.ref), row.name, caller.actor)
     elif row.kind == "mail":
@@ -423,7 +433,13 @@ def unlink_artifact(
 
 
 def unlink_from(db: OrmSession, row: Artifact, incident: Incident, caller: Principal) -> None:
-    """Take an artifact out of an incident (the caller commits); ``404`` when it is not in it."""
+    """Take an artifact out of an incident (the caller commits); ``404`` when it is not in it.
+    An archived incident is read-only: ``Archived``."""
+    archive.guard(incident)
+    if row.kind == originals.KIND:
+        raise HTTPException(
+            status_code=422, detail="Host evidence is taken out of an incident from its evidence, not unlinked"
+        )
     if row.kind == "file":
         found = sample_routes.detach_sample(db, incident, row.ref)
     elif row.kind == "mail":
@@ -497,9 +513,28 @@ def expire(db: OrmSession, row: Artifact, day: str | None, caller: Principal) ->
     return day
 
 
+def _refuse_held(db: OrmSession, row: Artifact) -> None:
+    held = originals.holders(db, row.ref)
+    if held:
+        raise HTTPException(
+            status_code=409, detail=f"{held} incident(s) hold this file as evidence: remove it from them first"
+        )
+
+
+def _forget_original(db: OrmSession, row: Artifact) -> None:
+    """Drop the artifact of an original and, once the commit is made, the file."""
+    sha256 = row.ref
+    after_commit(db, lambda: originals.remove(sha256))
+    artifacts.forget(db, originals.KIND, sha256)
+
+
 def delete_artifact_data(db: OrmSession, row: Artifact) -> None:
-    """Delete the artifact everywhere: its incidents' references, files and analyses."""
-    if row.kind == "file":
+    """Delete the artifact everywhere: its incidents' references, files and analyses. An original of
+    host evidence goes only when no incident holds it: ``409`` with how many do."""
+    if row.kind == originals.KIND:
+        _refuse_held(db, row)
+        _forget_original(db, row)
+    elif row.kind == "file":
         sample_routes.delete_sample_data(db, db.get(Sample, row.ref))
     elif row.kind == "mail":
         mail_routes.delete_mail_data(db, db.get(Mail, row.ref))
@@ -528,6 +563,8 @@ def delete_artifact(
 
 def remove(db: OrmSession, row: Artifact, caller: Principal) -> None:
     """Delete an artifact everywhere, and say so in the audit log (the caller commits)."""
+    if row.kind == originals.KIND:
+        _refuse_held(db, row)
     _audit(db, caller, "artifact.delete", f"Deleted {row.kind} {row.name or row.ref[:12]} ({row.ref[:12]}…)")
     delete_artifact_data(db, row)
 
@@ -542,7 +579,15 @@ def remove_incident_artifacts(db: OrmSession, incident_id: str) -> None:
         .where(ArtifactLink.incident_id == incident_id, Artifact.id.not_in(others))
     ).all()
     for row in rows:
-        if row.kind == "pcap":
+        if row.kind == originals.KIND:
+            # The sources of this incident are going with it: only another incident's keep the original.
+            if not db.scalar(
+                select(func.count())
+                .select_from(EvidenceSource)
+                .where(EvidenceSource.sha256 == row.ref, EvidenceSource.incident_id != incident_id)
+            ):
+                _forget_original(db, row)
+        elif row.kind == "pcap":
             captures.remove_capture(db, db.get(NetworkCapture, row.ref), update_incident=False)
         elif row.kind == "file":
             sample_routes.delete_sample_data(db, db.get(Sample, row.ref))
@@ -577,6 +622,8 @@ def export_artifacts(
     rows = [row for row in (db.get(Artifact, artifact_id) for artifact_id in dict.fromkeys(body.ids)) if row]
     if not rows:
         raise HTTPException(status_code=404, detail="No such artifact")
+    if all(row.kind in artifact_transfer.LEFT_OUT for row in rows):
+        raise HTTPException(status_code=422, detail="The original of host evidence is not part of an export")
     allowed = artifact_transfer.files_limit(rows)
     if body.files and sum(row.size or 0 for row in rows) > allowed:
         raise HTTPException(

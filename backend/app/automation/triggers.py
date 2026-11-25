@@ -200,6 +200,17 @@ def indicators_found(db: OrmSession, incident: Incident, door: str, found: list[
     publish(db, "indicators.found", "incident", incident.id, data, classes)
 
 
+def evidence_detected(
+    db: OrmSession, incident: Incident, source: Any, count: int, level: int, rules: list[dict]
+) -> None:
+    """The rules found something in a file of host evidence being read (``evidence/parse.py``): one
+    event for the file, in the transaction of its reading, never one for each detection."""
+    if settings.AUTOMATION_WORKER == "off" or not count:
+        return
+    data, classes = payloads.evidence_detected(incident, source, count, level, rules)
+    publish(db, "evidence.detected", "incident", incident.id, data, classes)
+
+
 def indicator_id(kind: str, value: str) -> str:
     """An indicator as the object of a run: ``domain:evil.example``."""
     return f"{kind}:{value}"
@@ -282,8 +293,16 @@ def handle_event(db: OrmSession, event: AutomationEvent, now: float) -> list[Run
     data, classes = payload.get("data") or {}, payload.get("classes") or {}
     cause, depth = payload.get("caused_by_run"), int(payload.get("depth") or 0)
     started: list[Run] = []
+    from ..core import copy
+
+    if copy.is_copy():
+        return started  # on a copy no playbook starts by itself (core/copy.py)
     if depth > MAX_DEPTH:
         logger.info("Event %s dropped: more than %d runs deep", event.kind, MAX_DEPTH)
+        return started
+    # Nothing starts by itself for an archived incident: it is read-only.
+    held = _incident_of(event.object_kind, event.object_id, data)
+    if held and db.scalar(select(Incident.archived_at).where(Incident.id == held)):
         return started
     caused_by = db.get(Run, cause) if cause else None
     for playbook in db.scalars(
@@ -364,6 +383,10 @@ def sync_schedule(db: OrmSession, playbook: Playbook, now: float) -> None:
 def fire_schedules(db: OrmSession, now: float) -> list[Run]:
     """Start the runs of the schedules that are due (the caller commits)."""
     started: list[Run] = []
+    from ..core import copy
+
+    if copy.is_copy():
+        return started  # on a copy no schedule fires: the times stay as they are, nothing is missed for good
     for row in db.scalars(select(AutomationSchedule).where(AutomationSchedule.next_at <= now)):
         playbook = db.get(Playbook, row.playbook_id)
         # Once, however many of its times passed while the worker was stopped (schedules.py); the
@@ -433,6 +456,7 @@ _ABOUT = {
     "incident.updated": "incident",
     "ioc.watch_hit": "incident",
     "indicators.found": "incident",
+    "evidence.detected": "incident",
     "mail.analysed": "mail",
     "file.analysed": "file",
     "code.analysed": "file",

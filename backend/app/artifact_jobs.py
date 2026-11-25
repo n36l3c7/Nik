@@ -67,7 +67,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifacts, work
+from . import archive, artifacts, work
 from .core import audit, leases, vault
 from .core.locking import lock_incident
 from .core.models import (
@@ -214,6 +214,8 @@ def _incident(db: OrmSession, params: dict[str, Any]):
     incident = lock_incident(db, wanted) if wanted else None
     if wanted and incident is None:
         raise JobError("The incident does not exist")
+    if incident is not None and incident.archived_at:
+        raise JobError(archive.SENTENCE)
     return incident
 
 
@@ -445,6 +447,12 @@ def _remove(db: OrmSession, job: ArtifactJob, later: _Later) -> dict[str, Any]:
 _WORK = {"store": _store, "attachment": _attachment, "analyse": _analyse, "convert": _convert, "remove": _remove}
 
 
+def register(kind: str, do: Any) -> None:
+    """Add a kind of job a module of its own does: ``do(db, job, later)`` returns the result the node
+    reads back, or raises ``JobError``."""
+    _WORK[kind] = do
+
+
 def _run(job_id: str, threads: bool) -> None:
     """Do one job this process took, holding it. One another process holds is left alone and goes
     back to waiting."""
@@ -620,6 +628,8 @@ class Keeper:
         incident = lock_incident(self.db, incident_id) if incident_id else None
         if incident_id and incident is None:
             raise JobError("The incident does not exist")
+        if incident is not None and incident.archived_at:
+            raise JobError(archive.SENTENCE)
         try:
             row, _ref = sample_routes.keep_sample(self.db, incident, data, name, self.actor, origin, parent=parent)
         except HTTPException as error:
@@ -635,7 +645,10 @@ class Keeper:
         if not self.direct:
             self._ask({"as": "mail", "name": name, "incident": incident_id, "report": report}, data)
             return
-        mail_routes.keep_mail(self.db, lock_incident(self.db, incident_id), data, name, self.actor)
+        incident = lock_incident(self.db, incident_id)
+        if incident is not None and incident.archived_at:
+            raise JobError(archive.SENTENCE)
+        mail_routes.keep_mail(self.db, incident, data, name, self.actor)
 
     def audit(self, action: str, details: str, incident_id: str = "") -> None:
         """A line of the audit log for what was kept: now when it was, with the files when it is asked for."""

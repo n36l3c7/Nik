@@ -72,23 +72,6 @@ def test_incident_crud_notes_via_key(admin: TestClient):
     assert k.delete("/api/incidents/i1", headers=H).status_code == 204
 
 
-def test_upload_sync_and_async(admin: TestClient):
-    k = TestClient(fastapi_app)
-    H = make_key(admin)
-    k.post("/api/incidents", headers=H, json={"id": "u1", "data": {}})
-    files = {"file": (".bash_history", b"#1700000000\nsudo cat /etc/shadow\nls\n", "text/plain")}
-    r = k.post("/api/incidents/u1/upload?tab=commands&shell=bash", headers=H, files=files)
-    assert r.status_code == 200 and r.json()["rows"] == 2
-    cmds = k.get("/api/incidents/u1", headers=H).json()["data"]["commands"]["shells"]["bash"]["commands"]
-    assert cmds[0]["command"] == "sudo cat /etc/shadow"
-    # async
-    files = {"file": (".zsh_history", b"a\nb\nc\n", "text/plain")}
-    r = k.post("/api/incidents/u1/upload?tab=commands&shell=zsh&async=true", headers=H, files=files)
-    assert r.status_code == 202
-    job = k.get(f"/api/jobs/{r.json()['jobId']}", headers=H).json()
-    assert job["status"] == "done" and job["result"]["rows"] == 3
-
-
 def test_pagination_etag_idempotency(admin: TestClient):
     k = TestClient(fastapi_app)
     H = make_key(admin)

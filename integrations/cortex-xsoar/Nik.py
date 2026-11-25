@@ -240,8 +240,8 @@ def get_settings_command(client: Client, _args: dict) -> CommandResults:  # noqa
         outputs_prefix="Nik.Settings",
         outputs=settings,
         readable_output=tableToMarkdown(  # noqa: F405
-            "Nik detection keywords", settings.get("keywords", []),
-            headers=["label", "pattern", "severity"],
+            "Nik business hours", settings.get("businessHours", {}),
+            headers=["startHour", "endHour", "flagWeekends", "tz"],
         ),
         raw_response=settings,
     )

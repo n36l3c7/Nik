@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeftRight, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useCanWrite } from '../../lib/useCanWrite.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { formatDateTime } from '../../lib/time.js'
 import { api } from '../../services/api.js'
@@ -143,6 +144,7 @@ function StartDialog({ incident, connections, canSend, onClose, onStarted }) {
 /** @param {{ incident: object }} props */
 export default function Mirror({ incident }) {
   const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   const { retryActiveIncident } = useIncidents()
   const [state, setState] = useState(null)
   const [starting, setStarting] = useState(false)
@@ -164,7 +166,6 @@ export default function Mirror({ incident }) {
   }, [load])
 
   if (!state || (!state.mirrored && state.instances.length === 0)) return null
-  const canWrite = can('write')
   const act = async (request, done) => {
     setError(null)
     setSaid(null)

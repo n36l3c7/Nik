@@ -1,0 +1,23 @@
+title: 'Brute Force: Many Failed Logons from One Address (Linux)'
+id: 1fe59524-53d2-4c0f-931f-98be017358fb
+name: nik_linux_ssh_brute_force
+status: stable
+description: 'Ten or more failed logons (sshd, PAM, the audit log) from the same source address within ten minutes.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.credential-access
+    - attack.t1110
+correlation:
+    type: event_count
+    rules:
+        - nik_linux_failed_logon
+    group-by:
+        - source_ip
+    timespan: 10m
+    generate: false
+    condition:
+        gte: 10
+falsepositives:
+    - A scanner or a script of the organisation with a wrong key or password
+level: high

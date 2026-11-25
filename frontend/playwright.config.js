@@ -67,6 +67,9 @@ export default defineConfig({
         BROWSER_TOKEN: process.env.E2E_BROWSER_TOKEN ?? '',
         PCAP_URL: process.env.E2E_PCAP_URL ?? '',
         PCAP_TOKEN: process.env.E2E_PCAP_TOKEN ?? '',
+        // The worker that reads the originals of host evidence (workers/forensics); without it files stay queued.
+        FORENSICS_URL: process.env.E2E_FORENSICS_URL ?? '',
+        FORENSICS_TOKEN: process.env.E2E_FORENSICS_TOKEN ?? '',
         // The sandbox scripts run in; without it the scripts test skips what needs one.
         SANDBOX_URL: process.env.E2E_SANDBOX_URL ?? '',
         SANDBOX_TOKEN: process.env.E2E_SANDBOX_TOKEN ?? '',

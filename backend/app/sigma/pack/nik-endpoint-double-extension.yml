@@ -1,0 +1,26 @@
+title: 'Artifact: Double File Extension'
+id: 1ed5dad0-e443-4b3b-be01-db8b2e8759f8
+status: stable
+description: 'A file that looks like a document ends in an executable extension, a common phishing lure.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1036.007
+logsource:
+    product: nik
+    service: endpoint
+detection:
+    selection:
+        - name|re|i:
+              - '\.(pdf|doc|docx|xls|xlsx|jpg|png|txt)\s*\.(exe|scr|js|vbs|bat|cmd|lnk)\b'
+        - path|re|i:
+              - '\.(pdf|doc|docx|xls|xlsx|jpg|png|txt)\s*\.(exe|scr|js|vbs|bat|cmd|lnk)\b'
+        - command|re|i:
+              - '\.(pdf|doc|docx|xls|xlsx|jpg|png|txt)\s*\.(exe|scr|js|vbs|bat|cmd|lnk)\b'
+        - target|re|i:
+              - '\.(pdf|doc|docx|xls|xlsx|jpg|png|txt)\s*\.(exe|scr|js|vbs|bat|cmd|lnk)\b'
+    condition: selection
+falsepositives:
+    - Software that is installed or run this way on purpose
+level: high

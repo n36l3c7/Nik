@@ -62,36 +62,40 @@ There is always one admin who can sign in: you cannot remove the Admin role from
 
 A role is a tag on an account. An account holds one or more and may do what they grant together: an analyst who also keeps the YARA rules is **Analyst** + **Rules**, not an admin.
 
-| Role | What the account can do |
-| --- | --- |
-| **Viewer** | Read incidents, artifacts, indicators and analyses. Changes nothing (*read-only* in the header). |
-| **Analyst** | Read and work: incidents, uploads, analyses, indicators, detection rules, business hours, the allowlist. Run playbooks, stop a run, answer an approval. |
-| **Playbooks** | Build playbooks and scripts, turn them on or off, debug them, manage lists. Reads no incident by itself: give it with **Analyst** or **Viewer**. |
-| **Connectors** | Install connectors, make instances, keep credentials. Builds no playbook by itself. |
-| **Rules** | YARA rules, capa rules, FLIRT signatures, script signatures. |
-| **Audit** | Read the audit log. |
-| **Dashboards** | Share dashboards with others. |
-| **Admin** | Everything, and alone: accounts, API keys, storage, backup, types and fields, content packs, mail and threat-intelligence settings, the hosts and data of playbooks, stopping all automation. |
+| Role           | What the account can do                                                                                                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Viewer**     | Read incidents, artifacts, indicators and analyses. Changes nothing (_read-only_ in the header).                                                                                              |
+| **Analyst**    | Read and work: incidents, uploads, analyses, indicators, business hours, the allowlist. Run playbooks, stop a run, answer an approval.                                                        |
+| **Playbooks**  | Build playbooks and scripts, turn them on or off, debug them, manage lists. Reads no incident by itself: give it with **Analyst** or **Viewer**.                                              |
+| **Connectors** | Install connectors, make instances, keep credentials. Builds no playbook by itself.                                                                                                           |
+| **Rules**      | Sigma rules, YARA rules, capa rules, FLIRT signatures, script signatures.                                                                                                                     |
+| **Audit**      | Read the audit log.                                                                                                                                                                           |
+| **Dashboards** | Share dashboards with others.                                                                                                                                                                 |
+| **Archive**    | Archive a closed incident and take it out of the archive; set the rule that archives by itself.                                                                                               |
+| **Evidence**   | Download the original of a file of host evidence.                                                                                                                                             |
+| **Admin**      | Everything, and alone: accounts, API keys, storage, backup, types and fields, content packs, mail and threat-intelligence settings, the hosts and data of playbooks, stopping all automation. |
 
 ??? info "The permissions behind the roles"
     Routes ask for a permission, never a role.
 
-    | Permission | Viewer | Analyst | Playbooks | Connectors | Rules | Audit | Dashboards | Admin |
-    | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
-    | `read` | ✓ | ✓ | | | | | | ✓ |
-    | `write` | | ✓ | | | | | | ✓ |
-    | `automation.run` | | ✓ | ✓ | | | | | ✓ |
-    | `automation.edit` | | | ✓ | | | | | ✓ |
-    | `automation.debug` | | | ✓ | | | | | ✓ |
-    | `lists.manage` | | | ✓ | | | | | ✓ |
-    | `connectors.manage` | | | | ✓ | | | | ✓ |
-    | `rules.manage` | | | | | ✓ | | | ✓ |
-    | `audit.read` | | | | | | ✓ | | ✓ |
-    | `dashboards.share` | | | | | | | ✓ | ✓ |
-    | `automation.open` | | | | | | | | ✓ |
-    | `incidents.configure` | | | | | | | | ✓ |
-    | `content.manage` | | | | | | | | ✓ |
-    | `admin` | | | | | | | | ✓ |
+    | Permission | Viewer | Analyst | Playbooks | Connectors | Rules | Audit | Dashboards | Archive | Evidence | Admin |
+    | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+    | `read` | ✓ | ✓ | | | | | |  |  | ✓ |
+    | `write` | | ✓ | | | | | |  |  | ✓ |
+    | `automation.run` | | ✓ | ✓ | | | | |  |  | ✓ |
+    | `automation.edit` | | | ✓ | | | | |  |  | ✓ |
+    | `automation.debug` | | | ✓ | | | | |  |  | ✓ |
+    | `lists.manage` | | | ✓ | | | | |  |  | ✓ |
+    | `connectors.manage` | | | | ✓ | | | |  |  | ✓ |
+    | `rules.manage` | | | | | ✓ | | |  |  | ✓ |
+    | `audit.read` | | | | | | ✓ | |  |  | ✓ |
+    | `dashboards.share` | | | | | | | ✓ |  |  | ✓ |
+    | `automation.open` | | | | | | | |  |  | ✓ |
+    | `incidents.configure` | | | | | | | |  |  | ✓ |
+    | `incidents.archive` | | | | | | | | ✓ | | ✓ |
+    | `evidence.download` | | | | | | | | | ✓ | ✓ |
+    | `content.manage` | | | | | | | |  |  | ✓ |
+    | `admin` | | | | | | | |  |  | ✓ |
 
 An account with one narrow role sees only that: **Audit** alone signs in and finds the audit log and its own account. To let an auditor read incidents, add **Viewer**.
 

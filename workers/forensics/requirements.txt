@@ -1,0 +1,23 @@
+# Nik forensics worker: the libraries that read the formats of host evidence.
+# Every one is permissive or LGPL (imported, never changed): no GPL or AGPL here.
+
+# Windows event logs (.evtx): a Rust parser with Python bindings (abi3 wheels). MIT / Apache-2.0.
+evtx>=0.15,<0.16
+
+# Sigma detection (nik_forensics/sigma): pySigma only parses and validates the rules (LGPL-2.1, imported and never
+# changed; its own dependencies are MIT, BSD, Apache-2.0 and MPL-2.0 certifi); our evaluator runs them.
+# Regular expressions of a rule run in RE2 (BSD-3-Clause): linear time, no backtracking, so a hostile rule cannot hang.
+pysigma>=2.1.2,<2.2
+google-re2>=1.1.20251105,<1.2
+pyyaml>=6.0.4,<7
+
+# Stage 6 (7.0): the formats of a Windows disk and profile. Versions are the ones the spikes proved.
+# Registry hives (regipy, MIT; it ships a ShimCache parser under Apache-2.0).
+regipy==6.5.0
+# Shortcuts (.lnk). MIT.
+LnkParse3==1.6.0
+# OLE compound files (jump lists). BSD-2-Clause.
+olefile==0.47
+# Prefetch (libscca) and ESE databases such as SRUDB.dat (libesedb): libyal bindings, LGPL-3.0, imported and never changed.
+libscca-python==20260527
+libesedb-python==20260704

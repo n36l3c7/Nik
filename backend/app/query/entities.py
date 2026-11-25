@@ -29,7 +29,7 @@ from .parser import Value
 
 SEVERITIES = registry.SEVERITIES
 STATUSES = registry.STATUSES
-ARTIFACT_KINDS = ("file", "mail", "pcap", "url", "mailbox")
+ARTIFACT_KINDS = ("file", "mail", "pcap", "url", "mailbox", "hostfile")
 INDICATOR_TYPES = ("ip", "domain", "url", "email", "md5", "sha1", "sha256")
 VERDICTS = ("unknown", "harmless", "suspicious", "malicious")
 ORIGINS = ("incident", "manual", "import", "artifact")
@@ -46,6 +46,21 @@ def _timer(name: str):
 
 _TYPE_NAME = select(IncidentType.name).where(IncidentType.id == Incident.type_id).scalar_subquery()
 _SOURCE_NAME = select(Connection.name).where(Connection.id == Incident.source_connection_id).scalar_subquery()
+
+
+def _archived_sql(op: str, value: Value, _ctx: Context):
+    if op not in ("=", "!"):
+        raise _bad("bad_operator", 0, '"archived" is true or false')
+    wanted = _boolean(value, 0) == (op == "=")
+    return Incident.archived_at.is_not(None) if wanted else Incident.archived_at.is_(None)
+
+
+def _archived_test(op: str, value: Value, _ctx: Context):
+    if op not in ("=", "!"):
+        raise _bad("bad_operator", 0, '"archived" is true or false')
+    wanted = _boolean(value, 0) == (op == "=")
+    return lambda row: bool(row.get("archivedAt")) == wanted
+
 
 # The fields Nik always had, by the names the language always gave them. Where the registry
 # calls one differently (close_reason, sla_breached, time_to_assign), that name is another name
@@ -68,6 +83,13 @@ _ALWAYS = (
         column=Incident.assignee,
     ),
     FieldSpec("hasMail", "bool", "It holds analysed e-mails", aliases=("mail",), column=Incident.has_mail),
+    FieldSpec(
+        "archived",
+        "bool",
+        "It is archived (the list leaves archived incidents out unless this asks for them)",
+        sql=_archived_sql,
+        test=_archived_test,
+    ),
     FieldSpec("created", "date", "When it was created", aliases=("createdAt",), column=Incident.created_at),
     FieldSpec("modified", "date", "When it last changed", aliases=("updated", "updatedAt"), column=Incident.updated_at),
     FieldSpec("type", "keyword", "The name of its type of incident", column=_TYPE_NAME, nullable=True),

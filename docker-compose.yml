@@ -202,6 +202,13 @@ services:
       PCAP_TOKEN: ${PCAP_TOKEN?PCAP_TOKEN is not set, run deploy/init-env.sh}
       PCAP_TOKEN_FILE: /run/secrets/pcap_token
       PCAP_MAX_MB: ${PCAP_MAX_MB:-500}
+      # Host evidence (7.0): the worker that reads the originals, and the largest file and
+      # collection sent in parts.
+      FORENSICS_URL: http://forensics:8760
+      FORENSICS_TOKEN: ${FORENSICS_TOKEN?FORENSICS_TOKEN is not set, run deploy/init-env.sh}
+      FORENSICS_TOKEN_FILE: /run/secrets/forensics_token
+      EVIDENCE_MAX_MB: ${EVIDENCE_MAX_MB:-8192}
+      COLLECTION_MAX_MB: ${COLLECTION_MAX_MB:-20480}
       # Mailboxes (mbox, Maildir archive) and Outlook PST files, read as many e-mails.
       MAILBOX_MAX_MB: ${MAILBOX_MAX_MB:-2048}
       PST_MAX_MB: ${PST_MAX_MB:-4096}
@@ -233,6 +240,10 @@ services:
       # to. NIK_SERVER_NAME is what this server calls itself to the other host of a pair.
       STANDBY_INBOX: /app/inbox
       NIK_SERVER_NAME: ${NIK_SERVER_NAME:-${TLS_HOSTNAME:-}}
+      # A copy of another server, to try a release on (docs/admin/try-on-a-copy.md): it reaches
+      # nothing outside itself. Set by deploy/restore.sh --as-copy.
+      NIK_COPY: ${NIK_COPY:-false}
+      NIK_COPY_OF: ${NIK_COPY_OF:-}
     volumes:
       - sample-store:/app/samples
       - ${NIK_WAL_ARCHIVE_DIR:-wal-archive}:/app/wal-archive
@@ -254,6 +265,7 @@ services:
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/browser_token:/run/secrets/browser_token:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/pcap_token:/run/secrets/pcap_token:ro,z
       - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/sandbox_token:/run/secrets/sandbox_token:ro,z
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/forensics_token:/run/secrets/forensics_token:ro,z
     networks: [default, analysis, browser-control, automation-internal]
     depends_on:
       db:
@@ -336,6 +348,9 @@ services:
       WAL_ARCHIVE_DIR: /app/wal-archive
       NIK_ARCHIVE_TIMEOUT: ${NIK_ARCHIVE_TIMEOUT:-300}
       NIK_SERVER_NAME: ${NIK_SERVER_NAME:-${TLS_HOSTNAME:-}}
+      # The way out of this container is shut on a copy of another server (core/copy.py).
+      NIK_COPY: ${NIK_COPY:-false}
+      NIK_COPY_OF: ${NIK_COPY_OF:-}
     volumes:
       # Read-only: this container sends the copy of each backup off the server (it is the one
       # with a way out) and never writes one.
@@ -512,6 +527,40 @@ services:
     logging: *logging
     restart: unless-stopped
 
+  # Forensics worker (7.0): reads the files of host evidence (event logs,
+  # registry hives, browser databases, command histories, a $MFT) and says, for
+  # each, what it read and what it could not. It is sent the original it reads
+  # (the store of files is sealed and it does not see it) and keeps it on the
+  # `forensics-work` volume, in clear, until nobody asked for it for a quarter
+  # of an hour, and at the latest until it starts again. Every file is read in a
+  # process of its own with bounded memory and CPU time, so a file made to crash
+  # a parser ends that process and not the worker. No route out: the internal
+  # analysis network only, read-only filesystem, no capabilities.
+  forensics:
+    build: ./workers/forensics
+    environment:
+      FORENSICS_TOKEN: ${FORENSICS_TOKEN?FORENSICS_TOKEN is not set, run deploy/init-env.sh}
+      FORENSICS_TOKEN_FILE: /run/secrets/forensics_token
+      FORENSICS_MAX_JOBS: ${FORENSICS_MAX_JOBS:-2}
+      FORENSICS_JOB_MEMORY_MB: ${FORENSICS_JOB_MEMORY_MB:-1536}
+      # The bound on a collection (a zip of a triage): the same value as the API's COLLECTION_MAX_MB.
+      FORENSICS_COLLECTION_MB: ${COLLECTION_MAX_MB:-20480}
+    volumes:
+      - forensics-work:/work
+      - ${NIK_SECRETS_DIR:-./deploy/no-secrets}/forensics_token:/run/secrets/forensics_token:ro,z
+    networks: [analysis]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${FORENSICS_MEMORY:-4g}
+    # The files being read get 20 s to finish (FORENSICS_STOP_GRACE); one that is cut is read again.
+    stop_grace_period: 30s
+    cpus: ${FORENSICS_CPUS:-2}
+    pids_limit: 512
+    logging: *logging
+    restart: unless-stopped
+
   # Isolated browser: opens HTML attachments and links in Chromium and sends
   # back screenshots; the analyst's clicks and typing are replayed here. The
   # only worker with a route to the internet (browser-egress), used only by
@@ -596,6 +645,8 @@ volumes:
   pst-work:
   # Where the packet capture worker keeps a capture too large for memory, while it reads it.
   pcap-work:
+  # The originals the forensics worker is reading, in clear while it reads them.
+  forensics-work:
   web-certs:
 
 networks:

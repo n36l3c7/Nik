@@ -1,18 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  Copy,
-  Download,
-  FileText,
-  FolderOpen,
-  House,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Share2,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Copy, Download, FileText, FolderOpen, House, Pencil, Plus, Share2, Trash2, Upload, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api, postForBlob } from '../../services/api.js'
 import {
@@ -30,11 +17,15 @@ import {
   rangeLabel,
   sharingText,
 } from '../../domain/dashboards.js'
+import { dashboardChoices, effectiveSeconds, nextTick, readChoice, writeChoice } from '../../domain/autoRefresh.js'
 import { ROLES } from '../../domain/permissions.js'
 import { generateId } from '../../lib/id.js'
 import { copyText, saveBlob } from '../../lib/download.js'
+import { hasModalLayer } from '../../lib/layers.js'
+import { useAutoRefresh } from '../../lib/useAutoRefresh.js'
 import { Badge, Button, EmptyState, Modal, Select, Wait } from '../ui/index.js'
 import QueryInput from '../ui/QueryInput.jsx'
+import RefreshControl from '../ui/RefreshControl.jsx'
 import Grid from './Grid.jsx'
 import Widget from './Widget.jsx'
 import WidgetEditor from './WidgetEditor.jsx'
@@ -235,7 +226,8 @@ function ShareDialog({ board, onSaved, onClose }) {
  * }} props
  */
 export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenIncident, onFirstScreen }) {
-  const { can } = useAuth()
+  const { can, currentUser } = useAuth()
+  const me = currentUser?.username ?? ''
   const ref = useRef(null)
   const fileRef = useRef(null)
   const editNext = useRef(null) // a dashboard just made opens ready to be edited
@@ -302,13 +294,59 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
     }
   }, [dashboardId])
 
-  // The dashboard asks again by itself when it says so, while nobody edits it.
-  const refreshSeconds = draft ? 0 : (board?.refreshSeconds ?? 0)
-  useEffect(() => {
-    if (!refreshSeconds) return undefined
-    const timer = setInterval(() => setTick((old) => old + 1), refreshSeconds * 1000)
-    return () => clearInterval(timer)
-  }, [refreshSeconds])
+  // ---- the refresh: by hand, and on the person's own pace (this browser, for each dashboard) ----
+  const scope = dashboardId ? `dashboards.${dashboardId}` : null
+  const [held, setHeld] = useState({ scope: null, id: 'default' })
+  const stored = useMemo(() => (scope ? readChoice(localStorage, me, scope) : 'default'), [me, scope])
+  const choice = held.scope === scope ? held.id : stored
+  const chooseRefresh = (id) => {
+    setHeld({ scope, id })
+    if (scope) writeChoice(localStorage, me, id, scope)
+  }
+  // Each widget says when its question is answered: the refresh is over when all of them have.
+  const settling = useRef(null)
+  const settled = useCallback((id, ok, at) => {
+    const wait = settling.current
+    if (!wait || wait.tick !== at || !wait.waiting.delete(id)) return
+    if (!ok) wait.failed += 1
+    if (wait.waiting.size === 0) wait.finish()
+  }, [])
+  useEffect(
+    () => () => {
+      settling.current?.finish()
+    },
+    [dashboardId],
+  )
+  const refresh = useCallback(
+    () =>
+      new Promise((resolve, reject) => {
+        const next = nextTick(tick)
+        const ids = (board?.widgets ?? []).map((widget) => widget.id)
+        const wait = { tick: next, waiting: new Set(ids), failed: 0, finish: null }
+        const timer = setTimeout(() => {
+          wait.failed = Math.max(1, wait.waiting.size)
+          wait.finish()
+        }, 60000)
+        wait.finish = () => {
+          clearTimeout(timer)
+          if (settling.current === wait) settling.current = null
+          if (wait.failed) {
+            reject(new Error(`${wait.failed} ${wait.failed === 1 ? 'widget' : 'widgets'} could not be refreshed.`))
+          } else resolve()
+        }
+        settling.current = wait
+        setTick(next)
+        if (ids.length === 0) wait.finish()
+      }),
+    [tick, board],
+  )
+  const paused = Boolean(draft || adding || editingWidget || drill || sharing || removing || saving)
+  // One timer: the hook, at the pace in force. The dashboard's saved pace is its default; the person's own
+  // choice (this browser) overrides it, an explicit Off included.
+  const defaultSeconds = board?.refreshSeconds ?? 0
+  const seconds = effectiveSeconds(choice, defaultSeconds)
+  const autoRefresh = useAutoRefresh({ refresh, seconds, paused, blocked: hasModalLayer })
+  const refreshChoices = useMemo(() => dashboardChoices(defaultSeconds), [defaultSeconds])
 
   const shown = draft ?? board
   const editing = Boolean(draft)
@@ -599,13 +637,15 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                           : [{ value: range, label: rangeLabel(range) }]),
                       ]}
                     />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={RefreshCw}
-                      onClick={() => setTick((old) => old + 1)}
-                      aria-label="Refresh"
-                      title="Refresh"
+                    <RefreshControl
+                      what="the dashboard"
+                      refreshing={autoRefresh.refreshing}
+                      lastAt={autoRefresh.lastAt}
+                      error={autoRefresh.error}
+                      onRefresh={autoRefresh.refreshNow}
+                      choice={choice}
+                      onChoice={chooseRefresh}
+                      options={refreshChoices}
                     />
                     <Button
                       size="sm"
@@ -786,6 +826,7 @@ export default function DashboardsPage({ dashboardId, onSelect, onClose, onOpenI
                         board={shown}
                         range={editing ? draft.timeRange : range}
                         tick={tick}
+                        onSettled={settled}
                         asTable={asTable}
                         onDrill={editing ? null : setDrill}
                         onOpenIncident={editing ? null : onOpenIncident}

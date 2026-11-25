@@ -1,0 +1,26 @@
+title: 'Command: Encoded Payload Decoded'
+id: b153c296-ea58-4dc4-bace-da4076dfc339
+status: stable
+description: 'A base64 or encoded payload is decoded or run, a common obfuscation step.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1140
+    - attack.t1027
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - 'frombase64string'
+              - '-encodedcommand'
+        - command|re|i:
+              - 'base64\s+(-d|--decode)'
+              - '\s-enc\s'
+              - 'certutil.*-decode'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: high

@@ -3,9 +3,9 @@
 Install Nik by hand on RHEL 8 or 9 (the same steps work on Rocky Linux and AlmaLinux): PostgreSQL, the backend under systemd, nginx in front.
 
 !!! warning "Prefer the Compose stack"
-    This install has **no analysis workers** and **no archive of the database log**. The Code and Capabilities views, document previews, the isolated browser, Network Analysis and address scans say "not configured"; samples and e-mails are still analysed statically and every other tab works. There is no recovery to a moment and no standby. Unless you must avoid containers on the host, use [Install in production](install.md): it is the supported way and the one that isolates hostile files.
+    This install has **no analysis workers** (the forensics worker included) and **no archive of the database log**. The Code and Capabilities views, document previews, the isolated browser, Network Analysis and address scans say "not configured"; files of host evidence are kept as they were given and wait, unread, with no Sigma rule run on them; samples and e-mails are still analysed statically and every other tab works. There is no recovery to a moment and no standby. Unless you must avoid containers on the host, use [Install in production](install.md): it is the supported way and the one that isolates hostile files.
 
-    The workers can still run with the Compose file beside a manual backend: put their `*_URL` and `*_TOKEN` in `nik.env`.
+    The workers can still run with the Compose file beside a manual backend: put their `*_URL` and `*_TOKEN` in `nik.env` (`FORENSICS_URL` and `FORENSICS_TOKEN` for the forensics worker).
 
 nginx serves the app and proxies `/api/` to the backend, so the browser talks to one origin. Every command assumes a sudo-capable user.
 
@@ -163,15 +163,7 @@ sudo openssl req -x509 -nodes -days 825 -newkey rsa:2048 \
 
 For an internet-facing host use a real certificate (for example `sudo dnf install -y certbot python3-certbot-nginx`).
 
-## Step 7: the .wasm type
-
-The app loads a WebAssembly module. RHEL 9's nginx maps it already; on RHEL 8 add this line to the `types { … }` block of `/etc/nginx/mime.types` if missing:
-
-```text
-application/wasm  wasm;
-```
-
-## Step 8: nginx server block
+## Step 7: nginx server block
 
 Create `/etc/nginx/conf.d/nik.conf`:
 
@@ -261,7 +253,7 @@ node frontend/security-headers.js /etc/nginx/snippets
     add_header Referrer-Policy "no-referrer" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
     add_header Cross-Origin-Opener-Policy "same-origin" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
     add_header X-Frame-Options "DENY" always;
     add_header Strict-Transport-Security "max-age=31536000" always;
     ```
@@ -282,7 +274,7 @@ node frontend/security-headers.js /etc/nginx/snippets
 !!! tip "502 Bad Gateway"
     Usually SELinux: check step 5a, and that the backend runs (`curl http://127.0.0.1:8000/api/health`).
 
-## Step 9: firewall
+## Step 8: firewall
 
 Only 80 and 443 are open; the backend stays on `127.0.0.1:8000`.
 
@@ -326,7 +318,7 @@ sudo chown -R nik:nik /opt/nik
 sudo systemctl restart nik-api.service
 ```
 
-Then compare your server block and header snippets with step 8: a release may change them (6.10 raised the mailbox location to `4200m`). Read the [release notes](upgrades.md#release-notes) of every version you pass.
+Then compare your server block and header snippets with step 7: a release may change them (6.10 raised the mailbox location to `4200m`; 7.0 took `'wasm-unsafe-eval'` out of the `Content-Security-Policy` line of `nik-headers-page.conf`, and the app no longer loads a WebAssembly module, so the `application/wasm  wasm;` line you may have added to `mime.types` can go). Read the [release notes](upgrades.md#release-notes) of every version you pass.
 
 ## Related
 

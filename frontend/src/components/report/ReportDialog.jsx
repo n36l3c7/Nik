@@ -1,24 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, Eye, FileText } from 'lucide-react'
 import { Button, Modal, Wait } from '../ui/index.js'
 import { useIncidents } from '../../context/IncidentContext.jsx'
-import { useSocEngine } from '../../context/SettingsContext.jsx'
 import { postForBlob } from '../../services/api.js'
 import { saveBlob } from '../../lib/download.js'
-import {
-  LANGUAGE_OPTIONS,
-  REPORT_SECTIONS,
-  TLP_OPTIONS,
-  reportDetections,
-  reportSettings,
-} from '../../domain/report.js'
-import { buildTimelineEvents } from '../../domain/timeline.js'
+import { LANGUAGE_OPTIONS, REPORT_SECTIONS, TLP_OPTIONS, reportSettings } from '../../domain/report.js'
 
 /*
  * Incident report dialog: language, TLP, sections and the executive summary
- * (saved on the incident), a preview of the server-built HTML in a sandboxed
- * frame, and the PDF or HTML download. The app sends the SOC rule hits it
- * computed, so the report can list their ATT&CK techniques.
+ * (saved on the incident), the table of evidence integrity (asked for with each report), a preview of the server-built HTML in a sandboxed
+ * frame, and the PDF or HTML download. The Sigma rule matches in the report come from the server,
+ * which reads them from its tables: the app sends none.
  */
 
 const inputBase =
@@ -28,11 +20,13 @@ const safeName = (name) => String(name || 'incident').replace(/[^A-Za-z0-9._-]+/
 
 export default function ReportDialog({ open, onClose, incident }) {
   const { updateReportSettings } = useIncidents()
-  const engine = useSocEngine()
   const [options, setOptions] = useState(() => reportSettings(incident))
   const [busy, setBusy] = useState(null) // 'preview' | 'pdf' | 'html'
   const [error, setError] = useState(null)
   const [preview, setPreview] = useState(null)
+  // The table of what was read of each file (7.0): on, as the server has it, unless unticked here. It is
+  // asked for with each report and not saved with the incident.
+  const [integrity, setIntegrity] = useState(true)
   const summaryTimer = useRef(null)
   // Options changed but not saved yet (the summary is saved after a pause).
   const unsaved = useRef({})
@@ -42,21 +36,10 @@ export default function ReportDialog({ open, onClose, incident }) {
     setOptions(reportSettings(incident))
     setPreview(null)
     setError(null)
+    setIntegrity(true)
     // Reopening for another incident resets the form; edits re-render only.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the incident is its id: saving its settings must not reset the form
   }, [open, incident?.id])
-
-  const detections = useMemo(
-    () =>
-      open && incident
-        ? reportDetections(
-            buildTimelineEvents(incident.data, engine),
-            // A report of what was flagged counts the detections on flagged events only.
-            options.scope === 'all' ? null : (incident.flags ?? {}),
-          )
-        : [],
-    [open, incident, engine, options.scope],
-  )
 
   if (!incident) return null
   const flaggedCount = Object.keys(incident.flags ?? {}).length
@@ -89,7 +72,7 @@ export default function ReportDialog({ open, onClose, incident }) {
       const blob = await postForBlob(`/incidents/${encodeURIComponent(incident.id)}/report`, {
         format,
         ...options,
-        detections,
+        integrity,
       })
       return blob
     } catch (err) {
@@ -213,6 +196,20 @@ export default function ReportDialog({ open, onClose, incident }) {
                 {section.label}
               </label>
             ))}
+            <label className="flex items-start gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                checked={integrity}
+                onChange={(event) => setIntegrity(event.target.checked)}
+                className="mt-0.5 accent-accent"
+              />
+              <span>
+                Evidence integrity
+                <span className="block text-xs text-fg-muted">
+                  What was read of each file of host evidence, and what was lost; a file read in part says why.
+                </span>
+              </span>
+            </label>
           </fieldset>
 
           <label className="block space-y-1">
@@ -227,8 +224,9 @@ export default function ReportDialog({ open, onClose, incident }) {
             />
           </label>
           <p className="text-[11px] text-fg-muted">
-            {detections.length} SOC rules matched in this incident; their ATT&amp;CK techniques join those from capa and
-            YARA. The organisation name and logo come from Settings → Report header.
+            The Sigma rule matches in this incident come from the server, which reads them from its tables; their
+            ATT&amp;CK techniques join those from capa and YARA. The organisation name and logo come from Settings →
+            Report header.
           </p>
         </div>
 

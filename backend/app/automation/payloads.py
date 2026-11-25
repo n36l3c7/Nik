@@ -511,6 +511,35 @@ def indicators_found(db, incident: Incident, door: str, found: list[dict], kept:
     return data, classes
 
 
+def evidence_detected(incident: Incident, source: Any, count: int, level: int, rules: list[dict]) -> tuple[dict, dict]:
+    """``evidence.detected``: Sigma rules matched records of a file of host evidence while it was read.
+
+    ``count`` is how many detections the file has, ``level`` the highest of them as a word and
+    ``levelNumber`` as 1 (informational) to 5 (critical): a condition on the minimum level reads the
+    number. ``rules`` are the ones that matched most, each ``{id, title, level, count}``, at most 20."""
+    from ..sigma.checking import LEVEL_NAMES
+
+    data = {
+        "incident": incident_data(incident),
+        "source": {"id": source.id, "fileName": source.file_name, "kind": source.kind},
+        "count": count,
+        "level": LEVEL_NAMES.get(level, ""),
+        "levelNumber": level,
+        "rules": [
+            {"id": rule["id"], "title": rule["title"], "level": rule["level"], "count": rule["count"]}
+            for rule in rules[:LIST_MAX]
+        ],
+    }
+    classes = incident_classes()
+    for key in ("source.id", "rules.id"):
+        classes[key] = ["nik_id"]
+    for key in ("source.fileName", "rules.title"):
+        classes[key] = ["incident_text"]
+    for key in ("source.kind", "count", "level", "levelNumber", "rules.level", "rules.count"):
+        classes[key] = ["verdict"]
+    return data, classes
+
+
 # --------------------------------------------------------------------------- #
 # The server, the outside                                                     #
 # --------------------------------------------------------------------------- #

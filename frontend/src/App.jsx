@@ -64,19 +64,27 @@ import { recognise } from './domain/pasted.js'
 import { useIocLookup } from './context/IocLookupContext.jsx'
 import { sha256Hex } from './lib/hash.js'
 import { useNavigation } from './context/NavigationContext.jsx'
-import { detectFileRoute, readHead } from './domain/fileRouting.js'
+import { HOST_TAB, detectFileRoute, readHead } from './domain/fileRouting.js'
 import LoginScreen from './components/auth/LoginScreen.jsx'
 import SessionExpiredDialog from './components/auth/SessionExpiredDialog.jsx'
 import SessionGuards, { RequiredEnrolmentScreen } from './components/auth/SessionGuards.jsx'
 import FirstRunSetup from './components/auth/FirstRunSetup.jsx'
 import { useAutomation } from './context/AutomationContext.jsx'
+import CopyBanner from './components/layout/CopyBanner.jsx'
+import { ArchiveBanner } from './components/incident/ArchiveControl.jsx'
+import { uploadFile } from './lib/chunkedUpload.js'
+import { appDropHeld } from './lib/dropOwner.js'
+import CollectionHost from './components/evidence/CollectionDialog.jsx'
+import { useHostFileSender } from './lib/useHostFileSender.js'
+import { ignoreGoneRejections, onIncidentGone } from './lib/incidentGone.js'
+import { noteEvidenceChanged } from './lib/useEvidenceSummary.js'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
 import RunPlaybookDialog from './components/automation/RunPlaybookDialog.jsx'
 import CloseIncidentDialog from './components/fields/CloseIncidentDialog.jsx'
 import IncidentPanel from './components/fields/IncidentPanel.jsx'
 import { useFields } from './context/FieldsContext.jsx'
 import { orderTabs, typeOf } from './domain/fields.js'
-import { EVIDENCE_TAB, resolveTab } from './domain/evidence.js'
+import { EVIDENCE_TAB, SERVER_KIND, resolveTab } from './domain/evidence.js'
 import { pageTabs } from './components/tabs/summary/pageTabs.jsx'
 import ResizeHandle, { useResizablePane } from './components/ui/ResizeHandle.jsx'
 import { transfer } from './lib/transfers.js'
@@ -183,7 +191,7 @@ function UnreachableScreen({ error, onRetry }) {
 }
 
 export default function App() {
-  const { hasUsers, isAuthenticated, enrolling, authReady, serverError, retry, logout, can } = useAuth()
+  const { hasUsers, isAuthenticated, enrolling, authReady, serverError, retry, logout, can, server } = useAuth()
   // What the roles of the signed-in account allow: the shell shows what it can use.
   const canRead = can('read')
   const canWrite = can('write')
@@ -204,9 +212,21 @@ export default function App() {
     selectIncident,
     activeIncidentId,
     retryActiveIncident: reloadActiveIncident,
+    incidentGone,
   } = useIncidents()
   const artifacts = useArtifacts()
   const { showToast } = useToast()
+  // An incident deleted in another window: the first request about it to fail brings the person back to the list.
+  useEffect(() => {
+    onIncidentGone((incidentId) => {
+      if (incidentGone(incidentId)) showToast({ message: 'The incident was deleted' })
+    })
+    window.addEventListener('unhandledrejection', ignoreGoneRejections)
+    return () => {
+      onIncidentGone(null)
+      window.removeEventListener('unhandledrejection', ignoreGoneRejections)
+    }
+  }, [incidentGone, showToast])
   const { openIoc } = useIocLookup()
   // The main area shows an artifact on its own instead of the active incident.
   const artifactOpen = Boolean(artifacts.currentId)
@@ -269,6 +289,7 @@ export default function App() {
 
   // Navigation requests from menus and dialogs (see NavigationContext).
   const navigation = useNavigation()
+  const sendHostFile = useHostFileSender()
   const { importInto, clearSearch } = navigation
   /** Show the active incident's tabs: an artifact or the Indicators page in the main area is left. */
   const showIncident = useCallback(() => {
@@ -406,8 +427,9 @@ export default function App() {
       !hasFiles(event) &&
       Array.from(event.dataTransfer?.types ?? []).includes('text/plain') &&
       !isTypingTarget(event.target)
+    // A page of host evidence (SourceFiles) takes the drop of files itself: the overlay and the handler stand down.
     const onEnter = (event) => {
-      if (!hasFiles(event)) return
+      if (!hasFiles(event) || appDropHeld()) return
       depth += 1
       setDragging(true)
     }
@@ -417,7 +439,7 @@ export default function App() {
       if (depth === 0) setDragging(false)
     }
     const onOver = (event) => {
-      if (hasFiles(event) || hasText(event)) event.preventDefault()
+      if ((hasFiles(event) && !appDropHeld()) || hasText(event)) event.preventDefault()
     }
     const onDrop = (event) => {
       if (hasText(event) && !event.defaultPrevented) {
@@ -428,6 +450,7 @@ export default function App() {
       if (!hasFiles(event)) return
       depth = 0
       setDragging(false)
+      if (appDropHeld()) return
       // A drop zone inside a tab (it calls preventDefault) handles its own files.
       if (event.defaultPrevented) return
       event.preventDefault()
@@ -771,10 +794,31 @@ export default function App() {
     // The incident, on the tab of the file, takes the place of what is open.
     leave(async () => {
       closeArtifact()
+      let incidentId = activeIncident?.id
       if (target === 'new') {
         const incident = createIncident(fields)
-        // Samples and .evtx files go to the server: the incident must exist there first.
+        incidentId = incident.id
+        // Samples and files of host evidence go to the server: the incident must exist there first.
         if (!(await whenSaved(incident.id))) return
+      }
+      // A file of host evidence nobody placed by hand: the server recognises it (or says why it does not).
+      if (tab === HOST_TAB && incidentId) {
+        await sendHostFile(file, incidentId)
+        return
+      }
+      const kind = SERVER_KIND[tab]
+      if (kind && incidentId) {
+        // Host evidence is sent in parts and read by the worker; the page of its kind shows what became of it.
+        try {
+          await transfer(`Sending ${file.name}`, (onProgress) =>
+            uploadFile(file, { incidentId, params: { kind }, onProgress }),
+          )
+          noteEvidenceChanged(incidentId)
+          navigation.goTo(tab)
+        } catch (err) {
+          showToast({ message: `${file.name}: ${err.message}` })
+        }
+        return
       }
       importInto(tab, file, params)
     })
@@ -829,7 +873,7 @@ export default function App() {
           },
         ]
       : []),
-    { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings('detection') },
+    { id: 'settings', label: 'Open settings', icon: Settings, run: () => openSettings(SETTINGS_HOME) },
     ...(canWrite
       ? [
           {
@@ -921,7 +965,8 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className={`flex h-screen overflow-hidden ${server.copy ? 'pt-7' : ''}`}>
+      <CopyBanner server={server} />
       <Rail
         active={activeSection}
         onSection={goHome}
@@ -1061,6 +1106,7 @@ export default function App() {
             {canRead && !artifactArea && !libraryOpen && (
               <TabBar activeTabId={activeTab.id} onChange={chooseTab} tabs={shownTabs} />
             )}
+            {canRead && !artifactArea && !libraryOpen && <ArchiveBanner incident={activeIncident} />}
             {canRead && !artifactArea && !libraryOpen && incidentApprovals.length > 0 && (
               <div className="flex shrink-0 flex-col gap-2 border-b border-line px-6 py-3">
                 {incidentApprovals.map((approval) => (
@@ -1146,7 +1192,11 @@ export default function App() {
                           kinds={evidenceKinds}
                           kind={resolved.kind}
                           onKind={chooseTab}
-                          onAddFile={canWrite ? (file) => placeFile(file, { asEvidence: true }) : undefined}
+                          onAddFile={
+                            canWrite && !activeIncident?.archivedAt
+                              ? (file) => placeFile(file, { asEvidence: true })
+                              : undefined
+                          }
                         />
                       ) : (
                         <ActiveTabComponent incident={activeIncident} />
@@ -1225,9 +1275,11 @@ export default function App() {
         </form>
       </Modal>
 
+      <CollectionHost />
+
       <AddFileDialog
         drop={drop}
-        activeIncident={activeIncident}
+        activeIncident={activeIncident?.archivedAt ? null : activeIncident}
         onClose={() => setDrop(null)}
         onConfirm={handleDropConfirm}
         onOpenKnown={(artifact) => {

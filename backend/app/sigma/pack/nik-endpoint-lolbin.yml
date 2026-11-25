@@ -1,0 +1,26 @@
+title: 'Artifact: Living-off-the-Land Binary'
+id: 92fa97b7-eb23-46d2-adf6-a488c2cb3228
+status: stable
+description: 'A binary that is often abused to run code or to download (mshta, rundll32, regsvr32, certutil...) appears.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1218
+logsource:
+    product: nik
+    service: endpoint
+detection:
+    selection:
+        - name|re|i:
+              - '\b(mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|cscript|wscript|installutil|msbuild|hh|forfiles)\.exe\b'
+        - path|re|i:
+              - '\b(mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|cscript|wscript|installutil|msbuild|hh|forfiles)\.exe\b'
+        - command|re|i:
+              - '\b(mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|cscript|wscript|installutil|msbuild|hh|forfiles)\.exe\b'
+        - target|re|i:
+              - '\b(mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|cscript|wscript|installutil|msbuild|hh|forfiles)\.exe\b'
+    condition: selection
+falsepositives:
+    - Software that is installed or run this way on purpose
+level: medium

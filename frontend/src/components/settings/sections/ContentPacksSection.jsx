@@ -95,6 +95,19 @@ function Diff({ text }) {
   )
 }
 
+/** The licence or credit text a pack carries (the rules of a vendor), collapsed: a person reads it when they want. */
+function Notice({ text }) {
+  if (!text) return null
+  return (
+    <details className="mt-2 border border-line bg-sunken text-xs">
+      <summary className="cursor-pointer px-3 py-1.5 font-medium text-fg-muted">
+        Notice of the pack (licence and credits)
+      </summary>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-sans text-fg">{text}</pre>
+    </details>
+  )
+}
+
 /** The plan of an import: each item with what would be done, kept or left out. */
 function Plan({ plan, onDone, onCancel }) {
   const [skipped, setSkipped] = useState(() => initialSkips(plan))
@@ -132,6 +145,7 @@ function Plan({ plan, onDone, onCancel }) {
           {planSummary(plan.counts)}.
         </p>
         {plan.pack.description && <p className="mt-1 text-sm text-fg">{plan.pack.description}</p>}
+        <Notice text={plan.pack.notice} />
       </div>
       {plan.problems.map((problem) => (
         <p key={problem} role="alert" className="border border-high-line bg-high-soft px-3 py-2 text-sm text-high-fg">
@@ -566,6 +580,7 @@ function PackDetails({ card, onClose, onDownload }) {
             .join(' · ')}
         </p>
         {card.description && <p className="text-fg">{card.description}</p>}
+        <Notice text={pack?.notice || card.notice} />
         {card.requires.length > 0 && (
           <p className="text-xs text-fg-muted">
             Requires: {card.requires.map((need) => `${need.pack} ${need.version}`).join(', ')}.

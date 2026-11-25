@@ -9,16 +9,21 @@
  * it; a file Nik cannot place gets no proposal and the dialog asks.
  *
  * Route: { tab, label, params } where params depend on the tab:
- *   browser   { engine, source, browser? }  (Chromium files: the browser is asked)
- *   commands  { shell }
- *   endpoint  { }                           (category and source are asked)
- *   eventlogs { kind: 'evtx' | 'json' }
+ *   host      { }                           (host evidence: the server recognises the file, or says why not)
+ *   browser   { engine, source, browser? }  (Chromium files: the browser is asked; chosen by hand in the dialog)
+ *   commands  { shell }                     (the same)
+ *   endpoint  { }                           (category and source are asked; the same)
+ *   eventlogs { kind: 'evtx' | 'json' }     (the same)
  *   malware   { }
  *   mail      { }                           (.eml, Outlook .msg)
  *   network   { }                           (pcap, pcapng)
  */
 
 export const HEAD_BYTES = 512
+
+/** The tab of a file of host evidence the app does not place by guessing: `kind: "auto"` asks the server. */
+export const HOST_TAB = 'host'
+const HOST = (label) => ({ tab: HOST_TAB, label, params: {} })
 
 const text = (bytes) => new TextDecoder('latin1').decode(bytes)
 
@@ -65,6 +70,24 @@ const SHELL_FILES = [
   [/consolehost_history\.txt$/i, 'powershell'],
 ]
 
+// What only host evidence is called: a hive, a prefetch file, a $MFT, the logs of Linux, a disk image to be turned
+// into something Nik reads (the server answers with how). A zip and a shortcut are NOT here: a zip is how samples
+// arrive (password "infected") and a shortcut is a common phishing payload, so anywhere outside a page of host
+// evidence they stay samples. A collection is imported on purpose ("Import a collection…", the Collections block
+// of the Evidence page, or "Host evidence (Nik recognises it)" in the Add-a-file dialog).
+const HOST_NAMES = [
+  [/(^|[\\/])(\$?mft|\$j|\$usnjrnl_\$j|c_\$extend_\$usnjrnl_\$j)$/i, '$MFT or $J of an NTFS volume'],
+  [/(^|[\\/])ntuser\.dat$/i, 'Registry hive (NTUSER.DAT)'],
+  [/\.hve$/i, 'Registry hive'],
+  [/(^|[\\/])(system|software|sam|security|default|usrclass\.dat)$/i, 'Registry hive'],
+  [/(^|[\\/])srudb\.dat$/i, 'SRUM database (SRUDB.dat)'],
+  [/\.pf$/i, 'Prefetch file'],
+  [/\.(automatic|custom)destinations-ms$/i, 'Jump list'],
+  [/(^|[\\/])(auth\.log|secure|audit\.log)(\.\d+)?$/i, 'Linux log'],
+  [/\.(vhd|vhdx|vmdk|e01|aff4?|dd|raw|plaso)$/i, 'Disk image or forensic container'],
+  [/(^|[\\/])plaso\.(jsonl|csv)$/i, 'Plaso export (psort)'],
+]
+
 /**
  * @param {{ name: string, head: Uint8Array }} file name and first bytes
  * @returns {{ tab: string, label: string, params: object } | null}
@@ -73,35 +96,21 @@ export function detectFileRoute({ name = '', head = new Uint8Array() }) {
   const base = String(name).split(/[\\/]/).pop()
   const lower = base.toLowerCase()
 
-  if (startsWith(head, MAGIC.evtx)) return { tab: 'eventlogs', label: 'Windows event log', params: { kind: 'evtx' } }
+  if (startsWith(head, MAGIC.evtx)) return HOST('Windows event log')
 
   if (startsWith(head, MAGIC.sqlite)) {
-    if (lower === 'places.sqlite')
-      return {
-        tab: 'browser',
-        label: 'Firefox places database',
-        params: { engine: 'firefox', source: 'places', browser: 'firefox' },
-      }
-    if (lower === 'history.db')
-      return {
-        tab: 'browser',
-        label: 'Safari history',
-        params: { engine: 'safari', source: 'history', browser: 'safari' },
-      }
-    if (lower === 'history')
-      return { tab: 'browser', label: 'Chromium history', params: { engine: 'chromium', source: 'history' } }
-    if (lower === 'shortcuts')
-      return { tab: 'browser', label: 'Chromium shortcuts', params: { engine: 'chromium', source: 'shortcuts' } }
+    if (lower === 'places.sqlite') return HOST('Firefox places database')
+    if (lower === 'history.db') return HOST('Safari history')
+    if (lower === 'history') return HOST('Chromium history')
+    if (lower === 'shortcuts') return HOST('Chromium shortcuts')
   }
-  if (lower === 'bookmarks' && head[0] === 0x7b)
-    return { tab: 'browser', label: 'Chromium bookmarks', params: { engine: 'chromium', source: 'bookmarks' } }
+  if (lower === 'bookmarks' && head[0] === 0x7b) return HOST('Chromium bookmarks')
   if (lower === 'downloads.plist' || lower === 'bookmarks.plist') {
-    const source = lower.startsWith('downloads') ? 'downloads' : 'bookmarks'
-    return { tab: 'browser', label: `Safari ${source}`, params: { engine: 'safari', source, browser: 'safari' } }
+    return HOST(`Safari ${lower.startsWith('downloads') ? 'downloads' : 'bookmarks'}`)
   }
 
-  for (const [pattern, shell] of SHELL_FILES) {
-    if (pattern.test(base)) return { tab: 'commands', label: 'Shell history', params: { shell } }
+  for (const [pattern] of SHELL_FILES) {
+    if (pattern.test(base)) return HOST('Shell history')
   }
 
   if (startsWith(head, MAGIC.pcapng)) return { tab: 'network', label: 'Packet capture (pcapng)', params: {} }
@@ -114,8 +123,12 @@ export function detectFileRoute({ name = '', head = new Uint8Array() }) {
   if (lower.endsWith('.eml') || (!lower.includes('.') && MAIL_HEADERS.test(text(head).trimStart())))
     return { tab: 'mail', label: 'E-mail (.eml)', params: {} }
 
-  if (lower.endsWith('.json') && text(head).includes('nik-eventlogs'))
-    return { tab: 'eventlogs', label: 'Event logs (collection script)', params: { kind: 'json' } }
+  if (lower.endsWith('.json') && text(head).includes('nik-eventlogs')) return HOST('Event logs (collection script)')
+
+  // Host evidence by its name, before the executables and the archives.
+  for (const [pattern, label] of HOST_NAMES) {
+    if (pattern.test(base) && !startsWith(head, MAGIC.mz) && !startsWith(head, MAGIC.elf)) return HOST(label)
+  }
 
   if (startsWith(head, MAGIC.mz)) return { tab: 'malware', label: 'Windows executable (PE)', params: {} }
   if (startsWith(head, MAGIC.elf)) return { tab: 'malware', label: 'Linux executable (ELF)', params: {} }
@@ -126,7 +139,7 @@ export function detectFileRoute({ name = '', head = new Uint8Array() }) {
     return { tab: 'malware', label: 'Office document (OLE)', params: {} }
   if (ACTIVE_EXTENSIONS.test(lower)) return { tab: 'malware', label: 'Script, archive or active document', params: {} }
 
-  if (lower.endsWith('.csv')) return { tab: 'endpoint', label: 'Tool export (CSV)', params: {} }
+  if (lower.endsWith('.csv')) return HOST('Tool export (CSV)')
   return null
 }
 

@@ -34,35 +34,39 @@ A file Nik cannot place says *not recognised: choose where it goes*: pick the **
 
 ### What Nik recognises
 
-| The file | Goes to |
-|---|---|
-| `.eml`, a message saved without extension, Outlook `.msg` | [Mail Analysis](mail.md) |
-| An executable (PE, ELF, Mach-O), a PDF, an Office document, a script, an archive | [Malware Analysis](malware.md) |
-| `.pcap`, `.pcapng` (gzip too) | [Network Analysis](network.md) |
-| Windows `.evtx`, the `nik-eventlogs.json` of the collection script | [Event Logs](host.md#event-logs) |
-| Chrome `History`, `Shortcuts`, `Bookmarks`; Firefox `places.sqlite`; Safari `History.db`, `Downloads.plist`, `Bookmarks.plist` | [Browser Forensics](host.md#browser-forensics) |
-| `.bash_history`, `.zsh_history`, `fish_history`, `ConsoleHost_history.txt` | [Command History](host.md#command-history) |
-| An mbox, an Outlook PST, an archive of a Maildir | A [mailbox](#mailboxes-mbox-maildir-pst), stored at once, no dialog |
-| A list of indicators (text, CSV, STIX 2.1, MISP, Nik's export) | The **Add indicators** dialog of the [Indicators page](indicator-library.md#add-one-or-many) |
+| The file                                                                                                                                               | Goes to                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `.eml`, a message saved without extension, Outlook `.msg`                                                                                              | [Mail Analysis](mail.md)                                                                     |
+| An executable (PE, ELF, Mach-O), a PDF, an Office document, a script, an archive                                                                       | [Malware Analysis](malware.md)                                                               |
+| `.pcap`, `.pcapng` (gzip too)                                                                                                                          | [Network Analysis](network.md)                                                               |
+| Windows `.evtx`, the `nik-eventlogs.json` of the collection script; `auth.log`, `secure`, `journalctl -o json`, `audit.log`, `log show --style ndjson` | [Event Logs](eventlogs.md)                                                                   |
+| Chrome `History`, `Shortcuts`, `Bookmarks`; Firefox `places.sqlite`; Safari `History.db`, `Downloads.plist`, `Bookmarks.plist`                         | [Browser Forensics](browser.md)                                                              |
+| `.bash_history`, `.zsh_history`, `fish_history`, `ConsoleHost_history.txt`                                                                             | [Command History](command-history.md)                                                        |
+| A registry hive, `.pf`, `.lnk`, a jump list, `SRUDB.dat`                                                                                               | [Endpoint Artifacts](endpoint.md)                                                            |
+| `$MFT`, `$J`                                                                                                                                           | [Disk (NTFS)](disk.md)                                                                       |
+| A zip of KAPE or Velociraptor, a Plaso export from `psort`                                                                                             | [Collections](collections.md)                                                                |
+| An mbox, an Outlook PST, an archive of a Maildir                                                                                                       | A [mailbox](#mailboxes-mbox-maildir-pst), stored at once, no dialog                          |
+| A list of indicators (text, CSV, STIX 2.1, MISP, Nik's export)                                                                                         | The **Add indicators** dialog of the [Indicators page](indicator-library.md#add-one-or-many) |
 
 !!! tip
     A file that holds indicators but is evidence (a CSV export of a tool, for example) opens **Add indicators** first. Press **Not indicators? Place the file in a tab** to drop it as evidence instead.
 
 ### Where a file is read
 
-- **In your browser**: browser databases, plists, shell histories, CSV and JSON exports. The raw file never leaves your machine; only the entries reach the server.
-- **On the server**: e-mails, mailboxes, suspicious files, packet captures, `.evtx` logs. They are stored, then analysed without ever being run.
+- **Host evidence** (event logs, browser, commands, endpoint artifacts, disk, collections) is sent to the server in parts, kept as it was given, and read there by an isolated worker. **It is no longer read in your browser**: see [Host evidence](host.md#files-are-no-longer-read-in-your-browser).
+- **Everything else** (e-mails, mailboxes, suspicious files, packet captures) is stored, then analysed without ever being run.
 
 ### Size limits
 
-| Evidence | Largest file | Set by |
-|---|---|---|
-| Suspicious file, e-mail | 100 MB | `SAMPLE_MAX_MB` |
-| Packet capture | 500 MB | `PCAP_MAX_MB` |
-| Host evidence sent to the server (`.evtx`, tool output) | 500 MB | `ARTIFACT_MAX_MB` |
-| Mailbox (mbox, Maildir archive) | 2048 MB | `MAILBOX_MAX_MB` |
-| Outlook PST | 4096 MB | `PST_MAX_MB` |
-| A file of indicators | 5 MB | fixed |
+| Evidence                        | Largest file | Set by              |
+| ------------------------------- | ------------ | ------------------- |
+| Suspicious file, e-mail         | 100 MB       | `SAMPLE_MAX_MB`     |
+| Packet capture                  | 500 MB       | `PCAP_MAX_MB`       |
+| One file of host evidence       | 8192 MB      | `EVIDENCE_MAX_MB`   |
+| A collection (a zip)            | 20480 MB     | `COLLECTION_MAX_MB` |
+| Mailbox (mbox, Maildir archive) | 2048 MB      | `MAILBOX_MAX_MB`    |
+| Outlook PST                     | 4096 MB      | `PST_MAX_MB`        |
+| A file of indicators            | 5 MB         | fixed               |
 
 An administrator changes them: see [Environment variables](../reference/configuration.md).
 
@@ -74,15 +78,15 @@ The **Evidence** tab of an incident lists everything it holds, kind by kind.
 
 - <span class="step">1</span> **Add a file…** chooses a file from the disk.
 - <span class="step">2</span> **Find a file…** narrows the list by name, sender or kind.
-- <span class="step">3</span> **The name of a kind** (Mail Analysis, Malware Analysis, Network Analysis, URL Analysis, Endpoint Artifacts, Event Logs, Browser Forensics, Command History) opens the whole kind: its own list, where files are added, compared and removed. The number beside it counts the files or records.
-- <span class="step">4</span> **A file** opens alone, in the page of its kind. A small square in front of it shows its verdict: red for high or phishing, amber for medium or suspicious.
+- <span class="step">3</span> **The name of a kind** (Mail Analysis, Malware Analysis, Network Analysis, URL Analysis, Endpoint Artifacts, Disk (NTFS), Event Logs, Browser Forensics, Command History) opens the whole kind: its own list, where files are added, compared and removed. The number beside it counts the files or records.
+- **A file** opens alone, in the page of its kind. A small square in front of it shows its verdict: red for high or phishing, amber for medium or suspicious.
 
 Right-click a file for **Open**, **Open in the list of …**, **Copy the name** and **Copy the detail**. Drag the edge of the list to resize it.
 
-**Remove** in the page of a file takes it out of this incident. The file stays as an [artifact](#analyse-without-an-incident).
+**Remove** in the page of a file takes it out of this incident. A file of mail, malware or a capture stays as an [artifact](#analyse-without-an-incident); a file of host evidence is removed with its records.
 
 !!! note
-    Endpoint Artifacts, Event Logs, Browser Forensics and Command History need the incident's operating system. See [Host evidence](host.md#the-system-of-the-incident).
+    Endpoint Artifacts, Disk (NTFS), Event Logs, Browser Forensics and Command History need the incident's operating system. See [Host evidence](host.md#the-system-of-the-incident).
 
 ## Paste or drag text
 
@@ -117,7 +121,7 @@ Not everything starts as a case. A reported e-mail, a suspicious file, a capture
 
 ![The New analysis dialog](../img/guide/evidence-4-new-analysis.png)
 
-Host evidence (browser and shell history, endpoint artifacts, event logs) always belongs to an incident.
+Host evidence (browser and shell history, endpoint artifacts, event logs, disk tables, collections) always belongs to an incident.
 
 ### The Artifacts page
 

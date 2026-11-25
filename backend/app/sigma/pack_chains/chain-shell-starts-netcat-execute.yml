@@ -1,0 +1,43 @@
+title: Shell Starts Netcat With a Command to Run
+id: 316ef025-6287-44b4-b40f-1d59ed1d9dfa
+name: nik_chain_shell_starts_netcat_execute
+status: test
+description: A shell started nc, ncat or netcat with an option that gives the connection a command to run (-e, -c). It is a reverse shell, or a bind shell, made with netcat.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1059.004
+- attack.command-and-control
+- attack.t1095
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - /sh
+    - /bash
+    - /dash
+    - /zsh
+    - /ksh
+    - /ash
+    - /csh
+    - /tcsh
+  selection_child:
+    Image|endswith:
+    - /nc
+    - /ncat
+    - /netcat
+    - /nc.traditional
+    - /nc.openbsd
+  selection_execute:
+    CommandLine|contains:
+    - ' -e '
+    - ' -c '
+    - ' --exec '
+    - ' --sh-exec '
+  condition: selection_parent and selection_child and selection_execute
+falsepositives:
+- A person who tests a network service with netcat
+level: high

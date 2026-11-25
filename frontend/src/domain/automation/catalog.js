@@ -164,6 +164,11 @@ export const EVENTS = {
     about: 'incident',
     sample: ['found.door', 'fetch'],
   },
+  'evidence.detected': {
+    label: 'Sigma rules match records of a host file',
+    about: 'incident',
+    sample: ['levelNumber', 4],
+  },
   'storage.low': { label: 'The disk is nearly full', about: '', sample: ['disk.free_percent', 5] },
   'sla.breached': {
     label: 'A timer of an incident passes its time',
@@ -185,10 +190,13 @@ export const EVENTS = {
 /** An event as the inspector lists it: "An e-mail is analysed · mail.analysed". */
 export const eventLabel = (event) => (EVENTS[event] ? `${EVENTS[event].label} · ${event}` : event)
 
+/** The test a first filter makes: a level is asked as a minimum, other numbers as a limit not to reach. */
+const sampleOp = (field, value) => (typeof value !== 'number' ? 'eq' : field === 'levelNumber' ? 'gte' : 'lt')
+
 /** A first filter for an event, for the analyst to change. */
 export function sampleFilter(event) {
   const [field, value] = EVENTS[event]?.sample ?? ['incident.severity', 'high']
-  return { all: [{ left: `{{ trigger.${field} }}`, op: typeof value === 'number' ? 'lt' : 'eq', right: value }] }
+  return { all: [{ left: `{{ trigger.${field} }}`, op: sampleOp(field, value), right: value }] }
 }
 
 /** What a trigger's event is about: incident, mail, file, pcap, url, indicator, or nothing. */
@@ -256,6 +264,32 @@ function eventFields(event, shapes) {
           ['more', 'number', 'How many the list leaves out'],
           ['kept', 'number', 'How many the incident now holds by finding, removed ones aside'],
         ]),
+        ...INCIDENT_FIELDS,
+      ]
+    case 'evidence.detected':
+      return [
+        { name: 'count', type: 'number', description: 'How many detections the file has' },
+        {
+          name: 'level',
+          type: 'text',
+          description: 'The highest level found: informational, low, medium, high or critical',
+        },
+        {
+          name: 'levelNumber',
+          type: 'number',
+          description:
+            'The same level as a number, 1 (informational) to 5 (critical): "at least high" is levelNumber >= 4',
+        },
+        ...fieldsOf('source', [
+          ['id', 'text', 'The id of the file'],
+          ['fileName', 'text', 'Its name'],
+          ['kind', 'text', 'The section: eventlog, browser, endpoint or commands'],
+        ]),
+        {
+          name: 'rules',
+          type: 'list',
+          description: 'The rules that matched most, each with id, title, level and count',
+        },
         ...INCIDENT_FIELDS,
       ]
     case 'sla.breached':

@@ -17,7 +17,7 @@ test('an entry goes to the first screen of its section from another section', ()
   assert.deepEqual(homeMove('iocs', at), { path: '/iocs', panel: 'iocs' })
   assert.deepEqual(homeMove('automation', at), { path: '/automation/playbooks' })
   assert.deepEqual(homeMove('playground', at), { path: '/playground' })
-  assert.deepEqual(homeMove('settings', at), { path: '/settings/analysis/detection-rules' })
+  assert.deepEqual(homeMove('settings', at), { path: '/settings/analysis/business-hours' })
 })
 
 test('…and from a screen inside the section', () => {
@@ -28,7 +28,7 @@ test('…and from a screen inside the section', () => {
   assert.deepEqual(homeMove('automation', { path: '/automation/runs/r1' }), { path: '/automation/playbooks' })
   assert.deepEqual(homeMove('automation', { path: '/automation/scripts/s1' }), { path: '/automation/playbooks' })
   assert.deepEqual(homeMove('settings', { path: '/settings/platform/sla' }), {
-    path: '/settings/analysis/detection-rules',
+    path: '/settings/analysis/business-hours',
   })
   assert.deepEqual(homeMove('incidents', { path: '/incident/i1', incidentId: 'i1' }), {
     path: '/incidents',
@@ -52,7 +52,7 @@ test('pressed on the first screen of its section an entry does nothing', () => {
   assert.equal(homeMove('iocs', { path: '/iocs', panel: 'iocs', quick: 'all' }), null)
   assert.equal(homeMove('automation', { path: '/automation/playbooks' }), null)
   assert.equal(homeMove('playground', { path: '/playground' }), null)
-  assert.equal(homeMove('settings', { path: '/settings/analysis/detection-rules' }), null)
+  assert.equal(homeMove('settings', { path: '/settings/analysis/business-hours' }), null)
   assert.equal(homeMove('artifacts', { path: '/artifacts', panel: 'artifacts' }), null)
   assert.equal(homeMove('artifacts', { path: '/artifacts', panel: null }), null)
   assert.equal(homeMove('nothing', { path: '/' }), null)

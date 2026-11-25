@@ -24,13 +24,6 @@ export const SETTINGS_GROUPS = [
     label: 'Analysis',
     sections: [
       {
-        id: 'detection',
-        slug: 'detection-rules',
-        label: 'Detection rules',
-        permission: 'read',
-        keywords: 'keywords suspicious patterns categories severity',
-      },
-      {
         id: 'hours',
         slug: 'business-hours',
         label: 'Business hours',
@@ -85,6 +78,13 @@ export const SETTINGS_GROUPS = [
     id: 'rules',
     label: 'Rule sets',
     sections: [
+      {
+        id: 'sigma',
+        slug: 'sigma',
+        label: 'Sigma rules',
+        permission: 'read',
+        keywords: 'detection detections rules hosts event logs windows sysmon sigmahq yaml levels suspicious keywords',
+      },
       { id: 'yara', slug: 'yara', label: 'YARA rules', permission: 'rules.manage', keywords: 'malware signatures' },
       {
         id: 'capa',
@@ -140,6 +140,13 @@ export const SETTINGS_GROUPS = [
         label: 'Pre-processing rules',
         permission: 'incidents.configure',
         keywords: 'fetch alerts drop duplicate link existing dedup noise script before incident',
+      },
+      {
+        id: 'archiving',
+        slug: 'archiving',
+        label: 'Archiving',
+        permission: 'incidents.archive',
+        keywords: 'archive closed incident days old read-only host records database drop automatic rule',
       },
     ],
   },
@@ -369,6 +376,8 @@ export function settingsFromPath(pathname) {
   const [, , group, slug] = path.replace(/\/+$/, '').split('/')
   const section = SECTIONS.find((candidate) => candidate.group === group && candidate.slug === slug)
   if (section) return { id: section.id }
+  // The keyword list of 6.x became Sigma rules in 7.0: its old addresses lead there.
+  if ((group === 'analysis' && slug === 'detection-rules') || (group === 'detection' && !slug)) return { id: 'sigma' }
   // An address of 4.x: the connections are the instances of the connectors now. And the pages that
   // 6.4 moved into the instance: fetching, the classifier and the mappers are set there.
   if (group === 'automation' && MOVED_TO_CONNECTORS.has(slug)) return { id: 'connectors' }

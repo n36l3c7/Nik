@@ -8,8 +8,10 @@ their checks and their audit entries.
 is run again, the message is analysed again, as "Re-analyse" does first. The
 long work "Re-analyse" then asks of the workers for one file (the disassembly,
 capa) is not asked for hundreds of files at once: it is started from the file.
-A capture, a scanned address and a mailbox are skipped: visiting an address
+A capture, a scanned address, a mailbox and the original of host evidence are skipped: visiting an address
 again is seen by its site, and a capture takes its worker for minutes.
+
+Deleting the original of host evidence is refused while an incident holds it as evidence.
 
 Downloading many together is not a job: it is the export of the artifacts
 (``POST /api/artifacts/export``), one archive made by the API with the files
@@ -145,6 +147,8 @@ def _link(db: OrmSession, ref: str, params: dict[str, Any], caller: Principal) -
     row = _row(db, ref)
     if row.kind == "mailbox":
         raise bulk.Skipped("A mailbox is not linked to an incident")
+    if row.kind == "hostfile":
+        raise bulk.Skipped("Host evidence is given to an incident when it is imported there, not linked")
     incident = db.get(Incident, params["incident"])
     if incident is None:
         raise bulk.Refused("The incident is not there any more")
@@ -161,6 +165,8 @@ def _unlink(db: OrmSession, ref: str, params: dict[str, Any], caller: Principal)
     incident = db.get(Incident, params["incident"])
     if incident is None:
         raise bulk.Refused("The incident is not there any more")
+    if row.kind == "hostfile":
+        raise bulk.Skipped("Host evidence is taken out of an incident from its evidence, not unlinked")
     if row.kind == "mailbox" or db.get(ArtifactLink, (row.id, incident.id)) is None:
         raise bulk.Skipped("It is not in the incident")
     unlink_from(db, row, incident, caller)

@@ -12,6 +12,8 @@ clients. Every change is recorded in the audit log here, whoever makes it.
 from __future__ import annotations
 
 import json
+import logging
+import time
 import uuid
 from typing import Any
 
@@ -35,22 +37,26 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import defer
 from sqlalchemy.orm.attributes import flag_modified
 
+from .. import archive, incident_quick, incident_tags, indicators_found, query, work
 from .. import fields as field_registry
-from .. import incident_quick, incident_tags, indicators_found, query, work
 from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
 from ..core.config import settings
-from ..core.db import SessionLocal, get_db
+from ..core.db import SessionLocal, get_db, without_statement_limit
 from ..core.files import read_upload
 from ..core.locking import lock_incident
-from ..core.models import AuditEntry, IdempotencyRecord, Incident, IocEntry, Job
+from ..core.models import EvidenceSource, IdempotencyRecord, Incident, IocEntry, Job
 from ..core.schemas import NoteIn
 from ..core.security import Principal, now_iso, reader_principal, writer_principal
 from ..events import emit, emit_now
+from ..evidence import imports as evidence_imports
+from ..evidence import intake, originals, parse
+from ..evidence import legacy as evidence_legacy
 from ..iocs import reindex_incident
-from ..parsing.registry import apply_upload
+from ..timers import zone_name
 
+logger = logging.getLogger("nik.incidents")
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 SEVERITIES = field_registry.SEVERITIES
@@ -65,6 +71,21 @@ def _timers(db: OrmSession, incident: Incident) -> None:
     from .. import timers
 
     timers.sync(db, incident, time.time())
+
+
+def _zone_given(body: dict[str, Any]) -> tuple[bool, str | None]:
+    """The time zone a request names for the incident (``tz`` is a column, not part of the document):
+    whether it was named, and the IANA name (None for empty: the time zone of Nik is used). 422 for a
+    name that is not a time zone."""
+    if "tz" not in body:
+        return False, None
+    given = body.pop("tz")
+    if given is None or (isinstance(given, str) and not given.strip()):
+        return True, None
+    try:
+        return True, zone_name(given if isinstance(given, str) else "")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _sync_columns(incident: Incident) -> None:
@@ -114,6 +135,11 @@ def _shown(row: Incident, source: dict[str, Any] | None = None) -> dict[str, Any
         "number": row.number,
         "type": row.type_id or field_registry.UNCLASSIFIED,
         "fields": field_registry.stored_fields(row),
+        # When it was archived and by whom (null when it is not): an archived incident is read-only.
+        "archivedAt": row.archived_at,
+        "archivedBy": row.archived_by,
+        # The time zone it is read in; empty is the one of Nik (Settings → business hours).
+        "tz": row.tz or "",
     }
 
 
@@ -138,6 +164,8 @@ def _summary(r: Any, source: dict[str, Any] | None) -> dict[str, Any]:
         "source": source,
         "createdAt": r.created_at,
         "updatedAt": r.updated_at,
+        "archivedAt": r.archived_at,
+        "archivedBy": r.archived_by,
     }
 
 
@@ -175,11 +203,14 @@ def _audit(db: OrmSession, caller: Principal, action: str, details: str, inciden
     audit.record(db, caller.actor, action, details, incident)
 
 
-def _get_or_404(db: OrmSession, incident_id: str, *, lock: bool = False) -> Incident:
-    """The incident; with ``lock`` it is locked for writing and read fresh."""
+def _get_or_404(db: OrmSession, incident_id: str, *, lock: bool = False, write: bool | None = None) -> Incident:
+    """The incident; with ``lock`` it is locked for writing and read fresh. A write to an archived
+    incident is refused (``Archived``, answered 409); ``write`` says it is one, and is true for a lock."""
     row = lock_incident(db, incident_id) if lock else db.get(Incident, incident_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    if lock if write is None else write:
+        archive.guard(row)
     return row
 
 
@@ -205,13 +236,20 @@ def _idempotent_save(db: OrmSession, key: str | None, status_code: int, body: An
     db.commit()
 
 
-def matching(db: OrmSession, caller: Principal, q: str | None) -> list:
+def matching(db: OrmSession, caller: Principal, q: str | None, archived: str = "exclude") -> list:
     """The conditions a query keeps incidents by: what the list shows for it, and what a bulk
     action on "all that match" works on (bulk_incidents.py). A query that cannot be read is
-    answered ``422`` with the position and the reason."""
+    answered ``422`` with the position and the reason.
+
+    The archived incidents are out of it (``archived`` is ``exclude``), unless the query asks for
+    them by ``archived:``; ``only`` keeps them alone and ``include`` keeps all."""
     conditions = query.sql("incidents", q, caller, db=db) if q and q.strip() else []
     if conditions:
         query.statement_timeout(db)
+    if archived == "only":
+        conditions.append(Incident.archived_at.is_not(None))
+    elif archived != "include" and not query.mentions(q, "archived"):
+        conditions.append(Incident.archived_at.is_(None))
     return conditions
 
 
@@ -231,6 +269,11 @@ def list_incidents(
     username: str | None = Query(None),
     state: str | None = Query(
         None, alias="status", pattern="^(open|in_progress|closed)$", description="Only incidents in this status."
+    ),
+    archived: str = Query(
+        "exclude",
+        pattern="^(exclude|only|include)$",
+        description="The archived incidents are left out (exclude), alone (only) or listed with the rest (include).",
     ),
     assignee: str | None = Query(None, description="Only incidents assigned to this user; empty = unassigned."),
     view: str = Query(
@@ -258,7 +301,7 @@ def list_incidents(
     """
     # `q` is the query language (app/query); the older parameters below are kept
     # for API clients and add their conditions to it.
-    conditions = matching(db, caller, q)
+    conditions = matching(db, caller, q, archived)
     if host:
         conditions.append(Incident.host.ilike(f"%{host}%"))
     if username:
@@ -309,6 +352,8 @@ def list_incidents(
                 Incident.type_id,
                 Incident.source_connection_id,
                 Incident.fields,
+                Incident.archived_at,
+                Incident.archived_by,
             )
             .where(*conditions)
             .order_by(order)
@@ -364,12 +409,18 @@ def get_incident(
     # not migrated) is converted and saved once, so clients always diff their
     # merge patches against the current shape.
     doc = dict(row.doc or {})
-    if normalize_browser_data(doc):
-        row = _get_or_404(db, incident_id, lock=True)
+    # So is one that still holds host evidence of before 7.0 and that the move after the upgrade has
+    # not reached yet (evidence/legacy.py): it is moved now, so that nothing is ever read from there.
+    if normalize_browser_data(doc) or evidence_legacy.holds(doc):
+        row = _get_or_404(db, incident_id, lock=True, write=False)
         doc = dict(row.doc or {})
         normalize_browser_data(doc)
         row.doc = doc
         flag_modified(row, "doc")
+        if evidence_legacy.holds(doc):
+            evidence_legacy.move(db, row)
+            db.flush()
+            reindex_incident(db, row)
         db.commit()
     response.headers["ETag"] = _etag(row.rev)
     return _shown(row, _source(db, row.source_connection_id))
@@ -407,20 +458,38 @@ def create_incident(
     incident_id = doc.get("id") or str(uuid.uuid4())
     doc["id"] = incident_id
     doc["createdBy"] = caller.actor
+    zone_sent, zone = _zone_given(doc)
     # Its type and its custom fields are not part of the document: they are checked by the registry.
     field_changes = _field_changes(doc)
 
     existing = lock_incident(db, str(incident_id))
+    archive.guard(existing)
     _own_number(doc, new=existing is None)
     if existing is None:
-        incident = Incident(id=str(incident_id), doc=doc)
+        incident = Incident(id=str(incident_id), doc=doc, tz=zone)
         _sync_columns(incident)
         db.add(incident)
     else:
         existing.doc = doc
+        if zone_sent:
+            existing.tz = zone
         _sync_columns(existing)
         incident = existing
     db.flush()
+    # A document of before 7.0 (an old export, an API client that still sends it) brings its host
+    # evidence inside: it goes to the tables, as evidence imported before 7.0 (evidence/legacy.py).
+    if evidence_legacy.holds(incident.doc):
+        evidence_legacy.move(db, incident)
+        db.flush()
+    # What an export said of the incident's host evidence (the files, their reports, the flags on
+    # records) comes back with it: the files are listed as not here until they are given again.
+    carried = (incident.doc or {}).get("evidence")
+    if carried is not None:
+        evidence_imports.restore(db, incident.id, carried, caller.actor)
+        kept = {key: value for key, value in incident.doc.items() if key != "evidence"}
+        incident.doc = kept
+        flag_modified(incident, "doc")
+        db.flush()
     _timers(db, incident)
     reindex_incident(db, incident)
 
@@ -491,6 +560,11 @@ def patch_incident(
         raise HTTPException(status_code=412, detail="Incident was modified by someone else (ETag mismatch)")
     # The type and the custom fields first, through the registry; what is left is the document.
     partial = dict(partial)
+    zone_sent, zone = _zone_given(partial)
+    if zone_sent and zone != row.tz:
+        archive.guard(row)
+        row.tz = zone
+        _audit(db, caller, "incident.update", f"Set the time zone of the incident to {zone or 'the one of Nik'}", row)
     field_changes = _field_changes(partial)
     was_closed = row.status == "closed"
     if field_changes:
@@ -512,6 +586,10 @@ def patch_incident(
     normalize_browser_data(merged)
     row.doc = merged
     flag_modified(row, "doc")
+    # Host evidence a client of before 7.0 still writes into the document goes to the tables (7.0).
+    if evidence_legacy.holds(merged):
+        evidence_legacy.move(db, row)
+        merged = row.doc
     _sync_columns(row)
     _timers(db, row)
     # Who set each field of the document last, for what a fetch or a mirror may write over.
@@ -568,6 +646,7 @@ def remove_incident(db: OrmSession, row: Incident, actor: str) -> str:
     its name. What the route does, and what a bulk delete does to each one."""
     incident_id = row.id
     name = (row.doc or {}).get("name") or incident_id
+    without_statement_limit(db)  # its records go with it: millions of rows take longer than one statement may
     audit.record(db, actor, "incident.delete", f'Deleted incident "{name}"', row)
     db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
     from .artifacts import remove_incident_artifacts
@@ -588,7 +667,7 @@ def remove_incident(db: OrmSession, row: Incident, actor: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# File upload (server-side parsing) — API clients send raw artifact files
+# File upload: API clients send the raw file of host evidence (7.0: kept as it came, read by the worker)
 # ---------------------------------------------------------------------------
 _UPLOAD_ACTIONS = {
     "browser": "browser.upload",
@@ -596,94 +675,51 @@ _UPLOAD_ACTIONS = {
     "endpoint": "endpoint.upload",
     "eventlogs": "eventlog.upload",
 }
+# How long a request waits for a file to be read when another process of the server took the reading.
+READ_WAIT = 15 * 60
+POLL = 1.0
 
 
-def _process_upload_job(job_id, incident_id, tab, params, data, filename, actor):
-    """Background worker for an async upload: parse + merge, then record result.
-
-    Runs after the 202 response, with its OWN DB session (the request's is
-    already closed). Sets the Job to done/error and fires the webhook.
-    """
-    db = SessionLocal()
+def _read_and_wait(source_id: str) -> None:
+    """Read the file of a source in this thread. When another process holds the reading (the sweeper
+    took it first), wait for it to end, up to ``READ_WAIT``."""
     try:
-        job = db.get(Job, job_id)
-        if job is not None:
-            job.status = "running"
-            job.updated_at = now_iso()
-            db.commit()
-        # Locked while the file is parsed into the document: nothing saved
-        # meanwhile can be lost, it waits for this write and merges after it.
-        row = lock_incident(db, incident_id)
-        if row is None:
-            raise ValueError("Incident not found")
-        doc = dict(row.doc or {})
-        summary = apply_upload(doc, tab, params, data, filename)
-        doc["updatedAt"] = now_iso()
-        row.doc = doc
-        flag_modified(row, "doc")
-        _sync_columns(row)
-        reindex_incident(db, row)
-        db.add(
-            AuditEntry(
-                id=str(uuid.uuid4()),
-                at=now_iso(),
-                actor=actor,
-                action=_UPLOAD_ACTIONS.get(tab, "upload"),
-                target=(doc.get("name")),
-                details=f"Uploaded {filename} → {summary['target']} ({summary['rows']} rows)",
-                incident_id=incident_id,
-                incident_name=doc.get("name"),
-            )
-        )
-        job = db.get(Job, job_id)
-        if job is not None:
-            job.status = "done"
-            job.result_json = json.dumps(summary)
-            job.updated_at = now_iso()
-        db.commit()
-        emit_now(db, "upload.completed", {"incidentId": incident_id, **summary})
-    except Exception as exc:  # noqa: BLE001 - whatever a parser raises, the job says that it failed
-        db.rollback()
-        job = db.get(Job, job_id)
-        if job is not None:
-            job.status = "error"
-            job.error = str(exc)
-            job.updated_at = now_iso()
-            db.commit()
-    finally:
-        db.close()
-
-
-def _held_upload_job(job_id: str, *args) -> None:
-    """``_process_upload_job`` while holding it. **Across a restart: failed loudly.** What was being
-    parsed was the body of a request, held in memory: nothing is left to go on with. The job is
-    marked failed with "interrupted by a restart" (``GET /api/jobs/{id}`` says it), never left
-    queued or running for ever, and the file is uploaded again: the parse merges into the document
-    under a lock and is committed whole, so a job that was cut wrote nothing."""
-    try:
-        with work.hold("upload", job_id):
-            _process_upload_job(job_id, *args)
+        with work.hold(parse.WORK, source_id) as claim:
+            parse.read(source_id, claim)
+        return
     except work.Taken:
-        return
+        pass
+    end = time.monotonic() + READ_WAIT
+    while time.monotonic() < end:
+        with SessionLocal() as db:
+            found = db.get(EvidenceSource, source_id)
+            if found is None or found.state not in ("queued", "parsing"):
+                return
+        time.sleep(POLL)
 
 
-def _fail_upload_job(db: OrmSession, job_id: str, sentence: str) -> None:
-    job = db.get(Job, job_id)
-    if job is None or job.status not in ("queued", "running"):
-        return
-    job.status, job.updated_at = "error", now_iso()
-    job.error = "Interrupted by a restart of the server before the file was parsed: upload the file again."
+def _upload_audit(db: OrmSession, actor: str, tab: str, file_name: str, shown: dict, incident: Incident | None) -> None:
+    details = f"Uploaded {file_name} → {shown['target']} ({shown['rows']} rows)"
+    if shown["alreadyImported"]:
+        details += ", already imported"
+    audit.record(db, actor, _UPLOAD_ACTIONS.get(tab, "upload"), details, incident)
 
 
-work.register(
-    work.Kind(
-        "upload",
-        "an upload parsed in the background",
-        "fail",
-        start=lambda _ref, _params: False,
-        fail=_fail_upload_job,
-    )
-)
+def _read_and_say(source_id: str, incident_id: str, file_name: str, actor: str, tab: str) -> None:
+    """The reading of an upload with ``async=true``: read, then audit and send the webhook as the
+    synchronous route does when the reading ends."""
+    try:
+        _read_and_wait(source_id)
+        with SessionLocal() as db:
+            source = db.get(EvidenceSource, source_id)
+            if source is None or source.state != "done":
+                return
+            shown = intake.summary(source)
+            _upload_audit(db, actor, tab, file_name, shown, db.get(Incident, incident_id))
+            db.commit()
+            emit_now(db, "upload.completed", {"incidentId": incident_id, **shown})
+    except Exception:  # noqa: BLE001 - nobody waits for this thread: the job says what the source says
+        logger.exception("The end of the upload of %s could not be told", source_id)
 
 
 @router.post("/{incident_id}/upload", tags=["incidents/upload"])
@@ -698,32 +734,43 @@ async def upload_artifact(
     source: str | None = Query(None, description="Source key (browser/endpoint), e.g. history"),
     shell: str | None = Query(None, description="Shell id (tab=commands), e.g. bash"),
     category: str | None = Query(None, description="Category id (tab=endpoint), e.g. persistence"),
-    async_: bool = Query(False, alias="async", description="Return 202 + a jobId; parse in the background."),
+    async_: bool = Query(False, alias="async", description="Return 202 + a jobId; read in the background."),
     caller: Principal = Depends(writer_principal),
     db: OrmSession = Depends(get_db),
     background_tasks: BackgroundTasks = None,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    """Upload a raw artifact file; the server parses it and merges the result.
+    """Upload a raw file of host evidence; the server keeps it and has the forensics worker read it.
 
     Routing (query params) mirrors the app's tabs:
     - `tab=browser&browser=chrome&source=history` → a Chromium `History` DB
       (add `&profile=Work` for a non-default browser profile)
     - `tab=commands&shell=bash` → a `.bash_history`
-    - `tab=endpoint&category=persistence&source=cron` → a cron file / tool CSV
-    - `tab=eventlogs` → a Windows `.evtx` log (curated event IDs are kept)
+    - `tab=endpoint&category=persistence&source=cron` → a cron file / tool CSV (the incident needs its
+      operating system)
+    - `tab=eventlogs` → a Windows `.evtx` log (or a `.json` export of event logs)
 
-    With `async=true` the file is parsed in the background: the call returns
-    `202 { jobId }` immediately — poll `GET /api/jobs/{jobId}` for the result
-    (good for large files). Send an `Idempotency-Key` header to make retries safe.
+    The answer is `{target, rows, format, sourceId, read, kept, duplicates, skipped, alreadyImported}`:
+    `read` is `complete` or `partial` (the report of the source says what was not read); a file that
+    could not be read at all is answered 400 with the reason. A file the incident already holds is not
+    read again. With `async=true` the call returns `202 { jobId }` at once: poll `GET /api/jobs/{jobId}`
+    for the result (good for large files). Send an `Idempotency-Key` header to make retries safe.
     """
     replay = _idempotent_replay(db, idempotency_key)
     if replay is not None:
         return replay
-    _get_or_404(db, incident_id)
+    incident = _get_or_404(db, incident_id, write=True)
     data = await read_upload(file, settings.ARTIFACT_MAX_MB, "file")
+    name = file.filename or "upload"
     params = {"browser": browser, "profile": profile, "shell": shell, "category": category, "source": source}
-
+    try:
+        kept = await run_in_threadpool(intake.take, db, incident, data, name, tab, params, caller.actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except originals.EvidenceError as exc:
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
+    source_id, already = kept.id, bool(kept.already)
+    job = None
     if async_:
         now = now_iso()
         job = Job(
@@ -733,41 +780,31 @@ async def upload_artifact(
             incident_id=incident_id,
             created_at=now,
             updated_at=now,
+            result_json=json.dumps({"sourceId": source_id, "alreadyImported": already}),
         )
         db.add(job)
-        # Held from here on (work.py). The bytes are in the memory of this process: a restart cannot
-        # go on with them, so the job then fails with a sentence that says to upload the file again.
-        work.want(db, "upload", job.id)
-        db.commit()
-        background_tasks.add_task(
-            _held_upload_job, job.id, incident_id, tab, params, data, file.filename or "upload", caller.actor
-        )
+    db.commit()
+
+    if job is not None:
+        if not already:
+            work.thread(_read_and_say, source_id, incident_id, name, caller.actor, tab)
         return JSONResponse({"jobId": job.id, "status": "queued"}, status_code=202)
 
-    row = _get_or_404(db, incident_id, lock=True)
-    doc = dict(row.doc or {})
-    try:
-        # Parsing a database or an event log takes a while: off the event loop.
-        summary = await run_in_threadpool(apply_upload, doc, tab, params, data, file.filename or "upload")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    doc["updatedAt"] = now_iso()
-    row.doc = doc
-    flag_modified(row, "doc")
-    _sync_columns(row)
-    reindex_incident(db, row)
-    _audit(
-        db,
-        caller,
-        _UPLOAD_ACTIONS.get(tab, "upload"),
-        f"Uploaded {file.filename} → {summary['target']} ({summary['rows']} rows)",
-        row,
-    )
+    if not already:
+        # Reading a file takes a while: off the event loop.
+        await run_in_threadpool(_read_and_wait, source_id)
+    db.expire_all()
+    found = db.get(EvidenceSource, source_id)
+    if found is not None and found.state == "failed":
+        sentence = found.error or "The file could not be read"
+        raise HTTPException(status_code=503 if sentence == parse.NOT_CONFIGURED else 400, detail=sentence)
+    shown = intake.summary(found, already)
+    _upload_audit(db, caller.actor, tab, name, shown, incident)
     db.commit()
-    emit(db, background_tasks, "upload.completed", {"incidentId": incident_id, **summary})
-    _idempotent_save(db, idempotency_key, 200, summary)
-    return summary
+    if not already:
+        emit(db, background_tasks, "upload.completed", {"incidentId": incident_id, **shown})
+    _idempotent_save(db, idempotency_key, 200, shown)
+    return shown
 
 
 # ---------------------------------------------------------------------------

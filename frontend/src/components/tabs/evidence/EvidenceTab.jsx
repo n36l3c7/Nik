@@ -1,15 +1,19 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, List, Plus } from 'lucide-react'
-import { useAuth } from '../../../context/AuthContext.jsx'
+import { Archive, FolderOpen, List, Plus } from 'lucide-react'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { useToast } from '../../../context/ToastContext.jsx'
+import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
+import { useHostFileSender } from '../../../lib/useHostFileSender.js'
 import { normalizeOs } from '../../../config/os.js'
 import { EVIDENCE_TAB, asksSystem, evidenceGroups, firstFile, openedAlone } from '../../../domain/evidence.js'
 import { Button, EmptyState, ErrorBoundary, Wait } from '../../ui/index.js'
 import ResizeHandle, { useResizablePane } from '../../ui/ResizeHandle.jsx'
 import { useObjectMenu } from '../../menu/useObjectMenu.js'
 import SystemDialog from './SystemDialog.jsx'
+import CollectionsBlock from '../../evidence/CollectionsBlock.jsx'
+import SourceViewer from '../../evidence/SourceViewer.jsx'
 
 /*
  * ============================================================================
@@ -46,6 +50,31 @@ const ROW =
   'flex w-full items-baseline gap-2 px-3 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
 
 /**
+ * The record the global search chose (CommandPalette, group Evidence): the Source viewer opens over the page of its
+ * section. The request is `{ record: { id, incidentId, sourceId, fileName } }` of the tab asked for; it is taken
+ * only here, by the page of the incident it names (the incident may still be loading when it is made).
+ */
+function OpenedRecord({ incident, kindId }) {
+  const { requests, take } = useNavigation()
+  const [record, setRecord] = useState(null)
+  const asked = requests[kindId]?.record
+  useEffect(() => {
+    if (!asked || asked.incidentId !== incident.id) return
+    take(kindId)
+    setRecord(asked)
+  }, [asked, incident.id, kindId, take])
+  if (!record) return null
+  return (
+    <SourceViewer
+      incidentId={incident.id}
+      source={{ id: record.sourceId, fileName: record.fileName }}
+      record={{ id: record.id }}
+      onClose={() => setRecord(null)}
+    />
+  )
+}
+
+/**
  * @param {{
  *   incident: object,
  *   kinds: object[],                      // the kinds of evidence this incident shows, in order (config/tabs.js)
@@ -56,6 +85,8 @@ const ROW =
  */
 export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }) {
   const fileInput = useRef(null)
+  const collectionInput = useRef(null)
+  const sendHostFile = useHostFileSender()
   const pane = useResizablePane('incident.evidence', { initial: 260, min: 200, max: 480 })
   const [query, setQuery] = useState('')
   const menu = useObjectMenu()
@@ -63,10 +94,12 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
   const [chosen, setChosen] = useState({})
   useEffect(() => setChosen({}), [incident.id])
 
-  const groups = useMemo(() => evidenceGroups(kinds, incident, query), [kinds, incident, query])
-  const every = useMemo(() => evidenceGroups(kinds, incident), [kinds, incident])
+  // What the machine gave (records, files read in part) is the server's: the document holds none of it.
+  const { summary } = useEvidenceSummary(incident.id)
+  const groups = useMemo(() => evidenceGroups(kinds, incident, summary, query), [kinds, incident, summary, query])
+  const every = useMemo(() => evidenceGroups(kinds, incident, summary), [kinds, incident, summary])
 
-  const { can } = useAuth()
+  const canWrite = useCanWrite(incident)
   const { updateIncidentMeta } = useIncidents()
   const { take } = useNavigation()
   const { showToast } = useToast()
@@ -128,6 +161,28 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
                   if (file) onAddFile(file)
                 }}
               />
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Archive}
+                className="w-full justify-center"
+                title="A triage zip (KAPE, Velociraptor) or a psort export: Nik lists what it holds and you choose what to import"
+                onClick={() => collectionInput.current?.click()}
+              >
+                Import a collection…
+              </Button>
+              <input
+                ref={collectionInput}
+                type="file"
+                accept=".zip,.jsonl,.csv"
+                className="hidden"
+                aria-label="A collection to import"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) sendHostFile(file, incident.id)
+                }}
+              />
             </>
           )}
           <input
@@ -168,6 +223,14 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
                   <span className={`shrink-0 text-[10px] ${item.count ? 'text-fg-muted' : 'text-fg-subtle'}`}>
                     {item.count || '—'}
                   </span>
+                  {item.partial > 0 && (
+                    <span
+                      role="img"
+                      aria-label="a file was read in part"
+                      title="A file of this kind was read in part"
+                      className="h-[7px] w-[7px] shrink-0 self-center rounded-full bg-med"
+                    />
+                  )}
                 </button>
                 {item.items.length > 0 && (
                   <ul aria-label={`Files of ${item.label}`}>
@@ -220,6 +283,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
       </nav>
       <ResizeHandle {...pane.handle} label="Resize the list of evidence" className="hidden md:block" />
       <div className="min-w-0 flex-1 md:pl-4">
+        <CollectionsBlock incident={incident} canWrite={canWrite} />
         {Viewer ? (
           <Suspense fallback={<Wait>Loading…</Wait>}>
             <ErrorBoundary resetKey={`${incident.id}:${shownKind.id}:${focus ?? ''}`}>
@@ -229,7 +293,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
         ) : asking ? (
           <SystemDialog
             kind={shownKind}
-            canEdit={can('write')}
+            canEdit={canWrite}
             onBack={backToFiles}
             onUse={(chosen) => updateIncidentMeta(incident.id, { os: chosen })}
           />
@@ -247,6 +311,7 @@ export default function EvidenceTab({ incident, kinds, kind, onKind, onAddFile }
           />
         )}
       </div>
+      <OpenedRecord key={incident.id} incident={incident} kindId={kind?.id ?? EVIDENCE_TAB} />
     </div>
   )
 }

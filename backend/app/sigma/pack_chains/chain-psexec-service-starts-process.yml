@@ -1,0 +1,25 @@
+title: PsExec Service Starts a Process
+id: 2cfdc75d-b2e9-4ba0-9022-0957c2f55e6d
+name: nik_chain_psexec_service_starts_process
+status: test
+description: PSEXESVC, the service PsExec installs on the machine it reaches, started a process. Whatever the process is, somebody ran it remotely.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.lateral-movement
+- attack.t1021.002
+- attack.execution
+- attack.t1569.002
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith:
+    - \psexesvc.exe
+    - \paexec.exe
+    - \remcomsvc.exe
+  condition: selection_parent
+falsepositives:
+- Administrators who use PsExec to manage machines
+level: high

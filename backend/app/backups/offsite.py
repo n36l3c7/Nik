@@ -56,8 +56,8 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..core import audit, leases
-from ..core.models import Backup, Setting
-from . import config, runner
+from ..core.models import Backup, BackupBlob, BackupBlobRef, Setting
+from . import config, pool, runner
 from .container import CHUNK, SUFFIX, BackupError
 
 logger = logging.getLogger("nik.backups")
@@ -84,6 +84,10 @@ class Destination(Protocol):
     def put(self, source: Path, name: str) -> dict[str, Any]: ...
 
     def remove(self, name: str) -> None: ...
+
+    def put_blob(self, source: Path, gen: str, sha256: str) -> dict[str, Any]: ...
+
+    def remove_blob(self, gen: str, sha256: str) -> None: ...
 
     def listing(self) -> list[dict[str, Any]]: ...
 
@@ -131,6 +135,11 @@ class Sftp:
 
     # ----- the connection ----- #
     def connect(self) -> socket.socket:
+        from ..core import copy
+
+        if copy.is_copy():
+            # A copy would delete the real server's backups there by its own retention.
+            raise OffsiteError("This server is a copy: it does not reach the destination of the backups")
         try:
             return socket.create_connection((self.host, self.port), CONNECT_TIMEOUT)
         except OSError as error:
@@ -238,6 +247,20 @@ class Sftp:
 
     def put(self, source: Path, name: str) -> dict[str, Any]:
         """Send the backup ``name`` and check what arrived. Returns ``{"remote", "bytes", "sha256", "seconds"}``."""
+        return self._put(source, self._file(name), name, runner.note_of(name, source.parent))
+
+    def _blob_file(self, gen: str, sha256: str) -> str:
+        return f"{self.path.rstrip('/')}/pool-{gen}/{sha256[:2]}/{sha256}{pool.SUFFIX}"
+
+    def put_blob(self, source: Path, gen: str, sha256: str) -> dict[str, Any]:
+        """Send a file of the pool (``pool.py``) to the same place under the destination as it has
+        beside the backups, and check what arrived."""
+        return self._put(source, self._blob_file(gen, sha256), f"{sha256[:12]} of the pool", None)
+
+    def remove_blob(self, gen: str, sha256: str) -> None:
+        self._remove((self._blob_file(gen, sha256), self._blob_file(gen, sha256) + ".partial"))
+
+    def _put(self, source: Path, final: str, name: str, note: Path | None) -> dict[str, Any]:
         import paramiko
 
         clock = time.monotonic()
@@ -247,7 +270,7 @@ class Sftp:
             for piece in iter(lambda: handle.read(CHUNK), b""):
                 digest.update(piece)
         wanted = digest.hexdigest()
-        final, partial = self._file(name), self._file(name) + ".partial"
+        partial = final + ".partial"
         last: Exception | None = None
         for attempt in range(ATTEMPTS):
             try:
@@ -259,15 +282,14 @@ class Sftp:
                 time.sleep(min(30, 2**attempt))
                 continue
             try:
-                self._make_path(sftp, self.path)
+                self._make_path(sftp, final.rsplit("/", 1)[0])
                 self._send(sftp, source, partial, size)
                 if self._sha256(sftp, partial, size) != wanted:
                     sftp.remove(partial)
                     raise OffsiteError(f"What {self.host} holds of {name} is not what was sent: it was removed")
                 self._rename(sftp, partial, final)
-                note = runner.note_of(name, source.parent)
-                if note.exists():
-                    with sftp.open(self._file(name, ".json"), "wb") as out:
+                if note is not None and note.exists():
+                    with sftp.open(final[: -len(SUFFIX)] + ".json", "wb") as out:
                         out.write(note.read_bytes())
                 return {"remote": final, "bytes": size, "sha256": wanted, "seconds": round(time.monotonic() - clock, 1)}
             except OffsiteError:
@@ -307,9 +329,12 @@ class Sftp:
         return digest.hexdigest()
 
     def remove(self, name: str) -> None:
+        self._remove((self._file(name), self._file(name) + ".partial", self._file(name, ".json")))
+
+    def _remove(self, paths: tuple[str, ...]) -> None:
         transport, sftp = self._open()
         try:
-            for path in (self._file(name), self._file(name) + ".partial", self._file(name, ".json")):
+            for path in paths:
                 try:
                     sftp.remove(path)
                 except FileNotFoundError:
@@ -417,8 +442,11 @@ def _note(db: OrmSession, name: str, state: str, **facts: Any) -> None:
 def ship(now: float | None = None, holder: str = runner.HOLDER) -> list[str]:
     """One pass of the process that has a way out: answer a test that was asked for, remove the
     copies of the backups that were deleted, send the backups that wait. Returns what it did."""
+    from ..core import copy
     from ..core.db import SessionLocal
 
+    if copy.is_copy():
+        return []  # nothing is sent, and nothing is removed there: the backups there are the real server's
     clock = time.time() if now is None else now
     did: list[str] = []
     # A test that was asked for is answered at once, lease or not: a person waits for it, and a
@@ -436,6 +464,12 @@ def ship(now: float | None = None, holder: str = runner.HOLDER) -> list[str]:
             destination, trouble = None, str(error)
         ready = config.ready(config.read(db).get("destination") or {})
         going = list(db.scalars(select(Backup.id).where(Backup.offsite_state == "delete")))
+        blobs_going = [
+            (gen, sha256)
+            for gen, sha256 in db.execute(
+                select(BackupBlob.gen, BackupBlob.sha256).where(BackupBlob.offsite_state == "delete")
+            )
+        ]
         waiting = [
             row.id
             for row in db.scalars(
@@ -446,12 +480,81 @@ def ship(now: float | None = None, holder: str = runner.HOLDER) -> list[str]:
             )
             if row.offsite_state == "pending" or clock - float((row.offsite or {}).get("triedAt") or 0) >= RETRY_AFTER
         ]
-    if not ready and not going:
+    if not ready and not going and not blobs_going:
         return did
     with leases.Renewing(LEASE, holder, runner.LEASE_SECONDS):
         if ready and destination is not None:
             did += _reconcile(destination, clock)
         did += _work(destination, trouble, going, waiting if ready else [], clock)
+        did += _blobs_gone(destination, blobs_going)
+    return did
+
+
+def _send_pool(destination, name: str) -> int:
+    """Send the files of the pool the backup ``name`` names and the destination does not hold yet:
+    before the backup itself, which cannot be restored there without them. Returns how many; raises
+    ``OffsiteError`` at the first that cannot be sent (the backup is then not sent either)."""
+    from ..core.db import SessionLocal
+
+    with SessionLocal() as db:
+        wanted = [
+            (gen, sha256)
+            for gen, sha256 in db.execute(
+                select(BackupBlob.gen, BackupBlob.sha256)
+                .join(
+                    BackupBlobRef,
+                    (BackupBlobRef.gen == BackupBlob.gen) & (BackupBlobRef.sha256 == BackupBlob.sha256),
+                )
+                .where(BackupBlobRef.backup_id == name, BackupBlob.offsite_state != "copied")
+            )
+        ]
+    sent = 0
+    for gen, sha256 in wanted:
+        source = pool.blob_path(runner.directory(), gen, sha256)
+        if not source.is_file():
+            raise OffsiteError(f"The file {source.name} of the pool, which {name} names, is not beside the backups")
+        try:
+            destination.put_blob(source, gen, sha256)
+        except OffsiteError:
+            _blob_state(gen, sha256, "failed")
+            raise
+        _blob_state(gen, sha256, "copied")
+        sent += 1
+    return sent
+
+
+def _blob_state(gen: str, sha256: str, state: str) -> None:
+    from ..core.db import SessionLocal
+
+    with SessionLocal() as db:
+        row = db.get(BackupBlob, (gen, sha256))
+        if row is not None:
+            row.offsite_state = state
+            db.commit()
+
+
+def _blobs_gone(destination, going: list[tuple[str, str]]) -> list[str]:
+    """Remove from the destination the files of the pool no backup names any more."""
+    from ..core.db import SessionLocal
+
+    did: list[str] = []
+    for gen, sha256 in going:
+        try:
+            if destination is not None:
+                destination.remove_blob(gen, sha256)
+        except OffsiteError as error:
+            logger.warning("The copy of %s of the pool was not removed: %s", sha256, error)
+            continue
+        with SessionLocal() as db:
+            row = db.get(BackupBlob, (gen, sha256))
+            # Named again meanwhile by a new backup (its state is then "pending"): left as it is.
+            if row is not None and row.offsite_state == "delete":
+                if row.local:
+                    row.offsite_state = ""
+                else:
+                    db.delete(row)
+                db.commit()
+        did.append(f"removed:pool:{sha256[:12]}")
     return did
 
 
@@ -531,6 +634,7 @@ def _work(destination, trouble: str, going: list[str], waiting: list[str], clock
         try:
             if destination is None:
                 raise OffsiteError(trouble or "The destination is not complete")
+            in_pool = _send_pool(destination, name)
             sent = destination.put(runner.file_of(name), name)
         except (OffsiteError, OSError) as error:
             with SessionLocal() as db:
@@ -553,7 +657,8 @@ def _work(destination, trouble: str, going: list[str], waiting: list[str], clock
                 db,
                 runner.SYSTEM,
                 "backup.offsite",
-                f"Copied {name} to {destination.where} ({sent['bytes']} bytes, checked after the upload)",
+                f"Copied {name} to {destination.where} ({sent['bytes']} bytes, checked after the upload)"
+                + (f", after {in_pool} file(s) of the pool it names" if in_pool else ""),
                 target=name,
             )
             db.commit()

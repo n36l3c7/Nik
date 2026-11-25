@@ -4,7 +4,7 @@ commonfields:
 name: Nik
 display: Nik Forensic Platform
 category: Forensics & Malware Analysis
-description: Query and manage incidents in the Nik forensic analysis platform via its REST API — list/read/create/update/delete incidents, add and remove notes, upload raw artifact files for server-side parsing, and read the audit log and detection settings.
+description: Query and manage incidents in the Nik forensic analysis platform via its REST API — list/read/create/update/delete incidents, add and remove notes, upload raw artifact files for server-side parsing, and read the audit log and the shared settings.
 configuration:
 - display: Server URL (e.g. https://nik.example.internal:8443)
   name: url
@@ -310,13 +310,10 @@ script:
       description: Related incident name, if any.
       type: String
   - name: nik-get-settings
-    description: Read the shared detection rules (keywords) and business hours.
+    description: Read the shared business hours (and the other shared settings Nik returns).
     arguments: []
     outputs:
-    - contextPath: Nik.Settings.keywords
-      description: Suspicious-keyword detection rules (label/pattern/severity/description).
-      type: Unknown
     - contextPath: Nik.Settings.businessHours
-      description: Business-hours window (startHour/endHour/flagWeekends).
+      description: Business-hours window (startHour/endHour/flagWeekends/tz, the time zone as an IANA name).
       type: Unknown
 fromversion: 6.5.0

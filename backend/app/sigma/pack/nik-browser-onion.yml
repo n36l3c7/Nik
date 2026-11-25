@@ -1,0 +1,33 @@
+title: 'Browser: Dark Web Address'
+id: aa9734ec-9c81-49ad-aa8a-6c721193d889
+status: stable
+description: 'A Tor hidden service address or a page about the dark web.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - '.onion'
+              - 'darkweb'
+              - 'dark-web'
+              - 'dark_web'
+              - 'dark web'
+        - title|contains:
+              - '.onion'
+              - 'darkweb'
+              - 'dark-web'
+              - 'dark_web'
+              - 'dark web'
+        - fileName|contains:
+              - '.onion'
+              - 'darkweb'
+              - 'dark-web'
+              - 'dark_web'
+              - 'dark web'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: high

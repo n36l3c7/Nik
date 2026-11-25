@@ -667,8 +667,12 @@ def ship(now: float | None = None, holder: str | None = None) -> list[str]:
     changed settings, confirm what the last pass sent, send what waits, send a checkpoint when
     one is due. Returns what it did."""
     from ..backups import runner
+    from ..core import copy
     from ..core.db import SessionLocal
     from . import chain
+
+    if copy.is_copy():
+        return []  # the receiver is the real server's: a copy's entries are not the real ones
 
     global _connection, _connection_key, _unconfirmed, _fails, _retry_at
     clock = time.time() if now is None else now

@@ -1,8 +1,5 @@
-"""Server-side artifact parsers.
+"""Server-side analysis of files that are not host evidence: samples (``malware``, ``executables``).
 
-Python ports of the client-side parsers in ``frontend/src/parsers/*Parsers.js``, used by
-the file-upload API endpoint so external clients can send raw artifact files and
-have the server normalize them into the same shapes the frontend produces.
-
-The two implementations must stay in sync on the normalized record shapes.
+Host evidence (event logs, browser data, shell histories, endpoint collections) is read by the forensics
+worker (``evidence/parse.py``), not here.
 """

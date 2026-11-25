@@ -258,7 +258,13 @@ def import_backup(
 
         # The indicators of the incidents that arrived.
         db.flush()
+        from ..evidence import legacy as evidence_legacy
+
         for row in fresh:
+            # A file written before 7.0 holds host evidence inside the documents: it goes to the tables.
+            if evidence_legacy.holds(row.doc):
+                evidence_legacy.move(db, row)
+                db.flush()
             reindex_incident(db, row, alerts=False)
 
         settings_taken = False

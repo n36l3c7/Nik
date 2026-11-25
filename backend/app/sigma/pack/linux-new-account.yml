@@ -1,0 +1,22 @@
+title: 'New Local Account Created (Linux)'
+id: 685762d2-b54e-4084-8a5d-a19e0fe3e843
+status: stable
+description: 'A local account was created (useradd or adduser in the authentication log or the journal).'
+references:
+    - https://attack.mitre.org/techniques/T1136/001/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1136.001
+logsource:
+    product: linux
+    service: auth
+detection:
+    selection:
+        recordtype: account
+        action: user_added
+    condition: selection
+falsepositives:
+    - Onboarding of a person, a package that creates a service account
+level: medium

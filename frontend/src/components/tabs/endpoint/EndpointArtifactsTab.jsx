@@ -1,242 +1,767 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Info, Terminal, Trash2, Upload } from 'lucide-react'
-import { Button, Card, Modal } from '../../ui/index.js'
-import FileUploadZone from '../browser/FileUploadZone.jsx'
-import ArtifactSection from './ArtifactSection.jsx'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarClock, Clock, Files, Flag, Info, MessageSquarePlus, ShieldAlert, Terminal, X } from 'lucide-react'
+import { Badge, Button, Modal, Select, ServerTable, StatCard, Tabs, tabId } from '../../ui/index.js'
+import SourceFiles from '../../evidence/SourceFiles.jsx'
+import DetectionsSection from '../../evidence/DetectionsSection.jsx'
+import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.jsx'
+import SourceViewer from '../../evidence/SourceViewer.jsx'
+import StackPanel from '../../evidence/StackPanel.jsx'
+import DateTimeRangeFilter from '../../ui/DateTimeRangeFilter.jsx'
 import ScriptBlock from './ScriptBlock.jsx'
-import { useIncidents } from '../../../context/IncidentContext.jsx'
-import { useNavigation } from '../../../context/NavigationContext.jsx'
-import { parseArtifactImport } from '../../../parsers/artifactParsers.js'
-import { sha256Hex } from '../../../lib/hash.js'
+import { useAuth } from '../../../context/AuthContext.jsx'
+import { useContextMenu } from '../../../context/ContextMenuContext.jsx'
+import { useToast } from '../../../context/ToastContext.jsx'
+import { useRowMenu } from '../../menu/useRowMenu.js'
 import {
   ARTIFACT_CATEGORIES,
+  HIVE_HELP,
+  HIVE_OPTION,
+  HIVE_SOURCE,
+  SRUM_OPTION,
+  SRUM_SOURCE,
   getArtifactCategoryById,
-  buildDefaultArtifactData,
-  artifactSourcesFor,
+  sourceNameByKey,
 } from '../../../config/artifacts.js'
-import { combineCategoryRecords } from '../../../domain/artifacts.js'
 import { getOsById, DEFAULT_OS } from '../../../config/os.js'
+import {
+  ENDPOINT_KIND,
+  OTHER,
+  addOptions,
+  categoriesOfFile,
+  categoryItems,
+  categoryOfSource,
+  categoryTotals,
+  columnsOf,
+  countsBySource,
+  dataChip,
+  expectedSources,
+  fieldsOf,
+  incidentRange,
+  isMultiSource,
+  labelOfFile,
+  notesOf,
+  otherOptions,
+  otherSources,
+  partialCategories,
+  presentKeys,
+  sourceFilter,
+  sourceKeyOf,
+  sourceOptions,
+  sourcePrefix,
+  statFilters,
+  timeLabelOf,
+  valueOf,
+  withData,
+  withoutData,
+} from '../../../domain/endpointPage.js'
+import { COUNT_SHOWN_CAP } from '../../../domain/serverTable.js'
+import { sizeText } from '../../../domain/transfers.js'
+import { detectionTone, levelsText, ruleChipValue } from '../../../domain/detections.js'
+import { formatDateTime } from '../../../lib/time.js'
+import { useDetections } from '../../../lib/useDetections.js'
+import { evidence } from '../../../services/api.js'
 
 /*
- * "Endpoint Artifacts" tab: one sub-tab per forensic category. Each category is
- * built from one or more SOURCES, imported per-source in one of two ways
- * (never a third-party tool, see config/artifacts.js):
- *   - mode 'file'   → upload the existing raw file; parsed in-browser.
- *   - mode 'script' → run the shown native script, import the CSV it writes.
- * The table below shows the union of every source's records, tagged by source.
+ * "Endpoint Artifacts" tab (7.0): one selector tab per forensic category. A file is sent to the server,
+ * the worker (parser `endpoint`) reads it, and the records come back through the evidence API. A
+ * category is built from sources (config/artifacts.js, the ones of the incident's system): each is
+ * a grey row of the sources table until its file is imported. The page holds no records.
  */
 
+const SLUG = /[^a-z0-9]+/g
 /** Filesystem-safe slug for the downloaded script filename. */
-function slugify(text) {
-  return String(text)
+const slugify = (text) =>
+  String(text)
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(SLUG, '-')
     .replace(/^-+|-+$/g, '')
+
+// The detection level has a select of its own in the toolbar.
+const HIDDEN_CHIPS = ['level', 'dataKey', 'dataValue']
+const FLAGGED_ROW = 'bg-accent-soft border-l-2 border-l-accent-strong'
+const FLAG_OPTIONS = [
+  { value: '', label: 'Flagged: any' },
+  { value: 'yes', label: 'Only flagged' },
+]
+// The filter each stackable field of the table sets when a value is picked.
+const FILTER_OF_FIELD = { host: 'host', username: 'username' }
+const DATA_FIELD = 'data.'
+const OTHER_CATEGORY = { id: OTHER, label: 'Other', icon: Files, sources: {} }
+
+const count = (n, capped = false) =>
+  capped ? `${COUNT_SHOWN_CAP.toLocaleString('en-US')}+` : n.toLocaleString('en-US')
+
+/** The collection scripts of a category on the incident's system: the old tab's content, in a dialog. */
+function ScriptsDialog({ category, sources, osLabel, onClose }) {
+  return (
+    <Modal open onClose={onClose} title={`Collection scripts — ${category.label} (${osLabel})`} maxWidth="max-w-3xl">
+      <div className="space-y-4">
+        {sources
+          .filter((source) => source.mode !== 'file' && source.script)
+          .map((source) => (
+            <div key={source.key} className="space-y-1">
+              <p className="text-sm font-semibold text-fg">{source.name}</p>
+              <p className="break-all font-mono text-[11px] text-fg-muted">{source.path}</p>
+              {source.tool && <p className="text-[11px] text-fg-muted">{source.tool}</p>}
+              <p className="inline-flex items-center gap-1 text-[11px] font-medium text-accent">
+                <Terminal className="h-3 w-3" aria-hidden="true" />
+                Collection script ({source.script.lang === 'powershell' ? 'PowerShell' : 'Bash'}); import the CSV it
+                writes
+              </p>
+              <ScriptBlock script={source.script} filename={`collect-${category.id}-${slugify(source.name)}`} />
+            </div>
+          ))}
+      </div>
+    </Modal>
+  )
 }
 
-/** Total records across a category's sources. */
-function totalRecords(catData) {
-  return Object.values(catData?.sources ?? {}).reduce((n, s) => n + (s?.records?.length ?? 0), 0)
+/** The records of a category (all its sources, or the one chosen), with their filters, stat cards and the Source viewer. */
+function Records({
+  incident,
+  category,
+  os,
+  sources,
+  counts,
+  reloadKey,
+  reload,
+  canWrite,
+  found,
+  focusRule,
+  ruleTitles,
+}) {
+  const isOther = category.id === OTHER
+  const prefix = sourcePrefix(os, category.id)
+  // The names of the sources no category claims, from the records themselves (a hive file's own name holds none).
+  const otherNames = useMemo(
+    () => Object.keys(counts).filter((name) => categoryOfSource(name, os, ARTIFACT_CATEGORIES) === OTHER),
+    [counts, os],
+  )
+  const options = useMemo(
+    () => (isOther ? otherOptions(otherNames, counts) : sourceOptions(category, os, counts)),
+    [isOther, otherNames, category, os, counts],
+  )
+  const [chosen, setChosen] = useState('')
+  // "Other" has no prefix to stand for all of it: it shows one source at a time.
+  const known = options.some((option) => option.value === chosen)
+  const source = known ? chosen : isOther ? (options[0]?.value ?? '') : ''
+  const scope = useMemo(() => (isOther ? { source } : sourceFilter(prefix, source)), [isOther, prefix, source])
+  const fields = useMemo(() => fieldsOf(category.id), [category.id])
+  const dataColumns = columnsOf(category.id)
+  const [filters, setFilters] = useState(() => {
+    // Opened from a rule of the Detections part: only that rule's records, in no range.
+    if (focusRule) return { rule: focusRule }
+    const range = incidentRange(incident)
+    return range ? { from: range.from, to: range.to } : {}
+  })
+  const [hosts, setHosts] = useState([])
+  const [stats, setStats] = useState(null)
+  const [viewing, setViewing] = useState(null)
+  const [stackField, setStackField] = useState('')
+  const rowsRef = useRef([])
+  const { askText } = useContextMenu()
+  const { showToast } = useToast()
+  const rowMenu = useRowMenu(incident)
+  const names = useMemo(() => sourceNameByKey(category), [category])
+
+  const base = useMemo(() => ({ ...filters, kind: ENDPOINT_KIND, ...scope }), [filters, scope])
+  const baseKey = JSON.stringify(base)
+
+  // The stat cards follow the filters in force.
+  useEffect(() => {
+    const controller = new AbortController()
+    const asked = statFilters(JSON.parse(baseKey))
+    const ask = (filtersOf) =>
+      evidence.records(incident.id, {
+        filters: filtersOf,
+        limit: 1,
+        signal: controller.signal,
+      })
+    Promise.all([ask(asked.entries), ask(asked.timed), ask(asked.flagged)])
+      .then(([all, timed, flagged]) =>
+        setStats({
+          entries: count(all.count ?? 0, all.countCapped),
+          timed: count(timed.count ?? 0, timed.countCapped),
+          flagged: flagged.count ?? 0,
+        }),
+      )
+      .catch((failure) => {
+        if (failure?.name !== 'AbortError') setStats(null)
+      })
+    return () => controller.abort()
+  }, [incident.id, baseKey, reloadKey])
+
+  // The hosts of this source, for the host filter.
+  useEffect(() => {
+    const controller = new AbortController()
+    evidence
+      .stack(incident.id, {
+        field: 'host',
+        filters: { kind: ENDPOINT_KIND, ...scope },
+        signal: controller.signal,
+      })
+      .then((answer) => setHosts(answer.values.map((item) => item.value)))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [incident.id, scope, reloadKey])
+
+  const load = useCallback(
+    async (args) => {
+      const page = await evidence.recordsLoader(incident.id, { kind: ENDPOINT_KIND, ...scope }, fields)(args)
+      if (!args.signal?.aborted) rowsRef.current = page.items
+      return page
+    },
+    [incident.id, scope, fields],
+  )
+
+  const mark = async (row, changes) => {
+    try {
+      await evidence.putMark(incident.id, {
+        key: row.key,
+        flagged: row.flagged,
+        note: row.note,
+        ...changes,
+      })
+      reload()
+    } catch (failure) {
+      showToast({
+        message: failure?.message || 'The mark could not be saved.',
+      })
+    }
+  }
+  const toggleFlag = (row) => mark(row, { flagged: !row.flagged })
+  const comment = async (row) => {
+    const note = await askText({
+      title: 'Comment on the record',
+      label: row.flagged ? 'Comment' : 'Comment (the record is flagged too)',
+      placeholder: 'What it shows',
+      confirm: 'Save comment',
+    })
+    if (note) mark(row, { flagged: true, note })
+  }
+
+  const onRowContextMenu = (event, row, filterItems) =>
+    rowMenu(event, {
+      title: row.summary,
+      actions: [
+        canWrite && {
+          label: row.flagged ? 'Remove the flag' : 'Flag as malicious',
+          icon: Flag,
+          onSelect: () => toggleFlag(row),
+        },
+        canWrite && {
+          label: 'Add a comment…',
+          icon: MessageSquarePlus,
+          onSelect: () => comment(row),
+        },
+        ...filterItems,
+      ],
+      text: row.summary,
+      record: row,
+    })
+
+  const openSource = (row) => {
+    const source = sources.find((item) => item.id === row.sourceId)
+    setViewing({
+      row,
+      source: source ?? { id: row.sourceId, fileName: row.summary },
+    })
+  }
+  const step = (delta) => {
+    const rows = rowsRef.current
+    const at = rows.findIndex((row) => row.id === viewing?.row.id)
+    const next = rows[at + delta]
+    if (next) openSource(next)
+  }
+  const at = rowsRef.current.findIndex((row) => row.id === viewing?.row.id)
+
+  const columns = [
+    {
+      key: 'flag',
+      label: '',
+      className: 'w-px',
+      render: (row) => (
+        <button
+          type="button"
+          disabled={!canWrite}
+          onClick={() => toggleFlag(row)}
+          aria-label={row.flagged ? 'Remove the flag' : 'Flag as malicious'}
+          title={row.flagged ? 'Remove the flag' : 'Flag as malicious'}
+          className={[
+            'inline-flex items-center justify-center p-1 transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            row.flagged ? 'text-accent hover:text-accent-fg' : 'text-fg-muted hover:text-accent',
+          ].join(' ')}
+        >
+          <Flag className="h-4 w-4" fill={row.flagged ? 'currentColor' : 'none'} aria-hidden="true" />
+        </button>
+      ),
+    },
+    {
+      key: 'ts',
+      label: timeLabelOf(category, os, source),
+      order: 'time',
+      render: (row) => (
+        <span className="whitespace-nowrap font-mono text-xs text-fg">{row.ts ? formatDateTime(row.ts) : '—'}</span>
+      ),
+    },
+    detectionsColumn,
+    {
+      key: 'type',
+      label: 'Source',
+      stackField: 'source',
+      render: (row) => <Badge color="slate">{names[row.type] ?? row.type}</Badge>,
+    },
+    ...(dataColumns.length > 0
+      ? dataColumns.map((column, index) => ({
+          key: `${DATA_FIELD}${column.key}`,
+          label: column.label,
+          align: column.align,
+          stackField: `${DATA_FIELD}${column.key}`,
+          hideable: index > 0,
+          render: (row) => (
+            <span className={column.mono ? 'break-all font-mono text-xs text-fg' : 'break-words text-xs text-fg'}>
+              {valueOf(row, column, sizeText) || '—'}
+              {index === 0 && row.note && <span className="ml-2 font-sans text-fg-muted">— {row.note}</span>}
+            </span>
+          ),
+        }))
+      : [
+          {
+            // A file read before 7.0 names no category: the list carries the worker's summary.
+            key: 'summary',
+            label: 'Entry',
+            render: (row) => (
+              <span className="break-all font-mono text-xs text-fg" title={row.summary}>
+                {row.summary || '—'}
+                {row.note && <span className="ml-2 font-sans text-fg-muted">— {row.note}</span>}
+              </span>
+            ),
+          },
+        ]),
+    {
+      key: 'host',
+      label: 'Host',
+      filterKey: 'host',
+      stackField: 'host',
+      hideable: true,
+      render: (row) => <span className="font-mono text-xs">{row.host || '—'}</span>,
+    },
+    {
+      key: 'username',
+      label: 'User',
+      filterKey: 'username',
+      stackField: 'username',
+      hideable: true,
+      render: (row) => <span className="font-mono text-xs">{row.username || '—'}</span>,
+    },
+    {
+      key: 'view',
+      label: '',
+      className: 'w-px',
+      render: (row) => (
+        <Button variant="ghost" size="xs" onClick={() => openSource(row)}>
+          Source
+        </Button>
+      ),
+    },
+  ]
+
+  const hasRange = incidentRange(incident) !== null
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select label="Source" value={source} onChange={setChosen} options={options} />
+      <Select
+        label="Host"
+        value={filters.host ?? ''}
+        onChange={(host) => setFilters((held) => ({ ...held, host }))}
+        options={[{ value: '', label: 'any' }, ...hosts.map((host) => ({ value: host, label: host }))]}
+      />
+      <Select
+        value={filters.flagged ? 'yes' : ''}
+        onChange={(value) => setFilters((held) => ({ ...held, flagged: value === 'yes' }))}
+        options={FLAG_OPTIONS}
+      />
+      <LevelFilter filters={filters} onChange={(value) => setFilters((held) => ({ ...held, level: value }))} />
+      <DateTimeRangeFilter
+        start={filters.from ?? null}
+        end={filters.to ?? null}
+        onChange={({ start, end }) => setFilters((held) => ({ ...held, from: start, to: end }))}
+      />
+      <Button
+        variant="ghost"
+        size="xs"
+        icon={CalendarClock}
+        disabled={!hasRange}
+        title="Set the range to the incident's suspicious activity window"
+        onClick={() => {
+          const range = incidentRange(incident)
+          setFilters((held) => ({ ...held, from: range.from, to: range.to }))
+        }}
+      >
+        Use incident range
+      </Button>
+    </div>
+  )
+
+  const pick = (value) => {
+    if (stackField === 'source') setChosen(String(value))
+    else if (stackField.startsWith(DATA_FIELD)) {
+      setFilters((held) => withData(held, stackField.slice(DATA_FIELD.length), value))
+    } else if (FILTER_OF_FIELD[stackField]) {
+      setFilters((held) => ({ ...held, [FILTER_OF_FIELD[stackField]]: value }))
+    }
+    setStackField('')
+  }
+  const chip = dataChip(filters, dataColumns)
+
+  return (
+    <div className="space-y-4">
+      {notesOf(category, os, counts).map((note) => (
+        <p key={note} className="flex items-start gap-2 border border-line bg-panel p-3 text-xs text-fg-muted">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          {note}
+        </p>
+      ))}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={category.icon} label="Entries" value={stats?.entries ?? '—'} />
+        <StatCard icon={Clock} label="With timestamp" value={stats?.timed ?? '—'} />
+        <StatCard
+          icon={Flag}
+          label="Flagged"
+          value={stats?.flagged ?? '—'}
+          tone={stats?.flagged > 0 ? 'accent' : 'default'}
+        />
+        <StatCard
+          icon={ShieldAlert}
+          label="Detections"
+          value={found.data.detections.toLocaleString('en-US')}
+          tone={detectionTone(found.data.byLevel)}
+          hint={levelsText(found.data.byLevel) || 'in all categories'}
+        />
+      </div>
+
+      <ServerTable
+        load={load}
+        columns={columns}
+        filters={filters}
+        onFiltersChange={setFilters}
+        toolbar={toolbar}
+        hideChips={HIDDEN_CHIPS}
+        chipLabel={(name, value) => (name === 'rule' ? ruleChipValue(value, ruleTitles) : null)}
+        filterChips={
+          chip ? (
+            <span className="inline-flex items-center gap-1 border border-accent-strong bg-accent-soft py-0.5 pl-2 pr-1 font-mono text-xs text-accent-fg">
+              <span className="max-w-64 truncate">{chip}</span>
+              <button
+                type="button"
+                aria-label={`Remove the filter ${chip}`}
+                onClick={() => setFilters((held) => withoutData(held))}
+                className="p-0.5 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </span>
+          ) : null
+        }
+        tableKey="endpoint-artifacts"
+        defaultOrder="-time"
+        refreshKey={reloadKey}
+        rowKey={(row) => row.id}
+        rowClassName={(row) => (row.flagged ? FLAGGED_ROW : '')}
+        onRowContextMenu={onRowContextMenu}
+        onStack={setStackField}
+        emptyMessage="No records match the current filters"
+        searchPlaceholder={`Search ${category.label.toLowerCase()}…`}
+      />
+
+      {stackField && (
+        <StackPanel
+          incidentId={incident.id}
+          field={stackField}
+          label={columns.find((column) => column.stackField === stackField)?.label}
+          filters={base}
+          onPick={pick}
+          onClose={() => setStackField('')}
+        />
+      )}
+      {viewing && (
+        <SourceViewer
+          incidentId={incident.id}
+          source={viewing.source}
+          record={{ id: viewing.row.id }}
+          onClose={() => setViewing(null)}
+          onPrev={at > 0 ? () => step(-1) : null}
+          onNext={at >= 0 && at < rowsRef.current.length - 1 ? () => step(1) : null}
+        />
+      )}
+    </div>
+  )
 }
 
 export default function EndpointArtifactsTab({ incident }) {
-  const { updateArtifactSource, clearArtifactSource, clearArtifactCategory } = useIncidents()
+  const { can } = useAuth()
+  const archived = Boolean(incident.archivedAt)
+  const canWrite = can('write') && !archived
 
-  const [activeCategoryId, setActiveCategoryId] = useState(ARTIFACT_CATEGORIES[0].id)
-  const [loading, setLoading] = useState({}) // { [sourceKey]: bool }
-  const [errors, setErrors] = useState({}) // { [sourceKey]: string }
-  const [confirmClear, setConfirmClear] = useState(false)
+  const [categoryId, setCategoryId] = useState(ARTIFACT_CATEGORIES[0].id)
+  const [counts, setCounts] = useState(null) // records per source name, from the server
+  const [sources, setSources] = useState([])
+  const [gave, setGave] = useState({}) // file id -> the source names its records have (a hive, SRUDB.dat)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [addAs, setAddAs] = useState('')
+  const [showScripts, setShowScripts] = useState(false)
+  const [fileView, setFileView] = useState(null) // a source opened whole in the viewer
+  const [part, setPart] = useState('entries') // 'entries' or 'detections'
+  const [focusRule, setFocusRule] = useState('') // a rule opened from Detections: Entries shows only its records
+  const [ruleTitles, setRuleTitles] = useState({}) // rule id -> title, for the chip of the filter
+  const reload = useCallback(() => setReloadKey((n) => n + 1), [])
 
-  const endpointData = incident.data.endpoint
   const os = getOsById(incident.os) ? incident.os : DEFAULT_OS
   const osLabel = getOsById(os)?.label ?? os
+  const others = useMemo(() => otherSources(sources, os, ARTIFACT_CATEGORIES, gave), [sources, os, gave])
+  const hasOther = others.length > 0
+  const isOther = categoryId === OTHER && hasOther
+  const category = isOther ? OTHER_CATEGORY : (getArtifactCategoryById(categoryId) ?? ARTIFACT_CATEGORIES[0])
+  const categorySources = useMemo(() => category.sources?.[os] ?? [], [category, os])
+  const expected = useMemo(() => expectedSources(category, os), [category, os])
 
-  const category = getArtifactCategoryById(activeCategoryId) ?? ARTIFACT_CATEGORIES[0]
-  const catData = endpointData.categories[activeCategoryId] ?? buildDefaultArtifactData(category)
-  const sources = useMemo(() => artifactSourcesFor(category, os), [category, os])
-
-  const combined = useMemo(() => combineCategoryRecords(category, catData), [category, catData])
-  const hasData = combined.length > 0
-
-  /* ---- Import a file for a specific source ---- */
-  const handleFile = async (source, file) => {
-    setErrors((p) => ({ ...p, [source.key]: null }))
-    setLoading((p) => ({ ...p, [source.key]: true }))
-    try {
-      const [{ records, format }, sha256] = await Promise.all([
-        parseArtifactImport(file, category, source),
-        sha256Hex(file),
-      ])
-      updateArtifactSource(incident.id, category.id, source.key, {
-        records,
-        meta: { fileName: file.name, format, rows: records.length, importedAt: new Date().toISOString(), sha256 },
-      })
-    } catch (err) {
-      setErrors((p) => ({ ...p, [source.key]: err?.message ?? 'Unexpected error while parsing the file.' }))
-    } finally {
-      setLoading((p) => ({ ...p, [source.key]: false }))
-    }
-  }
-
-  // A file dropped anywhere in the app for this tab (see NavigationContext):
-  // switch to its category first, then import it into the chosen source.
-  const { requests, take } = useNavigation()
+  // Counts of the selector, and the files (for the dots and the Source viewer): the server's, not a copy.
   useEffect(() => {
-    const request = requests.endpoint
-    if (!request?.file) return
-    if (request.params?.category && request.params.category !== activeCategoryId) {
-      setActiveCategoryId(request.params.category)
-      return
+    const controller = new AbortController()
+    evidence
+      .sources(incident.id, { kind: ENDPOINT_KIND, signal: controller.signal })
+      .then((answer) => setSources(answer.sources))
+      .catch(() => {})
+    if (archived) {
+      setCounts({})
+    } else {
+      evidence
+        .stack(incident.id, {
+          field: 'source',
+          filters: { kind: ENDPOINT_KIND },
+          limit: 100,
+          signal: controller.signal,
+        })
+        .then((answer) => setCounts(countsBySource(answer.values)))
+        .catch(() => setCounts((held) => held ?? {}))
     }
-    take('endpoint')
-    const source = sources.find((s) => s.key === request.params?.source) ?? sources[0]
-    if (source) handleFile(source, request.file)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for a new dropped file, and again once its category is the active one
-  }, [requests.endpoint, activeCategoryId])
+    return () => controller.abort()
+  }, [incident.id, archived, reloadKey])
 
-  const handleConfirmClear = () => {
-    clearArtifactCategory(incident.id, category.id)
-    setErrors({})
-    setConfirmClear(false)
-  }
+  // A hive and SRUDB.dat are one file for several sources: ask what each gave (its records' own sources).
+  const multi = useMemo(
+    () =>
+      sources
+        .filter((file) => isMultiSource(file.source))
+        .map((file) => `${file.id}:${file.kept}:${file.state}`)
+        .join('|'),
+    [sources],
+  )
+  useEffect(() => {
+    const files = sources.filter((file) => isMultiSource(file.source))
+    if (archived || files.length === 0) {
+      setGave({})
+      return undefined
+    }
+    const controller = new AbortController()
+    Promise.all(
+      files.map((file) =>
+        evidence
+          .stack(incident.id, {
+            field: 'source',
+            filters: { kind: ENDPOINT_KIND, sourceId: file.id },
+            limit: 50,
+            signal: controller.signal,
+          })
+          .then((answer) => [file.id, answer.values.map((item) => item.value)])
+          .catch(() => [file.id, []]),
+      ),
+    ).then((pairs) => {
+      if (!controller.signal.aborted) setGave(Object.fromEntries(pairs))
+    })
+    return () => controller.abort()
+    // The files are read through `multi`: another list with the same files and counts asks nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incident.id, archived, multi])
+
+  const totals = useMemo(() => categoryTotals(ARTIFACT_CATEGORIES, os, counts ?? {}), [os, counts])
+  const anyRecords = Object.values(totals).some((count) => count > 0)
+  const found = useDetections(incident.id, {
+    kind: ENDPOINT_KIND,
+    refresh: reloadKey,
+    enabled: !archived && anyRecords,
+  })
+  const items = useMemo(
+    () =>
+      categoryItems(ARTIFACT_CATEGORIES, totals, partialCategories(sources, os, ARTIFACT_CATEGORIES, gave), hasOther),
+    [totals, sources, os, hasOther, gave],
+  )
+
+  // The files of the page go to the source chosen here: a file of its own, or the hive / SRUDB.dat that fills several.
+  const options = useMemo(
+    () =>
+      addOptions(category, os, {
+        hiveSource: HIVE_SOURCE,
+        hiveLabel: HIVE_OPTION,
+        srumSource: SRUM_SOURCE,
+        srumLabel: SRUM_OPTION,
+      }),
+    [category, os],
+  )
+  const target = options.some((item) => item.key === addAs) ? addAs : (options[0]?.key ?? '')
+  const uploadParams = useMemo(() => {
+    const chosen = options.find((item) => item.key === target)
+    return chosen ? { source: chosen.source } : null
+  }, [options, target])
+  const hasHive = categorySources.some((source) => source.via === 'hive')
+  const keepOfCategory = useCallback(
+    (file) => {
+      const mine = categoriesOfFile(file, os, ARTIFACT_CATEGORIES, gave)
+      return isOther ? mine.includes(OTHER) : mine.includes(category.id)
+    },
+    [isOther, os, category.id, gave],
+  )
+  // A file of its own satisfies its row; a hive's rows are satisfied by their records (`present`).
+  const matchSource = useCallback(
+    (file) => (isMultiSource(file.source) ? null : sourceKeyOf(file, os, category.id)),
+    [os, category.id],
+  )
+  const present = useMemo(() => presentKeys(category, os, counts ?? {}), [category, os, counts])
+  const labelOf = useCallback((file) => labelOfFile(file, os, ARTIFACT_CATEGORIES, gave), [os, gave])
+  const hasScripts = categorySources.some((source) => source.mode !== 'file' && source.script)
+
+  const help = (
+    <>
+      {canWrite && options.length > 0 && (
+        <Select
+          label="Add files as"
+          value={target}
+          onChange={setAddAs}
+          options={options.map((item) => ({
+            value: item.key,
+            label: item.label,
+          }))}
+        />
+      )}
+      {hasScripts && (
+        <Button variant="ghost" size="xs" icon={Terminal} onClick={() => setShowScripts(true)}>
+          Collection scripts
+        </Button>
+      )}
+    </>
+  )
 
   return (
     <div className="space-y-6">
-      {/* -------- Category sub-tabs -------- */}
-      <div
-        role="tablist"
-        aria-label="Artifact category"
-        className="flex flex-wrap gap-2 border border-line bg-panel p-2"
-      >
-        {ARTIFACT_CATEGORIES.map((c) => {
-          const isActive = c.id === activeCategoryId
-          const CatIcon = c.icon
-          const count = totalRecords(endpointData.categories[c.id])
-          return (
-            <button
-              key={c.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveCategoryId(c.id)}
-              className={[
-                'inline-flex items-center gap-2 border px-3 py-2 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                isActive
-                  ? 'border-accent-strong bg-accent-soft text-accent'
-                  : 'border-transparent text-fg-muted hover:bg-canvas',
-              ].join(' ')}
-            >
-              <CatIcon className={`h-4 w-4 ${isActive ? '' : c.accent}`} />
-              {c.label}
-              {count > 0 && (
-                <span
-                  className={[
-                    'px-1.5 text-xs tabular-nums',
-                    isActive ? 'bg-accent-soft text-accent' : 'bg-canvas text-fg-muted',
-                  ].join(' ')}
-                >
-                  {count.toLocaleString('en-US')}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      <Tabs
+        variant="selector"
+        label="Artifact category"
+        idPrefix="endpoint"
+        items={items}
+        value={category.id}
+        onChange={setCategoryId}
+      />
+
+      <div role="tabpanel" aria-labelledby={tabId('endpoint', category.id)} className="space-y-6">
+        {!isOther && categorySources.length === 0 && (
+          <p className="border border-line bg-panel p-4 text-sm text-fg-muted">
+            Nik reads no <strong>{category.label.toLowerCase()}</strong> files for {osLabel}: this category is empty for
+            this host OS. Switch the incident OS, or use another tab.
+          </p>
+        )}
+        {hasHive && !isOther && (
+          <p className="flex items-start gap-2 border border-line bg-panel p-3 text-xs text-fg-muted">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {HIVE_HELP}
+          </p>
+        )}
+        <SourceFiles
+          incidentId={incident.id}
+          kind={ENDPOINT_KIND}
+          filter={keepOfCategory}
+          uploadParams={uploadParams}
+          expected={expected}
+          match={matchSource}
+          present={present}
+          labelOf={labelOf}
+          title={`Sources — ${category.label} (${osLabel})`}
+          help={help}
+          canWrite={canWrite && categorySources.length > 0 && !isOther}
+          onChanged={reload}
+          onView={setFileView}
+        />
+
+        {archived && (
+          <p className="border border-line bg-panel p-4 text-sm text-fg-muted">
+            Archived: the records are not loaded. Take the incident out of the archive to read them again.
+          </p>
+        )}
+        {!archived && counts !== null && anyRecords && (
+          <Tabs
+            variant="section"
+            label="Parts of the endpoint artifacts"
+            idPrefix="endpoint-part"
+            items={[
+              { id: 'entries', label: 'Entries' },
+              {
+                id: 'detections',
+                label: 'Detections',
+                count: found.data.total,
+              },
+            ]}
+            value={part}
+            onChange={(id) => {
+              setFocusRule('')
+              setPart(id)
+            }}
+          />
+        )}
+        {!archived && counts !== null && anyRecords && part === 'detections' && (
+          <DetectionsSection
+            data={found.data}
+            loading={found.loading}
+            error={found.error}
+            noun="records"
+            onOpen={(rule) => {
+              // The rule may have matched in another category: Entries then says there is nothing here.
+              setRuleTitles((before) => ({
+                ...before,
+                [rule.ruleId]: rule.title,
+              }))
+              setFocusRule(rule.ruleId)
+              setPart('entries')
+            }}
+          />
+        )}
+        {!archived && counts !== null && part === 'entries' && (totals[category.id] ?? 0) > 0 && (
+          <Records
+            key={`${incident.id}:${category.id}:${focusRule}`}
+            incident={incident}
+            category={category}
+            os={os}
+            sources={sources}
+            counts={counts}
+            reloadKey={reloadKey}
+            reload={reload}
+            canWrite={canWrite}
+            found={found}
+            focusRule={focusRule}
+            ruleTitles={ruleTitles}
+          />
+        )}
       </div>
 
-      {/* -------- Sources: per-source collection + import -------- */}
-      <Card
-        title={`Sources — ${category.label} (${osLabel})`}
-        icon={Upload}
-        actions={
-          <div className="flex items-center gap-2">
-            {hasData && (
-              <Button variant="danger" size="sm" icon={Trash2} onClick={() => setConfirmClear(true)}>
-                Clear
-              </Button>
-            )}
-          </div>
-        }
-      >
-        {sources.length === 0 ? (
-          <div className="flex items-start gap-2 border border-dashed border-line p-4 text-sm text-fg-muted">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              No fully-custom collection method for <strong>{category.label.toLowerCase()}</strong> on {osLabel}: the
-              standard artifacts here require third-party DFIR parsers, so this category is empty for this host OS.
-              Switch the incident OS, or use another tab.
-            </span>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {sources.map((source) => {
-              const meta = catData.sources?.[source.key]?.meta ?? null
-              const isFile = source.mode === 'file'
-              return (
-                <div key={source.key} className="flex flex-col gap-2 border border-line p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-fg">{source.name}</p>
-                    <p className="break-all font-mono text-[11px] text-fg-muted">{source.path}</p>
-                    {source.tool && <p className="text-[11px] text-fg-muted">{source.tool}</p>}
-                  </div>
+      {fileView && <SourceViewer incidentId={incident.id} source={fileView} onClose={() => setFileView(null)} />}
 
-                  {/* Script sources: show the native script to run, then import its CSV. */}
-                  {!isFile && source.script && (
-                    <details className="group">
-                      <summary className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-medium text-accent hover:underline">
-                        <Terminal className="h-3 w-3" />
-                        Collection script ({source.script.lang === 'powershell' ? 'PowerShell' : 'Bash'})
-                      </summary>
-                      <ScriptBlock script={source.script} filename={`collect-${category.id}-${slugify(source.name)}`} />
-                    </details>
-                  )}
-
-                  <FileUploadZone
-                    label={isFile ? source.name : `${source.name} — CSV`}
-                    description={
-                      isFile
-                        ? 'Upload the existing file from the host (parsed here).'
-                        : 'Upload the CSV the script produced.'
-                    }
-                    icon={category.icon}
-                    accept={isFile ? source.accept || '' : '.csv,.json'}
-                    meta={meta}
-                    loading={!!loading[source.key]}
-                    error={errors[source.key] ?? null}
-                    onFile={(file) => handleFile(source, file)}
-                    onClear={() => clearArtifactSource(incident.id, category.id, source.key)}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* -------- Combined records table -------- */}
-      <ArtifactSection incident={incident} category={category} records={combined} />
-
-      {/* -------- Confirm clear modal -------- */}
-      <Modal
-        open={confirmClear}
-        onClose={() => setConfirmClear(false)}
-        title={`Clear ${category.label}`}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setConfirmClear(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" icon={Trash2} onClick={handleConfirmClear}>
-              Clear
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-fg-muted">
-          You are about to delete all imported <strong>{category.label}</strong> records (every source) in the incident{' '}
-          <strong>{incident.name}</strong>. Other categories are left untouched. This action is irreversible.
-        </p>
-      </Modal>
+      {showScripts && (
+        <ScriptsDialog
+          category={category}
+          sources={categorySources}
+          osLabel={osLabel}
+          onClose={() => setShowScripts(false)}
+        />
+      )}
     </div>
   )
 }

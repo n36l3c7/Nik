@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .. import artifact_jobs, artifacts, unpack
+from .. import archive, artifact_jobs, artifacts, unpack
 from ..core import audit
 from ..core.config import settings
 from ..core.models import Artifact, Incident, Sample
@@ -81,8 +81,11 @@ class Store:
         if len(data) > self.limit:
             raise CommandError(f"The file is larger than the {self.limit_mb} MB limit of a sample: it was not kept")
         incident_id = str(call.run.incident_id or "")
-        if incident_id and db.get(Incident, incident_id) is None:
+        held = db.get(Incident, incident_id) if incident_id else None
+        if held is None:
             incident_id = ""
+        elif held.archived_at:
+            raise CommandError(archive.SENTENCE)
         origin = f"{self.connector_name} ({self.command})"
         playbook = (call.run.trigger or {}).get("playbook", "")
         who = f", approved by {call.approved_by}" if call.approved_by else ""

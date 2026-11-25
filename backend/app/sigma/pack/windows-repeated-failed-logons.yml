@@ -1,0 +1,23 @@
+title: 'Repeated Failed Logons for One Account'
+id: 79c9730d-17a0-44d8-bfde-05fa1c638172
+name: nik_repeated_failed_logons
+status: stable
+description: 'Five or more failed logons (4625) for the same account within thirty minutes; it is the first step of a logon after failures.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.credential-access
+    - attack.t1110
+correlation:
+    type: event_count
+    rules:
+        - nik_failed_logon
+    group-by:
+        - TargetUserName
+    timespan: 30m
+    generate: false
+    condition:
+        gte: 5
+falsepositives:
+    - A service account with an old password on a machine
+level: low

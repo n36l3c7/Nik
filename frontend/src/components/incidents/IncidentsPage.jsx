@@ -24,8 +24,9 @@ import { useBulk } from '../../context/BulkContext.jsx'
 import { useAutomation } from '../../context/AutomationContext.jsx'
 import { useContextMenu } from '../../context/ContextMenuContext.jsx'
 import { useFields } from '../../context/FieldsContext.jsx'
-import { useIncidents } from '../../context/IncidentContext.jsx'
+import { normalizeSummary, useIncidents } from '../../context/IncidentContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
+import { readChoice, secondsOf, writeChoice } from '../../domain/autoRefresh.js'
 import { typeOf } from '../../domain/fields.js'
 import { usePageMenu } from '../menu/usePageMenu.js'
 import {
@@ -47,10 +48,13 @@ import { filterPayload, filterView, isChanged } from '../../domain/savedFilters.
 import { isTypingTarget } from '../../domain/search.js'
 import { copyText } from '../../lib/download.js'
 import { hasModalLayer } from '../../lib/layers.js'
+import { useAutoRefresh } from '../../lib/useAutoRefresh.js'
 import { api } from '../../services/api.js'
 import { useQuerySchema } from '../../services/querySchema.js'
-import { Badge, BulkBar, Button, EmptyState, Modal, useSelection } from '../ui/index.js'
+import { Badge, BulkBar, Button, EmptyState, Modal, Select, useSelection } from '../ui/index.js'
+import { ARCHIVED_FILTER_OPTIONS, archivedParam } from '../../domain/archive.js'
 import QueryInput from '../ui/QueryInput.jsx'
+import RefreshControl from '../ui/RefreshControl.jsx'
 import ColumnsDialog from './ColumnsDialog.jsx'
 import { ManageFiltersDialog, SaveFilterDialog } from './FilterDialogs.jsx'
 import FilterMenu from './FilterMenu.jsx'
@@ -108,6 +112,7 @@ function incidentActions({
   types,
   canWrite,
   canAutomate,
+  canArchive,
   askBulk,
   onDone,
   exportIncident,
@@ -258,6 +263,17 @@ function incidentActions({
           },
         ]
       : []),
+    ...(canArchive
+      ? [
+          { group: 'Archive' },
+          { id: 'archive', label: 'Archive…', onSelect: () => ask('archive', 'Archive the incidents') },
+          {
+            id: 'unarchive',
+            label: 'Take out of the archive…',
+            onSelect: () => ask('unarchive', 'Take the incidents out of the archive'),
+          },
+        ]
+      : []),
     { group: 'Take out' },
     { id: 'export', label: 'Export (JSON)', onSelect: exportAll },
     { id: 'links', label: 'Copy the links', onSelect: copyLinks },
@@ -267,6 +283,24 @@ function incidentActions({
 
 // What each account had on screen, for the life of the browser tab: { [username]: view }.
 const remembered = new Map()
+
+/** Ask the server which incidents a query keeps, and the fields the columns need: the state `match` holds. */
+async function askMatch(text, wanted, archived = 'exclude') {
+  const asked = [
+    'view=summary',
+    ...(archivedParam(archived) ? [`archived=${archivedParam(archived)}`] : []),
+    ...(text ? [`q=${encodeURIComponent(text)}`] : []),
+    ...(wanted ? [`fields=${encodeURIComponent(wanted)}`] : []),
+  ]
+  const answer = await api.get(`/incidents?${asked.join('&')}`)
+  const found = answer?.incidents ?? []
+  return {
+    ids: text ? new Set(found.map((row) => row.id)) : null,
+    fields: wanted ? new Map(found.map((row) => [row.id, row.fields ?? {}])) : null,
+    error: null,
+    query: text,
+  }
+}
 const EMPTY_VIEW = { query: '', filterId: null, sort: DEFAULT_SORT, columns: null }
 
 /**
@@ -287,6 +321,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     setIncidentTriage,
     askClose,
     refreshIncidents,
+    reloadIncidents,
     storageError,
     unsavedChanges,
   } = useIncidents()
@@ -299,6 +334,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   const schema = useQuerySchema('incidents')
   const saved = useSavedFilters('incidents')
   const canWrite = can('write')
+  const canArchive = can('incidents.archive')
   const me = currentUser?.username ?? ''
   const pageRef = useRef(null)
 
@@ -356,7 +392,15 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   // ---- the incidents the query keeps, and the fields the columns need: asked of the server ----
   // `query`: what the rows on screen are the answer to (while a new query is asked, the old one).
   const [match, setMatch] = useState({ ids: null, fields: null, error: null, query: '' })
+  // Archived incidents are left out of the list unless it is asked for them: "no", "only" or "include".
+  const [archived, setArchived] = useState('exclude')
   const wanted = fieldNames(chosenKeys, columns).join(',')
+  // What the query and the fields are now, and what a refresh is asking of the server (see `refresh`).
+  const asked = useRef({ text: '', wanted: '', archived: 'exclude' })
+  const asking = useRef(null)
+  useEffect(() => {
+    asked.current = { text: view.query.trim(), wanted, archived }
+  }, [view.query, wanted, archived])
   // Asked again when the list changes or a change reaches the server, so an edit shows in the filter.
   const stamp = `${incidents.length}:${incidents.reduce((latest, row) => (row.updatedAt > latest ? row.updatedAt : latest), '')}:${unsavedChanges}`
   useEffect(() => {
@@ -369,23 +413,10 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     if (tryParse(text).error) return undefined
     let cancelled = false
     const timer = setTimeout(() => {
-      const asked = [
-        'view=summary',
-        ...(text ? [`q=${encodeURIComponent(text)}`] : []),
-        ...(wanted ? [`fields=${encodeURIComponent(wanted)}`] : []),
-      ]
-      api
-        .get(`/incidents?${asked.join('&')}`)
-        .then((answer) => {
-          if (cancelled) return
-          const found = answer?.incidents ?? []
-          setMatch({
-            ids: text ? new Set(found.map((row) => row.id)) : null,
-            fields: wanted ? new Map(found.map((row) => [row.id, row.fields ?? {}])) : null,
-            error: null,
-            query: text,
-          })
-        })
+      // A refresh is asking the same already: its answer is as fresh as this one would be.
+      if (asking.current === `${text}|${wanted}|${archived}`) return
+      askMatch(text, wanted, archived)
+        .then((next) => !cancelled && setMatch(next))
         .catch((failure) => {
           if (!cancelled) setMatch((current) => ({ ...current, error: failure.query ?? { message: failure.message } }))
         })
@@ -394,14 +425,32 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
       cancelled = true
       clearTimeout(timer)
     }
-  }, [view.query, wanted, stamp])
+  }, [view.query, wanted, stamp, archived])
+
+  // The rows of the list: the ones the app holds, or the ones the server lists when archived are asked for.
+  const [archivedRows, setArchivedRows] = useState([])
+  const loadArchived = useCallback(async () => {
+    const answer = await api.get(`/incidents?view=summary&archived=${archivedParam(archived)}`)
+    const found = Array.isArray(answer?.incidents) ? answer.incidents : []
+    setArchivedRows(found.filter((row) => row && row.id).map(normalizeSummary))
+  }, [archived])
+  useEffect(() => {
+    if (archived === 'exclude') {
+      setArchivedRows([])
+      return
+    }
+    loadArchived().catch(() => {})
+  }, [archived, loadArchived, stamp])
+  // An incident archived from its header is still in the rows the app holds (marked): the list leaves it out, as the server does.
+  const unarchived = useMemo(() => incidents.filter((row) => !row.archivedAt), [incidents])
+  const listed = archived === 'exclude' ? unarchived : archivedRows
 
   const rows = useMemo(() => {
-    const kept = incidents
+    const kept = listed
       .filter((row) => !match.ids || match.ids.has(row.id))
       .map((row) => (match.fields ? { ...row, fields: match.fields.get(row.id) ?? {} } : row))
     return sortIncidents(kept, view.sort, columns, { types })
-  }, [incidents, match.ids, match.fields, view.sort, columns, types])
+  }, [listed, match.ids, match.fields, view.sort, columns, types])
   const [limit, setLimit] = useState(PAGE_ROWS)
   const drawn = useMemo(() => rows.slice(0, limit), [rows, limit])
 
@@ -411,6 +460,33 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   const query = match.query
   const keptIds = useMemo(() => new Set(rows.map((row) => row.id)), [rows])
   const picked = useSelection({ filter: query, pageIds: drawnIds, total: rows.length, known: keptIds })
+  // A selection of everything the filter keeps ("all N matching") holds only while no incident joined
+  // what the filter keeps: one that appeared after a refresh is not one the person saw and chose.
+  const { all: pickedAll, reset: resetPicked } = picked
+  const seenIds = useRef(keptIds)
+  useEffect(() => {
+    const before = seenIds.current
+    seenIds.current = keptIds
+    if (pickedAll && before !== keptIds && [...keptIds].some((id) => !before.has(id))) resetPicked()
+  }, [keptIds, pickedAll, resetPicked])
+
+  // A bulk action that runs holds the automatic refresh back until it is over.
+  const [bulkRunning, setBulkRunning] = useState(0)
+  const askTracked = useCallback(
+    (request) =>
+      askBulk({
+        ...request,
+        onStarted: (...started) => {
+          request.onStarted?.(...started)
+          setBulkRunning((count) => count + 1)
+        },
+        onDone: (...done) => {
+          setBulkRunning((count) => Math.max(0, count - 1))
+          request.onDone?.(...done)
+        },
+      }),
+    [askBulk],
+  )
   const bulkActions = incidentActions({
     picked,
     rows,
@@ -420,7 +496,8 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
     types,
     canWrite,
     canAutomate,
-    askBulk,
+    canArchive,
+    askBulk: askTracked,
     onDone: refreshIncidents,
     exportIncident,
     showToast,
@@ -462,6 +539,33 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
   // The incident whose tags are changed from the menu of its row (its id: the row is read as it is now).
   const [taggingId, setTaggingId] = useState(null)
   const tagging = taggingId ? (incidents.find((row) => row.id === taggingId) ?? null) : null
+
+  // ---- the refresh: the same view brought up to date, by hand or on the person's own pace ----
+  const [chosenRefresh, setChosenRefresh] = useState(() => readChoice(localStorage, me))
+  const chooseRefresh = (id) => {
+    setChosenRefresh(id)
+    writeChoice(localStorage, me, id)
+  }
+  // The list is read again, and so is the answer to the query, with the list on screen all the while:
+  // the filter, the order, the columns, the rows shown, the selection and the quick view are not touched.
+  const refresh = useCallback(async () => {
+    await reloadIncidents()
+    const { text, wanted: fields, archived: mode } = asked.current
+    if (mode !== 'exclude') await loadArchived().catch(() => {})
+    if ((!text && !fields) || tryParse(text).error) return
+    asking.current = `${text}|${fields}|${mode}`
+    try {
+      const next = await askMatch(text, fields, mode)
+      // Typed meanwhile: the effect of the new query is asking its own.
+      if (asked.current.text === text && asked.current.wanted === fields && asked.current.archived === mode) {
+        setMatch(next)
+      }
+    } finally {
+      asking.current = null
+    }
+  }, [reloadIncidents, loadArchived])
+  const paused = Boolean(dialog || deleteTarget || taggingId || importing || bulkRunning > 0)
+  const autoRefresh = useAutoRefresh({ refresh, seconds: secondsOf(chosenRefresh), paused, blocked: hasModalLayer })
 
   const exportRow = async (row) => {
     setExportingId(row.id)
@@ -573,10 +677,19 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
         <SearchBar />
         <div className="flex flex-1 basis-0 items-center justify-end gap-3">
           <p role="status" aria-label="Incidents listed" className="whitespace-nowrap font-mono text-xs text-fg-muted">
-            {rows.length === incidents.length
-              ? `${incidents.length} ${incidents.length === 1 ? 'incident' : 'incidents'}`
-              : `${rows.length} of ${incidents.length}`}
+            {rows.length === listed.length
+              ? `${listed.length} ${listed.length === 1 ? 'incident' : 'incidents'}`
+              : `${rows.length} of ${listed.length}`}
           </p>
+          <RefreshControl
+            what="the list"
+            refreshing={autoRefresh.refreshing}
+            lastAt={autoRefresh.lastAt}
+            error={autoRefresh.error}
+            onRefresh={autoRefresh.refreshNow}
+            choice={chosenRefresh}
+            onChoice={chooseRefresh}
+          />
           <Button variant="secondary" size="sm" icon={Columns3} onClick={() => setDialog('columns')}>
             Columns…
           </Button>
@@ -630,6 +743,15 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
             values={offered}
             className="min-w-0 flex-1"
           />
+          <Select
+            label="Archive"
+            value={archived}
+            onChange={(value) => {
+              setArchived(value)
+              resetPicked()
+            }}
+            options={ARCHIVED_FILTER_OPTIONS}
+          />
           <Button variant="secondary" size="sm" icon={Save} onClick={() => setDialog('save')}>
             Save the filter…
           </Button>
@@ -678,7 +800,7 @@ export default function IncidentsPage({ onCreateIncident, onNewAnalysis, onOpenI
 
       {/* ----- The table (its own scroll, in both directions) ----- */}
       <div className="min-h-0 flex-1 overflow-auto">
-        {incidents.length === 0 ? (
+        {unarchived.length === 0 && archived === 'exclude' ? (
           <div className="flex h-full items-center justify-center p-6">
             <EmptyState
               skull

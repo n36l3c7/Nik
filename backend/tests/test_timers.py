@@ -270,3 +270,125 @@ def test_accounts_are_told_of_approvals_and_mentions_and_read_what_they_were_tol
     assert anna.post("/api/notifications/read", json={}).json()["unread"] == 0
     # Nobody reads what another account was told.
     assert reader.post("/api/notifications/read", json={"ids": [told["notifications"][1]["id"]]}).json()["unread"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# The time zone the hours are read in (7.0)                                    #
+# --------------------------------------------------------------------------- #
+ROME = {**HOURS, "tz": "Europe/Rome"}
+
+
+def rome(text: str) -> float:
+    """A moment written as the wall clock of Rome."""
+    from zoneinfo import ZoneInfo
+
+    return datetime.fromisoformat(text).replace(tzinfo=ZoneInfo("Europe/Rome")).timestamp()
+
+
+def test_the_default_zone_is_utc_and_gives_what_it_always_gave():
+    for hours in (HOURS, {**HOURS, "tz": "UTC"}, {**HOURS, "tz": ""}, {**HOURS, "tz": "No/Such_Zone"}):
+        assert timers.business_seconds(at("2026-11-16 09:00"), at("2026-11-16 11:30"), hours) == 9000
+        assert timers.business_seconds(at("2026-11-13 16:00"), at("2026-11-16 10:00"), hours) == 4 * 3600
+        assert timers.business_seconds(at("2026-11-14 10:00"), at("2026-11-15 10:00"), hours) == 0
+
+
+def test_business_hours_are_read_on_the_wall_clock_of_the_zone():
+    # Monday 2026-11-16, Rome is UTC+1: 08:00-18:00 there is 07:00-17:00 UTC.
+    assert timers.business_seconds(at("2026-11-16 06:00"), at("2026-11-16 09:00"), ROME) == 2 * 3600
+    assert timers.business_seconds(at("2026-11-16 16:00"), at("2026-11-16 20:00"), ROME) == 3600
+    # From Friday afternoon to Monday morning in Rome: two hours on each side of the weekend.
+    assert timers.business_seconds(rome("2026-11-13 16:00"), rome("2026-11-16 10:00"), ROME) == 4 * 3600
+
+
+def test_business_hours_keep_their_place_on_the_clock_across_a_change_of_summer_time():
+    # 2026-03-29 is the last Sunday of March (the clock goes forward at 02:00), 2026-10-25 of October (back at 03:00).
+    # Monday the 30th of March, 08:00-18:00 in Rome is 06:00-16:00 UTC, while the week before it was 07:00-17:00.
+    every_day = {**ROME, "flagWeekends": False}
+    assert timers.business_seconds(rome("2026-03-30 07:00"), rome("2026-03-30 19:00"), ROME) == 10 * 3600
+    assert timers.business_seconds(at("2026-03-30 05:00"), at("2026-03-30 17:00"), ROME) == 10 * 3600
+    assert timers.business_seconds(at("2026-03-23 05:00"), at("2026-03-23 17:00"), ROME) == 10 * 3600
+    assert (
+        timers.business_seconds(at("2026-03-23 05:00"), at("2026-03-23 06:00"), ROME) == 0
+    )  # 05:00-06:00 UTC is 06:00-07:00 in Rome
+    assert timers.business_seconds(at("2026-03-30 05:00"), at("2026-03-30 06:00"), ROME) == 0
+    assert timers.business_seconds(at("2026-03-30 06:00"), at("2026-03-30 07:00"), ROME) == 3600
+    # The day of the change itself, every day counted: Sunday the 29th has 23 hours, and its 10 of work stay 10.
+    assert timers.business_seconds(rome("2026-03-29 00:00"), rome("2026-03-30 00:00"), every_day) == 10 * 3600
+    assert timers.business_seconds(at("2026-03-28 23:00"), at("2026-03-29 23:00"), every_day) == 10 * 3600
+    # From Friday afternoon to Monday morning across the change: the same two hours.
+    assert timers.business_seconds(rome("2026-03-27 17:00"), rome("2026-03-30 09:00"), ROME) == 2 * 3600
+    # October: Sunday the 25th is 25 hours long; Friday 23rd 17:00 to Monday 26th 09:00 is still two hours.
+    assert timers.business_seconds(rome("2026-10-23 17:00"), rome("2026-10-26 09:00"), ROME) == 2 * 3600
+    assert timers.business_seconds(rome("2026-10-25 00:00"), rome("2026-10-26 00:00"), every_day) == 10 * 3600
+    assert timers.business_seconds(at("2026-10-24 22:00"), at("2026-10-25 23:00"), every_day) == 10 * 3600
+    assert timers.business_seconds(at("2026-10-26 06:00"), at("2026-10-26 07:00"), ROME) == 0  # 07:00-08:00 in Rome
+    assert timers.business_seconds(at("2026-10-26 07:00"), at("2026-10-26 08:00"), ROME) == 3600
+
+
+def test_a_timer_counts_in_the_zone_of_the_incident_else_the_one_of_nik(admin: TestClient):
+    incident(admin)
+    incident(admin, "i2")
+    assert admin.put("/api/settings", json={"businessHours": {**HOURS, "tz": "Europe/Rome"}}).status_code == 200
+    assert admin.patch("/api/incidents/i2", json={"tz": "UTC"}).status_code == 200
+    with SessionLocal() as db:
+        assert timers.business_hours(db, db.get(Incident, "i1"))["tz"] == "Europe/Rome"
+        assert timers.business_hours(db, db.get(Incident, "i2"))["tz"] == "UTC"
+        assert timers.business_hours(db)["tz"] == "Europe/Rome"
+        # 06:00-09:00 UTC on a Monday: two hours of work in Rome (07:00 UTC is 08:00 there), one in UTC.
+        one = timers.business_hours(db, db.get(Incident, "i1"))
+        two = timers.business_hours(db, db.get(Incident, "i2"))
+    assert timers.business_seconds(at("2026-11-16 06:00"), at("2026-11-16 09:00"), one) == 2 * 3600
+    assert timers.business_seconds(at("2026-11-16 06:00"), at("2026-11-16 09:00"), two) == 3600
+    shown = admin.get("/api/incidents/i1/timers").json()
+    assert shown["businessHours"]["tz"] == "Europe/Rome"
+
+
+def test_the_zone_of_nik_is_checked_when_it_is_set(admin: TestClient):
+    assert admin.get("/api/settings").json()["businessHours"]["tz"] == "UTC"
+    refused = admin.put("/api/settings", json={"businessHours": {**HOURS, "tz": "Mars/Olympus"}})
+    assert refused.status_code == 422 and "is not a time zone name" in refused.json()["detail"]
+    assert admin.put("/api/settings", json={"businessHours": {**HOURS, "tz": "Europe/Rome"}}).status_code == 200
+    assert admin.get("/api/settings").json()["businessHours"]["tz"] == "Europe/Rome"
+    listed = admin.put("/api/lists/business_hours/items", json={"document": {**HOURS, "tz": "../etc/passwd"}})
+    assert listed.status_code == 400 and "time zone" in listed.json()["detail"]
+
+
+def test_the_incident_can_be_read_and_set_in_a_zone_of_its_own(admin: TestClient):
+    incident(admin)
+    assert admin.get("/api/incidents/i1").json()["tz"] == ""
+    assert admin.patch("/api/incidents/i1", json={"tz": "Europe/Rome"}).json()["tz"] == "Europe/Rome"
+    assert admin.get("/api/incidents/i1").json()["tz"] == "Europe/Rome"
+    refused = admin.patch("/api/incidents/i1", json={"tz": "Nowhere/Land"})
+    assert refused.status_code == 422 and "is not a time zone name" in refused.json()["detail"]
+    assert admin.get("/api/incidents/i1").json()["tz"] == "Europe/Rome"
+    # Other changes leave it; empty gives it back to Nik; it is a column, never a key of the document.
+    assert admin.patch("/api/incidents/i1", json={"host": "WKS-1"}).json()["tz"] == "Europe/Rome"
+    assert admin.patch("/api/incidents/i1", json={"tz": ""}).json()["tz"] == ""
+    assert admin.patch("/api/incidents/i1", json={"tz": "UTC"}).status_code == 200
+    merged = admin.patch(
+        "/api/incidents/i1", json={"tz": None}, headers={"Content-Type": "application/merge-patch+json"}
+    )
+    assert merged.json()["tz"] == ""
+    made = admin.post("/api/incidents", json={"id": "i3", "data": {}, "tz": "Asia/Tokyo"})
+    assert made.status_code == 201 and made.json()["tz"] == "Asia/Tokyo"
+    with SessionLocal() as db:
+        assert "tz" not in db.get(Incident, "i3").doc
+    assert admin.post("/api/incidents", json={"id": "i4", "data": {}, "tz": "x"}).status_code == 422
+
+
+def test_hours_kept_without_a_zone_are_read_in_utc_and_a_page_that_does_not_send_one_keeps_it(admin: TestClient):
+    from app import lists
+
+    with SessionLocal() as db:
+        lists.apply_setting(db, "businessHours", {"startHour": 9, "endHour": 17, "flagWeekends": False}, "tester")
+        db.commit()
+    assert admin.get("/api/settings").json()["businessHours"] == {
+        "startHour": 9,
+        "endHour": 17,
+        "flagWeekends": False,
+        "tz": "UTC",
+    }
+    assert admin.put("/api/settings", json={"businessHours": {**HOURS, "tz": "Europe/Rome"}}).status_code == 200
+    assert admin.put("/api/settings", json={"businessHours": {"startHour": 7, "endHour": 19}}).status_code == 200
+    held = admin.get("/api/settings").json()["businessHours"]
+    assert held["tz"] == "Europe/Rome" and held["startHour"] == 7 and held["flagWeekends"] is True

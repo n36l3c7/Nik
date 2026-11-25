@@ -33,7 +33,7 @@ More: [Work an incident](../guide/incidents.md#create-an-incident).
 
 The e-mail opens in the **Evidence** tab, in the Mail Analysis page.
 
-More: [Add evidence](../guide/evidence.md).
+More: [Add evidence](../guide/evidence.md); the files of a machine are in [Host evidence](../guide/host.md).
 
 ## 3. Read the verdict
 

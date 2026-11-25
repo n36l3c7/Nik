@@ -1004,6 +1004,10 @@ def _to_context(db: OrmSession, run: Run, writes: list, source: str) -> list[str
     incident = db.get(Incident, run.incident_id)
     if incident is None:
         return []
+    if incident.archived_at:
+        from ..archive import SENTENCE
+
+        raise StepFailed(SENTENCE, retry=False)
     try:
         return incident_context.apply(db, incident, list(writes), source or f"run:{run.id}", SYSTEM_USER)
     except incident_context.ContextError as error:

@@ -1,13 +1,31 @@
-import { useMemo, useState } from 'react'
-import { Flag, Plus, StickyNote, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Bug,
+  CornerDownRight,
+  Download,
+  Flag,
+  Link2,
+  Mail,
+  Network,
+  Plus,
+  ScrollText,
+  Search,
+  StickyNote,
+  Terminal,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useItemMenu, useRowMenu } from '../../menu/useRowMenu.js'
 import { Badge, Button, EmptyState } from '../../ui/index.js'
-import EventTypeIcon from '../browser/EventTypeIcon.jsx'
 import NoteBlock from './NoteBlock.jsx'
 import { useIncidents } from '../../../context/IncidentContext.jsx'
+import { useNavigation } from '../../../context/NavigationContext.jsx'
 import { formatDateTime, formatRelative } from '../../../lib/time.js'
 import { truncate } from '../../../lib/url.js'
-import { flagProfile } from '../../../domain/browserProfiles.js'
+import { HOST_KIND_META, recordLabel } from '../../../domain/timeline.js'
+import { useCanWrite } from '../../../lib/useCanWrite.js'
+import { evidence } from '../../../services/api.js'
+import { useEvidenceSummary } from '../../../lib/useEvidenceSummary.js'
 import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /*
@@ -17,9 +35,10 @@ import { useUnsavedChanges } from '../../../lib/unsaved.js'
  *
  * A vertical timeline that merges two kinds of items into a single, time-sorted
  * stream:
- *   - FLAGS: entries the analyst marked as malicious in the Browser Forensics
- *            tab (Object.values(incident.flags)); sorted by `.time` (Unix ms).
- *            Each flag can carry free-form comments.
+ *   - FLAGS: entries the analyst marked as malicious (Object.values(incident.flags));
+ *            sorted by `.time` (Unix ms). Each flag can carry free-form comments.
+ *   - MARKS: the host records flagged on the pages of host evidence; they live on the
+ *            server (`evidence.records` with `flagged`), with the note each carries.
  *   - NOTES: standalone note blocks (incident.notes); sorted by `.createdAt`.
  *
  * A composer at the top lets the analyst add a free note. Items with no usable
@@ -28,6 +47,7 @@ import { useUnsavedChanges } from '../../../lib/unsaved.js'
 
 /** Resolve the sortable Unix-ms timestamp of a merged item (null → +Infinity). */
 function itemMs(item) {
+  if (item.kind === 'mark') return Number.isFinite(item.data.ts) ? item.data.ts : Number.POSITIVE_INFINITY
   if (item.kind === 'flag') {
     return Number.isFinite(item.data.time) ? item.data.time : Number.POSITIVE_INFINITY
   }
@@ -38,6 +58,25 @@ function itemMs(item) {
 export default function IncidentTimeline({ incident }) {
   const { addFlagComment, removeFlagComment, addNote, updateNote, removeNote } = useIncidents()
   const [noteDraft, setNoteDraft] = useState('')
+  const canWrite = useCanWrite(incident)
+  const { goTo } = useNavigation()
+
+  // The host records flagged (a page of them: a few are flagged out of millions).
+  const { summary } = useEvidenceSummary(incident.id)
+  const [marks, setMarks] = useState([])
+  const [marked, setMarked] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    evidence
+      .records(incident.id, { filters: { flagged: true }, order: 'time', limit: 100, signal: controller.signal })
+      .then((page) => setMarks(page.records ?? []))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [incident.id, summary, marked])
+  const unflag = async (record) => {
+    await evidence.putMark(incident.id, { key: record.key, flagged: false, note: record.note })
+    setMarked((count) => count + 1)
+  }
 
   const rowMenu = useRowMenu(incident)
   const menu = useItemMenu(incident)
@@ -54,8 +93,9 @@ export default function IncidentTimeline({ incident }) {
       key: `note:${note.id}`,
       data: note,
     }))
-    return [...flags, ...notes].sort((a, b) => itemMs(a) - itemMs(b))
-  }, [incident.flags, incident.notes])
+    const hosts = marks.map((record) => ({ kind: 'mark', key: `mark:${record.key}`, data: record }))
+    return [...flags, ...hosts, ...notes].sort((a, b) => itemMs(a) - itemMs(b))
+  }, [incident.flags, incident.notes, marks])
 
   const isEmpty = items.length === 0
 
@@ -100,7 +140,7 @@ export default function IncidentTimeline({ incident }) {
           skull
           compact
           title="No flags or notes yet"
-          message="No flagged entries or notes yet. Flag entries in the Browser Forensics tab to build the incident timeline."
+          message="No flagged entries or notes yet. Flag entries in the evidence pages to build the incident timeline."
         />
       ) : (
         <div className="relative">
@@ -108,11 +148,18 @@ export default function IncidentTimeline({ incident }) {
           <span aria-hidden="true" className="pointer-events-none absolute bottom-2 left-[11px] top-2 w-px bg-raised" />
           <ol className="space-y-5">
             {items.map((item) =>
-              item.kind === 'flag' ? (
+              item.kind === 'mark' ? (
+                <MarkTimelineItem
+                  key={item.key}
+                  record={item.data}
+                  canWrite={canWrite}
+                  onOpen={() => goTo(HOST_KIND_META[item.data.kind]?.tab ?? 'evidence')}
+                  onUnflag={() => unflag(item.data)}
+                />
+              ) : item.kind === 'flag' ? (
                 <FlagTimelineItem
                   key={item.key}
                   flag={item.data}
-                  profile={flagProfile(incident.data?.browser?.browsers, item.data)}
                   onAddComment={(text) => addFlagComment(incident.id, item.data.key, text)}
                   onRemoveComment={(commentId) => removeFlagComment(incident.id, item.data.key, commentId)}
                   onMenu={(event) => rowMenu(event, { flaggable: item.data, record: item.data })}
@@ -178,11 +225,70 @@ function TimelineRow({ icon: Icon, tone, children, onMenu }) {
   )
 }
 
+const TYPE_ICONS = {
+  visit: Link2,
+  search: Search,
+  redirect: CornerDownRight,
+  download: Download,
+  command: Terminal,
+  sample: Bug,
+  eventlog: ScrollText,
+  syslog: ScrollText,
+  mail: Mail,
+  network: Network,
+}
+
+/** The small icon of what a flagged entry is (a visit, a command, a sample…). */
+function TypeIcon({ type }) {
+  const Icon = TYPE_ICONS[type] ?? Link2
+  return <Icon className="mt-0.5 h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mark item: a host record flagged on the server, with its note.             */
+/* -------------------------------------------------------------------------- */
+
+function MarkTimelineItem({ record, canWrite, onOpen, onUnflag }) {
+  const meta = HOST_KIND_META[record.kind]
+  return (
+    <TimelineRow icon={Flag} tone="flag">
+      <div className="border border-line border-l-2 border-l-accent-strong bg-accent-soft p-3">
+        <div className="flex items-start gap-2">
+          <TypeIcon
+            type={
+              record.kind === 'eventlog' || record.kind === 'syslog'
+                ? 'eventlog'
+                : record.kind === 'commands'
+                  ? 'command'
+                  : record.type
+            }
+          />
+          <span className="min-w-0 flex-1 break-words text-sm font-medium text-fg">{recordLabel(record)}</span>
+        </div>
+        {record.note && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-fg">{record.note}</p>}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs text-fg-muted">{record.ts ? formatDateTime(record.ts) : '—'}</span>
+          <Badge color={meta?.color ?? 'slate'}>{meta?.label ?? record.kind}</Badge>
+          {record.host && <Badge color="slate">{record.host}</Badge>}
+          <Button variant="ghost" size="xs" onClick={onOpen}>
+            Open its page
+          </Button>
+          {canWrite && (
+            <Button variant="ghost" size="xs" onClick={onUnflag}>
+              Remove the flag
+            </Button>
+          )}
+        </div>
+      </div>
+    </TimelineRow>
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /* Flag item: event summary + per-flag comments (add / remove).               */
 /* -------------------------------------------------------------------------- */
 
-function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment, onMenu }) {
+function FlagTimelineItem({ flag, onAddComment, onRemoveComment, onMenu }) {
   const [comment, setComment] = useState('')
   const comments = flag.comments ?? []
 
@@ -202,7 +308,7 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment, onMenu
       <div className="border border-line border-l-2 border-l-accent-strong bg-accent-soft p-3">
         {/* Header: event type icon + title */}
         <div className="flex items-start gap-2">
-          <EventTypeIcon type={flag.eventType} />
+          <TypeIcon type={flag.eventType} />
           <span className="min-w-0 flex-1 break-words text-sm font-medium text-fg">
             {flag.title || flag.url || flag.key}
           </span>
@@ -219,11 +325,6 @@ function FlagTimelineItem({ flag, profile, onAddComment, onRemoveComment, onMenu
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-fg-muted">{formatDateTime(flag.time)}</span>
           {flag.browserId && <Badge color="cyan">{flag.browserId}</Badge>}
-          {profile && (
-            <Badge color={profile.deleted ? 'amber' : 'slate'}>
-              {profile.deleted ? `${profile.name} (deleted profile)` : profile.name}
-            </Badge>
-          )}
           {flag.section && <Badge color="slate">{flag.section}</Badge>}
         </div>
 

@@ -1,0 +1,24 @@
+title: 'Scheduled Task Created'
+id: 5cdc3588-c306-4b89-89ef-ea2d505e7d37
+status: stable
+description: 'A scheduled task was created (4698 of the Security log, 106 of the Task Scheduler log): a common way to stay on the machine.'
+references:
+    - https://attack.mitre.org/techniques/T1053/005/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1053.005
+logsource:
+    product: windows
+detection:
+    security_task:
+        Channel: Security
+        EventID: 4698
+    scheduler_task:
+        Channel: Microsoft-Windows-TaskScheduler/Operational
+        EventID: 106
+    condition: security_task or scheduler_task
+falsepositives:
+    - Software that schedules its own updates
+level: medium

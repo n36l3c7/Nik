@@ -1060,6 +1060,8 @@ def test_the_health_page_and_the_list_of_jobs_say_what_there_is(admin: TestClien
         "playbook",
         "mirror",
         "find_indicators",
+        "archive",
+        "unarchive",
     }
     assert {action["name"] for action in listed["actions"]["artifacts"]} == {
         "tags",

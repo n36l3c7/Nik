@@ -198,6 +198,14 @@ class Incident(Base):
     source_connection_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     source_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     mirror: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # The time zone the incident is read in (an IANA name), when it is not the one of Nik (7.0): its
+    # business hours, and the times of its evidence when they are not shown in UTC.
+    tz: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # When it was archived (7.0), and by whom: a closed incident that is read-only and out of the
+    # lists, whose records of host evidence left the database (its originals, their reports and the
+    # flags and notes on records stay; taking it out of the archive reads the originals again).
+    archived_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
+    archived_by: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
         Index(
@@ -254,8 +262,11 @@ def _number_incident(_mapper, connection, target: Incident) -> None:
 
 @event.listens_for(Incident, "before_update")
 def _bump_incident_revision(_mapper, _connection, target: Incident) -> None:
-    """Every write of the document is a new revision, wherever it comes from."""
-    if sa_inspect(target).attrs.doc.history.has_changes():
+    """Every write of the document is a new revision, wherever it comes from. So is going into the
+    archive or out of it: whoever holds the incident open learns it is read-only at the next check,
+    instead of being told that nothing changed."""
+    attrs = sa_inspect(target).attrs
+    if attrs.doc.history.has_changes() or attrs.archived_at.history.has_changes():
         target.rev = (target.rev or 0) + 1
 
 
@@ -2118,3 +2129,429 @@ class BulkItem(Base):
 
 # Created by migration 0055_bulk where missing, in this order.
 BULK_TABLES = ("bulk_jobs", "bulk_items")
+
+
+# The id of a row the database numbers itself: BIGINT on PostgreSQL, and on SQLite the INTEGER that
+# is the rowid (a BIGINT primary key is not one there, and would not be numbered).
+ROW_ID = BigInteger().with_variant(Integer(), "sqlite")
+# What a record holds: JSONB on PostgreSQL, so that a field is read in the query; plain JSON elsewhere.
+RECORD_JSON = JSON().with_variant(JSONB(), "postgresql")
+
+# The five levels of a Sigma rule, as numbers that sort: what a record, a detection and a rule keep.
+LEVELS = {"informational": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
+
+
+class EvidenceSource(Base):
+    """One file of host evidence an incident holds, and what reading it gave (7.0).
+
+    The file itself is the original, kept read-only in the store as ``_evidence/<sha256>.bin`` and
+    registered as the artifact ``hostfile-<sha256>``: the same file in two incidents is one copy,
+    and two rows. ``kind`` is the evidence section it shows in (``eventlog``, ``endpoint``,
+    ``browser``, ``commands``, ``disk``, ``syslog``); ``source`` is what it is to that section (``evtx``,
+    ``windows.run_keys``, ``chrome.history``…), ``parser`` and ``parser_version`` what read it.
+
+    ``state`` is ``queued`` → ``parsing`` → ``done`` or ``failed``; ``legacy`` for what an incident
+    held in its document before 7.0 (no original, no report). ``read`` is the verdict of the parse
+    report: ``complete``, ``partial`` (something in the file was not read: ``report`` says what and
+    where), ``failed`` or ``unknown`` (legacy). The counts are the report's figures: ``in_file`` the
+    records the file says it holds, when its format says so (an evtx chunk header does), ``read`` the
+    ones the parser gave, ``kept`` those stored, ``duplicates`` those another file of the incident
+    already gave, ``skipped`` those lost, ``notes`` the rows set aside for a reason that loses
+    nothing, ``truncated`` the values cut in the database (the viewer has them whole).
+
+    A file read in part can be acknowledged with a note (``seen_*``): the header stops showing it.
+    ``collection_id`` is the collection (a KAPE zip) the file was taken out of.
+    """
+
+    __tablename__ = "evidence_sources"
+    __table_args__ = (
+        Index("ix_evidence_sources_incident", "incident_id", "kind", "source"),
+        Index("ix_evidence_sources_sha256", "incident_id", "sha256"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(60), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    file_name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # Where it was inside the collection it came in ("C/Windows/System32/winevt/Logs/Security.evtx").
+    file_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    collection_id: Mapped[Optional[str]] = mapped_column(
+        String(32), ForeignKey("evidence_sources.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # The machine and the account the file is of: read from the file, or said at the import.
+    host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # The browser profile ("Default", "Profile 1"), for the files of a browser.
+    profile: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    parser: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="queued")
+    legacy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    read: Mapped[str] = mapped_column(String(10), nullable=False, default="unknown")
+    in_file: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    read_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    kept: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    duplicates: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    notes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    truncated: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    indicators: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The first and the last time of its records (ms since the epoch, UTC).
+    first_ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    last_ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    # The parse report: {"reasons": {reason: {"count", "examples": [{"offset", "detail"}]}}, "notes": …,
+    # "chunks": …, "limits": …}. Examples are capped; the counts are not.
+    report: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    seen_by: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    seen_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    seen_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    parsed_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    # The file's own last-modified time as the browser saw it (ms since the epoch): the syslog parser takes the year
+    # of lines that carry none from it, not from the date the file reached the worker.
+    file_time: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+
+class EvidenceRecord(Base):
+    """One record read out of a file of host evidence: an event, a registry value, a visit, a command.
+
+    ``key`` is its natural key, the same each time the file is read (``evtx:<computer>:<channel>:<record
+    id>``, ``mft:<entry>:<sequence>``, ``usn:<usn>``…): it is what makes a second file with the same
+    records count them as duplicates, and what the flags and notes of ``evidence_marks`` hang on, so
+    reading the file again keeps them. ``ts`` is ms since the epoch, UTC (none for a record that has no
+    time, such as a line of a PowerShell history); ``seq`` its place in the file. ``data`` holds its
+    fields, each value cut at 8000 characters (``truncated`` says one was); ``locator`` is where it is
+    in the original (``{"offset", "length"}``, ``{"key"}`` of a hive, ``{"table", "rowid"}``,
+    ``{"line"}``), which is what the viewer opens. ``level`` is the highest level of its detections.
+    """
+
+    __tablename__ = "evidence_records"
+    __table_args__ = (
+        Index("uq_evidence_records_key", "incident_id", "key", unique=True),
+        Index("ix_evidence_records_time", "incident_id", "ts", "id"),
+        Index("ix_evidence_records_kind", "incident_id", "kind", "type", "ts"),
+        Index("ix_evidence_records_event", "incident_id", "event_id", "ts"),
+        Index("ix_evidence_records_source", "source_id", "seq"),
+        Index(
+            "ix_evidence_records_level",
+            "incident_id",
+            "level",
+            sqlite_where=text("level IS NOT NULL"),
+            postgresql_where=text("level IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    type: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    key: Mapped[str] = mapped_column(String(300), nullable=False)
+    ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # The fields most read, out of ``data``: an event's id and channel.
+    event_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    channel: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    # What the lists show of it in one line, and what the search of all Nik reads.
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    data: Mapped[dict[str, Any]] = mapped_column(RECORD_JSON, nullable=False, default=dict)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    locator: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # The source the record is of when it is not its file's: an export of Plaso holds records of every
+    # section. None: the source of the file (``evidence_sources.source``).
+    source: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+
+
+class EvidenceMember(Base):
+    """A file inside a collection (a KAPE or Velociraptor zip), as the worker listed it: what the person chooses
+    from when importing. ``kind`` and ``source`` are what a parser of the worker reads it as (empty: nothing does),
+    ``skip`` why it cannot be (an encrypted member, one too large, an archive inside); ``executable`` a program, listed
+    for "Analyse" and never imported as evidence. ``source_id`` is the source it became, when it was imported."""
+
+    __tablename__ = "evidence_members"
+    __table_args__ = (Index("ix_evidence_members_sha256", "collection_id", "sha256"),)
+
+    collection_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_sources.id", ondelete="CASCADE"), primary_key=True
+    )
+    n: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    kind: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    parser: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    profile: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    executable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    skip: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    source_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
+
+class EvidenceMark(Base):
+    """A person's flag and note on a record, by the record's natural key: they outlive the record,
+    so reading the file again, or the records coming back after an incident was archived, finds them."""
+
+    __tablename__ = "evidence_marks"
+
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    flagged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class EvidenceDetection(Base):
+    """A rule matched host evidence: one row per rule and record. A correlation (a count over time, a
+    sequence) is on the last record that completed it, and ``records`` lists the keys of all of them.
+    Removed with its record, and made again when the file is read again."""
+
+    __tablename__ = "evidence_detections"
+    __table_args__ = (
+        Index("ix_evidence_detections_incident", "incident_id", "level"),
+        Index("ix_evidence_detections_rule", "incident_id", "rule_id"),
+        # One row for a rule and a record: a file read twice, or a record two files hold, says it once.
+        Index("uq_evidence_detections_record_rule", "record_id", "rule_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    record_id: Mapped[int] = mapped_column(
+        ROW_ID, ForeignKey("evidence_records.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    rule_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule_title: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    # Who wrote the rule: the licence of SigmaHQ's rules (DRL 1.1) has a match say it.
+    rule_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The ATT&CK techniques and other tags of the rule, as it had them when it matched.
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    records: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class EvidenceProcess(Base):
+    """A process that ran, out of a creation event (Security 4688, Sysmon 1, auditd execve): the nodes
+    of the process tree. ``guid`` is Sysmon's ProcessGuid, or one made of host, id and start time where
+    the log has none; ``parent_guid`` the same of its parent, when the log says which it was."""
+
+    __tablename__ = "evidence_processes"
+    __table_args__ = (
+        Index("ix_evidence_processes_guid", "incident_id", "host", "guid"),
+        Index("ix_evidence_processes_parent", "incident_id", "host", "parent_guid"),
+        Index("ix_evidence_processes_time", "incident_id", "start_ts"),
+        # One host's processes in start order (the list, the linking), and the ones of a pid (a parent).
+        Index("ix_evidence_processes_host_time", "incident_id", "host", "start_ts", "id"),
+        Index("ix_evidence_processes_pid", "incident_id", "host", "pid", "start_ts"),
+        Index("ix_evidence_processes_parent_id", "parent_id"),
+        Index("ix_evidence_processes_record", "record_id"),
+    )
+
+    id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    record_id: Mapped[Optional[int]] = mapped_column(
+        ROW_ID, ForeignKey("evidence_records.id", ondelete="CASCADE"), nullable=True
+    )
+    host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    guid: Mapped[str] = mapped_column(String(80), nullable=False)
+    parent_guid: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    pid: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    ppid: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    image: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    command_line: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    logon_id: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    integrity: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    start_ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    end_ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    # The highest level of the process-chain rules that matched it.
+    level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # The process that started it, when the evidence holds it (linking, ``evidence/processes.py``); none for a
+    # process whose parent is not in the evidence: then ``parent_image`` and ``parent_command_line`` are what the
+    # log said of it (a "ghost" parent, shown and not stored as a row).
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        ROW_ID, ForeignKey("evidence_processes.id", ondelete="SET NULL"), nullable=True
+    )
+    parent_image: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    parent_command_line: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # The hashes the log gave (Sysmon): ``{"SHA256": "..."}``.
+    hashes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class EvidenceLogon(Base):
+    """A logon, or an attempt, out of a log (Security 4624/4625/4634/4648/4672, RDP, an sshd line of
+    auth.log): the edges of the lateral movement graph, from ``source_host``/``source_ip`` to ``host``."""
+
+    __tablename__ = "evidence_logons"
+    __table_args__ = (
+        Index("ix_evidence_logons_time", "incident_id", "ts"),
+        Index("ix_evidence_logons_edge", "incident_id", "source_ip", "host"),
+        Index("ix_evidence_logons_host", "incident_id", "host", "ts"),
+        Index("ix_evidence_logons_record", "record_id"),
+    )
+
+    id: Mapped[int] = mapped_column(ROW_ID, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    record_id: Mapped[Optional[int]] = mapped_column(
+        ROW_ID, ForeignKey("evidence_records.id", ondelete="CASCADE"), nullable=True
+    )
+    ts: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    source_host: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    source_ip: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    domain: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # The Windows logon type (2, 3, 10…) as a number; none for a log that has no such thing.
+    logon_type: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    logon_id: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    # success | failure | logoff | explicit (4648) | privileged (4672)
+    outcome: Mapped[str] = mapped_column(String(12), nullable=False)
+    method: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    # What a failure said (the status and sub-status of a 4625), as text.
+    status: Mapped[str] = mapped_column(String(120), nullable=False, default="", server_default="")
+    # The server an explicit-credentials logon (4648) went to; empty where the log does not say or it is the host.
+    target_host: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
+
+
+class UploadSession(Base):
+    """A file sent in parts (``/uploads``), for the files of host evidence that are too large for one
+    request: a $MFT, a collection. The parts land one after the other in a file of the store's
+    scratch space; the client asks how much was received and goes on from there after a cut.
+    ``state`` is ``open``, then ``complete`` (the file was checked against ``sha256`` when the client
+    gave one, and handed to the import: ``source_id``), ``aborted`` or ``expired``."""
+
+    __tablename__ = "upload_sessions"
+    __table_args__ = (Index("ix_upload_sessions_actor", "actor", "state"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    actor: Mapped[str] = mapped_column(String(200), nullable=False)
+    incident_id: Mapped[str] = mapped_column(String, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    received: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="open")
+    # What the import needs besides the bytes: the section, the host, the browser profile.
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    source_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_epoch: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+
+class SigmaRule(Base):
+    """A Sigma rule host evidence is matched against at the import (7.0): one of a pack (the built-in
+    ``nik`` pack, SigmaHQ's), or written in Rule sets. ``id`` is the rule's own ``id``.
+
+    ``source`` is the YAML as written; the rest is read out of it when it is saved, for the lists and
+    to pick the rules a record can match (``product``, ``category``, ``service``). ``kind`` is ``rule``
+    or ``correlation``. ``supported`` is false for a rule Nik's evaluator cannot run, and ``reason``
+    says why: it is listed, never dropped. A rule of a pack that a person edited has
+    ``updated_by`` other than ``nik`` and is not overwritten when the pack is updated.
+    """
+
+    __tablename__ = "sigma_rules"
+    __table_args__ = (
+        Index("ix_sigma_rules_pick", "enabled", "product", "category", "service"),
+        Index("ix_sigma_rules_pack", "pack"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pack: Mapped[str] = mapped_column(String(80), nullable=False, default="", server_default="")
+    # The ``name`` of the rule, which a correlation rule names the rules it counts by (else by ``id``).
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
+    title: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="rule")
+    level: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # stable | test | experimental | deprecated | unsupported, as the rule says.
+    status: Mapped[str] = mapped_column(String(14), nullable=False, default="")
+    product: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    service: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    supported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    reason: Mapped[str] = mapped_column(String(400), nullable=False, default="", server_default="")
+    # The version of the worker's evaluator this row was last checked with: empty for a rule that was
+    # never checked (the worker was not there), which is not run and is checked when the worker answers.
+    engine: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    # What the pack says of a rule a person changed: ``source`` is theirs, this is what Reset puts back.
+    original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    updated_by: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+
+class BackupBlob(Base):
+    """A file of the pool of the backups (``backups/pool.py``): a file of the store named by its
+    SHA-256, written once and named by every backup that needs it. ``gen`` is the generation of the
+    pool (the id of its key). ``verified_at`` is when it was last read whole and compared with its
+    name; ``offsite_state`` where its copy off the server stands, as for a backup: ``""`` (no copy
+    asked for), ``pending``, ``copied``, ``failed`` or ``delete``. ``local`` is whether the file is
+    in the backup directory: a row may stand for a copy off the server alone."""
+
+    __tablename__ = "backup_blobs"
+    __table_args__ = (Index("ix_backup_blobs_offsite", "offsite_state"),)
+
+    gen: Mapped[str] = mapped_column(String(16), primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    stored: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    verified_at: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    local: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    offsite_state: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+
+
+class BackupBlobRef(Base):
+    """A backup names a file of the pool: what keeps the file while the backup is kept."""
+
+    __tablename__ = "backup_blob_refs"
+    __table_args__ = (Index("ix_backup_blob_refs_blob", "gen", "sha256"),)
+
+    backup_id: Mapped[str] = mapped_column(String(80), ForeignKey("backups.id", ondelete="CASCADE"), primary_key=True)
+    gen: Mapped[str] = mapped_column(String(16), primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+# Created by migration 0056_evidence where missing: the pool of the backups.
+POOL_TABLES = ("backup_blobs", "backup_blob_refs")
+
+# Created by migration 0056_evidence where missing, in this order; and the column it adds: the time
+# zone an incident is read in, when it is not Nik's.
+EVIDENCE_TABLES = (
+    "evidence_sources",
+    "evidence_records",
+    "evidence_marks",
+    "evidence_detections",
+    "evidence_processes",
+    "evidence_logons",
+    "upload_sessions",
+    "sigma_rules",
+)
+EVIDENCE_COLUMNS: dict[str, tuple[str, ...]] = {"incidents": ("tz", "archived_at", "archived_by")}
+
+# Created by migration 0058_collections where missing: the members of a collection, and the source a record
+# of a file that holds several kinds of record (an export of Plaso) is of.
+COLLECTION_TABLES = ("evidence_members",)

@@ -20,16 +20,23 @@ The options are kept per incident and saved as you change them.
 
 By default the report holds **what you flagged**, so it stays about the incident and not about everything imported:
 
-| Section | Holds |
-|---|---|
-| **Executive summary and key facts** | Your summary, and the details of the incident: status, owner, severity… |
-| **Flagged events** | The flagged events, in order, with their comments |
-| **MITRE ATT&CK techniques** | Those of the flagged samples and of the detections on flagged events |
-| **Indicators of compromise** | The indicators flagged by hand |
-| **Malware samples**, **E-mails**, **Network captures** | Those flagged, or holding something flagged (an indicator, a function, a packet) |
-| **Windows event logs** | The logs that hold a flagged event |
-| **Analyst notes** | Every note |
-| **Evidence appendix (files and SHA-256)** | The SHA-256 of the imported files that hold something flagged |
+| Section                                                | Holds                                                                                                                         |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Executive summary and key facts**                    | Your summary, and the details of the incident: status, owner, severity…                                                       |
+| **Flagged events**                                     | The flagged events, in order, with their comments. Host records are read from the server's tables                             |
+| **MITRE ATT&CK techniques**                            | Those of the flagged samples and of the detections on flagged events                                                          |
+| **Indicators of compromise**                           | The indicators flagged by hand                                                                                                |
+| **Malware samples**, **E-mails**, **Network captures** | Those flagged, or holding something flagged (an indicator, a function, a packet)                                              |
+| **Windows event logs**                                 | The logs that hold a flagged event                                                                                            |
+| **Rule matches**                                       | The [Sigma rules](detection.md#sigma-rules) that matched host evidence: the rule, its level, how many records, and its author |
+| **Analyst notes**                                      | Every note                                                                                                                    |
+| **Evidence appendix (files and SHA-256)**              | The SHA-256 of the imported files that hold something flagged                                                                 |
+
+### Evidence integrity
+
+Beside the sections is a tick, **Evidence integrity**, on by default, asked for with each report. It adds a table that says, for each file of [host evidence](host.md): the parser and its version, the records **in the file**, **read**, **kept**, **already imported** and **lost**, and how it was **read**: _complete_, _read in part_, _failed_, _not read yet_, or _no report: imported before 7.0_. A file read in part says why, and who acknowledged it, and when. The last line counts the files, those read in part and those that failed.
+
+A reader of the report can see what the evidence does not cover. Detections in the report come from the server: the rules that matched, with their authors, as the licence of the rule sets asks.
 
 Tick **Include everything** for the full inventory instead: every indicator, sample, e-mail, capture and imported file of the incident. The choice is kept per incident.
 

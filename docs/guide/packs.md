@@ -55,19 +55,31 @@ A pack that requires another says so and is installed after it. One written for 
 
 ## What a pack holds
 
-| Folder | Item |
-| --- | --- |
-| `connectors/` | A connector, with its logo and README |
-| `scripts/` | Scripts |
-| `playbooks/` | The graph of a playbook's current version, and its limits |
-| `fields/` | Custom fields |
-| `incident_types/` | Types: fields, layout, SLA, close reasons, playbook |
-| `mappers/` | Incoming and outgoing rules, and the classifier a new instance starts with |
-| `lists/` | Lists, with their items only when the pack was made to carry them |
-| `dashboards/` | Dashboards |
-| `preprocess_rules/` | Pre-processing rules |
+| Folder              | Item                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `connectors/`       | A connector, with its logo and README                                                   |
+| `scripts/`          | Scripts                                                                                 |
+| `playbooks/`        | The graph of a playbook's current version, and its limits                               |
+| `fields/`           | Custom fields                                                                           |
+| `incident_types/`   | Types: fields, layout, SLA, close reasons, playbook                                     |
+| `mappers/`          | Incoming and outgoing rules, and the classifier a new instance starts with              |
+| `lists/`            | Lists, with their items only when the pack was made to carry them                       |
+| `dashboards/`       | Dashboards                                                                              |
+| `preprocess_rules/` | Pre-processing rules                                                                    |
+| `sigma/`            | [Sigma rules](detection.md#sigma-rules) for host evidence, one rule in each `.yml` file |
 
 The file format is in [Connector and pack format](../reference/connector-format.md#the-pack-format).
+
+### Sigma rules in a pack
+
+A pack with a `sigma/` folder adds rules to **Platform settings › Rule sets › Sigma rules**. A pack of this kind can hold thousands of rules, so Nik hands them to the worker in groups.
+
+- A pack of Sigma rules shows a **notice** before you install it: the licence and the authors of its rules. Read it.
+- A rule arrives **on** when Nik can run it, its status is `stable` or `test`, and its level is `medium` or higher. The others arrive off.
+- A rule whose text you changed keeps your text when the pack is updated. **Reset**, in the rule's editor, gives the pack's text back.
+- The rules of [SigmaHQ](https://github.com/SigmaHQ/sigma) are not part of Nik. They are a pack to install, under the Detection Rule License 1.1: the author of a rule is always shown with a match. Build the two packs from your own checkout with `scripts/build_sigma_pack.py` ([steps and numbers](detection.md#more-rules-content-packs)); they need Nik 7.0.
+
+See [Detection and rules](detection.md#sigma-rules).
 
 ## Update a pack
 

@@ -1,0 +1,41 @@
+title: Web Server or Database Starts a Shell (Windows)
+id: cf39f464-2e7d-4b7f-b867-fac8db01db24
+name: nik_chain_web_server_starts_shell_windows
+status: test
+description: IIS, Apache, nginx, Tomcat or SQL Server started cmd or PowerShell. A web shell, or a SQL injection with xp_cmdshell, runs commands as the service.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.persistence
+- attack.t1505.003
+- attack.execution
+- attack.t1059.003
+- attack.t1059.001
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_server:
+    ParentImage|endswith:
+    - \w3wp.exe
+    - \httpd.exe
+    - \nginx.exe
+    - \tomcat.exe
+    - \tomcat8.exe
+    - \tomcat9.exe
+    - \tomcat10.exe
+    - \sqlservr.exe
+    - \php-cgi.exe
+  selection_java:
+    ParentImage|endswith: \java.exe
+    Ancestors|contains: tomcat
+  selection_child:
+    Image|endswith:
+    - \cmd.exe
+    - \powershell.exe
+    - \pwsh.exe
+  condition: (selection_server or selection_java) and selection_child
+falsepositives:
+- An administrative page that runs a script on purpose
+- Maintenance jobs of the database that call cmd
+level: high

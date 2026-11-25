@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import {
   Activity,
+  Archive,
   Clock,
   DatabaseBackup,
   FileCode2,
@@ -36,7 +37,7 @@ import {
 import { useAuth } from '../../context/AuthContext.jsx'
 import { filterSettings, resolveSection, visibleSettings } from '../../domain/settingsNav.js'
 import { useLayer } from '../../lib/layers.js'
-import DetectionRulesSection from './sections/DetectionRulesSection.jsx'
+import SigmaRulesSection from './sections/SigmaRulesSection.jsx'
 import BusinessHoursSection from './sections/BusinessHoursSection.jsx'
 import AccountsSection from './sections/AccountsSection.jsx'
 import SignInPolicySection from './sections/SignInPolicySection.jsx'
@@ -49,6 +50,7 @@ import CapaRulesSection from './sections/CapaRulesSection.jsx'
 import FieldsSection from './sections/FieldsSection.jsx'
 import IncidentTypesSection from './sections/IncidentTypesSection.jsx'
 import SlaSection from './sections/SlaSection.jsx'
+import ArchivingSection from './sections/ArchivingSection.jsx'
 import PreprocessSection from './sections/PreprocessSection.jsx'
 import ListsSection from './sections/ListsSection.jsx'
 import ContentPacksSection from './sections/ContentPacksSection.jsx'
@@ -88,19 +90,20 @@ import SearchBar from '../layout/SearchBar.jsx'
  */
 
 const SECTION_VIEWS = {
-  detection: { icon: ShieldAlert, Component: DetectionRulesSection },
   hours: { icon: Clock, Component: BusinessHoursSection },
   mail: { icon: Mail, Component: MailSettingsSection },
   report: { icon: FileText, Component: ReportBrandingSection },
   allowlist: { icon: ShieldCheck, Component: IocAllowlistSection },
   intel: { icon: Radar, Component: ThreatIntelSection },
   found: { icon: ScanSearch, Component: IndicatorsFoundSection },
+  sigma: { icon: ShieldAlert, Component: SigmaRulesSection },
   yara: { icon: FileSearch, Component: YaraRulesSection },
   capa: { icon: Radar, Component: CapaRulesSection },
   flirt: { icon: Fingerprint, Component: FlirtSignaturesSection },
   incidentTypes: { icon: Shapes, Component: IncidentTypesSection },
   fields: { icon: TextCursorInput, Component: FieldsSection },
   sla: { icon: Timer, Component: SlaSection },
+  archiving: { icon: Archive, Component: ArchivingSection },
   preprocess: { icon: Filter, Component: PreprocessSection },
   lists: { icon: ListOrdered, Component: ListsSection },
   connectors: { icon: Plug, Component: ConnectorsSection },

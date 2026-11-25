@@ -1,0 +1,26 @@
+title: WMI Provider Host Starts a Shell
+id: b342db97-6594-49ef-b0a1-4e41d8ac3d51
+name: nik_chain_wmi_starts_shell
+status: test
+description: wmiprvse.exe started cmd or PowerShell. It is what a command run through WMI (wmic process call create, Invoke-WmiMethod, impacket wmiexec) looks like on the machine that receives it.
+author: Nik
+date: '2026-11-25'
+tags:
+- attack.execution
+- attack.t1047
+- attack.lateral-movement
+logsource:
+  product: nik
+  service: process-chain
+detection:
+  selection_parent:
+    ParentImage|endswith: \wmiprvse.exe
+  selection_child:
+    Image|endswith:
+    - \cmd.exe
+    - \powershell.exe
+    - \pwsh.exe
+  condition: selection_parent and selection_child
+falsepositives:
+- Management software that runs commands through WMI
+level: high

@@ -26,8 +26,7 @@ export default defineConfig({
   // tests run under the policy nginx sends.
   preview: { proxy: apiProxy, headers: PAGE_HEADERS },
   build: {
-    // sql.js (WASM) is lazy-loaded: raise the warning limit for the chunks
-    // produced by the tabs' code-splitting.
+    // The tabs are code-split and some chunks are large (the graph and code editors): raise the warning limit.
     chunkSizeWarningLimit: 1500,
   },
 })

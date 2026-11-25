@@ -96,6 +96,7 @@ Every action of the canvas library is a command: its id with a dash for the firs
 | Command | Node | Command | Node |
 | --- | --- | --- | --- |
 | `nik-get-incident` | Get an incident | `nik-scan-url` | Scan an address |
+| `nik-list-evidence-files` | List the host evidence files of an incident | `nik-get-evidence-records` | Read host evidence records |
 | `nik-add-note` | Add a note | `nik-add-file` | Add a file |
 | `nik-set-status` | Set the status | `nik-download-file` | Download a file |
 | `nik-set-assignee` | Assign the incident | `nik-unpack-artifact` | Unpack an archive |

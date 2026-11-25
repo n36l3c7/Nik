@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import tasks, timers, war_room, work_plan
+from .. import archive, tasks, timers, war_room, work_plan
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import Incident, Notification, Task, WarRoomEntry
@@ -56,6 +56,8 @@ def _task(db: OrmSession, task_id: str, *, lock: bool = False) -> Task:
     row = db.scalars(stmt.with_for_update() if lock else stmt).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    if lock:  # a task of an archived incident is read-only with it
+        archive.guard_id(db, row.incident_id)
     return row
 
 
@@ -134,6 +136,7 @@ def add_task(
     incident = db.get(Incident, incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    archive.guard(incident)
     who = body.assignee
     if sum(1 for given in (who.user, who.role, who.owner) if given) > 1:
         raise HTTPException(status_code=400, detail="A task is for one user, for one role, or for the owner")
@@ -251,7 +254,7 @@ def list_timers(
     incident = db.get(Incident, incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
-    return {"timers": timers.of(db, incident, time.time()), "businessHours": timers.business_hours(db)}
+    return {"timers": timers.of(db, incident, time.time()), "businessHours": timers.business_hours(db, incident)}
 
 
 @router.post("/incidents/{incident_id}/timers/{field}/{what}")
@@ -271,6 +274,7 @@ def move_timer(
     incident = lock_incident(db, incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
+    archive.guard(incident)
     now = time.time()
     try:
         if what == "start":

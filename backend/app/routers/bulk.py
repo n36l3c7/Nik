@@ -30,13 +30,13 @@ from .. import bulk, bulk_incidents
 from ..core import audit
 from ..core.db import get_db
 from ..core.models import BulkJob
-from ..core.permissions import ADMIN, AUDIT_READ, AUTOMATION_RUN, WRITE
+from ..core.permissions import ADMIN, AUDIT_READ, AUTOMATION_RUN, INCIDENTS_ARCHIVE, WRITE
 from ..core.security import Principal, admin_principal, reader_principal, require
 
 router = APIRouter(tags=["bulk actions"])
 
-# Whoever may change things, or run playbooks: each action then asks for its own permission.
-actor_principal = require(WRITE, AUTOMATION_RUN)
+# Whoever may change things, run playbooks or archive: each action then asks for its own permission.
+actor_principal = require(WRITE, AUTOMATION_RUN, INCIDENTS_ARCHIVE)
 # The address of a list → its name in bulk.py.
 LISTS = {"incidents": "incidents", "artifacts": "artifacts", "iocs": "indicators"}
 Things = Literal["incidents", "artifacts", "iocs"]

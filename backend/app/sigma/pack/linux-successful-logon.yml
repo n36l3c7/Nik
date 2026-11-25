@@ -1,0 +1,14 @@
+title: 'Successful Logon (Linux)'
+id: e4d77df2-b433-4a6b-9e94-49a4b51f132d
+name: nik_linux_successful_logon
+status: stable
+description: 'A logon succeeded: sshd (Accepted), a session opened by login or a display manager, or a login of the audit log. It is the base of the correlation of a logon after failures.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: linux
+detection:
+    selection:
+        recordtype: logon
+    condition: selection
+level: informational

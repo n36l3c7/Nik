@@ -1,6 +1,6 @@
 """Shared (global) settings routes.
 
-A single row (id=1) holds ``{ keywords, businessHours, iocAllowlist, report, mail, enrichment }``
+A single row (id=1) holds ``{ businessHours, iocAllowlist, report, mail, enrichment }``
 (``report``: the organisation name and logo printed on incident reports;
 ``mail``: own domains and trusted mail servers for Mail Analysis;
 ``enrichment``: automatic threat-intelligence lookups, never the API keys). When it has never
@@ -9,7 +9,7 @@ been written, the factory defaults from ``defaults.py`` are returned.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -22,6 +22,7 @@ from ..core.security import Principal, principal, writer_principal
 from ..defaults import default_settings_doc
 from ..enrichment.service import config as enrichment_config
 from ..iocs import DEFAULT_ALLOWLIST
+from ..timers import zone_name
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -38,8 +39,10 @@ def read_settings(db: OrmSession) -> dict:
     defaults = default_settings_doc()
     merged = {key: doc.get(key, value) for key, value in defaults.items()}
     # What became lists is read from them, in the shape it always had.
-    for key in ("keywords", "businessHours", "iocAllowlist"):
+    for key in ("businessHours", "iocAllowlist"):
         merged[key] = lists.settings_value(db, key, defaults[key])
+    # Hours kept before the time zone existed have none: they are read in UTC.
+    merged["businessHours"] = {**defaults["businessHours"], **(merged["businessHours"] or {})}
     held = merged["mail"] if isinstance(merged["mail"], dict) else {}
     merged["mail"] = {
         **defaults["mail"],
@@ -68,11 +71,17 @@ def put_settings(
 ) -> dict:
     """Store the shared settings and return them (a session, or a key with the write scope).
 
-    Detection keywords, business hours and the indicator allowlist are the
-    analysts' working tools. The report header, the mail settings and the
-    threat-intelligence settings (which decide what leaves the server) are
-    changed by admins only: sent by anyone else they are left as they are.
+    Business hours and the indicator allowlist are the analysts' working tools. ``keywords`` is still
+    accepted and ignored (7.0: the suspicious keywords became Sigma rules). The report header, the mail
+    settings and the threat-intelligence settings (which decide what leaves the server) are changed by
+    admins only: sent by anyone else they are left as they are.
     """
+    zone = body.businessHours.get("tz") if "businessHours" in body.model_fields_set else None
+    if zone:
+        try:
+            zone_name(zone)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
     current = read_settings(db)
     is_admin = caller.has("admin")
     if not is_admin:
@@ -80,8 +89,10 @@ def put_settings(
     # A key that was not sent keeps what is stored: a page sends only what it changed.
     sent = body.model_fields_set
     doc = {
-        "keywords": body.keywords if "keywords" in sent else current["keywords"],
-        "businessHours": body.businessHours if "businessHours" in sent else current["businessHours"],
+        # What the hours do not say (a page that does not know the time zone) stays as it was.
+        "businessHours": {**current["businessHours"], **body.businessHours}
+        if "businessHours" in sent
+        else current["businessHours"],
         "iocAllowlist": (
             [str(entry).strip() for entry in body.iocAllowlist if str(entry).strip()]
             if body.iocAllowlist is not None
@@ -108,7 +119,7 @@ def put_settings(
     # What is a list is written to its list; the document keeps which list that is.
     stored = dict(doc)
     pointers = lists.pointers_of(db)
-    for key in ("keywords", "businessHours", "iocAllowlist"):
+    for key in ("businessHours", "iocAllowlist"):
         if key in changed or lists.find(db, pointers[key]) is None:
             lists.apply_setting(db, key, doc[key], caller.actor)
         stored[key] = {"list": pointers[key]}

@@ -138,6 +138,29 @@ To close many at once with one reason, see [Act on many at once](bulk.md).
 
 The closing time is cleared. The reason and notes stay until it is closed again.
 
+## Archive an incident
+
+An incident that is closed and will not be worked on again can be **archived**. Archiving keeps what matters and drops what weighs.
+
+- **Dropped:** the host records of the incident (the rows of its event logs, browser history, endpoint artifacts and disk tables) leave the database.
+- **Kept:** the original files, their parse reports, the flags and the notes.
+- The incident becomes **read-only** and leaves the lists. A strip says **Archived**, who did it and when.
+
+1. Close the incident ([above](#close-an-incident)).
+2. Press **Archive** in its header, and read what the question says.
+3. To see archived incidents in the list, set the filter **Archived** to **only** (or **include**).
+
+![The list of incidents with the filter Archived: only](../img/guide/incidents-archive.png)
+
+To take an incident out of the archive, press **Take out of the archive** in its header. It becomes writable again and Nik **reads its files again**: the records come back when the reading is done.
+
+Archiving needs the permission `incidents.archive` (the role **Archive**). Two more ways:
+
+- In the list, select incidents and choose **Archive…** from the bulk actions. See [Act on many at once](bulk.md).
+- **Platform settings › Incidents › Archiving** can archive by itself the incidents closed for more than a number of days. It is **off** by default.
+
+An archived incident's pages show _Archived: the records are not loaded_.
+
 ## Saving, and working on the same incident
 
 There is no Save button on an incident: every change is saved as you make it.
@@ -164,6 +187,8 @@ Nik does not merge incidents. To tie them together:
 2. Confirm.
 
 Deleting is for mistakes and tests. To keep a record, close it instead.
+
+If someone deletes an incident you have open in another window, Nik takes you back to the list and says "The incident was deleted".
 
 ## Related
 

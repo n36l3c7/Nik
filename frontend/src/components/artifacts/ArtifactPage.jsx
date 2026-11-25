@@ -25,7 +25,7 @@ import {
   verdictBadge,
 } from '../../domain/artifactRegistry.js'
 import { formatDateTime, anyToMs } from '../../lib/time.js'
-import { AsciiSkull, Badge, Button, Chip, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
+import { AsciiSkull, Badge, Button, Chip, CopyButton, EmptyState, ErrorBoundary, Modal } from '../ui/index.js'
 import { KIND_ICONS } from './ArtifactsPanel.jsx'
 import ArtifactTransferDialog from './ArtifactTransferDialog.jsx'
 import AsIndicator from './AsIndicator.jsx'
@@ -77,6 +77,53 @@ export function CloseArtifact({ onClick }) {
       title="Close the artifact: back to the list of artifacts"
       onClick={onClick}
     />
+  )
+}
+
+/**
+ * What a file of host evidence is, on its own page: it has no analysis (the evidence pages of the incidents
+ * that hold it read it), so the page says what the file is and where it is used. The API does not list the
+ * sources that hold it: the incidents are the way to its page.
+ */
+function HostFileInfo({ artifact, onOpenIncident }) {
+  return (
+    <section aria-label="Host evidence file" className="space-y-3 border border-line bg-panel px-4 py-3">
+      <p className="text-sm text-fg">
+        The original of a file of host evidence (an event log, a browser database, a command history…), kept as it came.
+        The evidence pages of the incidents below read it; this page does not analyse it.
+      </p>
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
+        <dt className="font-mono text-xs text-fg-muted">Name</dt>
+        <dd className="break-all text-fg">{artifact.name}</dd>
+        <dt className="font-mono text-xs text-fg-muted">SHA-256</dt>
+        <dd className="flex items-center gap-2 break-all font-mono text-xs text-fg">
+          {artifact.ref}
+          <CopyButton text={artifact.ref} label="Copy the SHA-256" />
+        </dd>
+        <dt className="font-mono text-xs text-fg-muted">Size</dt>
+        <dd className="text-fg">
+          {Number.isFinite(artifact.size) ? `${artifact.size.toLocaleString('en-US')} bytes` : '—'}
+        </dd>
+      </dl>
+      {artifact.incidents.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs text-fg-muted">Used in</span>
+          {artifact.incidents.map((item) => (
+            <Button
+              key={item.id}
+              variant="secondary"
+              size="xs"
+              icon={FolderOpen}
+              onClick={() => onOpenIncident(item.id)}
+            >
+              {item.name}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-fg-muted">No incident holds it now.</p>
+      )}
+    </section>
   )
 }
 
@@ -189,11 +236,13 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
   const kind = artifactKind(artifact.kind)
   const Icon = KIND_ICONS[artifact.kind] ?? Boxes
   const badge = verdictBadge(artifact)
-  const TabComponent = getTabById(kind.tab).component
+  // A file of host evidence has no analysis tab: its page says what it is (see HostFileInfo).
+  const hostfile = artifact.kind === 'hostfile'
+  const TabComponent = kind.tab ? (getTabById(kind.tab)?.component ?? null) : null
   const linkedIds = new Set(artifact.incidents.map((i) => i.id))
   const linkable = incidents.filter((i) => !linkedIds.has(i.id))
   // A capture belongs to one incident at most.
-  const canLink = artifact.kind !== 'pcap' || artifact.incidents.length === 0
+  const canLink = !hostfile && (artifact.kind !== 'pcap' || artifact.incidents.length === 0)
 
   const run = async (work, failure) => {
     setBusy(true)
@@ -303,9 +352,11 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
               {analysing === action.as ? 'Analysing…' : action.label}
             </Button>
           ))}
-          <Button variant="ghost" size="sm" icon={Download} onClick={() => setExportOpen(true)}>
-            Export
-          </Button>
+          {!hostfile && (
+            <Button variant="ghost" size="sm" icon={Download} onClick={() => setExportOpen(true)}>
+              Export
+            </Button>
+          )}
           <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)}>
             Delete
           </Button>
@@ -438,20 +489,24 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
         </div>
       </section>
 
-      <Suspense
-        fallback={
-          <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
-            <AsciiSkull preset="medium" />
-            <p role="status" className="font-mono text-sm text-fg-muted">
-              Loading…
-            </p>
-          </div>
-        }
-      >
-        <ErrorBoundary resetKey={artifact.id}>
-          <TabComponent key={artifact.id} incident={incident} onReference={setReference} />
-        </ErrorBoundary>
-      </Suspense>
+      {TabComponent ? (
+        <Suspense
+          fallback={
+            <div aria-busy="true" className="flex flex-col items-center justify-center gap-4 py-16">
+              <AsciiSkull preset="medium" />
+              <p role="status" className="font-mono text-sm text-fg-muted">
+                Loading…
+              </p>
+            </div>
+          }
+        >
+          <ErrorBoundary resetKey={artifact.id}>
+            <TabComponent key={artifact.id} incident={incident} onReference={setReference} />
+          </ErrorBoundary>
+        </Suspense>
+      ) : (
+        <HostFileInfo artifact={artifact} onOpenIncident={onOpenIncident} />
+      )}
 
       <Modal
         open={linkOpen}
@@ -470,8 +525,8 @@ export default function ArtifactPage({ onOpenIncident, onNewIncident }) {
       >
         <div className="space-y-3">
           <p className="text-sm text-fg-muted">
-            The artifact appears in the incident's Evidence, under {getTabById(kind.tab).label}, with its indicators, on
-            the timeline and in the report.
+            The artifact appears in the incident's Evidence, under {getTabById(kind.tab)?.label ?? 'Evidence'}, with its
+            indicators, on the timeline and in the report.
             {artifact.kind === 'pcap' ? ' A capture belongs to one incident at most.' : ''}
           </p>
           <label htmlFor="artifact-link-incident" className="block space-y-1.5">

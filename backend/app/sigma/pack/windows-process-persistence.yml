@@ -1,0 +1,23 @@
+title: 'Persistence Mechanism Set Up (process command line)'
+id: 809fbf04-b2c1-47a8-954e-6f067c04b6f0
+status: stable
+description: 'A command sets up persistence: cron, SSH keys, a service, a Run key, a scheduled task or a LaunchAgent, on the command line of a process (Sysmon 1, Security 4688).'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1053
+    - attack.t1543
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    selection:
+        - CommandLine|contains:
+              - 'schtasks'
+        - CommandLine|re|i:
+              - 'reg\s+add\b[^|;&]*\\run'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: medium

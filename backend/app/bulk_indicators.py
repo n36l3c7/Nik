@@ -26,7 +26,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 
-from . import bulk, indicators_found, lists
+from . import archive, bulk, indicators_found, lists
 from . import ioc_library as lib
 from .bulk_incidents import clean_tags, describe_tags
 from .core import audit
@@ -207,6 +207,8 @@ def _incident_remove(db: OrmSession, ref: str, params: dict[str, Any], caller: P
     incident = lock_incident(db, params["incident"])
     if incident is None:
         raise bulk.Refused("The incident is not there any more")
+    if incident.archived_at:
+        raise bulk.Refused(archive.SENTENCE)
     entry = db.get(IocEntry, (incident.id, kind, value))
     if entry is None:
         raise bulk.Skipped("The incident does not hold it")

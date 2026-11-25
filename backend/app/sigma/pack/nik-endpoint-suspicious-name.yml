@@ -1,0 +1,26 @@
+title: 'Artifact: Name of an Offensive Tool or of a Masquerading System File'
+id: b8add76c-f0b1-425c-9fc2-6066f371929f
+status: stable
+description: 'A file or a process is named like a known offensive tool or like a system file it is not.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1036
+logsource:
+    product: nik
+    service: endpoint
+detection:
+    selection:
+        - name|re|i:
+              - '\b(mimikatz|psexec|procdump|lazagne|rubeus|cobalt|meterpreter|beacon|nc\.exe|ncat|winpeas|linpeas|svch0st|scvhost)\b'
+        - path|re|i:
+              - '\b(mimikatz|psexec|procdump|lazagne|rubeus|cobalt|meterpreter|beacon|nc\.exe|ncat|winpeas|linpeas|svch0st|scvhost)\b'
+        - command|re|i:
+              - '\b(mimikatz|psexec|procdump|lazagne|rubeus|cobalt|meterpreter|beacon|nc\.exe|ncat|winpeas|linpeas|svch0st|scvhost)\b'
+        - target|re|i:
+              - '\b(mimikatz|psexec|procdump|lazagne|rubeus|cobalt|meterpreter|beacon|nc\.exe|ncat|winpeas|linpeas|svch0st|scvhost)\b'
+    condition: selection
+falsepositives:
+    - Software that is installed or run this way on purpose
+level: high

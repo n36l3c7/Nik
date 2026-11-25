@@ -148,7 +148,7 @@ def test_a_file_that_is_not_a_safe_pack_is_refused():
         archive.writestr(link, "/etc/passwd")
     assert "a link" in refused(held.getvalue())
     # Too many files, and too much once unpacked.
-    assert "2000 files at most" in refused(raw_zip({f"fields/f{index}.json": "{}" for index in range(2001)}))
+    assert "5000 files at most" in refused(raw_zip({f"fields/f{index}.json": "{}" for index in range(5001)}))
     big = io.BytesIO()
     with zipfile.ZipFile(big, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("pack.yml", yaml.safe_dump(MANIFEST))

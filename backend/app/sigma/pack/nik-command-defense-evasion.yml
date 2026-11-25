@@ -1,0 +1,26 @@
+title: 'Command: Security Tool or Auditing Disabled'
+id: 78382b73-3cea-4c45-bb00-ef7ba3aa5384
+status: stable
+description: 'Antivirus, EDR, SELinux or auditing is disabled (Defender preferences, AMSI, setenforce, auditd).'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.defense-evasion
+    - attack.t1562
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - 'set-mppreference'
+              - 'amsiutils'
+              - 'amsi.dll'
+        - command|re|i:
+              - 'setenforce\s+0'
+              - 'systemctl\s+(stop|disable)\s+(falcon|sentinel|cb|auditd)'
+              - 'auditctl\s+-e\s*0'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: high

@@ -32,7 +32,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from . import artifacts
+from . import archive, artifacts
 from .core import store
 from .core.config import settings
 from .core.locking import lock_incident
@@ -91,11 +91,15 @@ def _incidents(db: OrmSession, row: Artifact, wanted: str, one: bool) -> list[In
         incident = lock_incident(db, wanted)
         if incident is None:
             raise ConvertError("The incident does not exist", 404)
+        if incident.archived_at:
+            raise ConvertError(archive.SENTENCE, 409)
         return [incident]
     linked = db.scalars(select(ArtifactLink.incident_id).where(ArtifactLink.artifact_id == row.id)).all()
     if one and len(linked) != 1:
         return []  # a capture belongs to one incident: with several, a person says which
-    return [incident for incident in (lock_incident(db, item) for item in sorted(linked)) if incident is not None]
+    found = (lock_incident(db, item) for item in sorted(linked))
+    # An archived incident is read-only: what is made does not go to it.
+    return [incident for incident in found if incident is not None and not incident.archived_at]
 
 
 def _file(db: OrmSession, row: Artifact) -> bytes:

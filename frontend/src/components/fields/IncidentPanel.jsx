@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { useCanWrite } from '../../lib/useCanWrite.js'
 import { useFields } from '../../context/FieldsContext.jsx'
 import { useIncidents } from '../../context/IncidentContext.jsx'
 import { api } from '../../services/api.js'
@@ -34,14 +34,13 @@ const FOLDED_KEY = 'nik.incidentPanel.folded'
  * @param {{ incident: object }} props
  */
 export default function IncidentPanel({ incident }) {
-  const { can } = useAuth()
   const { types, known, ready } = useFields()
   const { refreshIncidents, retryActiveIncident } = useIncidents()
   const [folded, setFoldedState] = useState(() => localStorage.getItem(FOLDED_KEY) === '1')
   const [editing, setEditing] = useState(false)
   const pane = useResizablePane('incident.facts', { initial: 250, min: 220, max: 480 })
   const [error, setError] = useState(null)
-  const canWrite = can('write')
+  const canWrite = useCanWrite(incident)
 
   const setFolded = (next) => {
     setFoldedState(next)
@@ -150,7 +149,7 @@ export default function IncidentPanel({ incident }) {
         />
         {closing.length > 0 && (
           <section aria-label="How it was closed" className="flex flex-col gap-2 border-t border-line-soft pt-3">
-            <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">Closed</h3>
+            <h3 className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">How it was closed</h3>
             <FieldList fields={closing} values={values} dense className="grid-cols-1" />
           </section>
         )}

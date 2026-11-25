@@ -56,6 +56,10 @@ export function sourceLabel(source) {
       return `Commands · ${label(SHELLS, id)}`
     case 'endpoint':
       return `Endpoint · ${label(ARTIFACT_CATEGORIES, id)}`
+    case 'syslog':
+      return `Linux/macOS log · ${id}`
+    case 'disk':
+      return `Disk · ${id}`
     case 'eventlog':
       return `Event log · ${getChannel(id)?.short ?? id}`
     case 'sample':

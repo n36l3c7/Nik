@@ -47,7 +47,7 @@ from ..core.config import settings
 logger = logging.getLogger("nik.recovery")
 
 KEPT = ".kept"
-NOT_KEPT = ("_previews/", "_transfer/")
+NOT_KEPT = ("_previews/", "_transfer/", "_uploads/")
 LEFTOVERS = backup_store.LEFTOVERS
 
 

@@ -31,7 +31,7 @@ New to Nik? Start with [Your first incident](../get-started/first-incident.md): 
 
     ---
 
-    Bring files in and read each kind in its own page.
+    Bring files in and read each kind in its own page. Host files are kept as they were given, read on the server, and every record opens its original.
 
     [Add evidence](evidence.md) ·
     [E-mail](mail.md) ·
@@ -39,6 +39,16 @@ New to Nik? Start with [Your first incident](../get-started/first-incident.md): 
     [Network capture](network.md) ·
     [Links](url.md) ·
     [Host evidence](host.md)
+
+    Host evidence, page by page: [Event Logs](eventlogs.md) ·
+    [Browser](browser.md) ·
+    [Command History](command-history.md) ·
+    [Endpoint artifacts](endpoint.md) ·
+    [Disk (NTFS)](disk.md) ·
+    [Collections](collections.md) ·
+    [Source viewer](viewer.md) ·
+    [Timeline](timeline.md) ·
+    [Stacking](stacking.md)
 
 -   **Indicators**
 
@@ -70,7 +80,7 @@ New to Nik? Start with [Your first incident](../get-started/first-incident.md): 
     Shape Nik to your team: types of incident, rules, sources, accounts.
 
     [Types, fields and pages](types.md) ·
-    [Detection and rules](detection.md) ·
+    [Detection and rules](detection.md) (Sigma rules) ·
     [Threat intelligence](threat-intel.md) ·
     [Accounts, roles and sign-in](accounts.md)
 
@@ -86,9 +96,11 @@ An account holds one or more roles. A button you may not use is not shown, or is
 | Analyst | Works incidents, evidence and indicators; runs playbooks. |
 | Playbooks | Builds playbooks and scripts. |
 | Connectors | Installs connectors and their instances. |
-| Rules | Keeps the YARA, capa, FLIRT and script signatures. |
+| Rules | Keeps the Sigma rules and the YARA, capa, FLIRT and script signatures. |
 | Audit | Reads the audit log. |
 | Dashboards | Shares dashboards. |
+| Archive | Archives closed incidents. |
+| Evidence | Downloads the originals of host evidence. |
 | Admin | Everything. |
 
 The full table is in [Accounts, roles and sign-in](accounts.md).

@@ -1586,3 +1586,345 @@ def test_migration_0055_adds_the_tables_of_the_bulk_jobs(tmp_path, monkeypatch):
     with engine.connect() as conn:
         assert not set(BULK_TABLES) & set(sa.inspect(conn).get_table_names())
         assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1
+
+
+def test_migration_0056_adds_the_tables_of_host_evidence_and_the_time_zone(tmp_path, monkeypatch):
+    from app.core.models import EVIDENCE_TABLES
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE incidents (id VARCHAR PRIMARY KEY, doc JSON NOT NULL)"))
+        conn.execute(sa.text("INSERT INTO incidents (id, doc) VALUES ('i1', '{}')"))
+
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0055_bulk")
+    command.upgrade(cfg, "0056_evidence")
+    with engine.begin() as conn:
+        inspector = sa.inspect(conn)
+        assert set(EVIDENCE_TABLES) <= set(inspector.get_table_names())
+        assert {"tz", "archived_at", "archived_by"} <= {column["name"] for column in inspector.get_columns("incidents")}
+        assert {index["name"] for index in inspector.get_indexes("evidence_records")} >= {
+            "uq_evidence_records_key",
+            "ix_evidence_records_time",
+        }
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_sources (id, incident_id, kind, source, sha256, file_name, file_path, size,"
+                " host, username, profile, parser, parser_version, state, legacy, read, read_count, kept, duplicates,"
+                " skipped, notes, truncated, indicators, report, seen_note, created_at, created_by)"
+                " VALUES ('s1', 'i1', 'eventlog', 'evtx', '', 'Security.evtx', '', 0, '', '', '', 'evtx', '1',"
+                " 'done', 0, 'complete', 1, 1, 0, 0, 0, 0, 0, '{}', '', 'now', '')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_records (incident_id, source_id, kind, type, key, seq, host, username, channel,"
+                " summary, data, truncated, locator) VALUES ('i1', 's1', 'eventlog', 'event',"
+                " 'evtx:WS1:Security:1', 0, '', '', 'Security', '', '{}', 0, '{}')"
+            )
+        )
+        # The database numbers the records itself, on SQLite as on PostgreSQL.
+        assert conn.execute(sa.text("SELECT id FROM evidence_records")).scalar() == 1
+        with pytest.raises(sa.exc.IntegrityError):
+            with conn.begin_nested():
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO evidence_records (incident_id, source_id, kind, type, key, seq, host, username,"
+                        " channel, summary, data, truncated, locator) VALUES ('i1', 's1', 'eventlog', 'event',"
+                        " 'evtx:WS1:Security:1', 1, '', '', 'Security', '', '{}', 0, '{}')"
+                    )
+                )
+        conn.execute(sa.text("DELETE FROM evidence_records"))
+        conn.execute(sa.text("DELETE FROM evidence_sources"))
+    command.stamp(cfg, "0055_bulk")
+    command.upgrade(cfg, "0056_evidence")  # again: the tables and the column are there, nothing to do
+    command.downgrade(cfg, "0055_bulk")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert not set(EVIDENCE_TABLES) & set(inspector.get_table_names())
+        assert "tz" not in {column["name"] for column in inspector.get_columns("incidents")}
+        assert conn.execute(sa.text("SELECT count(*) FROM incidents")).scalar() == 1
+
+
+def _server_before_0057(tmp_path, monkeypatch):
+    """A database as 0056 left it: every table, without what 0057 adds."""
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP INDEX uq_evidence_detections_record_rule"))
+        conn.execute(sa.text("DROP INDEX ix_sigma_rules_pack"))
+        for column in ("name", "engine", "original"):
+            conn.execute(sa.text(f"ALTER TABLE sigma_rules DROP COLUMN {column}"))
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0056_evidence")
+    return engine, cfg
+
+
+def test_migration_0057_adds_what_sigma_needs_and_moves_the_keywords_a_person_wrote(tmp_path, monkeypatch):
+    import yaml
+
+    from app.defaults import DEFAULT_SUSPICIOUS_KEYWORDS
+
+    engine, cfg = _server_before_0057(tmp_path, monkeypatch)
+    shipped = [dict(item) for item in DEFAULT_SUSPICIOUS_KEYWORDS]
+    own = {
+        "id": "my-site",
+        "label": "Our wiki",
+        "pattern": r"wiki\.corp",
+        "severity": "high",
+        "description": "Internal",
+    }
+    changed = {**shipped[0], "severity": "critical"}  # a shipped one a person raised
+    odd = {"id": "odd", "label": "", "pattern": "", "severity": "low"}  # no pattern: nothing to look for
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text("INSERT INTO settings (id, doc) VALUES (1, :doc)"),
+            {"doc": json.dumps({"keywords": [changed, *shipped[1:], own, odd], "businessHours": {"startHour": 9}})},
+        )
+        # Two rows of the same rule on the same record: what a file read twice could have left.
+        for _number in (1, 2):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO evidence_detections (incident_id, record_id, rule_id, rule_title, rule_author, level,"
+                    " tags, records, created_at) VALUES ('i1', 7, 'r1', 'x', '', 4, '[]', '[]', 'now')"
+                )
+            )
+    command.upgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert {"name", "engine", "original"} <= {column["name"] for column in inspector.get_columns("sigma_rules")}
+        assert "ix_sigma_rules_pack" in {index["name"] for index in inspector.get_indexes("sigma_rules")}
+        unique = [
+            i for i in inspector.get_indexes("evidence_detections") if i["name"] == "uq_evidence_detections_record_rule"
+        ]
+        assert unique and unique[0]["unique"] and unique[0]["column_names"] == ["record_id", "rule_id"]
+        assert conn.execute(sa.text("SELECT count(*) FROM evidence_detections")).scalar() == 1
+        rows = conn.execute(
+            sa.text(
+                "SELECT title, level, product, service, enabled, supported, engine, pack, source, reason"
+                " FROM sigma_rules ORDER BY title"
+            )
+        ).all()
+        doc = json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar())
+    # The two the person made became rules; the ones Nik shipped did not.
+    assert [(r[0], r[1]) for r in rows] == [("Our wiki", 4), (changed["label"], 5)]
+    wiki = rows[0]
+    assert (wiki[2], wiki[3], wiki[4], wiki[5], wiki[6], wiki[7]) == ("nik", "browser", 1, 0, "", "")
+    assert wiki[9] == "Not checked yet: the forensics worker was not reached"
+    text = yaml.safe_load(wiki[8])
+    assert (
+        text["title"] == "Our wiki"
+        and text["level"] == "high"
+        and text["logsource"] == {"product": "nik", "service": "browser"}
+    )
+    assert (
+        text["detection"]["url"] == {"url|re": r"(?i)wiki\.corp"} and text["detection"]["condition"] == "url or title"
+    )
+    assert text["id"] and len(text["id"]) == 36
+    assert doc == {"businessHours": {"startHour": 9}}  # the keywords are not a setting any more
+
+    # Again: nothing to move, nothing twice. Down, then up.
+    command.downgrade(cfg, "0056_evidence")
+    with engine.connect() as conn:
+        assert "engine" not in {c["name"] for c in sa.inspect(conn).get_columns("sigma_rules")}
+        assert "uq_evidence_detections_record_rule" not in {
+            i["name"] for i in sa.inspect(conn).get_indexes("evidence_detections")
+        }
+    command.upgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT count(*) FROM sigma_rules")).scalar() == 2
+
+
+def test_migration_0057_reads_the_keywords_from_their_list_and_removes_the_list(tmp_path, monkeypatch):
+    from app.core.models import NamedList, NamedListItem
+    from app.defaults import DEFAULT_SUSPICIOUS_KEYWORDS
+
+    engine, cfg = _server_before_0057(tmp_path, monkeypatch)
+    first = DEFAULT_SUSPICIOUS_KEYWORDS[0]
+    items = [
+        (item["id"], {key: item[key] for key in ("label", "pattern", "severity", "description")})
+        for item in DEFAULT_SUSPICIOUS_KEYWORDS
+    ]
+    items.append(("mine", {"label": "Mine", "pattern": r"mine\.example", "severity": "medium", "description": ""}))
+    with engine.begin() as conn:
+        conn.execute(
+            NamedList.__table__.insert(),
+            {"id": "l1", "name": "suspicious_keywords", "label": "x", "description": "", "kind": "key_value",
+             "item_type": "keyword", "columns": [], "builtin": True, "writable_by_automation": False,
+             "updated_at": "now", "updated_by": "nik"},
+        )  # fmt: skip
+        for position, (key, value) in enumerate(items):
+            conn.execute(
+                NamedListItem.__table__.insert(),
+                {"list_id": "l1", "key": key, "value": value, "note": "", "position": position,
+                 "added_at": "now", "added_by": "nik"},
+            )  # fmt: skip
+        conn.execute(
+            sa.text("INSERT INTO settings (id, doc) VALUES (1, :doc)"),
+            {
+                "doc": json.dumps(
+                    {"keywords": {"list": "suspicious_keywords"}, "iocAllowlist": {"list": "ioc_allowlist"}}
+                )
+            },
+        )
+    assert first["id"] == items[0][0]
+    command.upgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        assert [r[0] for r in conn.execute(sa.text("SELECT title FROM sigma_rules")).all()] == ["Mine"]
+        assert conn.execute(sa.text("SELECT count(*) FROM lists")).scalar() == 0
+        assert conn.execute(sa.text("SELECT count(*) FROM list_items")).scalar() == 0
+        assert json.loads(conn.execute(sa.text("SELECT doc FROM settings WHERE id = 1")).scalar()) == {
+            "iocAllowlist": {"list": "ioc_allowlist"}
+        }
+
+
+def test_migration_0057_on_a_server_that_never_had_keywords_changes_nothing_else(tmp_path, monkeypatch):
+    engine, cfg = _server_before_0057(tmp_path, monkeypatch)
+    command.upgrade(cfg, "0057_sigma")  # no settings row at all
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT count(*) FROM sigma_rules")).scalar() == 0
+
+
+def test_migration_0058_adds_the_members_of_a_collection_and_the_source_of_a_record(tmp_path, monkeypatch):
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE evidence_members"))
+        conn.execute(sa.text("ALTER TABLE evidence_records DROP COLUMN source"))
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0057_sigma")
+    command.upgrade(cfg, "0058_collections")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "evidence_members" in inspector.get_table_names()
+        assert {"collection_id", "n", "path", "sha256", "kind", "source", "executable", "skip", "source_id"} <= {
+            column["name"] for column in inspector.get_columns("evidence_members")
+        }
+        assert "source" in {column["name"] for column in inspector.get_columns("evidence_records")}
+    command.stamp(cfg, "0057_sigma")
+    command.upgrade(cfg, "0058_collections")  # again: both are there, nothing to do
+    command.downgrade(cfg, "0057_sigma")
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        assert "evidence_members" not in inspector.get_table_names()
+        assert "source" not in {column["name"] for column in inspector.get_columns("evidence_records")}
+
+
+OLD_PROCESSES = (
+    "CREATE TABLE evidence_processes (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " incident_id VARCHAR NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,"
+    " source_id VARCHAR(32) NOT NULL REFERENCES evidence_sources(id) ON DELETE CASCADE,"
+    " record_id INTEGER REFERENCES evidence_records(id) ON DELETE CASCADE, host VARCHAR(255) NOT NULL,"
+    " guid VARCHAR(80) NOT NULL, parent_guid VARCHAR(80) NOT NULL, pid BIGINT, ppid BIGINT,"
+    " image VARCHAR(1000) NOT NULL, command_line TEXT NOT NULL, username VARCHAR(255) NOT NULL,"
+    " logon_id VARCHAR(40) NOT NULL, integrity VARCHAR(20) NOT NULL, start_ts BIGINT, end_ts BIGINT, level INTEGER)"
+)
+OLD_LOGONS = (
+    "CREATE TABLE evidence_logons (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " incident_id VARCHAR NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,"
+    " source_id VARCHAR(32) NOT NULL REFERENCES evidence_sources(id) ON DELETE CASCADE,"
+    " record_id INTEGER REFERENCES evidence_records(id) ON DELETE CASCADE, ts BIGINT,"
+    " host VARCHAR(255) NOT NULL, source_host VARCHAR(255) NOT NULL, source_ip VARCHAR(64) NOT NULL,"
+    " username VARCHAR(255) NOT NULL, domain VARCHAR(255) NOT NULL, logon_type INTEGER,"
+    " logon_id VARCHAR(40) NOT NULL, outcome VARCHAR(12) NOT NULL, method VARCHAR(40) NOT NULL)"
+)
+NEW_INDEXES = {
+    "evidence_processes": {
+        "ix_evidence_processes_host_time",
+        "ix_evidence_processes_pid",
+        "ix_evidence_processes_parent_id",
+        "ix_evidence_processes_record",
+    },
+    "evidence_logons": {"ix_evidence_logons_host", "ix_evidence_logons_record"},
+}
+NEW_COLUMNS = {"parent_id", "parent_image", "parent_command_line", "hashes"}
+
+
+def _names(conn, table: str, what: str) -> set[str]:
+    inspector = sa.inspect(conn)
+    found = inspector.get_columns(table) if what == "columns" else inspector.get_indexes(table)
+    return {item["name"] for item in found}
+
+
+def test_migration_0059_adds_what_linking_and_the_screens_need_to_the_processes_and_logons(tmp_path, monkeypatch):
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "old.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        # The two tables as 0056 made them, with a process and a logon in them.
+        conn.execute(sa.text("DROP TABLE evidence_processes"))
+        conn.execute(sa.text("DROP TABLE evidence_logons"))
+        conn.execute(sa.text(OLD_PROCESSES))
+        conn.execute(sa.text(OLD_LOGONS))
+        conn.execute(sa.text("CREATE INDEX ix_evidence_processes_guid ON evidence_processes (incident_id, host, guid)"))
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_processes (incident_id, source_id, host, guid, parent_guid, image, command_line,"
+                " username, logon_id, integrity) VALUES ('i', 's', 'h', 'g', '', 'a.exe', '', '', '', '')"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO evidence_logons (incident_id, source_id, host, source_host, source_ip, username, domain,"
+                " logon_id, outcome, method) VALUES ('i', 's', 'h', '', '', 'u', '', '', 'success', '')"
+            )
+        )
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0058_collections")
+    command.upgrade(cfg, "0059_processes")
+    with engine.connect() as conn:
+        assert NEW_COLUMNS <= _names(conn, "evidence_processes", "columns")
+        assert "status" in _names(conn, "evidence_logons", "columns")
+        for table, wanted in NEW_INDEXES.items():
+            assert wanted <= _names(conn, table, "indexes")
+        # What was there stays, with the defaults of the new columns.
+        row = conn.execute(
+            sa.text("SELECT image, parent_id, parent_image, parent_command_line, hashes FROM evidence_processes")
+        ).one()
+        assert tuple(row) == ("a.exe", None, "", "", "{}")
+        assert conn.execute(sa.text("SELECT status FROM evidence_logons")).scalar() == ""
+    command.stamp(cfg, "0058_collections")
+    command.upgrade(cfg, "0059_processes")  # again: everything is there, nothing to do
+    command.downgrade(cfg, "0058_collections")
+    with engine.connect() as conn:
+        assert not NEW_COLUMNS & _names(conn, "evidence_processes", "columns")
+        assert "status" not in _names(conn, "evidence_logons", "columns")
+        for table, wanted in NEW_INDEXES.items():
+            assert not wanted & _names(conn, table, "indexes")
+        assert conn.execute(sa.text("SELECT count(*) FROM evidence_processes")).scalar() == 1
+
+
+def test_migration_0059_on_a_database_made_by_the_models_downgrades_and_upgrades_again(tmp_path, monkeypatch):
+    from app.core.db import Base
+
+    engine = sa.create_engine("sqlite:///" + str(tmp_path / "new.db").replace("\\", "/"))
+    Base.metadata.create_all(engine)
+    import app.core.db
+
+    monkeypatch.setattr(app.core.db, "engine", engine)
+    cfg = Config("alembic.ini")
+    command.stamp(cfg, "0059_processes")
+    command.downgrade(cfg, "0058_collections")  # the foreign key of parent_id goes with its column
+    with engine.connect() as conn:
+        assert "parent_id" not in _names(conn, "evidence_processes", "columns")
+    command.upgrade(cfg, "0059_processes")
+    with engine.connect() as conn:
+        assert NEW_COLUMNS <= _names(conn, "evidence_processes", "columns")
+        assert NEW_INDEXES["evidence_processes"] <= _names(conn, "evidence_processes", "indexes")

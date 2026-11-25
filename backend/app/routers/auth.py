@@ -73,9 +73,12 @@ def _clear_ticket_cookie(response: Response) -> None:
 
 
 def _signed_in(db: OrmSession, user: User, session: SessionModel, policy: dict[str, Any]) -> dict[str, Any]:
+    from ..core import copy
+
     return {
         "user": signin.account_out(db, user, policy),
         "session": signin.session_state(session, policy, stored_roles(user.roles)),
+        "server": copy.describe(),
     }
 
 

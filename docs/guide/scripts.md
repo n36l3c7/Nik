@@ -101,6 +101,21 @@ Seven scripts ship with Nik, each with its test. They can be changed like any ot
 | `CsvToList` | Reads CSV text into a list of objects, named by the header row |
 | `VerdictChanges` | What changed between two checks of the same indicators, and a line that says it |
 
+## Reading host evidence
+
+A script computes only on what a node hands it, and has no function of its own to read the evidence of an incident. Since 7.0 two read-only nodes of the group **Host evidence** give it that data, as arguments of the script's node.
+
+| Node | Gives |
+| --- | --- |
+| **List the host evidence files of an incident** (`nik.list-evidence-files`) | `files`: each file with its section, source, name, size, SHA-256, host, user, parser, state, how it was read, the counts (in the file, read, kept, duplicates, skipped) and its parse report in short. The newest first, 200 at most. Filter by **kind**, or take only the files **read in part** |
+| **Read host evidence records** (`nik.get-evidence-records`) | `records`: a page of records, oldest first, 500 at most, with the filters of the Evidence pages (section, type, file, source, host, user, channel, event id, **level** of a detection, **rule**, flagged, text, time range). **Next** is the cursor to give back for the page after |
+
+A record is given light: its summary, host, user and time. Name the keys of its data that you want in **Data fields** (12 at most, each cut at 500 characters), so that a page never carries a whole event log. Nothing is changed by these nodes, in a dry run too.
+
+What they give carries a class: a host or a user name is an internal name, a summary and the fields of a record can name anything. A later node that sends them out is judged by it: see [What a playbook may reach and send](#what-a-playbook-may-reach-and-send).
+
+Scripts that read `data.eventlogs`, `data.endpoint`, `data.browser` or `data.commands` of the incident document must change: those are emptied after the upgrade.
+
 ## What a playbook may reach and send
 
 Two choices in a playbook's **Settings** decide what it does outside Nik. Both belong to an **Admin**. Opening either beyond the default asks twice (a box to tick, and the playbook's name typed) and is written in the audit log.

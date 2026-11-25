@@ -1,0 +1,24 @@
+title: 'Command: Destructive Operation'
+id: 88f21e6b-a94b-4b20-bc0a-2e4344da973f
+status: stable
+description: 'A filesystem wipe or the deletion of shadow copies, the pattern of ransomware.'
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.impact
+    - attack.t1485
+logsource:
+    product: nik
+    service: commands
+detection:
+    selection:
+        - command|contains:
+              - 'mkfs.'
+        - command|re|i:
+              - 'rm\s+-rf\s+(/|~)(\s|$)'
+              - 'dd\s+if=[^|;&]*of=/dev/(sd|nvme|vd)'
+              - 'vssadmin\s+delete\s+shadows'
+    condition: selection
+falsepositives:
+    - An administrator who runs the same command on purpose
+level: high

@@ -71,6 +71,7 @@ EVENTS = (
     "ioc.verdict_changed",
     "ioc.watch_hit",
     "indicators.found",
+    "evidence.detected",
     "storage.low",
     "sla.breached",
     "artifact.expiring",

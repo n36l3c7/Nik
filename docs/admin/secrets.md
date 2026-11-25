@@ -13,7 +13,7 @@ Know where each secret of the server is, change a key safely, and keep the right
 | `STORE_KEY` | Every file of the store, sealed on disk | `api` only |
 | `AUDIT_KEY` (and `AUDIT_KEY_PREVIOUS`) | The signature of every audit log entry | `api`, `automation` |
 | `DB_PASSWORD` | The connection to PostgreSQL | `api`, `automation`, `db` (only to create the database) |
-| `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN` | What the backend says to one worker | `api` and that worker |
+| `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN`, `FORENSICS_TOKEN` | What the backend says to one worker. `FORENSICS_TOKEN` is new in 7.0: `deploy/init-env.sh` makes it on an install that has none (a file `forensics_token`) | `api` and that worker |
 | `SANDBOX_TOKEN` | What is said to the script sandbox | `api`, `automation`, `sandbox` |
 | `METRICS_TOKEN` (optional) | Who reads `/api/metrics` | `api` |
 | Backup passphrase | Every backup | none: it is in the database, under `SECRET_KEY` |
@@ -113,7 +113,7 @@ A store from before 6.8 is sealed in the background, one file at a time, while t
 The database itself is not encrypted by Nik: encrypt the host disk if it must be ([Security](../reference/security.md#the-store-of-files-encrypted)).
 
 ??? info "The work volumes"
-    No worker mounts the store. `pcap` keeps a capture larger than `PCAP_MEMORY_FILE_MB` (64 MB) in clear on its `pcap-work` volume while it is open; `docview` converts a PST on `pst-work`. Both are emptied when their worker starts and hold nothing to back up. To keep even a large capture off the disk, replace `pcap-work` with a tmpfs in a Compose override and give the worker the memory.
+    No worker mounts the store. `pcap` keeps a capture larger than `PCAP_MEMORY_FILE_MB` (64 MB) in clear on its `pcap-work` volume while it is open; `docview` converts a PST on `pst-work`; `forensics` is given each original it reads and keeps it **in clear** on `forensics-work` until nobody has asked for it for 15 minutes (`FORENSICS_FILE_IDLE`), up to 48 GB. All are emptied when their worker starts and hold nothing to back up. The originals themselves are in the store, sealed like every file. To keep even a large capture off the disk, replace `pcap-work` with a tmpfs in a Compose override and give the worker the memory.
 
 ## What to keep off the server
 

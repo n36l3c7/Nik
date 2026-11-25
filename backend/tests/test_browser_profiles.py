@@ -1,4 +1,4 @@
-"""Browser profiles (2.0.0): upload routing, legacy normalization, migration 0003."""
+"""Browser profiles (2.0.0): legacy normalization, migration 0003."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from alembic import command
 from app.browser_profiles import normalize_browser_data, profile_for_upload
 
-HISTORY_CSV = b"url,title,visit_time\nhttps://example.com/,Example,2026-11-04 10:00:00\n"
 LEGACY_SLOT = {
     "history": [{"id": "h1", "url": "https://legacy.example/"}],
     "downloads": [],
@@ -21,53 +20,38 @@ LEGACY_SLOT = {
 }
 
 
-def _upload(client: TestClient, profile: str | None = None):
-    query = "tab=browser&browser=chrome&source=history" + (f"&profile={profile}" if profile else "")
-    return client.post(f"/api/incidents/p1/upload?{query}", files={"file": ("history.csv", HISTORY_CSV)})
+def moved(incident: str) -> dict:
+    """The browser evidence of an incident as the tables hold it: {source: (profile, [keys])}."""
+    from sqlalchemy import select
+
+    from app.core.db import SessionLocal
+    from app.core.models import EvidenceRecord, EvidenceSource
+
+    with SessionLocal() as db:
+        return {
+            row.source: (
+                row.profile,
+                row.legacy,
+                sorted(db.scalars(select(EvidenceRecord.key).where(EvidenceRecord.source_id == row.id))),
+            )
+            for row in db.scalars(select(EvidenceSource).where(EvidenceSource.incident_id == incident))
+        }
 
 
-def test_upload_goes_to_default_or_named_profile(admin: TestClient):
-    admin.post("/api/incidents", json={"id": "p1", "data": {}})
-    first = _upload(admin)
-    assert first.status_code == 200, first.text
-    assert first.json()["target"] == "browser/chrome/Default/history"
-    assert first.json()["profileId"] == "default"
-    work = _upload(admin, "Work")
-    again = _upload(admin, "work")  # names match case-insensitively
-    assert work.json()["profileId"] == again.json()["profileId"] != "default"
-
-    chrome = admin.get("/api/incidents/p1").json()["data"]["browser"]["browsers"]["chrome"]
-    assert chrome["activeProfile"] == "default"
-    names = sorted(p["name"] for p in chrome["profiles"].values())
-    assert names == ["Default", "Work"]
-    for profile in chrome["profiles"].values():
-        assert profile["history"][0]["url"] == "https://example.com/"
-        assert profile["meta"]["history"]["rows"] == 1
-
-
-def test_upload_into_a_legacy_document_migrates_it(admin: TestClient):
-    # A PATCH stores the document as-is, bypassing create-time normalization.
-    admin.post("/api/incidents", json={"id": "p1", "data": {}})
-    admin.patch("/api/incidents/p1", json={"data": {"browser": {"browsers": {"chrome": LEGACY_SLOT}}}})
-    assert _upload(admin, "Work").status_code == 200
-    profiles = admin.get("/api/incidents/p1").json()["data"]["browser"]["browsers"]["chrome"]["profiles"]
-    assert profiles["default"]["history"] == LEGACY_SLOT["history"]
-    assert {p["name"] for p in profiles.values()} == {"Default", "Work"}
-
-
-def test_create_and_backup_restore_normalize_legacy_documents(admin: TestClient):
+def test_create_and_backup_restore_move_legacy_documents_to_the_tables(admin: TestClient):
+    """A document in the shape of before 2.0.0 (one slot per browser) is read as one of before 7.0:
+    its browser evidence leaves the document for the tables, under the profile "Default"."""
     legacy = {"id": "old", "data": {"browser": {"browsers": {"firefox": LEGACY_SLOT}}}}
     created = admin.post("/api/incidents", json=legacy).json()
-    firefox = created["data"]["browser"]["browsers"]["firefox"]
-    assert firefox["activeProfile"] == "default"
-    assert firefox["profiles"]["default"]["meta"] == LEGACY_SLOT["meta"]
+    assert "browser" not in created["data"]
+    assert moved("old") == {"firefox.history": ("Default", True, ["legacy:h1"])}
 
-    # A file exported by a release before 2.0.0 is normalized when it is imported (it adds: another id).
+    # A file exported by a release before 2.0.0 goes the same way when it is imported (it adds: another id).
     backup = admin.get("/api/backup/export").json()
     backup["incidents"] = [{**legacy, "id": "older"}]
     assert admin.post("/api/backup/import", json=backup).status_code == 200, "import failed"
-    restored = admin.get("/api/incidents/older").json()["data"]["browser"]["browsers"]["firefox"]
-    assert restored["profiles"]["default"]["history"] == LEGACY_SLOT["history"]
+    assert "browser" not in admin.get("/api/incidents/older").json()["data"]
+    assert moved("older") == {"firefox.history": ("Default", True, ["legacy:h1"])}
 
 
 def test_profile_helpers():
@@ -126,29 +110,31 @@ def test_migration_0003_moves_legacy_slots_into_profiles(tmp_path, monkeypatch):
     assert load("a")["data"]["browser"]["browsers"]["chrome"]["history"] == LEGACY_SLOT["history"]
 
 
-def test_get_and_patch_convert_legacy_documents(admin: TestClient):
+def test_a_patch_with_the_old_shape_is_moved_to_the_tables(admin: TestClient):
     admin.post("/api/incidents", json={"id": "p1", "updatedAt": "t1", "data": {}})
-    # A plain-JSON PATCH with the old shape is converted before it is stored.
-    admin.patch("/api/incidents/p1", json={"data": {"browser": {"browsers": {"chrome": LEGACY_SLOT}}}})
+    # A plain-JSON PATCH with the old shape is converted, and what it holds leaves the document.
+    patched = admin.patch("/api/incidents/p1", json={"data": {"browser": {"browsers": {"chrome": LEGACY_SLOT}}}})
+    assert patched.status_code == 200 and "browser" not in patched.json()["data"]
+    assert moved("p1") == {"chrome.history": ("Default", True, ["legacy:h1"])}
     stored = admin.get("/api/incidents/p1")
-    chrome = stored.json()["data"]["browser"]["browsers"]["chrome"]
-    assert set(chrome) == {"activeProfile", "profiles"}
-    assert chrome["profiles"]["default"]["history"] == LEGACY_SLOT["history"]
+    assert "browser" not in stored.json()["data"]
     # One write since the incident was created: revision 1.
     assert stored.headers["ETag"] == '"1"'
 
 
-def test_get_saves_a_converted_legacy_document_once(admin: TestClient):
+def test_get_moves_a_document_the_upgrade_has_not_reached_yet(admin: TestClient):
     from app.core.db import SessionLocal
     from app.core.models import Incident
 
     admin.post("/api/incidents", json={"id": "p1", "data": {}})
-    with SessionLocal() as db:  # simulate a database that skipped migration 0003
+    with SessionLocal() as db:  # a document as 6.x left it, which the move after the upgrade has not reached
         row = db.get(Incident, "p1")
         row.doc = {**row.doc, "data": {"browser": {"browsers": {"edge": LEGACY_SLOT}}}}
         db.commit()
     first = admin.get("/api/incidents/p1").json()
-    assert first["data"]["browser"]["browsers"]["edge"]["profiles"]["default"]["meta"] == LEGACY_SLOT["meta"]
+    assert "browser" not in first["data"]
+    assert moved("p1") == {"edge.history": ("Default", True, ["legacy:h1"])}
     with SessionLocal() as db:
-        saved = db.get(Incident, "p1").doc["data"]["browser"]["browsers"]["edge"]
-    assert "profiles" in saved and "history" not in saved
+        assert "browser" not in db.get(Incident, "p1").doc["data"]
+    # Read again: nothing more to move.
+    assert admin.get("/api/incidents/p1").json()["data"] == first["data"]

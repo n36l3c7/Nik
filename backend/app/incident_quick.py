@@ -11,11 +11,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from . import fields as field_registry
 from . import timers, war_room
-from .core.models import Incident
+from .core.models import EvidenceRecord, Incident
 
 LAST_ENTRIES = 3
 
@@ -28,31 +29,42 @@ def _length(value: Any) -> int:
     return len(value) if isinstance(value, list) else 0
 
 
-def counts(doc: dict[str, Any] | None) -> dict[str, int]:
-    """How much evidence a document holds: the numbers the Summary shows, counted the same way."""
-    doc = _dict(doc)
-    data = _dict(doc.get("data"))
-    events = bookmarks = 0
-    for slot in _dict(_dict(data.get("browser")).get("browsers")).values():
-        for profile in _dict(_dict(slot).get("profiles")).values():
-            profile = _dict(profile)
-            events += _length(profile.get("history")) + _length(profile.get("downloads"))
-            bookmarks += _length(profile.get("bookmarks"))
-    commands = sum(
-        _length(_dict(shell).get("commands")) for shell in _dict(_dict(data.get("commands")).get("shells")).values()
-    )
-    artifacts = 0
-    for category in _dict(_dict(data.get("endpoint")).get("categories")).values():
-        for source in _dict(_dict(category).get("sources")).values():
-            artifacts += _length(_dict(source).get("records"))
-    return {
-        "browserEvents": events,
-        "commands": commands,
-        "endpointArtifacts": artifacts,
-        "flagged": len(_dict(doc.get("flags"))),
-        "bookmarks": bookmarks,
-        "notes": _length(doc.get("notes")),
-    }
+def counts_for(db: OrmSession, docs: dict[str, dict[str, Any] | None]) -> dict[str, dict[str, int]]:
+    """The numbers of several incidents at once (``{incident id: document}``): one grouped query over
+    the records of all of them, however many there are. Counting is an index scan of
+    ``(incident_id, kind, type, ts)``, no record is loaded."""
+    found: dict[str, dict[str, int]] = {key: {} for key in docs}
+    if docs:
+        rows = db.execute(
+            select(EvidenceRecord.incident_id, EvidenceRecord.kind, EvidenceRecord.type, func.count())
+            .where(EvidenceRecord.incident_id.in_(list(docs)))
+            .group_by(EvidenceRecord.incident_id, EvidenceRecord.kind, EvidenceRecord.type)
+        ).all()
+        for incident_id, kind, type_, total in rows:
+            slot = found[incident_id]
+            slot[kind] = slot.get(kind, 0) + total
+            if kind == "browser":
+                slot[f"browser:{type_}"] = total
+    out: dict[str, dict[str, int]] = {}
+    for incident_id, doc in docs.items():
+        doc = _dict(doc)
+        slot = found[incident_id]
+        marks = slot.get("browser:bookmark", 0)
+        out[incident_id] = {
+            "browserEvents": slot.get("browser", 0) - marks - slot.get("browser:shortcut", 0),
+            "commands": slot.get("commands", 0),
+            "endpointArtifacts": slot.get("endpoint", 0),
+            "eventLogs": slot.get("eventlog", 0),
+            "flagged": len(_dict(doc.get("flags"))),
+            "bookmarks": marks,
+            "notes": _length(doc.get("notes")),
+        }
+    return out
+
+
+def counts(db: OrmSession, incident_id: str, doc: dict[str, Any] | None) -> dict[str, int]:
+    """How much evidence an incident holds: the numbers the Summary shows, counted from the tables."""
+    return counts_for(db, {incident_id: doc})[incident_id]
 
 
 def quick(db: OrmSession, incident: Incident) -> dict[str, Any]:
@@ -65,7 +77,7 @@ def quick(db: OrmSession, incident: Incident) -> dict[str, Any]:
         "createdBy": doc.get("createdBy"),
         "suspiciousStart": doc.get("suspiciousStart"),
         "suspiciousEnd": doc.get("suspiciousEnd"),
-        "counts": counts(doc),
+        "counts": counts(db, incident.id, doc),
         "timers": timers.of(db, incident, time.time()),
         "last": war_room.entries(db, incident, limit=LAST_ENTRIES),
     }

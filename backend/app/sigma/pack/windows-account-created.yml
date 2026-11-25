@@ -1,0 +1,23 @@
+title: 'Local or Domain Account Created or Enabled'
+id: c38439e5-3c19-44fb-ad32-8c29c0dbe8b8
+status: stable
+description: 'A user account was created or enabled (4720, 4722).'
+references:
+    - https://attack.mitre.org/techniques/T1136/001/
+author: Nik
+date: 2026-11-25
+tags:
+    - attack.persistence
+    - attack.t1136.001
+logsource:
+    product: windows
+    service: security
+detection:
+    selection:
+        EventID:
+            - 4720
+            - 4722
+    condition: selection
+falsepositives:
+    - Onboarding of a person
+level: medium

@@ -1,0 +1,27 @@
+title: 'Browser: Tor Network'
+id: 4cbb4b96-0275-468d-829f-7a862e92f1a6
+status: stable
+description: 'A reference to the Tor network or to Tor Browser, which anonymises traffic.'
+author: Nik
+date: 2026-11-25
+logsource:
+    product: nik
+    service: browser
+detection:
+    selection:
+        - url|contains:
+              - 'torproject'
+        - url|re|i:
+              - '\btor\b'
+        - title|contains:
+              - 'torproject'
+        - title|re|i:
+              - '\btor\b'
+        - fileName|contains:
+              - 'torproject'
+        - fileName|re|i:
+              - '\btor\b'
+    condition: selection
+falsepositives:
+    - Research, training or news that talks about it
+level: medium

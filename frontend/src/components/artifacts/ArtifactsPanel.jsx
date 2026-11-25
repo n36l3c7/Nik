@@ -4,6 +4,7 @@ import {
   Bug,
   Download,
   FolderOpen,
+  HardDrive,
   Inbox,
   Link2,
   Mail,
@@ -51,7 +52,7 @@ import { transfer as showTransfer } from '../../lib/transfers.js'
 // How many artifacts one archive holds (the server's limit of an export).
 const TOGETHER_MAX = 500
 
-export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2, mailbox: Inbox }
+export const KIND_ICONS = { file: Bug, mail: Mail, pcap: Network, url: Link2, mailbox: Inbox, hostfile: HardDrive }
 
 const CHIP =
   'h-7 px-2.5 border font-mono text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
