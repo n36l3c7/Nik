@@ -49,7 +49,13 @@ class RuleSets:
         self._busy: dict[str, int] = {}
 
     def _file(self, digest: str) -> str:
-        return os.path.join(self.folder, f"{digest}.ndjson")
+        """Where the set of that name is kept. The name is 64 hexadecimal digits wherever this is called; a
+        name that would be a place outside the folder is refused here too, whoever calls."""
+        folder = os.path.normpath(self.folder)
+        path = os.path.normpath(os.path.join(folder, f"{digest}.ndjson"))
+        if not path.startswith(folder + os.sep):
+            raise given.Refused(400, "The name of a rule set is the SHA-256 of its content (64 hexadecimal digits)")
+        return path
 
     def clear(self) -> None:
         """What a stopped worker left is not kept."""

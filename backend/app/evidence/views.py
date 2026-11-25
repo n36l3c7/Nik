@@ -17,6 +17,7 @@ written into the SQL, not bound: a value that is selected and grouped by must re
 from __future__ import annotations
 
 import json
+import logging
 import statistics
 import urllib.error
 import urllib.request
@@ -31,6 +32,8 @@ from ..core.models import EvidenceMark, EvidenceRecord, EvidenceSource
 from ..workers import handover
 from . import originals, parse
 from .browse import KEY, BadQuery, _filters, json_text  # noqa: F401 - KEY is read by the routers
+
+log = logging.getLogger("nik.evidence.views")
 
 GAPS_MAX = 200
 BURST_MIN = 20
@@ -256,11 +259,14 @@ def ask_view(sha256: str, body: dict[str, Any], route: str = "view") -> tuple[in
                 try:
                     handover.give(url, parse.HEADER, token, name, originals.path_of(sha256))
                 except handover.NotGiven as refused:
-                    return 502, {"detail": str(refused)}
+                    log.warning("The forensics worker was not given %s: %s", name, refused)
+                    return 502, {"detail": "The forensics worker could not be given the file"}
                 continue
             return error.code, answer
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            return 502, {"detail": f"The forensics worker cannot be reached: {getattr(error, 'reason', error)}"}
+            # Why is for the log: the address of a worker is not for whoever reads a file.
+            log.warning("The forensics worker cannot be reached: %s", getattr(error, "reason", error))
+            return 502, {"detail": "The forensics worker cannot be reached"}
     return 502, {"detail": "The forensics worker did not take the file"}
 
 

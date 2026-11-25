@@ -58,7 +58,8 @@ class UploadError(Exception):
 
     def __init__(self, sentence: str, status: int = 400, received: int | None = None) -> None:
         super().__init__(sentence)
-        self.status, self.received = status, received
+        # The sentence is written here, for the person: it is what the answer carries, not the exception.
+        self.sentence, self.status, self.received = sentence, status, received
 
 
 def is_auto(params: dict[str, Any]) -> bool:

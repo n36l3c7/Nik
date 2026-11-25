@@ -31,7 +31,7 @@ class UploadIn(BaseModel):
 
 
 def _refused(error: uploads.UploadError) -> JSONResponse:
-    body: dict[str, Any] = {"detail": str(error)}
+    body: dict[str, Any] = {"detail": error.sentence}
     if error.received is not None:
         body["received"] = error.received
     return JSONResponse(body, status_code=error.status)

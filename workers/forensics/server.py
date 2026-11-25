@@ -161,13 +161,18 @@ class Refused(Exception):
         self.status, self.body = status, {"detail": detail, **more}
 
 
-def job_command(path: str, request: dict) -> list[str]:
+def job_arguments(path: str, request: dict) -> list[str]:
+    """What the interpreter is given to read a file: the job, the file and the request."""
     asked = {
         key: request.get(key) for key in ("fileName", "kind", "parser", "source", "params", "rules") if request.get(key)
     }
     if asked.get("rules"):  # the job is given the file of the set, not its name
         asked["rules"] = RULES.path(str(asked["rules"])) or ""
-    return [sys.executable, "-I", RUNNER, path, json.dumps(asked)]
+    return [RUNNER, path, json.dumps(asked)]
+
+
+def job_command(path: str, request: dict) -> list[str]:
+    return [sys.executable, "-I", *job_arguments(path, request)]
 
 
 def check_view(body: dict) -> None:
@@ -543,7 +548,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(f"{len(data):x}\r\n".encode("ascii") + data + b"\r\n")
 
     def _parse(self, path: str, body: dict, say) -> None:
-        self._relay(job_command(path, body), say, JOB_SECONDS + 60)
+        self._relay(job_arguments(path, body), say, JOB_SECONDS + 60)
 
     def _unpack(self, path: str, body: dict, say) -> None:
         """A collection unpacked by a child (``unpack_job.py``). What the child keeps lands in the folder of the files
@@ -578,8 +583,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
         try:
-            command = [sys.executable, "-I", UNPACKER, "list", path, json.dumps(asked)]
-            self._relay(command, say, JOB_SECONDS + 60, each=kept)
+            self._relay([UNPACKER, "list", path, json.dumps(asked)], say, JOB_SECONDS + 60, each=kept)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
@@ -621,10 +625,14 @@ class Handler(BaseHTTPRequestHandler):
         scratch = tempfile.mkdtemp(dir=base)
         try:
             asked = {"path": member, "sha256": sha256, "out": os.path.join(scratch, "member"), "total": total}
-            command = [sys.executable, "-I", UNPACKER, "member", zipped, json.dumps(asked)]
             with GIVEN.hold([name]):
                 done = subprocess.run(  # noqa: S603 - fixed command, the zip and the request are arguments
-                    command, capture_output=True, timeout=JOB_SECONDS, env=job_env(), cwd="/", check=False
+                    [sys.executable, "-I", UNPACKER, "member", zipped, json.dumps(asked)],
+                    capture_output=True,
+                    timeout=JOB_SECONDS,
+                    env=job_env(),
+                    cwd="/",
+                    check=False,
                 )
             try:
                 said = json.loads(done.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
@@ -653,11 +661,12 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionError):
             self.close_connection = True
 
-    def _relay(self, command: list[str], say, seconds: float, each=None) -> None:
-        """Run a job and send what it writes as it writes it, in chunks. ``each(line)`` sees each line it wrote."""
+    def _relay(self, arguments: list[str], say, seconds: float, each=None) -> None:
+        """Run a job and send what it writes as it writes it, in chunks. ``each(line)`` sees each line it wrote.
+        What runs is always this interpreter, alone (``-I``): ``arguments`` are the job and what it is given."""
         say("starting")
         job = subprocess.Popen(  # noqa: S603 - fixed command, the file and the request are arguments
-            command,
+            [sys.executable, "-I", *arguments],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
