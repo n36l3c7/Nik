@@ -1,7 +1,7 @@
 """A copy of a server (``NIK_COPY=true``, 7.0): it reaches nothing outside itself.
 
 A release is tried on a copy of the real server, restored from one of its
-backups (``deploy/restore.sh --as-copy``; docs/admin/try-a-release.md). Such a
+backups (``deploy/restore.sh --as-copy``; docs/admin/try-on-a-copy.md). Such a
 copy holds the real server's connections, schedules, webhooks, mail settings
 and backup destinations. Started as it is, it would fetch from the real
 systems, write back to them, send mail and webhooks, delete the real off-site

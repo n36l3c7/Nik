@@ -240,7 +240,7 @@ services:
       # to. NIK_SERVER_NAME is what this server calls itself to the other host of a pair.
       STANDBY_INBOX: /app/inbox
       NIK_SERVER_NAME: ${NIK_SERVER_NAME:-${TLS_HOSTNAME:-}}
-      # A copy of another server, to try a release on (docs/admin/try-a-release.md): it reaches
+      # A copy of another server, to try a release on (docs/admin/try-on-a-copy.md): it reaches
       # nothing outside itself. Set by deploy/restore.sh --as-copy.
       NIK_COPY: ${NIK_COPY:-false}
       NIK_COPY_OF: ${NIK_COPY_OF:-}

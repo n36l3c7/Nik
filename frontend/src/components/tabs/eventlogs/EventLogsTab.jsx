@@ -149,7 +149,7 @@ function WindowsLogs({ incident }) {
   const items = SECTIONS.map((item) => ({
     ...item,
     count: {
-      events: matter ? counts.matter : counts.records,
+      events: counts.records, // all of them, as "Events kept": the table says how many of them matter
       detections: found.data.total,
       processes: counts.processes,
       logons: counts.logons,
@@ -234,6 +234,8 @@ function WindowsLogs({ incident }) {
                 canWrite={canWrite}
                 refresh={version}
                 matter={matter}
+                matterCount={counts.matter}
+                total={counts.records}
                 onMatterChange={setMatter}
                 focusRule={focusRule}
                 ruleTitles={ruleTitles}

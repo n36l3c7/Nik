@@ -1,0 +1,58 @@
+name: Load
+
+# A million records of host evidence on PostgreSQL, and the time each screen takes to answer on them. It takes
+# minutes and says nothing about a change that touches no query: it runs once a week and by hand, not on a push.
+on:
+  workflow_dispatch:
+    inputs:
+      records:
+        description: Records to load
+        default: "1000000"
+      max_seconds:
+        description: The slowest answer allowed, in seconds
+        default: "5"
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: docker.io/library/postgres:18-alpine
+        env:
+          POSTGRES_USER: nik
+          POSTGRES_PASSWORD: nik
+          POSTGRES_DB: nik
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nik -d nik" --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://nik:nik@127.0.0.1:5432/nik
+      RECORDS: ${{ inputs.records || '1000000' }}
+      MAX_SECONDS: ${{ inputs.max_seconds || '5' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Pango for WeasyPrint (the application imports it)
+        run: .github/scripts/retry.sh 4 .github/scripts/apt-install.sh libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0
+      - name: Install backend deps
+        run: pip install -r backend/requirements-dev.txt
+      - name: Migrations
+        working-directory: backend
+        run: alembic upgrade head
+      - name: Load the records and time the screens
+        working-directory: backend
+        run: python scripts/load_evidence.py --records "$RECORDS" --max-seconds "$MAX_SECONDS"

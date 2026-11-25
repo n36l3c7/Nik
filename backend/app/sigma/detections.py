@@ -79,20 +79,22 @@ class Detected:
     def full(self) -> bool:
         return len(self.pending) >= PENDING_MAX
 
-    def write(self, db: OrmSession) -> None:
-        """Write what is held (the caller commits). The records they name are stored by now."""
+    def write(self, db: OrmSession, placed: dict[str, int] | None = None) -> None:
+        """Write what is held (the caller commits). The records they name are stored by now; ``placed`` holds
+        the ids of those the batch just stored, by key, and only the others (a record another file gave first,
+        one of an earlier batch) are looked for."""
         if not self.pending or self.set is None:
             self.pending = []
             return
         held, self.pending = self.pending, []
-        placed = _ids(db, self.incident_id, {item["key"] for item in held})
+        found = _ids(db, self.incident_id, {item["key"] for item in held}, placed)
         table = EvidenceDetection.__table__
         insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
         rows: list[dict[str, Any]] = []
         seen: set[tuple[int, str]] = set()
         now = now_iso()
         for item in held:
-            record_id = placed.get(item["key"])
+            record_id = found.get(item["key"])
             meta = self.set.meta.get(item["rule"])
             if record_id is None:
                 self.unplaced += 1
@@ -165,12 +167,11 @@ class Detected:
         return max((level for level, n in self.by_level.items() if n), default=0)
 
 
-def _ids(db: OrmSession, incident_id: str, keys: set[str]) -> dict[str, int]:
-    """The ids of the records of the incident with these keys, whichever file of the incident holds them."""
-    from sqlalchemy import select
-
-    out: dict[str, int] = {}
-    wanted = sorted(keys)
+def _ids(db: OrmSession, incident_id: str, keys: set[str], known: dict[str, int] | None = None) -> dict[str, int]:
+    """The ids of the records of the incident with these keys, whichever file of the incident holds them.
+    ``known`` are some of them already (the batch just stored): they are not asked for."""
+    out: dict[str, int] = {key: known[key] for key in keys if known and key in known}
+    wanted = sorted(keys - out.keys())
     for start in range(0, len(wanted), CHUNK):
         found = db.execute(
             select(EvidenceRecord.key, EvidenceRecord.id).where(

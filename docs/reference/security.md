@@ -25,9 +25,10 @@ Samples are **never executed**: there is no detonation sandbox. They are read, d
 | `capa` | Capabilities of samples | Internal only | Only the sample it is sent |
 | `docview` (LibreOffice, pdfium) | Document previews (macros disabled, links never updated); PST conversion on a volume of its own | Internal only | Only the document it is sent |
 | `pcap` (tshark, sharkd) | Packet captures | Internal only | Only the capture it is sent |
+| `forensics` | Files of host evidence (event logs, registry hives, a `$MFT`, browser databases, histories, collections), the Sigma rules, the viewer of an original | Internal only | Only the file it is sent, on its own volume `forensics-work`; a process for each file |
 | `browser` (Chromium) | HTML attachments and addresses | Its own network to the backend, and the internet through a filtering proxy; none shared with other workers | Only the page it is sent |
 | `sandbox` | Python scripts of playbooks | Internal only, no volume | The arguments of its node |
-| `api` | Everything else: e-mails, event logs, static analysis, reports | Database, workers; outside only for threat-intelligence look-ups | The store, read-write, and its key |
+| `api` | Everything else: e-mails, static analysis, reports | Database, workers; outside only for threat-intelligence look-ups | The store, read-write, and its key |
 
 Every container runs as an unprivileged user on a read-only filesystem, with all capabilities dropped, `no-new-privileges`, and memory, CPU and process limits. A worker is reached with a token of its own, compared in constant time; none can reach the database.
 
@@ -35,13 +36,16 @@ The **isolated browser** is the one part that runs attacker code on purpose. Wit
 
 ### Limits on what a file can make the server do
 
-- **Size**: every upload has a limit, enforced while reading ([`SAMPLE_MAX_MB`](configuration.md#SAMPLE_MAX_MB), [`ARTIFACT_MAX_MB`](configuration.md#ARTIFACT_MAX_MB), [`PCAP_MAX_MB`](configuration.md#PCAP_MAX_MB)…).
+- **Size**: every upload has a limit, enforced while reading ([`SAMPLE_MAX_MB`](configuration.md#SAMPLE_MAX_MB), [`ARTIFACT_MAX_MB`](configuration.md#ARTIFACT_MAX_MB), [`PCAP_MAX_MB`](configuration.md#PCAP_MAX_MB), [`EVIDENCE_MAX_MB`](configuration.md#EVIDENCE_MAX_MB), [`COLLECTION_MAX_MB`](configuration.md#COLLECTION_MAX_MB)…). A file sent in parts is checked against its SHA-256 and against the free room before it is accepted.
 - **Time**: an analysis that stalls is killed with everything it started.
 - **SQLite files** are opened read-only, schema untrusted, with a time budget and a row limit.
 - **Names** from evidence never become paths or commands: files are stored under their SHA-256 or an id; download names are cleaned.
 - **E-mail**: HTML sanitised on the server; only the first five DKIM signatures verified; an image declaring a huge size refused before decoding.
 - **Reports**: every value escaped; the PDF renderer fetches nothing.
 - **Script signatures**: a pattern too slow on hostile text is refused when saved; a match stops after half a second.
+- **Host evidence is read in a process of its own for each file**, with its memory and CPU time bounded, in a container with no route out, a read-only root and no capabilities. A file made to crash a parser ends that process: the file is reported as read in part, with what was read before, and the worker goes on.
+- **Untrusted YAML and zips are handled in child processes with limits**, never in the server. The YAML of a Sigma rule is read by pySigma in a short process of its own, with a time bound, when it is checked or tried. A collection (a KAPE or Velociraptor zip) is opened only by the worker, in a process of its own: no member's name is ever a path (members are written under a number), a symbolic link is skipped, a member above its size limit or one that expands more than 2,000 times is skipped, an archive inside it is listed and not opened, an encrypted member is skipped, 20,000 members at most. What was not read is said in the report.
+- **A search in a file** (text or hex) has a time budget and a limit of matches; the answer says when it stopped short.
 - **Archives** unpacked by a playbook: in memory, 200 members at most, never written to disk or opened; a member's name is never a path.
 - **Content packs**: at most 20 MB and 2,000 files, 100 MB unpacked, no path leaving the pack, YAML read without building objects. A pack never carries an instance, a credential, an allowed host or an opened class of data.
 - **The pack catalogue** is read only when its index carries an Ed25519 signature of the key Nik holds; each pack must match the size and SHA-256 of the signed index. Packs from `NIK_PACKS_DIR` are not checked.
@@ -51,8 +55,8 @@ The **isolated browser** is the one part that runs attacker code on purpose. Wit
 - **A picture, not the page**: the isolated browser sends screenshots; documents are page images.
 - **Hostile HTML** (an e-mail body, a captured page) is drawn in a frame that runs no script and loads nothing. Remote images load only when asked, tracking pixels never.
 - **Addresses** are not links: opening one asks first and shows it defanged.
-- **Samples** are downloaded only inside a password-protected zip (`infected` by default).
-- The app sends a Content-Security-Policy that runs only its own scripts and talks only to its own origin, plus `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and HSTS. The session cookie is `HttpOnly`, `Secure`, `SameSite=Lax`. The pages load nothing from outside: no CDN, no fonts, no telemetry.
+- **Samples** are downloaded only inside a password-protected zip (`infected` by default). So is **the original of a file of host evidence**, which can hold credentials, mail and history: it needs its own permission, `evidence.download` (the role **evidence**), and every download is in the audit log.
+- The app sends a Content-Security-Policy that runs only its own scripts (no WebAssembly: 7.0 took `'wasm-unsafe-eval'` out) and talks only to its own origin, plus `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and HSTS. The session cookie is `HttpOnly`, `Secure`, `SameSite=Lax`. The pages load nothing from outside: no CDN, no fonts, no telemetry.
 
 ## What leaves the server
 
@@ -67,6 +71,8 @@ Nothing, unless one of these is turned on or asked for.
 | Playbook nodes (connectors, HTTP, e-mail) | A run reaches the node, after approval if asked | The request, to the instance's host or a host the playbook may reach, if the classes of data it holds may leave |
 | Backup copies and archive | A destination is set | Sealed files over SFTP to the pinned host |
 | The audit log | Forwarding is set | Each entry to the syslog receiver |
+
+A server that is a **copy** of another (`NIK_COPY=true`, for [trying a release](../admin/try-on-a-copy.md)) sends none of these: every door to the outside is shut where it would open, and the screens say **COPY of** the name of the original.
 
 Indicators Nik finds by itself as incidents come in start no look-up unless an admin allows it in **Indicators found**. The data guard reads addresses, names and e-mail addresses: a token or customer number in the path of a link has no class and leaves with the link.
 
@@ -146,12 +152,12 @@ The stack does not start without `DB_PASSWORD`, `SECRET_KEY`, `STORE_KEY` and a 
 
 ### The store of files, encrypted
 
-Samples, e-mails, captures, mailboxes, previews, screenshots and rule files are encrypted on disk.
+Samples, e-mails, **the originals of host evidence**, captures, mailboxes, previews, screenshots and rule files are encrypted on disk.
 
 - **How.** Each file has its own random key; content in 64 KB chunks with AES-256-GCM; the file key wrapped in the file's head under a key derived from `STORE_KEY` (HKDF-SHA256). Primitives from the `cryptography` package.
 - **A changed file is not served.** Each chunk is authenticated with its position, whether it is last, and the file's path: a byte changed, a chunk moved, a file cut or swapped all fail. The answer is an error (`file_damaged`), the audit log gets `store.damaged`, admins are told.
-- **Who holds the key: the backend alone.** Workers never mount the store; the backend sends the file a job needs, kept in memory. The `automation` worker asks the backend for a file with a short-lived proof.
-- **What is in clear, and where:** a sample in a worker's memory while analysed; a capture over 64 MB on `pcap-work` while open; a PST on `pst-work` while converted; an upload in the backend's memory before it is sealed. A host with swap may write memory to disk: encrypt the swap.
+- **Who holds the key: the backend alone.** Workers never mount the store; the backend sends the file a job needs, kept in memory (the forensics worker keeps it on its work volume, below). The `automation` worker asks the backend for a file with a short-lived proof.
+- **What is in clear, and where:** a sample in a worker's memory while analysed; a capture over 64 MB on `pcap-work` while open; **an original of host evidence on `forensics-work` while the forensics worker reads or shows it, and until nobody has asked for it for 15 minutes** (`FORENSICS_FILE_IDLE`), emptied when the worker starts; a PST on `pst-work` while converted; an upload in the backend's memory before it is sealed. A host with swap may write memory to disk: encrypt the swap.
 - **What whoever has the disk still learns:** how many files, of which kind, their sizes and dates, and the SHA-256 of samples and e-mails (their file names). **The database is not encrypted by Nik**: incidents, analysis results and the audit log are in PostgreSQL in clear. Encrypt the host disk to cover them.
 - **The key must not sit on the disk it protects**: point `NIK_SECRETS_DIR` elsewhere when a stolen host is the fear.
 - **Deleting** removes the file and its key with it; it does not promise the blocks are unrecoverable on an SSD.
@@ -164,6 +170,7 @@ Asked for in the app by a signed-in admin (password and code again), carried out
 
 - **Always encrypted**: AES-256-GCM in 1 MB authenticated chunks, under a key derived with scrypt from the backup passphrase. A changed, reordered or truncated file is refused before anything is restored.
 - **The passphrase is not `SECRET_KEY`**: a backup is readable on a host that never had the server's keys. It is kept in the database under `SECRET_KEY` so scheduled backups can run; no route returns it.
+- **The pool** (7.0): the samples, e-mails and originals named by their SHA-256 are written once, in a folder `pool-<id>` beside the backups, each as a file in the backup's format, encrypted under a key of the pool. The key is made by the server, kept under `SECRET_KEY` and carried by each backup that names the pool, so the backup, its passphrase and the folder are all a restore needs. Another passphrase starts another pool: a passphrase given up cannot open what is written after it. A restore refuses before changing anything when a file the backup names is not in the folder.
 - **A backup does not need the store key**: files are decrypted as read and encrypted again under the passphrase. A restore seals them under the restoring server's key.
 - **Including `SECRET_KEY`** (off by default) trades one risk for another: a backup and its passphrase then read every stored secret.
 - **The copy off the server** goes from `automation` over SFTP to a host whose key an admin pinned; no trust on first use. The second host can delete or withhold a backup, not read one.
@@ -197,19 +204,23 @@ Asked for in the app by a signed-in admin (password and code again), carried out
 - List the administrators' networks only after checking the address the server sees you at.
 - Give accounts and keys the narrowest roles (**viewer** for a key that only reads) and keys an expiry. Keep **admin** for the few who run the platform.
 - Give **playbooks** only to those who write automation. Read the audit log for `automation.egress.open` and `automation.data.open`.
+- Give the role **evidence** (download of an original) and **archive** only to those who need them. Read the audit log for `evidence.*` entries.
+- Keep the `pool-*` folders with the backups wherever you copy them, and try a release on [a copy](../admin/try-on-a-copy.md) before the real server changes.
 - Upgrade regularly: rebuilding the images brings the fixes of LibreOffice, Wireshark and Chromium.
 
 ## Known limits
 
 - Chromium runs with `--no-sandbox`: its sandbox needs privileges the container does not give, so the container is the sandbox.
-- The backend parses some formats itself (e-mails, event logs, PE headers, YARA, QR codes) in a hardened but not disposable container that holds the database password.
+- The backend parses some formats itself (e-mails, PE headers, YARA, QR codes) in a hardened but not disposable container that holds the database password. Host evidence is not one of them: the forensics worker holds no password and has no route to the database.
 - In a browser session without network, requests are refused by the interception, not the proxy.
 - A backup is as recent as the schedule; the archive closes the gap only once it leaves the host. No streaming replication.
 - The archive and base backups on the server are in clear. A standby holds every key. A server that cannot reach the second host cannot know it was replaced, and one that takes over does not know what the other did in other systems in its last moments.
 - A store file rewritten in place exists in one version: a recovery brings the database of the moment and the latest content of such a file.
 - The store is encrypted at rest; the database is not.
 - The store key protects against whoever has the disk and not the key: on the same disk, it does not protect a host stolen whole.
-- Large captures and PSTs are in clear on a work volume while read.
+- Large captures and PSTs are in clear on a work volume while read, and so is an original of host evidence, on the work volume of the forensics worker, for as long as it is used and 15 minutes after.
+- A host evidence parser is a hardened process, not a proof: a flaw in a library (EVTX, registry, NTFS, SQLite…) is contained to the process and the container, which has no route out. Results of a parser are checked against what the file holds by a count of its own, and what could not be read is said; Nik has been tried on real files for EVTX, `$MFT`, hives, Prefetch, LNK, jump lists and SRUM, and on generated ones for the others (the guide's host pages say which).
+- A copy of a server holds the real data and every stored secret it can read: it reaches nothing, and it must be thrown away and its backup file removed when the test is done.
 - There is no client for an external secrets manager (`backend/app/core/keys.py` is where one would go).
 - A database holding anything Nik does not make (a view, a trigger of yours) is refused by the backups.
 - Under rootless Podman and Docker Desktop, administrators' networks cannot be used and failures are counted per account only.

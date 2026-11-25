@@ -116,7 +116,7 @@ A standby runs the same stack with a database that replays the log the first hos
 
     ```sh
     git clone https://github.com/n36l3c7/Nik.git /opt/Nik && cd /opt/Nik
-    git checkout v6.11.0                                   # the version the first host runs
+    git checkout v7.0.0                                    # the version the first host runs
     deploy/init-env.sh
     $EDITOR .env                                           # TLS_HOSTNAME, ports
     deploy/standby.sh secrets import nik-keys.txt
@@ -173,7 +173,7 @@ Any host that can read the directory of the copies can bring the server back, wi
 
     ```sh
     git clone https://github.com/n36l3c7/Nik.git /opt/Nik && cd /opt/Nik
-    git checkout v6.11.0
+    git checkout v7.0.0
     deploy/init-env.sh
     $EDITOR .env                   # TLS_HOSTNAME, ports
     ```
@@ -196,14 +196,14 @@ Any host that can read the directory of the copies can bring the server back, wi
 
 When there is no archive on the second host, or the store key was lost with the first host (a backup needs only its passphrase).
 
-You need: Docker or Podman and git, the backups received (`/srv/nik-backups/incoming`), the backup passphrase, and the first host's `SECRET_KEY` with its `AUDIT_KEY` and `AUDIT_KEY_PREVIOUS` (or a backup that includes the key).
+You need: Docker or Podman and git, the backups received (`/srv/nik-backups/incoming`, with the `pool-*` folders beside them from 7.0), the backup passphrase, and the first host's `SECRET_KEY` with its `AUDIT_KEY` and `AUDIT_KEY_PREVIOUS` (or a backup that includes the key).
 
 1. Get the code at the version that took the backup or later (the `.json` beside each backup names it):
 
     ```sh
     git clone https://github.com/n36l3c7/Nik.git /opt/Nik && cd /opt/Nik
     grep '"nik"' /srv/nik-backups/incoming/nik-20261120-023000.json
-    git checkout v6.11.0
+    git checkout v7.0.0
     ```
 
 2. Make this host's settings, then put the old keys in (skip if the backup holds the key):
@@ -223,6 +223,13 @@ You need: Docker or Podman and git, the backups received (`/srv/nik-backups/inco
     sudo chmod 644 /srv/nik-restore/nik-20261120-023000.nikbak
     deploy/restore.sh /srv/nik-restore/nik-20261120-023000.nikbak
     # with the key inside the backup:  deploy/restore.sh --secret-key /srv/nik-restore/nik-….nikbak
+    ```
+
+    **A backup made by 7.0 needs its pool.** The files it names are in a folder `pool-<id>` beside it on the second host. A second name is not enough for a folder: copy it into the open folder too, and open it to the restore, which runs as a user that is nobody on the host. Without it the restore stops before changing anything and names what is missing ([The pool beside the backups](backups.md#the-pool-beside-the-backups)).
+
+    ```sh
+    sudo cp -r /srv/nik-backups/incoming/pool-* /srv/nik-restore/
+    sudo chmod -R a+rX /srv/nik-restore
     ```
 
 4. Sign in with an account of the first host (password, second factor and recovery codes as they were). Check incidents, a file of the store, **Workers**, an instance of a connector, and **Keys** (no audit entry should be unchecked).
@@ -254,7 +261,7 @@ To swap roles back later: stop the server, promote the standby, rejoin the other
 
 **The standby first, then the server.** Never the other way.
 
-1. On the standby: `git pull`, then `docker compose up -d --build db recovery api web`. It migrates nothing.
+1. On the standby: `git pull`, then `docker compose up -d --build db recovery api web`. It migrates nothing. For 7.0 run `deploy/init-env.sh` first on both hosts: the Compose file asks `api` for `FORENSICS_TOKEN`, even on a standby that starts no `forensics` container.
 2. On the server: `git pull`, then `docker compose up -d --build`. The snapshot, rehearsal and migrations run there.
 3. The migration reaches the standby through the log.
 

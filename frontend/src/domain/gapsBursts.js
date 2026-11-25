@@ -149,3 +149,36 @@ export function burstBars(bursts = [], strip) {
   }
   return marked
 }
+
+const DAY = 86_400_000
+
+/**
+ * One very old (or very new) record stretches the density to years and the rest sits in a few bars. When the
+ * axis is long (`minDays`) and the shortest run of bars that holds `share` of the records is at most `maxPart`
+ * of it, that run is offered as a range: `{ start, end, outside, days }` (`outside` records are left out of it), else
+ * null. Nothing is hidden: the range is only offered, the strip is not changed. `strip` is a strip on a grid.
+ */
+export function denseRange(strip, { share = 0.95, minDays = 14, maxPart = 0.25 } = {}) {
+  const bars = strip?.bars ?? []
+  if (bars.length < 8 || !(strip.width > 0)) return null
+  const counts = bars.map((bar) => bar.host + bar.docs)
+  const total = counts.reduce((sum, n) => sum + n, 0)
+  if (total === 0 || axisEnd(strip) - strip.from < minDays * DAY) return null
+  const need = Math.ceil(total * share)
+  // The shortest window of bars with `need` records: two pointers, each bar enters once.
+  let best = null
+  let held = 0
+  let left = 0
+  for (let right = 0; right < counts.length; right += 1) {
+    held += counts[right]
+    while (left <= right && held - counts[left] >= need) {
+      held -= counts[left]
+      left += 1
+    }
+    if (held >= need && (best === null || right - left < best.right - best.left)) best = { left, right, held }
+  }
+  if (best === null || (best.right - best.left + 1) / bars.length > maxPart) return null
+  const start = bars[best.left].t
+  const end = bars[best.right].t + strip.width - 1
+  return { start, end, outside: total - best.held, days: Math.max(1, Math.round((end - start + 1) / DAY)) }
+}

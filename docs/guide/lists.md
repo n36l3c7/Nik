@@ -1,6 +1,6 @@
 # Lists and the allowlist
 
-Keep the values that features and playbooks read by a name (the allowlist, your domains, your mail servers, keywords, hosts) in lists you can edit, import, export and swap.
+Keep the values that features and playbooks read by a name (the allowlist, your domains, your mail servers, hosts) in lists you can edit, import, export and swap.
 
 !!! note "You need"
     **Platform settings › Lists › Lists** is for who manages lists: the **playbooks** role, or an admin (permission `lists.manage`).
@@ -34,14 +34,13 @@ The items of a list of values or of keys are of one type: **Text**, **Domains**,
 
 ## The lists Nik ships
 
-| List | Name | Kind | Read by |
-|---|---|---|---|
-| **IoC allowlist** | `ioc_allowlist` | Values (indicators) | [The allowlist](#the-ioc-allowlist) |
-| **Your organisation's domains** | `internal_domains` | Values (domains) | [Mail analysis](mail.md#what-the-mail-settings-change), the data guard |
-| **Trusted mail servers** | `mail_trusted_auth_servers` | Values (hosts) | [Mail analysis](mail.md#what-the-mail-settings-change) |
-| **Suspicious keywords** | `suspicious_keywords` | Keys and values (label, pattern, severity, description) | [Detection rules](detection.md) |
-| **Business hours** | `business_hours` | One document (hours in UTC) | Business hours, SLA timers |
-| **Hosts every playbook may reach** | `automation_hosts` | Values (hosts) | **Network and data** of Automation |
+| List                               | Name                        | Kind                                         | Read by                                                                |
+| ---------------------------------- | --------------------------- | -------------------------------------------- | ---------------------------------------------------------------------- |
+| **IoC allowlist**                  | `ioc_allowlist`             | Values (indicators)                          | [The allowlist](#the-ioc-allowlist)                                    |
+| **Your organisation's domains**    | `internal_domains`          | Values (domains)                             | [Mail analysis](mail.md#what-the-mail-settings-change), the data guard |
+| **Trusted mail servers**           | `mail_trusted_auth_servers` | Values (hosts)                               | [Mail analysis](mail.md#what-the-mail-settings-change)                 |
+| **Business hours**                 | `business_hours`            | One document (the hours and their time zone) | Business hours, SLA timers                                             |
+| **Hosts every playbook may reach** | `automation_hosts`          | Values (hosts)                               | **Network and data** of Automation                                     |
 
 They are yours to change. They cannot be deleted.
 
@@ -102,13 +101,12 @@ See [Playbook nodes and expressions](../reference/playbook-nodes.md).
 
 Each feature that reads a list says which one, in its own section of **Platform settings**:
 
-| Section | The line |
-|---|---|
-| **Analysis › Detection rules** | **Keywords: reads the list** |
-| **Analysis › Business hours** | **Hours: reads the list** |
-| **Analysis › Mail analysis** | **Your organisation's domains: reads the list**, **Your mail servers and gateways: reads the list** |
-| **Indicators › IOC allowlist** | **Allowlist: reads the list** |
-| **Automation › Network and data** | **Hosts: reads the list** |
+| Section                           | The line                                                                                            |
+| --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Analysis › Business hours**     | **Hours: reads the list**                                                                           |
+| **Analysis › Mail analysis**      | **Your organisation's domains: reads the list**, **Your mail servers and gateways: reads the list** |
+| **Indicators › IOC allowlist**    | **Allowlist: reads the list**                                                                       |
+| **Automation › Network and data** | **Hosts: reads the list**                                                                           |
 
 1. Make the other list, of the same kind as the one the feature reads.
 2. In the feature's section, choose it in the select of **…: reads the list**.

@@ -10,6 +10,7 @@ import {
   importPercent,
   importText,
   kindOptions,
+  leftOut,
   memberState,
   memberTabs,
   placeOf,
@@ -17,7 +18,6 @@ import {
   whatOf,
   whoOf,
 } from '../../domain/collections.js'
-import { reasonRows } from '../../domain/sourceFiles.js'
 import { sizeText } from '../../domain/transfers.js'
 import { closeCollection, collectionOpen, subscribeCollection } from '../../lib/collectionDialog.js'
 import { noteEvidenceChanged } from '../../lib/useEvidenceSummary.js'
@@ -193,7 +193,7 @@ function CollectionDialog({ incidentId, sourceId }) {
       return next
     })
 
-  const skipped = reasonRows(collection?.report)
+  const skipped = leftOut(collection?.report)
   const info = collection?.members
   const listing = collection?.state === 'listing' || (!collection && !state.error)
   const failed = collection?.state === 'failed'
@@ -438,20 +438,38 @@ function CollectionDialog({ incidentId, sourceId }) {
               )}
             </div>
 
-            {skipped.length > 0 && (
+            {skipped.rows.length > 0 && (
               <section aria-label="What was left out" className="space-y-1.5">
-                <h4 className="text-sm font-semibold">Left out, and why</h4>
+                <h4 className="text-sm font-semibold">
+                  Left out, and why{' '}
+                  <span className="font-normal text-fg-muted">
+                    ({skipped.total.toLocaleString('en-US')} {skipped.total === 1 ? 'member' : 'members'})
+                  </span>
+                </h4>
                 <ul className="divide-y divide-line-soft border border-line text-[13px]">
-                  {skipped.map((row) => (
+                  {skipped.rows.map((row) => (
                     <li key={row.reason} className="flex flex-wrap items-baseline gap-x-3 px-3 py-1.5">
                       <span className="font-mono text-xs tabular-nums text-fg-muted">
-                        {row.records.toLocaleString('en-US')}
+                        {row.members.toLocaleString('en-US')}
                       </span>
                       <span className="min-w-0 flex-1 break-words">{row.reason}</span>
-                      {row.detail && <span className="break-all font-mono text-xs text-fg-muted">{row.detail}</span>}
+                      {row.path && <span className="break-all font-mono text-xs text-fg-muted">{row.path}</span>}
+                      {row.more > 0 && (
+                        <span className="text-xs text-fg-muted">+ {row.more.toLocaleString('en-US')} more</span>
+                      )}
                     </li>
                   ))}
                 </ul>
+                <button
+                  type="button"
+                  className="text-xs text-link underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  onClick={() => {
+                    setStatus('skipped')
+                    setPicked(new Set())
+                  }}
+                >
+                  List the skipped members
+                </button>
               </section>
             )}
           </>

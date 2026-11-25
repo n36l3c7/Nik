@@ -11,7 +11,7 @@ Install Nik for a team, keep it safe and backed up, bring it back after a failur
 
     ---
 
-    Docker or Podman, rootless, behind a proxy, your own TLS certificate, start on boot. The services and their ports.
+    Docker or Podman, rootless, behind a proxy, your own TLS certificate, start on boot. The services (the forensics worker among them) and their ports.
 
 -   :material-tune: **[Configuration](configuration.md)**
 
@@ -29,7 +29,7 @@ Install Nik for a team, keep it safe and backed up, bring it back after a failur
 
     ---
 
-    The backups Nik takes and tests by itself, the copy to a second host, restoring, and the export of content.
+    The backups Nik takes and tests by itself, the pool of files beside them, the copy to a second host, restoring, and the export of content.
 
 -   :material-history: **[Recovery and standby](recovery.md)**
 
@@ -41,7 +41,13 @@ Install Nik for a team, keep it safe and backed up, bring it back after a failur
 
     ---
 
-    How an upgrade runs (snapshot, rehearsal, migrations), how to roll back, and what each release asks of you.
+    How an upgrade runs (snapshot, rehearsal, migrations), how to roll back, and what each release asks of you, 7.0 included.
+
+-   :material-content-copy: **[Try a release on a copy](try-on-a-copy.md)**
+
+    ---
+
+    Restore a production backup into a second stack that reaches nothing outside, and rehearse an upgrade on your own data.
 
 -   :material-heart-pulse: **[Health and audit](health.md)**
 
@@ -77,4 +83,5 @@ Then, in this order:
 - [Get started: Install](../get-started/install.md) — a first try on one machine
 - [Environment variables](../reference/configuration.md) — every variable, with its default
 - [Security](../reference/security.md) — the threat model and the hardening checklist
+- [Try a release on a copy](try-on-a-copy.md) — rehearse an upgrade on your own data
 - [Architecture](../reference/architecture.md) — what runs where

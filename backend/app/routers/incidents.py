@@ -43,7 +43,7 @@ from ..automation import triggers
 from ..browser_profiles import normalize_browser_data
 from ..core import audit
 from ..core.config import settings
-from ..core.db import SessionLocal, get_db
+from ..core.db import SessionLocal, get_db, without_statement_limit
 from ..core.files import read_upload
 from ..core.locking import lock_incident
 from ..core.models import EvidenceSource, IdempotencyRecord, Incident, IocEntry, Job
@@ -646,6 +646,7 @@ def remove_incident(db: OrmSession, row: Incident, actor: str) -> str:
     its name. What the route does, and what a bulk delete does to each one."""
     incident_id = row.id
     name = (row.doc or {}).get("name") or incident_id
+    without_statement_limit(db)  # its records go with it: millions of rows take longer than one statement may
     audit.record(db, actor, "incident.delete", f'Deleted incident "{name}"', row)
     db.execute(delete(IocEntry).where(IocEntry.incident_id == incident_id))
     from .artifacts import remove_incident_artifacts

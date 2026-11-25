@@ -76,6 +76,7 @@ import { uploadFile } from './lib/chunkedUpload.js'
 import { appDropHeld } from './lib/dropOwner.js'
 import CollectionHost from './components/evidence/CollectionDialog.jsx'
 import { useHostFileSender } from './lib/useHostFileSender.js'
+import { ignoreGoneRejections, onIncidentGone } from './lib/incidentGone.js'
 import { noteEvidenceChanged } from './lib/useEvidenceSummary.js'
 import ApprovalBanner from './components/automation/ApprovalBanner.jsx'
 import RunPlaybookDialog from './components/automation/RunPlaybookDialog.jsx'
@@ -211,9 +212,21 @@ export default function App() {
     selectIncident,
     activeIncidentId,
     retryActiveIncident: reloadActiveIncident,
+    incidentGone,
   } = useIncidents()
   const artifacts = useArtifacts()
   const { showToast } = useToast()
+  // An incident deleted in another window: the first request about it to fail brings the person back to the list.
+  useEffect(() => {
+    onIncidentGone((incidentId) => {
+      if (incidentGone(incidentId)) showToast({ message: 'The incident was deleted' })
+    })
+    window.addEventListener('unhandledrejection', ignoreGoneRejections)
+    return () => {
+      onIncidentGone(null)
+      window.removeEventListener('unhandledrejection', ignoreGoneRejections)
+    }
+  }, [incidentGone, showToast])
   const { openIoc } = useIocLookup()
   // The main area shows an artifact on its own instead of the active incident.
   const artifactOpen = Boolean(artifacts.currentId)

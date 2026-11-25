@@ -9,7 +9,7 @@ import { LevelFilter, detectionsColumn } from '../../evidence/DetectionControls.
 import { useIncidents } from '../../../context/IncidentContext.jsx'
 import { detectionTone, levelsText, summedByLevel, totalOf } from '../../../domain/detections.js'
 import { ARCHIVED_RECORDS_NOTE } from '../../../domain/archive.js'
-import { burstBars, durationText, gapBands, onGrid } from '../../../domain/gapsBursts.js'
+import { burstBars, denseRange, durationText, gapBands, onGrid } from '../../../domain/gapsBursts.js'
 import { hostCounts } from '../../../domain/evidence.js'
 import {
   HOST_KIND_META,
@@ -298,6 +298,7 @@ export default function TimelineTab({ incident }) {
     [histogram, thresholds.show],
   )
   const bands = useMemo(() => gapBands(marks.gaps, strip), [marks, strip])
+  const dense = useMemo(() => denseRange(strip), [strip])
   const burstMarks = useMemo(() => burstBars(marks.bursts, strip), [marks, strip])
   const spanLabel = useMemo(() => {
     if (strip.bars.length === 0) return '—'
@@ -517,6 +518,17 @@ export default function TimelineTab({ incident }) {
           {rangeBar}
           <GapControls thresholds={thresholds} onChange={setThresholds} />
           <Density strip={strip} onPick={setRange} gaps={bands} bursts={burstMarks} />
+          {dense && (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]" role="status">
+              <span>
+                Most records are between {formatDateTime(dense.start)} and {formatDateTime(dense.end)}
+                {dense.outside > 0 ? ` (${dense.outside.toLocaleString('en-US')} outside)` : ''}.
+              </span>
+              <Button variant="secondary" size="xs" onClick={() => setRange({ start: dense.start, end: dense.end })}>
+                Show that range
+              </Button>
+            </p>
+          )}
           {thresholds.show && strip.bars.length > 0 && (
             <GapList gaps={marks.gaps} bursts={marks.bursts} width={histogram?.width ?? 0} onPick={setRange} />
           )}

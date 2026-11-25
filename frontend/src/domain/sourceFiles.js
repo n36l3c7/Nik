@@ -62,6 +62,24 @@ export function keptText(source) {
   return `${number(source.kept)} / ${number(source.inFile)}`
 }
 
+/**
+ * How many entries of a file that was read whole are not records of their own (an `$MFT` entry without a name, a
+ * continuation, a damaged one are "in file" and not records), or 0. Duplicates are told apart: they have their own
+ * number. A collection counts its members, not records.
+ */
+export function notRecords(source) {
+  if (!source || source.read !== 'complete' || source.kind === 'collection' || source.legacy) return 0
+  if (!Number.isInteger(source.kept) || !Number.isInteger(source.inFile)) return 0
+  return Math.max(0, source.inFile - source.kept - (source.duplicates > 0 ? source.duplicates : 0))
+}
+
+/** The sentence under the count of a row that has some: "6 in the file are not records of their own: see the report". */
+export function notRecordsText(source, see = 'the report') {
+  const n = notRecords(source)
+  if (n === 0) return ''
+  return `${number(n)} in the file ${n === 1 ? 'is not a record' : 'are not records'} of their own: see ${see}`
+}
+
 /** The first characters of a SHA-256, as the table shows them. */
 export const shortHash = (sha256, length = 12) => (sha256 ? sha256.slice(0, length) : '')
 

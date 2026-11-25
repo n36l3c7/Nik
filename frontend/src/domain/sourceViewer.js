@@ -197,3 +197,66 @@ export function copyTextOf(answer) {
   if (answer.kind === 'fields') return (answer.rows ?? []).map(([name, value]) => `${name}: ${value}`).join('\n')
   return String(answer.text ?? '')
 }
+
+/** How many matches one search asks for (the API's default is 100, its ceiling 200). */
+export const FIND_LIMIT = 100
+
+const ENCODING_NAMES = { 'utf-8': 'UTF-8', 'utf-16le': 'UTF-16', hex: 'bytes' }
+
+/** One match of the whole-file search as a line: "0x000012A0 · UTF-16 · 24 bytes". */
+export function matchLine(match) {
+  const name = ENCODING_NAMES[match.encoding] ?? match.encoding ?? ''
+  return [hexOffset(match.offset), name, `${match.length} byte${match.length === 1 ? '' : 's'}`]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/**
+ * What to tell under a search answer (`{ matches, next, cut }`). `more` is where "Next matches" goes on from.
+ * A search is cut either because it found `limit` matches (then there are more, and nothing else to say) or
+ * because the worker's clock ran out before the end of the file: that one gets a sentence of its own.
+ */
+export function findSummary(answer, limit = FIND_LIMIT) {
+  const matches = answer?.matches ?? []
+  const more = Number.isInteger(answer?.next) ? answer.next : null
+  const timedOut = Boolean(answer?.cut) && matches.length < limit
+  const sentence = timedOut
+    ? `The search stopped at its time limit, at ${hexOffset(more ?? 0)}: "Next matches" goes on from there.`
+    : matches.length === 0
+      ? 'Not found in this file.'
+      : more !== null
+        ? `${matches.length} matches shown, there are more.`
+        : `${matches.length} match${matches.length === 1 ? '' : 'es'}.`
+  return { matches, more, timedOut, note: sentence }
+}
+
+/** Where, in the text of a page, a match lies: `[from, to)` in characters, from the bytes it covers. */
+export function charRange(text, pageOffset, matchOffset, matchLength) {
+  const from = matchOffset - pageOffset
+  const to = from + matchLength
+  if (to <= 0 || matchLength <= 0) return null
+  const encoder = new TextEncoder()
+  let bytes = 0
+  let start = null
+  let end = null
+  let index = 0
+  for (const char of text) {
+    const size = char === '�' ? 1 : encoder.encode(char).length // a broken byte shows as one replacement
+    if (start === null && bytes + size > from) start = index
+    bytes += size
+    index += char.length
+    if (start !== null && bytes >= to) {
+      end = index
+      break
+    }
+  }
+  if (start === null) return null
+  return { from: start, to: end ?? index }
+}
+
+/** The rows (of 16 bytes) of a hex dump that start at `pageOffset` and hold bytes of the match: `[first, last]`. */
+export function markedRows(pageOffset, matchOffset, matchLength) {
+  const first = Math.max(0, Math.floor((matchOffset - pageOffset) / ROW))
+  const last = Math.floor((matchOffset + Math.max(1, matchLength) - 1 - pageOffset) / ROW)
+  return last < 0 ? null : [first, last]
+}

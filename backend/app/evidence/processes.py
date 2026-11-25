@@ -80,10 +80,11 @@ def _insert(db: OrmSession) -> Any:
     return postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
 
 
-def _placed(db: OrmSession, incident_id: str, keys: set[str]) -> dict[str, int]:
-    """The ids of the records of the incident with these keys, whichever file of it holds them."""
-    found: dict[str, int] = {}
-    for part in _parts(sorted(keys)):
+def _placed(db: OrmSession, incident_id: str, keys: set[str], known: dict[str, int] | None = None) -> dict[str, int]:
+    """The ids of the records of the incident with these keys, whichever file of it holds them. ``known`` are
+    some of them already (the batch just stored): they are not asked for."""
+    found: dict[str, int] = {key: known[key] for key in keys if known and key in known}
+    for part in _parts(sorted(keys - found.keys())):
         rows = db.execute(
             select(EvidenceRecord.key, EvidenceRecord.id).where(
                 EvidenceRecord.incident_id == incident_id, EvidenceRecord.key.in_(part)
@@ -135,13 +136,14 @@ class Held:
         return len(self.procs) + len(self.ends) + len(self.logons) >= PENDING_MAX
 
     # ---- writing
-    def write(self, db: OrmSession) -> None:
-        """Write what is held (the caller commits). The records the lines name are stored by now."""
+    def write(self, db: OrmSession, known: dict[str, int] | None = None) -> None:
+        """Write what is held (the caller commits). The records the lines name are stored by now; ``known`` holds
+        the ids of those the batch just stored, by key."""
         if not self:
             return
         procs, ends, logons = self.procs, self.ends, self.logons
         self.procs, self.ends, self.logons = [], [], []
-        placed = _placed(db, self.incident_id, {str(e.get("key")) for e in (*procs, *logons) if e.get("key")})
+        placed = _placed(db, self.incident_id, {str(e.get("key")) for e in (*procs, *logons) if e.get("key")}, known)
         if procs:
             self._write_processes(db, procs, placed)
         if logons:

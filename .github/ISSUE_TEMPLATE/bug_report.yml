@@ -12,7 +12,7 @@ body:
     attributes:
       label: Nik version
       description: Shown under the name on the sign-in page, or the tag you checked out.
-      placeholder: "6.11.0"
+      placeholder: "7.0.0"
     validations:
       required: true
   - type: dropdown

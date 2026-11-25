@@ -33,6 +33,7 @@
 
 import { CUT } from '../domain/transfers.js'
 import { noteForeground, requestIsBackground } from '../lib/activity.js'
+import { reportIncidentGone } from '../lib/incidentGone.js'
 import { queryString, recordFilters } from '../domain/evidenceQuery.js'
 import { saveUrl } from '../lib/download.js'
 
@@ -150,6 +151,7 @@ async function request(
       (payload && typeof payload.detail === 'string' && payload.detail) || `Request failed (${response.status})`
     reportUnauthorized(response.status, path)
     reportRefused(response.status, path, payload)
+    const incidentGone = reportIncidentGone(response.status, detail, path)
     // `query`: for a query that cannot be read, where and why (position, code, suggestion).
     // `data`: whatever else the server said (the problems of a playbook, the result of a script's test).
     throw Object.assign(new Error(detail), {
@@ -157,6 +159,7 @@ async function request(
       code: typeof payload?.code === 'string' ? payload.code : null,
       query: payload?.query ?? null,
       data: payload,
+      incidentGone,
     })
   }
 
@@ -340,6 +343,10 @@ export const evidence = {
   /** Bytes `[offset, offset + length)` of the original, `as` `hex` or `text`: `{ offset, length, size, as, data }`. */
   sourcePage: (incidentId, sourceId, { offset = 0, length = 65536, as = 'hex', signal } = {}) =>
     api.get(sourcePath(incidentId, sourceId, `/page${queryString({ offset, length, as })}`), { signal }),
+  /** Where a text (`as` `text`: UTF-8 and UTF-16, any case) or bytes (`hex`) are in the original, from `from` on:
+   *  `{ matches: [{ offset, length, encoding }], next, cut, size }`. */
+  sourceFind: (incidentId, sourceId, { q, as = 'text', from = 0, limit = 100, signal } = {}) =>
+    api.get(sourcePath(incidentId, sourceId, `/find${queryString({ q, as, from, limit })}`), { signal }),
   /** The original in an encrypted zip: the browser streams it to the disk (needs evidence.download). */
   downloadOriginal: (incidentId, source) => {
     saveUrl(`${BASE}${sourcePath(incidentId, source.id, '/download')}`, `${source.fileName || 'evidence'}.zip`)

@@ -35,7 +35,9 @@ hide:
 
     - [Your first incident in 10 minutes](get-started/first-incident.md)
     - [Analyse an e-mail](guide/mail.md), [a sample](guide/malware.md), [a capture](guide/network.md), [a link](guide/url.md)
+    - [Read the files of a machine](guide/host.md): [event logs](guide/eventlogs.md), [a triage collection](guide/collections.md)
     - [Indicators: find, check, share](guide/indicators.md)
+    - [Detection with Sigma rules](guide/detection.md#sigma-rules)
     - [Act on many incidents at once](guide/bulk.md)
     - [Write your first playbook](guide/playbooks.md)
 
@@ -82,6 +84,18 @@ hide:
     Static analysis, YARA, capa and a disassembler. Samples are never executed.
 
     [Malware →](guide/malware.md)
+
+-   **Host evidence**
+
+    Event logs, registry, Prefetch, `$MFT`, browser history and whole triage zips, kept as given and read in an isolated worker. Every record opens its original.
+
+    [Host evidence →](guide/host.md)
+
+-   **Detection**
+
+    Sigma rules run on every record as a file is read; write your own and try them on an incident.
+
+    [Detection →](guide/detection.md)
 
 -   **Network and links**
 

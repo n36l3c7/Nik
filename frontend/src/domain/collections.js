@@ -165,3 +165,23 @@ export function placedText(fileName, kind) {
   const place = placeOf(kind)
   return place ? `${fileName} → ${place.label}` : fileName
 }
+
+/**
+ * "Left out, and why" of a collection: one row for each reason, with how many members it holds. A member is
+ * skipped once (the report counts one skip for it), so the rows add up to the "Skipped" tab: `total` is that sum
+ * and `more` says how many members of a row the single example path does not show.
+ */
+export function leftOut(report) {
+  const rows = Object.entries(report?.reasons ?? {})
+    .map(([reason, held]) => {
+      const members = held.count ?? 0
+      return {
+        reason,
+        members,
+        path: held.examples?.[0]?.detail ?? '',
+        more: Math.max(0, members - 1), // one example path is shown
+      }
+    })
+    .sort((a, b) => b.members - a.members || a.reason.localeCompare(b.reason))
+  return { rows, total: rows.reduce((sum, row) => sum + row.members, 0) }
+}

@@ -11,6 +11,7 @@ import {
   isCollection,
   isWorking,
   kindOptions,
+  leftOut,
   looksLikeCollection,
   memberState,
   memberTabs,
@@ -120,4 +121,27 @@ test('where a file went is told with the page it is on', () => {
   assert.equal(placeOf('nothing'), null)
   assert.equal(placedText('Security.evtx', 'eventlog'), 'Security.evtx → Event Logs')
   assert.equal(placedText('x', 'nothing'), 'x')
+})
+
+test('what a collection left out is told by reason, and adds up to the skipped members', () => {
+  const report = {
+    reasons: {
+      'an archive inside the collection: it is not opened': {
+        count: 2,
+        lost: 0,
+        examples: [{ detail: 'C/inner.zip' }, { detail: 'C/other.zip' }],
+      },
+      'it is encrypted and the password is not known': { count: 5, lost: 0, examples: [{ detail: 'C/a.evtx' }] },
+    },
+  }
+  const { rows, total } = leftOut(report)
+  assert.equal(total, 7)
+  assert.deepEqual(
+    rows.map((row) => [row.members, row.path, row.more]),
+    [
+      [5, 'C/a.evtx', 4],
+      [2, 'C/inner.zip', 1],
+    ],
+  )
+  assert.deepEqual(leftOut(undefined), { rows: [], total: 0 })
 })

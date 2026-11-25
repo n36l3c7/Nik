@@ -181,7 +181,7 @@ def test_the_list_filters(week, admin: TestClient):
         return admin.get(f"{BASE}/logons", params=params).json()["count"]
 
     assert count(host="DC-1") == 4 and count(user="bob") == 2 and count(sourceIp="10.0.0.9") == 3
-    assert count(sourceHost="SRV-1") == 4 and count(outcome="failure") == 5 and count(outcome="failure,logoff") == 6
+    assert count(sourceHost="SRV-1") == 5 and count(outcome="failure") == 5 and count(outcome="failure,logoff") == 6
     assert count(logonType="10") == 3 and count(logonType="2,5") == 4 and count(logonType=["2", "5"]) == 4
     assert count(q="svc-back") == 4 and count(q="10.0.0") == 8 and count(q="no-such") == 0
     assert count(**{"from": T0 + 10_000, "to": T0 + 12_000}) == 3
@@ -368,3 +368,50 @@ def test_an_incident_with_no_logons_has_an_empty_graph(incident, admin: TestClie
     assert answer == {"nodes": [], "edges": [], "cut": False, "caps": {"nodes": 300, "edges": 1500}}
     assert admin.get(f"{BASE}/logons").json()["logons"] == []
     assert admin.get("/api/incidents/nope/evidence/logons/graph").status_code == 404
+
+
+def test_a_machine_named_with_and_without_its_domain_is_one_node(incident, monkeypatch, admin: TestClient):
+    long = "WKS-FIN-014.harbourline.example.org"
+    read(
+        incident,
+        monkeypatch,
+        [
+            logon(0, "SRV-1.harbourline.example.org", source_host=long),
+            logon(0, "srv-1", source_host="WKS-FIN-014", outcome="failure"),
+            logon(0, "SRV-1", source_host="wks-fin-014"),
+            # An address and a name are two nodes: nothing proves they are the same machine.
+            logon(0, "SRV-1", source_ip="10.0.0.7"),
+            logon(0, "SRV-1", source_host="10.0.0.8"),
+            # A machine reaching itself, named once with its domain and once without: no edge.
+            logon(0, "SRV-1", source_host="srv-1.harbourline.example.org"),
+        ],
+    )
+    answer = admin.get(f"{BASE}/logons/graph").json()
+    edges = edges_of(answer)
+    assert set(edges) == {
+        ("host:wks-fin-014", "host:srv-1"),
+        ("address:10.0.0.7", "host:srv-1"),
+        ("host:10.0.0.8", "host:srv-1"),
+    }
+    one = edges[("host:wks-fin-014", "host:srv-1")]
+    assert (one["count"], one["failed"]) == (3, 1)
+    nodes = {node["id"]: node for node in answer["nodes"]}
+    assert nodes["host:wks-fin-014"]["label"] == long
+    assert nodes["host:srv-1"]["label"] == "SRV-1.harbourline.example.org"
+    assert (nodes["host:srv-1"]["logonsIn"], nodes["host:wks-fin-014"]["logonsOut"]) == (5, 3)
+    assert nodes["host:srv-1"]["inEvidence"] is True and nodes["host:wks-fin-014"]["inEvidence"] is False
+    # What a click on a node asks (its label) finds the logons whatever way they spelled the machine.
+    for host in (long, "WKS-FIN-014", "srv-1"):
+        listed = admin.get(f"{BASE}/logons", params={"sourceHost": host}).json()["count"]
+        assert listed == (3 if host != "srv-1" else 1)
+    assert admin.get(f"{BASE}/logons", params={"host": "srv-1"}).json()["count"] == 6
+    assert admin.get(f"{BASE}/logons", params={"host": "SRV-1.other.example"}).json()["count"] == 6
+    assert admin.get(f"{BASE}/logons", params={"sourceHost": "10.0.0.8"}).json()["count"] == 1
+    assert admin.get(f"{BASE}/logons", params={"sourceHost": "10.0.0"}).json()["count"] == 0
+
+
+def test_the_short_id_of_a_host_follows_the_sql_rule():
+    assert lateral.short_id(" WKS-1.Corp.Example ") == "wks-1"
+    assert lateral.short_id("10.0.0.5") == "10.0.0.5"
+    assert lateral.short_id("fe80::1") == "fe80::1"
+    assert lateral.short_id("") == "" and lateral.short_id(None) == ""

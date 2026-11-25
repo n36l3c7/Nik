@@ -82,7 +82,7 @@ function useStackOptions(incidentId, field, refresh) {
  *   onMatterChange: (on: boolean) => void }} props
  * `sources`: the event-log sources, to say which file a record came from; `refresh` changes when
  * files were added or read, so the table and the lists of values load again. `matter` keeps to the events
- * that matter (the page owns it: the count of its tab follows it).
+ * that matter (the page owns it); `matterCount` of `total` events are such, and the page's tab counts them all.
  */
 export default function EventsSection({
   incident,
@@ -90,6 +90,8 @@ export default function EventsSection({
   canWrite,
   refresh,
   matter,
+  matterCount = null,
+  total = null,
   onMatterChange,
   focusRule = '',
   ruleTitles,
@@ -327,6 +329,11 @@ export default function EventsSection({
         <Star className="h-3.5 w-3.5" aria-hidden="true" />
         Events that matter
       </button>
+      {matter && matterCount !== null && total !== null && (
+        <span className="font-mono text-xs text-fg-muted">
+          {matterCount.toLocaleString('en-US')} of {total.toLocaleString('en-US')} events matter
+        </span>
+      )}
       {matter && (
         <Button variant="ghost" size="xs" onClick={() => onMatterChange(false)}>
           Show all events

@@ -8,7 +8,7 @@ The exact details: every variable, the query language, the playbook nodes, the e
 
     ---
 
-    Every variable of the backend, the Compose file, the workers and the scripts, with its default.
+    Every variable of the backend, the Compose file, the workers (the forensics worker too) and the scripts, with its default.
 
 -   :material-magnify: **[Query language](query-language.md)**
 
@@ -26,42 +26,42 @@ The exact details: every variable, the query language, the playbook nodes, the e
 
     ---
 
-    The events that start playbooks and webhooks, and what each carries.
+    The events that start playbooks and webhooks, and what each carries, `evidence.detected` included.
 
 -   :material-package-variant: **[Connector and pack format](connector-format.md)**
 
     ---
 
-    The YAML of a connector and the layout of a content pack.
+    The YAML of a connector and the layout of a content pack, with its Sigma rules.
 
 -   :material-api: **[API](api.md)**
 
     ---
 
-    Authentication, API keys, conventions, the main routes, bulk jobs and uploads.
+    Authentication, API keys, conventions, the main routes, host evidence (records, uploads in parts, Sigma rules, archive), bulk jobs and uploads.
 
 -   :material-shield-lock: **[Security](security.md)**
 
     ---
 
-    The threat model, how hostile content is contained, what leaves the server, the hardening checklist.
+    The threat model, how hostile content and host evidence are contained, what leaves the server, the hardening checklist.
 
 -   :material-layers-triple: **[Architecture](architecture.md)**
 
     ---
 
-    What runs where, the services, the data model, how each analysis works.
+    What runs where, the services, the data model, how each analysis works, how host evidence is read.
 
 -   :material-code-braces: **[Developer guide](developer.md)**
 
     ---
 
-    Local development, tests, and how to extend Nik.
+    Local development, tests, and how to extend Nik: a parser of host evidence, Sigma log sources, tabs, automation.
 
 </div>
 
 ## Related
 
 - [User guide](../guide/index.md) — how to work in Nik
-- [Run the server](../admin/index.md) — install, back up, upgrade
+- [Run the server](../admin/index.md) — install, back up, upgrade, try a release on a copy
 - [Changelog](../changelog.md)

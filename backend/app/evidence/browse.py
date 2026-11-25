@@ -18,7 +18,7 @@ import json
 import re
 from typing import Any
 
-from sqlalchemy import Boolean, String, and_, bindparam, case, func, or_, select
+from sqlalchemy import Boolean, String, and_, bindparam, case, func, or_, select, tuple_
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.sql.functions import FunctionElement
@@ -369,6 +369,32 @@ def _projected(data: Any, names: list[str]) -> dict[str, Any]:
     }
 
 
+def _timed(db: OrmSession, query: Any, order: str, cursor: str | None, wanted: int) -> list[Any]:
+    """The next ``wanted`` rows of a time order: the records with a time first, in the order of the index
+    ``(incident_id, ts, id)`` (read forward or backward, so that a page of ten million records is a hundred rows
+    of the index and not a sort of all of them), then the ones with none, by id. The cursor says which of the two
+    it is in. The two reads are what ``ORDER BY (ts IS NULL), ts, id`` says, which no index can serve."""
+    record = EvidenceRecord
+    ascending = order == "time"
+    first, last_id = decode(order, cursor) if cursor else (None, 0)
+    rows: list[Any] = []
+    if not cursor or first is not None:
+        dated = query.where(record.ts.is_not(None))
+        if cursor:
+            pair, there = tuple_(record.ts, record.id), tuple_(first, last_id)
+            dated = dated.where(pair > there if ascending else pair < there)
+        by = (record.ts, record.id) if ascending else (record.ts.desc(), record.id.desc())
+        rows = db.execute(dated.order_by(*by).limit(wanted)).all()
+    if len(rows) < wanted:
+        undated = query.where(record.ts.is_(None))
+        if cursor and first is None:
+            undated = undated.where(record.id > last_id if ascending else record.id < last_id)
+        rows += db.execute(
+            undated.order_by(record.id if ascending else record.id.desc()).limit(wanted - len(rows))
+        ).all()
+    return rows
+
+
 def records(
     db: OrmSession,
     incident_id: str,
@@ -388,14 +414,17 @@ def records(
         raise BadQuery("order is one of " + ", ".join(ORDERS))
     if order == "file" and not f.get("sourceId"):
         raise BadQuery("The order file needs a sourceId")
-    after = _after(order, *decode(order, cursor)) if cursor else None
     where = _filters(incident_id, f)
     record = EvidenceRecord
     mark_on = and_(EvidenceMark.incident_id == record.incident_id, EvidenceMark.key == record.key)
     query = select(record, EvidenceMark.flagged, EvidenceMark.note).outerjoin(EvidenceMark, mark_on).where(*where)
-    if after is not None:
-        query = query.where(after)
-    rows = db.execute(query.order_by(*_sort(order)).limit(limit + 1)).all()
+    if order == "file":
+        after = _after(order, *decode(order, cursor)) if cursor else None
+        rows = db.execute(
+            (query.where(after) if after is not None else query).order_by(*_sort(order)).limit(limit + 1)
+        ).all()
+    else:
+        rows = _timed(db, query, order, cursor, limit + 1)
     more = len(rows) > limit
     rows = rows[:limit]
     answer: dict[str, Any] = {

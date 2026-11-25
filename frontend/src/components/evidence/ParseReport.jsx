@@ -4,7 +4,15 @@ import LevelBadge from './LevelBadge.jsx'
 import { levelsText, reportDetections } from '../../domain/detections.js'
 import { sizeText } from '../../domain/transfers.js'
 import { formatDateTime } from '../../lib/time.js'
-import { canAcknowledge, canReadAgain, canView, noteRows, readPill, reasonRows } from '../../domain/sourceFiles.js'
+import {
+  canAcknowledge,
+  canReadAgain,
+  canView,
+  noteRows,
+  notRecordsText,
+  readPill,
+  reasonRows,
+} from '../../domain/sourceFiles.js'
 
 const number = (n) => (n === null || n === undefined ? '—' : n.toLocaleString('en-US'))
 const when = (iso) => (iso ? formatDateTime(Date.parse(iso)) : '')
@@ -119,7 +127,7 @@ export default function ParseReport({
             <Stat
               label="Records in file"
               value={number(source.inFile)}
-              hint={source.inFile === null ? 'the file does not say' : ''}
+              hint={source.inFile === null ? 'the file does not say' : notRecordsText(source, 'the notes below')}
             />
             <Stat
               label="Kept"
@@ -141,6 +149,18 @@ export default function ParseReport({
             <p className="border-b border-line px-4 py-3 text-sm text-med-fg">
               The parser stopped before the end of the file.
             </p>
+          )}
+
+          {notes.length > 0 && (
+            <ul aria-label="Notes" className="space-y-1 border-b border-line px-4 py-3 text-[13px]">
+              {notes.map((item) => (
+                <li key={item.reason} className="flex flex-wrap items-baseline gap-2">
+                  <Badge color="cyan">{item.reason}</Badge>
+                  <span className="font-mono tabular-nums">{number(item.count)}</span>
+                  <span className="text-fg-muted">{item.detail}</span>
+                </li>
+              ))}
+            </ul>
           )}
 
           {reasons.length > 0 && (
@@ -202,18 +222,6 @@ export default function ParseReport({
                 </ul>
               )}
             </section>
-          )}
-
-          {notes.length > 0 && (
-            <ul aria-label="Notes" className="space-y-1 border-t border-line px-4 py-3 text-[13px]">
-              {notes.map((item) => (
-                <li key={item.reason} className="flex flex-wrap items-baseline gap-2">
-                  <Badge color="cyan">{item.reason}</Badge>
-                  <span className="font-mono tabular-nums">{number(item.count)}</span>
-                  <span className="text-fg-muted">{item.detail}</span>
-                </li>
-              ))}
-            </ul>
           )}
         </>
       )}

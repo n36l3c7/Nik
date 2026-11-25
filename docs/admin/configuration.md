@@ -50,12 +50,14 @@ A host directory needs the right owner and, under SELinux, a label: create it as
 | Variable | Default | Limits |
 | --- | --- | --- |
 | [`SAMPLE_MAX_MB`](../reference/configuration.md#SAMPLE_MAX_MB) | 100 | A sample or an e-mail |
-| [`ARTIFACT_MAX_MB`](../reference/configuration.md#ARTIFACT_MAX_MB) | 500 | An evidence file the server parses |
+| [`ARTIFACT_MAX_MB`](../reference/configuration.md#ARTIFACT_MAX_MB) | 500 | An evidence file sent with the old route `POST /incidents/{id}/upload` |
+| [`EVIDENCE_MAX_MB`](../reference/configuration.md#EVIDENCE_MAX_MB) | 8192 | A file of host evidence sent in parts (what the app uses) |
+| [`COLLECTION_MAX_MB`](../reference/configuration.md#COLLECTION_MAX_MB) | 20480 | A collection (a KAPE or Velociraptor zip) |
 | [`PCAP_MAX_MB`](../reference/configuration.md#PCAP_MAX_MB) | 500 | A packet capture |
 | [`MAILBOX_MAX_MB`](../reference/configuration.md#MAILBOX_MAX_MB) | 2048 | A mailbox (mbox, Maildir archive) |
 | [`PST_MAX_MB`](../reference/configuration.md#PST_MAX_MB) | 4096 | An Outlook PST |
 
-The shipped nginx lets a mailbox upload of 4200 MB through. To raise `MAILBOX_MAX_MB` or `PST_MAX_MB` above that, also raise `client_max_body_size` of the mailbox location in `frontend/nginx/nginx.conf`.
+Files of host evidence are sent in parts of 8 MB, so the 600 MB of the shipped nginx does not limit them: only `EVIDENCE_MAX_MB` and `COLLECTION_MAX_MB` do, and the free room of the store, which is checked before the transfer. The shipped nginx lets a mailbox upload of 4200 MB through. To raise `MAILBOX_MAX_MB` or `PST_MAX_MB` above that, also raise `client_max_body_size` of the mailbox location in `frontend/nginx/nginx.conf`.
 
 ## Settings in the app
 
@@ -66,7 +68,7 @@ Open **Platform settings** at the foot of the rail. These are the sections an ad
 | **System › Health** | Thresholds of the warnings, the Prometheus scrape token | [Health and audit](health.md) |
 | **System › Storage** | Disk use, encryption of the store | [Keys and secrets](secrets.md#the-encryption-of-the-store) |
 | **System › Keys** | Where each key comes from; asking for a change | [Keys and secrets](secrets.md#change-a-key) |
-| **System › Workers** | The state of each worker | [Health and audit](health.md#workers) |
+| **System › Workers** | The state of each worker, the forensics worker among them | [Health and audit](health.md#workers) |
 | **System › Bulk actions** | Limits of the bulk actions; the jobs | [below](#bulk-action-limits) |
 | **System › Backup** | Passphrase, schedule, retention, copy off the server, recovery to a moment | [Backups](backups.md), [Recovery](recovery.md) |
 | **System › Audit log** | The chain, forwarding to syslog, removing old entries | [Health and audit](health.md#the-audit-log) |
@@ -76,6 +78,9 @@ Open **Platform settings** at the foot of the rail. These are the sections an ad
 | **Automation › Stop all** | The general switch of automation | [Health and audit](health.md#stop-all) |
 | **Automation › Content packs** | The catalogue, installing and updating packs | [Content packs](../guide/packs.md) |
 | **Indicators › Threat intelligence**, **Indicators found** | Automatic look-ups, what they may send; finding indicators as incidents come in | [Threat intelligence](../guide/threat-intel.md) |
+| **Analysis › Business hours** | The working hours **and their time zone** (UTC until set): the rule for remote logons outside working hours and the timers read it | [Detection and rules](../guide/detection.md) |
+| **Rule sets › Sigma rules** | The rules host evidence is matched against, by the forensics worker (needs the role **rules** to change) | [Detection and rules](../guide/detection.md) |
+| **Incidents › Archiving** | Archive the incidents closed for more than N days (off by default; needs the role **archive**) | [Reference: API](../reference/api.md#archive) |
 | **Analysis › Mail analysis**, **Report header** | Your mail domains and trusted servers; name and logo on reports | [E-mail](../guide/mail.md), [Reports](../guide/reports.md) |
 
 ## Sign-in and sessions

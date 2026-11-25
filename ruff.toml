@@ -12,6 +12,7 @@ src = [
   "workers/docview",
   "workers/pcap",
   "workers/sandbox",
+  "workers/forensics",
 ]
 
 [lint]

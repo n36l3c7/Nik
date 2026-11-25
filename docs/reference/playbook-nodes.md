@@ -167,6 +167,30 @@ Nothing is run or opened. A file is passed by reference: an argument `artifact` 
 
 A file is as large as an upload at most (`SAMPLE_MAX_MB`). **Download a file** is a `GET` with no credentials, to a host the playbook may reach (three redirects, each checked). An archive: zip only (plain, ZipCrypto, AES), 200 files at most. A dry run keeps nothing and starts nothing.
 
+### Host evidence
+
+Two read-only nodes of the group **Host evidence** (7.0) give a playbook the files and records of [host evidence](../guide/host.md). They change nothing, in a dry run too. A script cannot read Nik: the playbook reads, and hands the result to the script as arguments.
+
+| Node · id · command | Takes | Gives |
+| --- | --- | --- |
+| **List the host evidence files of an incident** · `nik.list-evidence-files` · `nik-list-evidence-files` | `incident`; `kind` (eventlog, disk, endpoint, browser, commands, syslog, collection; empty for all); `partial` (only files read in part or failed) | `files` (each: `file`, `kind`, `name`, `size`, `sha256`, `host`, `user`, `state`, `read`, counts, `report`), `ids`, `count`, `total`, `records` |
+| **Read host evidence records** · `nik.get-evidence-records` · `nik-get-evidence-records` | `incident`; filters `kind`, `type`, `file`, `source`, `host`, `username`, `channel`, `event_id`, `level` (1 to 5), `rule`, `flagged`, `q`, `from`, `to`; `order` (time, -time, file); `limit`; `cursor`; `fields` | `records`, `returned`, `next`, `count`, `count_capped` |
+
+| Limit | Value |
+| --- | --- |
+| Files listed | 200 at most; `total` says how many matched |
+| Records a page | 100 by default, 500 at most. `next` is the cursor to give back as `cursor`; it is empty at the end |
+| `count` | Given on the first page; it stops at 100,001 (`count_capped`) |
+| Data of a record | Not given unless `fields` names its keys: 12 at most, each value cut at 500 characters |
+
+An incident that is archived has no records loaded: the node refuses it with a sentence. Take it out of the archive first. The values these nodes give carry the classes of internal names (a host, a user, a summary, the fields of a record), so a later [HTTP request](#http-request) that sends them out is held back by the data guard, as for any private value.
+
+Example, in the War Room of an incident: its records with a detection of level high or critical, with two of their fields.
+
+```text
+!nik-get-evidence-records level=4 fields=CommandLine,ParentImage limit=50
+```
+
 ### HTTP request
 
 `http.request`: `method` (GET, POST, PUT, PATCH, DELETE), `url`, `headers`, `query`, `json` or `body`, `timeout` (60; 300 at most), `fail_on_error` (on). Gives `status`, `ok`, `json`, `text`. An answer over 5 MB is refused; three redirects, each checked. Anything but a GET asks for approval by default and is not repeated after a restart unless **Safe to repeat** is on.

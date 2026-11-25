@@ -7,6 +7,238 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-11-25
+
+The files of host evidence are kept as they were given and are read on
+the server. Every file keeps its original, says what was read of it and
+what was not, and every record opens the place it came from. Detection
+moves from the browser to Sigma rules run by a new worker, and the
+evidence of a disk, the registry, Windows artifacts, Linux and macOS
+logs, triage collections and Plaso exports joins the pages. The release
+is a major one because host evidence leaves the incident document, the
+parsers of the browser are gone, and a new container is needed.
+
+### Breaking
+
+- **A new container, `forensics`, reads the files of host evidence.**
+  Without it a file is kept and waits to be read. Its token is a new
+  secret (`FORENSICS_TOKEN`, a file of `./secrets`), made by
+  `deploy/init-env.sh`: run it before the first start.
+- **The indicators of host evidence are found indicators.** 6.x listed
+  every address, name and hash the host evidence of an incident named.
+  From 7.0 they follow the setting of the found indicators: private and
+  reserved addresses and benign names are left out by default, and the
+  limit for an incident applies. At the upgrade the indicators of the
+  old host evidence are read again by the same rules.
+- **Host evidence is no longer in the incident document.** Event logs,
+  endpoint artifacts, browser data and command history are read from
+  `/api/incidents/{id}/evidence/*`; `data.eventlogs`, `data.endpoint`,
+  `data.browser` and `data.commands` are emptied once the old data has
+  moved. A script or an integration that reads them must change.
+- **Files are no longer read on the analyst's machine.** The parsers of
+  the browser are gone (and `sql.js` and `papaparse` with them). The
+  file goes to the server and stays there: what was said of these
+  files, that they never left the analyst's machine, is no longer true.
+- **Detection is Sigma rules, run on the server.** The list of
+  suspicious keywords is gone and `keywords` is no longer in
+  `GET /api/settings`. What a person had added becomes Sigma rules at the
+  upgrade. The malware keywords of the Malware tab stay as they were.
+- **A backup made by 7.0 is not read by 6.x.** The files named by their
+  SHA-256 are written once in a folder `pool-<id>` beside the backups,
+  which must be kept with them. The way back to 6.x is the 6.11 backup.
+- **The content security policy no longer allows WebAssembly.**
+  `'wasm-unsafe-eval'` is gone from the policy of the stack; an install
+  without containers removes it from its own and drops the `.wasm` type.
+- **The Cortex XSOAR integration's `nik-get-settings` no longer returns
+  `Nik.Settings.keywords`**, as the settings no longer carry `keywords`.
+- **Two playbook nodes, two War Room commands.** The group **Host
+  evidence** reads files and records for a playbook:
+  `nik.list-evidence-files` (`nik-list-evidence-files`) and
+  `nik.get-evidence-records` (`nik-get-evidence-records`). Read-only;
+  200 files, and 100 records a page by default (500 at most, with a
+  cursor), up to 12 `data` fields of 500 characters each. The records of
+  an archived incident are refused. What they give carries the classes
+  of internal names, so a later HTTP node that sends a summary out is
+  held back. A script still cannot read Nik: the playbook hands it the
+  result as arguments.
+- **Deleting an incident, archiving it, or analysing a file again** with
+  millions of records is no longer cut by the 30 s statement limit.
+- **Lists of records at millions of records read the time index.**
+- **An incident deleted in another window** takes the person back to the
+  list with "The incident was deleted".
+- **Measuring a server**: `python scripts/load_evidence.py` (from
+  `backend/`, on a migrated database nobody uses) loads generated records
+  and times the screens' queries.
+- **SigmaHQ packs.** Nik ships none of its rules: `python
+  scripts/build_sigma_pack.py <checkout> --out <dir>` builds two packs
+  from your own checkout.
+- **The working hours have a time zone**, UTC until set: the rule for
+  remote logons outside working hours and the timers read it.
+- Two new roles, **archive** (`incidents.archive`) and **evidence**
+  (`evidence.download`); an administrator has both. Nobody else may
+  archive an incident or download an original until given them.
+
+### Added
+
+- **Originals.** Every file of host evidence is kept as it was given
+  (read-only, with its SHA-256). It is in the store, sealed like the
+  rest, and a file the incident already holds is said to be imported
+  already.
+- **A parse report for every file**: records in the file, read, kept,
+  duplicates, skipped with the reasons and where, and notes. A file read
+  in part says so on its row, in the incident header and in the list of
+  evidence, until somebody marks it seen (War Room and audit log).
+- **The viewer.** From a record to the place it came from in its
+  original (the XML of an event, the line of a CSV, the row of a
+  database, the key of a hive, the entry of the `$MFT`), and the whole
+  file as text or hex in pages of 64 KiB, with go to offset and search
+  in the file (text in UTF-8 and UTF-16, or bytes in hex).
+- **Download of an original** in an AES-256 zip (password `infected`),
+  with the permission `evidence.download`, audited.
+- **Pages that ask the server for their rows**: filters, sort, column
+  menus, stacking of the values of a column (shares, first and last
+  time, copied as TSV), flags and notes on records, which survive
+  **Analyse again** because a record has a stable key.
+- **Sending in parts.** `/api/uploads` takes a file in parts of 8 MB that
+  can be resumed and cancelled, up to `EVIDENCE_MAX_MB` (8192) a file
+  and `COLLECTION_MAX_MB` (20480) for a collection; the free room is
+  checked first. A file given without a section is recognised by the
+  server.
+- **Sigma rules** (Settings, Rule sets): a list with filters and
+  switches, a YAML editor that says what is wrong on the line, **Try on
+  an incident**, and the reset of a rule of a pack that was changed.
+  pySigma reads a rule and Nik's own evaluator runs it in the worker, on
+  the full values of each record as the file is read. Log sources are
+  Windows (the usual categories and services), Linux (`auth`, `sshd`,
+  `sudo`, `syslog`, `cron`, `auditd`, and `process_creation` from
+  auditd), macOS (the unified log, keyword rules) and Nik's own
+  (`product: nik`, services `commands`, `endpoint`, `browser` and
+  `process-chain`). The correlations `event_count`, `value_count`,
+  `temporal` and `temporal_ordered` run at the end of a file, one level
+  of nesting. A rule Nik cannot run is listed with the reason. The field
+  `NikOffHours` says a record is outside the working hours.
+- **Two built-in packs of rules**: **Nik** (60 rules: the browser rules
+  of before as Sigma, and rules for Windows and Linux) and **Nik process
+  chains** (16 rules over a process and its ancestors). Content packs may carry Sigma rules in a
+  `sigma/` folder, with a `notice` for their licence; a pack of SigmaHQ
+  is not inside Nik, it is a pack to install (its authors are named with
+  each match, as its licence asks).
+- **Detections.** A match is a detection of its record: a tab, a column,
+  a filter and a count on every page of host evidence and on the
+  Timeline, the detections in the drawer of a record and in the parse
+  report, one line in the War Room for a file with detections of level
+  medium or more, and the playbook trigger `evidence.detected`
+  (`levelNumber`). The PDF report reads them from the server. A
+  detection never changes the severity of an incident.
+- **Disk (NTFS)**, a new kind of evidence: the `$MFT` (one record per
+  entry, with its names, path, sizes, streams and eight times) and the
+  `$J` change journal.
+- **Registry hives** (SYSTEM, SOFTWARE, NTUSER.DAT, Amcache.hve): Run
+  keys, services, USB storage, mounted devices, UserAssist, ShimCache,
+  BAM, recent documents and Amcache. One hive gives several sources.
+- **Prefetch, shortcuts (LNK), jump lists and SRUM** (a new category,
+  Network usage), as Endpoint Artifacts.
+- **Linux and macOS logs** on the Event Logs page: `auth.log` and
+  `secure`, `journalctl -o json`, `audit.log` (an event joined from its
+  lines) and `log show --style ndjson`.
+- **Collections.** A KAPE or Velociraptor zip is listed by the worker
+  without trusting its paths, and the files chosen are imported in two
+  steps; programs found in it are listed and sent to Malware Analysis on
+  request. A Plaso `psort` export (JSON lines or CSV) is read into the
+  same pages. A disk image (VHDX, VHD, E01) or a `.plaso` file is
+  recognised and refused with what to do.
+- **Processes and logons.** The process tree of a host (Security 4688
+  and 4689, Sysmon 1 and 5, auditd `execve`), with a parent the log
+  names and the evidence does not hold shown as such; the Logons table
+  (4624, 4625, 4634, 4647, 4648, 4672, 4778, 4779, Remote Desktop
+  events, `sshd` and the logons of auth.log, journald, auditd and the
+  unified log) and the lateral movement graph above it.
+- **Gaps and bursts** on the histogram of the Timeline, with thresholds
+  that are remembered, and an **Evidence** group in the global search
+  that opens the record.
+- **Archiving.** A closed incident can be archived (`incidents.archive`,
+  also as a bulk action): its records leave the database, its originals,
+  reports, flags and notes stay, it is read-only and out of the lists
+  (filter **Archived**). Taking it out reads the files again. A rule in
+  Settings, Incidents, Archiving archives the incidents closed for more
+  than N days (off by default).
+- **The working hours have a time zone**: `businessHours.tz`, an IANA
+  name for Nik, and `tz` for one incident.
+- **A copy to try a release on.** `NIK_COPY=true` makes a stack restored
+  from a backup do nothing outward: no schedule, fetch, mirroring,
+  playbook that starts by itself, mail, webhook, copy off the server,
+  shipping to the standby or archive of the log. A playbook runs there
+  only by hand as a dry run. The screens say **COPY of** and the name.
+  `deploy/restore.sh --as-copy` sets it. See
+  [Try a release on a copy](https://n36l3c7.github.io/Nik/admin/try-on-a-copy/).
+- **Incremental backups.** The files of the store named by their SHA-256
+  (samples, e-mails, originals of host evidence) are written once, into
+  a folder `pool-<id>` beside the backups, and a backup names the ones it
+  needs. The restore test reads every file of the pool at least once a
+  week. Another passphrase starts another pool. The copy off the server
+  sends the pool files first and removes those no backup names.
+- **A refresh button and an automatic refresh** on the list of incidents
+  and on the dashboards: only the table, or the widgets, are read again.
+- Migrations `0056_evidence`, `0057_sigma`, `0058_collections` and
+  `0059_processes`.
+
+### Changed
+
+- `POST /api/incidents/{id}/upload` keeps its parameters (a file up to
+  500 MB) and now keeps the original and has the worker read it. The
+  answer says how much was read and kept, and whether it was in part.
+- `nik.add-evidence` keeps its parameters and does the same. The export
+  of an incident lists the evidence files with their SHA-256, counts,
+  report, flags and notes, but not the records or the originals (an
+  imported file shows **original absent** until it is given again). An
+  export of 6.x still imports.
+- Counts, indicators, the audit log and the PDF report read the tables.
+  The report has an **Evidence integrity** section.
+- A file added from a page is read by the parser of its section whatever
+  its name; the browser parser writes the domain of each address.
+- The parsers of event logs, event logs as JSON, syslog and Plaso are at
+  version 2: a file read before offers **Analyse again**.
+- An incident going into the archive or out of it is a new revision, so
+  whoever has it open learns it.
+
+### Removed
+
+- The parsers of the browser, `sql.js` and `papaparse`; the client-side
+  detection of host evidence; the list of suspicious keywords and the
+  `keywords` of the settings.
+- `'wasm-unsafe-eval'` from the content security policy and the `.wasm`
+  step of the install without containers.
+
+### Security
+
+- Originals are sealed in the store like every file; the worker is given
+  one when it reads it and keeps it in clear on its work volume until
+  nobody asked for it for fifteen minutes, and no longer than its next
+  start.
+- The worker has no route out, a read-only root, no capabilities and
+  4 GB. Each file is read in a process of its own with bounded memory
+  and CPU time; the YAML of a rule and a zip of a collection are opened
+  in processes of their own, with limits, and never in the server. The
+  paths in a zip are never trusted.
+- The download of an original is audited.
+
+### Upgrade notes
+
+- Read [Upgrading to 7.0](https://n36l3c7.github.io/Nik/admin/upgrades/#upgrading-to-70)
+  first. Take a backup with 6.11, and try the release on
+  [a copy](https://n36l3c7.github.io/Nik/admin/try-on-a-copy/).
+- `git pull`, then **`deploy/init-env.sh`** (it adds `FORENSICS_TOKEN`),
+  then `docker compose up -d --build` (or `podman compose`). Migrations
+  `0056` to `0059` run after the snapshot and the rehearsal.
+- The old host evidence moves to the tables in the background, as
+  evidence **imported before 7.0**: it has no original and no report;
+  importing the file again gives them.
+- Set the **time zone** of the working hours in Settings, Business hours.
+- Give the roles **archive** and **evidence** to whoever needs them.
+- An install without containers removes `'wasm-unsafe-eval'` from its
+  nginx and has no forensics worker unless the one of the Compose file
+  is run beside it.
+
 ## [6.11.0] - 2026-11-23
 
 A closed incident says how it was closed, and the notes of a mirrored
@@ -4009,7 +4241,8 @@ databases.
   rules, case management, full backup, authentication and audit, and the
   external REST API.
 
-[Unreleased]: https://github.com/n36l3c7/Nik/compare/v6.11.0...HEAD
+[Unreleased]: https://github.com/n36l3c7/Nik/compare/v7.0.0...HEAD
+[7.0.0]: https://github.com/n36l3c7/Nik/compare/v6.11.0...v7.0.0
 [6.11.0]: https://github.com/n36l3c7/Nik/compare/v6.10.2...v6.11.0
 [6.10.2]: https://github.com/n36l3c7/Nik/compare/v6.10.1...v6.10.2
 [6.10.1]: https://github.com/n36l3c7/Nik/compare/v6.10.0...v6.10.1

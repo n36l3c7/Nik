@@ -27,6 +27,15 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+def without_statement_limit(db: Session) -> None:
+    """Let the rest of this transaction take as long as it needs (PostgreSQL; SQLite has no such limit). For the
+    few things that remove millions of rows in one go (an incident, a file read again): the limit on one statement
+    (``DB_STATEMENT_TIMEOUT_MS``) is for the requests of people, and this is a delete of a million rows, which with
+    the rows that hang on them takes about a minute."""
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SET LOCAL statement_timeout = 0"))
+
+
 # Build engine-specific connect args. SQLite needs check_same_thread disabled
 # because FastAPI may access the connection from different threads.
 _connect_args: dict = {}

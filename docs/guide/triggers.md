@@ -52,17 +52,18 @@ An event a playbook's own step caused (a file it kept, an address it scanned) na
 
 ## Events about incidents and indicators
 
-| Event | When |
-| --- | --- |
-| **An incident is created** · `incident.created` | An incident is created (by hand, by the API, fetched, by a playbook) |
-| **An incident changes** · `incident.updated` | One of its fields changes; `trigger.changed` lists which |
-| **An indicator's verdict changes** · `ioc.verdict_changed` | What the sources say of an indicator, taken together, changes |
-| **An incident holds a watched indicator** · `ioc.watch_hit` | An incident comes to hold an indicator of a watched list |
-| **Indicators are found in an incident** · `indicators.found` | A reading of an incident kept indicators it did not hold |
-| **A timer of an incident passes its time** · `sla.breached` | Once for each SLA timer |
-| **The disk is nearly full** · `storage.low` | Less than a tenth free; once a day while it stays so |
-| **An artifact with a date is a week from being deleted** · `artifact.expiring` | Once |
-| **An artifact was deleted because its date came** · `artifact.expired` | Once |
+| Event                                                                          | When                                                                                                            |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| **An incident is created** · `incident.created`                                | An incident is created (by hand, by the API, fetched, by a playbook)                                            |
+| **An incident changes** · `incident.updated`                                   | One of its fields changes; `trigger.changed` lists which                                                        |
+| **An indicator's verdict changes** · `ioc.verdict_changed`                     | What the sources say of an indicator, taken together, changes                                                   |
+| **An incident holds a watched indicator** · `ioc.watch_hit`                    | An incident comes to hold an indicator of a watched list                                                        |
+| **Indicators are found in an incident** · `indicators.found`                   | A reading of an incident kept indicators it did not hold                                                        |
+| **A timer of an incident passes its time** · `sla.breached`                    | Once for each SLA timer                                                                                         |
+| **The disk is nearly full** · `storage.low`                                    | Less than a tenth free; once a day while it stays so                                                            |
+| **An artifact with a date is a week from being deleted** · `artifact.expiring` | Once                                                                                                            |
+| **An artifact was deleted because its date came** · `artifact.expired`         | Once                                                                                                            |
+| **Sigma rules match records of a host file** · `evidence.detected`             | A file of [host evidence](host.md) was read and at least one rule matched: [below](#events-about-host-evidence) |
 
 ### incident.created
 
@@ -107,6 +108,27 @@ A bulk action changes each row through what changes one alone, so it writes the 
 - While a playbook waits for the event, the job keeps to the pace of the engine: it waits while 50 events are still unread, or while they and the runs in progress would pass `AUTOMATION_MAX_ACTIVE_RUNS`.
 
 The playbook's own limits still hold: one that starts 60 runs an hour starts 60 for a bulk change of 500. **Run a playbook on each**, from a selection of incidents, starts 20 unfinished runs at a time. No node starts a bulk action. See [Act on many at once](bulk.md).
+
+## Events about host evidence
+
+**Sigma rules match records of a host file** · `evidence.detected` starts a playbook **once for each file**, when the file has been read and at least one [Sigma rule](detection.md#sigma-rules) matched. It is not said once for each detection. The run works on the incident.
+
+| Field                                            | Holds                                                                                          |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `trigger.source.fileName`, `trigger.source.kind` | The file and its section (`eventlog`, `endpoint`, `browser`, `commands`, `disk`, `syslog`)     |
+| `trigger.count`                                  | How many detections the file has                                                               |
+| `trigger.level`, `trigger.levelNumber`           | The highest level among them, as a word and as a number from 1 (informational) to 5 (critical) |
+| `trigger.rules`                                  | The rules that matched most, each with `id`, `title`, `level` and `count`                      |
+
+A detection never changes the severity of an incident: a playbook that should react says so here. To act only on serious matches, use a condition on `levelNumber`:
+
+```text
+On an event: Sigma rules match records of a host file · evidence.detected
+Only when the event matches:
+  {{ trigger.levelNumber }}   is at least   4
+```
+
+Level 4 is **high**. Every field is in [Events](../reference/events.md#evidencedetected).
 
 ## Schedules
 

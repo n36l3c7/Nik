@@ -6,7 +6,7 @@ test('the policy lets only the app run scripts and talk to its own origin', () =
   const directives = Object.fromEntries(
     CONTENT_SECURITY_POLICY.split('; ').map((part) => [part.split(' ')[0], part.split(' ').slice(1)]),
   )
-  assert.deepEqual(directives['script-src'], ["'self'", "'wasm-unsafe-eval'"])
+  assert.deepEqual(directives['script-src'], ["'self'"])
   assert.deepEqual(directives['connect-src'], ["'self'"])
   assert.deepEqual(directives['object-src'], ["'none'"])
   assert.deepEqual(directives['base-uri'], ["'none'"])

@@ -10,8 +10,8 @@
  * should either fail: nothing but the app's own scripts can run, the app
  * talks to its own origin only, and it cannot be framed by another site.
  *
- *  - script-src: the bundle, plus WebAssembly for sql.js (browser databases
- *    are read in the browser).
+ *  - script-src: the bundle and nothing else (no WebAssembly: files of host
+ *    evidence are read by the forensics worker, not in the browser).
  *  - style-src 'unsafe-inline': style attributes, and the sandboxed frames
  *    (they inherit this policy) render e-mails and reports with inline styles.
  *  - img-src http(s): the e-mail frame inherits this policy too, and "Load
@@ -20,7 +20,7 @@
 
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
+  "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https: http:",
   "font-src 'self' data:",

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  charRange,
   copyTextOf,
   fieldRows,
+  findSummary,
   hexDump,
+  markedRows,
+  matchLine,
   neighbours,
   numberedLines,
   pageStartFor,
@@ -146,4 +150,31 @@ test('what could not be shown is said by its status, and what is copied by its k
   )
   assert.equal(copyTextOf({ kind: 'xml', text: '<a/>' }), '<a/>')
   assert.equal(copyTextOf(null), '')
+})
+
+test('a match is one line, and a search says what happened to it', () => {
+  assert.equal(matchLine({ offset: 0x12a0, length: 24, encoding: 'utf-16le' }), '0x000012A0 · UTF-16 · 24 bytes')
+  assert.equal(matchLine({ offset: 0, length: 1, encoding: 'hex' }), '0x00000000 · bytes · 1 byte')
+  const found = { matches: [{ offset: 1, length: 3, encoding: 'utf-8' }], next: null, cut: false }
+  assert.equal(findSummary(found).note, '1 match.')
+  assert.equal(findSummary({ matches: [], next: null, cut: false }).note, 'Not found in this file.')
+  // The limit of matches cuts the answer too: that is "more", not a time limit.
+  const full = { matches: [{}, {}], next: 900, cut: true }
+  assert.deepEqual([findSummary(full, 2).timedOut, findSummary(full, 2).more], [false, 900])
+  const slow = { matches: [{}], next: 0x100000, cut: true }
+  const timed = findSummary(slow, 2)
+  assert.equal(timed.timedOut, true)
+  assert.match(timed.note, /time limit, at 0x00100000/)
+})
+
+test('the bytes of a match are found again in the characters and the rows of the page', () => {
+  assert.deepEqual(charRange('hello world', 100, 106, 5), { from: 6, to: 11 })
+  // UTF-16 of "ab" is a, NUL, b, NUL: four characters for four bytes.
+  assert.deepEqual(charRange('x\u0000a\u0000b\u0000', 0, 2, 4), { from: 2, to: 6 })
+  // A two-byte character before the match moves it by one character, not two.
+  assert.deepEqual(charRange('é-ok', 0, 3, 2), { from: 2, to: 4 })
+  assert.equal(charRange('abc', 100, 0, 3), null)
+  assert.deepEqual(markedRows(0, 20, 4), [1, 1])
+  assert.deepEqual(markedRows(0, 30, 4), [1, 2])
+  assert.deepEqual(markedRows(64, 70, 1), [0, 0])
 })

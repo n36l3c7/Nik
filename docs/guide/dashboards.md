@@ -17,6 +17,15 @@ Each widget asks one question of what Nik holds and shows the answer: a number, 
 
 A number can show its change against the period before: the same length of time, just earlier.
 
+### Refresh
+
+A dashboard is read when you open it. Two controls in its toolbar keep it current.
+
+- The **refresh** button reads every widget again now.
+- **Auto-refresh** reads them on a pace: **Dashboard default** (the pace the dashboard was saved with), **Off**, **30 seconds**, **1 minute**, **5 minutes**, **10 minutes** or **30 minutes**.
+
+The choice is yours alone, for each dashboard, and it is kept in this browser.
+
 The toolbar <span class="step">4</span>:
 
 | Button | Does |

@@ -175,6 +175,18 @@ An analysis a playbook's own step started says which run caused it: that playboo
 | `scan.verdict` · `scan.score` | `phishing`, `suspicious` or `clean` · 0 to 100 |
 | `scan.artifact_id` · `scan.page` | Its id as an artifact · its address in Nik |
 
+### evidence.detected
+
+**Sigma rules match records of a file of host evidence**: said **once for the file**, when it has been read and at least one rule matched, never once per detection. The run works on the incident. Nothing starts while automation is off. A detection never changes the severity of the incident; a playbook that should react says so here.
+
+| Field | Holds |
+| --- | --- |
+| `source.id` · `source.fileName` · `source.kind` | The file, its name, and its section (`eventlog`, `endpoint`, `browser`, `commands`, `disk`, `syslog`) |
+| `count` | How many detections the file has |
+| `level` · `levelNumber` | The highest level among them: `informational`, `low`, `medium`, `high` or `critical`, and 1 to 5. A condition on a minimum level reads `levelNumber` |
+| `rules` | The rules that matched most (20 at most), each `{id, title, level, count}` |
+| `incident.…` | The incident |
+
 ## The system
 
 ### storage.low

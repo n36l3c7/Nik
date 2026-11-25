@@ -360,6 +360,15 @@ test('a record opens its original: the Source drawer shows the record, then the 
   await expect(drawer.getByRole('group', { name: 'Show the bytes as' })).toBeVisible()
   await expect(drawer).toContainText('Original kept on the server, read-only')
   await expect(drawer).toContainText(/SHA-256 [0-9a-f]{16}/)
+  // A word of the record is found anywhere in the original (any case), and a click opens the page of the match.
+  await drawer.getByRole('searchbox', { name: 'Search the whole file' }).fill('ADMINISTRATOR')
+  await page.keyboard.press('Enter')
+  const matches = drawer.getByRole('list', { name: 'Matches' })
+  await expect(matches.getByRole('button').first()).toContainText(/^0x[0-9A-F]{8} · UTF-8 · 13 bytes/, {
+    timeout: 20_000,
+  })
+  await matches.getByRole('button').first().click()
+  await expect(drawer.getByTestId('find-mark').first()).toHaveText(/administrator/i)
   await page.keyboard.press('Escape')
   await expect(drawer).toHaveCount(0)
 })
@@ -417,7 +426,9 @@ test('"Events that matter" shows the curated events, and every event when it is 
   const events = page.getByRole('tab', { name: /^Events/ })
   // On at the start: the Application event is not one that matters. 7 events of the first file and the 4688 of the second.
   await expect(matter).toHaveAttribute('aria-pressed', 'true')
-  await expect(events).toContainText('8')
+  // The tab counts every event, as "Events kept" does; the table says how many of them matter.
+  await expect(events).toContainText('9')
+  await expect(page.getByText('8 of 9 events matter')).toBeVisible()
   await expect(recordsTable().locator('tbody tr')).toHaveCount(8)
   await expect(recordsTable()).not.toContainText('1000')
   await matter.click()
@@ -2491,6 +2502,23 @@ test('a link to an archived incident opens it read-only, and an address with an 
   expect(new URL(page.url()).pathname).not.toContain('e2e-no-such-incident')
   expect((await page.request.delete('/api/incidents/e2e-link')).status()).toBe(204)
   await openIncidentAt(mainIncident)
+})
+
+test('an incident deleted while it is open in this window sends the person back to the list, with a notice and no error', async () => {
+  test.setTimeout(60_000)
+  await openFreshIncident('e2e-gone', 'E2E-GONE')
+  await openEvidence('Event Logs')
+  await expect(sourcesTable()).toBeVisible()
+  // Somebody else deletes it. The first request this page makes about it (it polls, saves and reads) finds it
+  // gone; one that is not awaited with a catch would throw, and the page fails the test on any uncaught error.
+  expect((await page.request.delete('/api/incidents/e2e-gone')).status()).toBe(204)
+  await expect(page.getByRole('status').filter({ hasText: 'The incident was deleted' })).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(page.getByRole('region', { name: 'Incidents' })).toBeVisible()
+  await expect(page.locator('nav[aria-label="Analysis tabs"]')).toBeHidden()
+  expect(new URL(page.url()).pathname).not.toContain('e2e-gone')
+  await backToMain()
 })
 
 /** An open Windows incident made through the API, and opened by its address. */
@@ -9722,7 +9750,7 @@ async function backToMain() {
 
 test('the app runs under its security headers, and the policy blocked nothing', async ({ request }) => {
   const headers = (await request.get('/')).headers()
-  expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'")
+  expect(headers['content-security-policy']).toContain("script-src 'self'")
   expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
   expect(headers['x-content-type-options']).toBe('nosniff')
   expect(headers['x-frame-options']).toBe('DENY')

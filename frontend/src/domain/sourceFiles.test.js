@@ -13,6 +13,8 @@ import {
   noteRows,
   readBeforeProcesses,
   readPill,
+  notRecords,
+  notRecordsText,
   reasonRows,
   shortHash,
   uploadText,
@@ -166,4 +168,21 @@ test('a log read by a parser older than version 2 is offered to be analysed agai
   assert.equal(readBeforeProcesses(read('browser', '1')), false)
   assert.equal(readBeforeProcesses(read('evtx', '1', { state: 'parsing' })), false)
   assert.equal(readBeforeProcesses(read('evtx', '1', { legacy: true })), false)
+})
+
+test('a file read whole that keeps fewer than it holds says the rest are not records of their own', () => {
+  const mft = { read: 'complete', kind: 'disk', kept: 15, inFile: 21, duplicates: 0 }
+  assert.equal(notRecords(mft), 6)
+  assert.equal(notRecordsText(mft), '6 in the file are not records of their own: see the report')
+  assert.equal(
+    notRecordsText({ ...mft, kept: 20 }, 'the notes below'),
+    '1 in the file is not a record of their own: see the notes below',
+  )
+  // Duplicates have their own number; a file read in part has skipped records; a collection counts members.
+  assert.equal(notRecords({ ...mft, duplicates: 6 }), 0)
+  assert.equal(notRecords({ ...mft, duplicates: 2 }), 4)
+  assert.equal(notRecords({ ...mft, read: 'partial' }), 0)
+  assert.equal(notRecords({ ...mft, kind: 'collection', kept: 0 }), 0)
+  assert.equal(notRecords({ ...mft, kept: 21 }), 0)
+  assert.equal(notRecords({ read: 'complete', kept: 3, inFile: null }), 0)
 })

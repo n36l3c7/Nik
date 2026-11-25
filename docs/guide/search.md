@@ -17,6 +17,11 @@ Find any incident, artifact or indicator: filter a list with a query, keep the f
 | <span class="step">5</span> The count | `12 of 340` when a filter is on. |
 | <span class="step">6</span> **Columns…** | Chooses and orders the columns. |
 
+- **Refresh**: the round button beside the count reads the list again now. **Auto-refresh** reads it on a pace: **Off** (the start), **30 seconds**, **1 minute**, **5 minutes**, **10 minutes** or **30 minutes**. The choice is kept in this browser.
+- **Archived**: **Archived: no** hides the archived incidents; **only** and **include** show them. See [Archive an incident](incidents.md#archive-an-incident).
+
+![The refresh button and the auto-refresh choice](../img/guide/incidents-refresh.png)
+
 - **Sort**: click the heading of a column; click again to reverse.
 - **Quick view**: click a row. A panel opens on the right with the incident's severity, status, timers, tags and what its type shows there. ++up++ / ++down++ move to the next row; ++esc++ closes it. At its foot: **Open the incident**, **Assign to me**, **Close…**.
 - **Open**: double-click a row, or press ++enter++ on it.
@@ -126,14 +131,23 @@ Saved filters exist on the list of incidents only.
 Press ++ctrl+k++ (++cmd+k++ on a Mac) or ++"/"++ anywhere, or click the search bar in the header.
 
 1. Type at least two characters.
-2. Results come in groups: **Incidents**, **Indicators — all incidents**, **Samples**, and for the open incident **Events — this incident** and **Notes — this incident**.
+2. Results come in groups: **Incidents**, **Indicators — all incidents**, **Samples**, **Evidence — all incidents**, and for the open incident **Events — this incident** and **Notes — this incident**.
 3. ++up++ / ++down++ choose; ++enter++ opens.
 
-| Type | To |
-|---|---|
-| `#61` | Open incident number 61 |
-| An address, a hash, a word | Find it across incidents and in the open one |
-| `>` then words | Run an action: go to a tab, new incident, export, settings, sign out |
+| Type                       | To                                                                   |
+| -------------------------- | -------------------------------------------------------------------- |
+| `#61`                      | Open incident number 61                                              |
+| An address, a hash, a word | Find it across incidents and in the open one                         |
+| A program, a user, a path  | Find it in the records of host evidence of every incident            |
+| `>` then words             | Run an action: go to a tab, new incident, export, settings, sign out |
+
+### The Evidence group
+
+**Evidence — all incidents** searches the **records of host evidence** on the server: event logs, endpoint artifacts, browser history, commands, `$MFT` and `$J`. Each hit shows the record with the words highlighted, the incident, the file it came from and its time. Press Enter to open the page of that kind in that incident. At most twelve are shown.
+
+![The search palette finding the records of one program across the evidence](../img/guide/search-evidence.png)
+
+A record of an archived incident is not searched: its records are not in the database.
 
 !!! tip
     Right-click any indicator › **Search for it** opens the search with it already typed.

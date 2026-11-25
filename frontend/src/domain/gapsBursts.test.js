@@ -6,6 +6,7 @@ import {
   axisEnd,
   burstBar,
   burstBars,
+  denseRange,
   durationText,
   gapBands,
   markerItems,
@@ -127,4 +128,24 @@ test('a burst marks the bar of its slice', () => {
   )
   assert.deepEqual([...marked.keys()], [8])
   assert.equal(marked.get(8).count, 150)
+})
+
+test('a long axis with nearly every record in a small part of it offers that part as a range', () => {
+  const DAY = 86_400_000
+  const width = 10 * DAY
+  const bars = Array.from({ length: 100 }, (_, i) => ({ t: i * width, host: 0, docs: 0 }))
+  bars[0].host = 1 // a jump list entry from years back
+  for (let i = 90; i < 96; i += 1) bars[i].host = 50
+  const strip = { from: 0, width, bars, peak: 50 }
+  const range = denseRange(strip)
+  assert.deepEqual(range, { start: 90 * width, end: 96 * width - 1, outside: 1, days: 60 })
+  // Records all over the axis, a short axis and an empty one offer nothing; the strip itself is not changed.
+  assert.equal(denseRange({ ...strip, bars: bars.map((bar) => ({ ...bar, host: 5 })) }), null)
+  assert.equal(
+    denseRange({ from: 0, width: DAY / 24, bars: bars.map((bar, i) => ({ ...bar, host: i > 90 ? 9 : 0 })) }),
+    null,
+  )
+  assert.equal(denseRange({ from: 0, width, bars: bars.map((bar) => ({ ...bar, host: 0 })) }), null)
+  assert.equal(denseRange(undefined), null)
+  assert.equal(bars[0].host, 1)
 })

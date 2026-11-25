@@ -10,17 +10,23 @@ the outcomes ``success``, ``failure`` and ``explicit`` (a logoff and a privilege
 A logon with no source, from the machine itself (``-``, ``::1``, ``127.0.0.1``, ``0.0.0.0``) or from the host
 it is of, is local and makes no edge. The busiest edges are kept, at most ``EDGES_MAX``, on at most
 ``NODES_MAX`` nodes, and ``cut`` says when others were left out. A node id is ``host:<name>`` or
-``address:<address>`` in lower case, the same in every call, so a screen can keep what it drew. The counts of a
+``address:<address>`` in lower case, the same in every call, so a screen can keep what it drew. The name of a
+host is its short name, the part before the first dot, unless it is an address: ``WKS-1.corp.example`` and
+``wks-1`` are one node, labelled with the longest spelling the logons have. An address and a name are never
+merged: nothing in the logs proves they are the same machine. The counts of a
 node are those of the edges that are shown. ``inEvidence`` is true for a host the incident holds a file, a
 process or a logon of.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy import and_, case, func, literal_column, or_, select
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.sql.expression import FunctionElement
 
 from ..core.models import EvidenceLogon, EvidenceProcess, EvidenceSource
 from . import paging
@@ -35,6 +41,42 @@ OUTCOMES = ("success", "failure", "logoff", "explicit", "privileged")
 EDGE_OUTCOMES = ("success", "failure", "explicit")
 LOCAL = ("-", "::1", "127.0.0.1", "0.0.0.0", "::", "localhost")  # noqa: S104 - addresses a logon names, not binds
 IN_MAX = 300
+
+
+class _head(FunctionElement):  # noqa: N801 - a SQL function: the text before the first dot
+    inherit_cache = True
+    name = "head"
+
+
+@compiles(_head)
+def _head_default(element: Any, compiler: Any, **kw: Any) -> str:
+    return f"split_part({compiler.process(element.clauses, **kw)}, '.', 1)"
+
+
+@compiles(_head, "sqlite")
+def _head_sqlite(element: Any, compiler: Any, **kw: Any) -> str:
+    text = compiler.process(element.clauses, **kw)
+    return f"(CASE WHEN instr({text}, '.') > 0 THEN substr({text}, 1, instr({text}, '.') - 1) ELSE {text} END)"
+
+
+def short_id(name: str | None) -> str:
+    """The id of a host: its name in lower case up to the first dot; an address stays whole."""
+    text = (name or "").strip().lower()
+    if ":" in text or re.fullmatch(r"[0-9.]*\.[0-9.]*", text):
+        return text
+    return text.split(".", 1)[0]
+
+
+def _host_id(column: Any) -> Any:
+    """``short_id`` of a column, in SQL: the same rule (an address has a colon, or only digits and dots)."""
+    text = func.lower(func.trim(column))
+    bare = text
+    for digit in "0123456789":
+        bare = func.replace(bare, literal_column(f"'{digit}'"), literal_column("''"))
+    dots = func.replace(bare, literal_column("'.'"), literal_column("''"))
+    dotted = text.contains(literal_column("'.'"), autoescape=False)
+    address = or_(text.contains(literal_column("':'"), autoescape=False), and_(dotted, dots == literal_column("''")))
+    return case((address, text), else_=_head(text))
 
 
 def item_of(row: EvidenceLogon) -> dict[str, Any]:
@@ -61,14 +103,16 @@ def _filters(incident_id: str, f: dict[str, Any]) -> list[Any]:
     g = EvidenceLogon
     where: list[Any] = [g.incident_id == incident_id]
     for name, column in (
-        ("host", g.host),
         ("user", g.username),
         ("sourceIp", g.source_ip),
-        ("sourceHost", g.source_host),
         ("sourceId", g.source_id),
     ):
         if f.get(name) not in (None, ""):
             where.append(column == f[name])
+    # A host is asked by its short name, in any case: the graph's nodes name a machine that way.
+    for name, column in (("host", g.host), ("sourceHost", g.source_host)):
+        if f.get(name) not in (None, ""):
+            where.append(_host_id(column) == short_id(f[name]))
     if f.get("logonType"):
         where.append(g.logon_type.in_(f["logonType"]))
     if f.get("outcome"):
@@ -130,8 +174,8 @@ def _origin() -> tuple[Any, Any, Any]:
     own = _explicit_target()
     kind = case((own, literal_column("'host'")), (named, literal_column("'host'")), else_=literal_column("'address'"))
     name = case(
-        (own, func.lower(g.host)),
-        (named, func.lower(func.trim(g.source_host))),
+        (own, _host_id(g.host)),
+        (named, _host_id(g.source_host)),
         else_=func.lower(func.trim(g.source_ip)),
     )
     label = case((own, g.host), (named, func.trim(g.source_host)), else_=func.trim(g.source_ip))
@@ -150,7 +194,7 @@ def _reached() -> tuple[Any, Any]:
     g = EvidenceLogon
     own = _explicit_target()
     return (
-        case((own, func.lower(func.trim(g.target_host))), else_=func.lower(g.host)),
+        case((own, _host_id(g.target_host)), else_=_host_id(g.host)),
         case((own, func.trim(g.target_host)), else_=g.host),
     )
 
@@ -260,6 +304,7 @@ def graph(db: OrmSession, incident_id: str, f: dict[str, Any]) -> dict[str, Any]
         )
     if edges:
         _describe(db, where, kind, name, target, edges, nodes)
+        _labels(db, incident_id, nodes)
         _evidence(db, incident_id, nodes)
     return {
         "nodes": sorted(nodes.values(), key=lambda node: (-(node["logonsIn"] + node["logonsOut"]), node["id"])),
@@ -314,6 +359,22 @@ def _describe(
         edge["types"] = sorted(set(edge["types"]))
 
 
+def _labels(db: OrmSession, incident_id: str, nodes: dict[str, dict[str, Any]]) -> None:
+    """A host node is labelled with the longest spelling its logons have (``WKS-1.corp.example`` over ``WKS-1``)."""
+    g = EvidenceLogon
+    longest: dict[str, str] = {}
+    for column in (g.host, g.source_host, g.target_host):
+        # The names of a column are few, whatever its rows.
+        for held in db.scalars(select(column).where(g.incident_id == incident_id).distinct()):
+            text = (held or "").strip()
+            node_id = f"host:{short_id(text)}"
+            node = nodes.get(node_id)
+            if text and node and node["kind"] == "host" and len(text) > len(longest.get(node_id, "")):
+                longest[node_id] = text
+    for node_id, text in longest.items():
+        nodes[node_id]["label"] = text
+
+
 def _evidence(db: OrmSession, incident_id: str, nodes: dict[str, dict[str, Any]]) -> None:
     """Mark the nodes that are hosts the incident holds a file, a process or a logon of."""
     names = sorted({node["id"][5:] for node in nodes.values() if node["kind"] == "host"})
@@ -326,9 +387,9 @@ def _evidence(db: OrmSession, incident_id: str, nodes: dict[str, dict[str, Any]]
         (EvidenceProcess.host, EvidenceProcess),
         (EvidenceLogon.host, EvidenceLogon),
     ):
-        # The hosts of a table are few, whatever its rows: asked as they are, compared in lower case here.
+        # The hosts of a table are few, whatever its rows: asked as they are, compared by their short id here.
         here.update(
-            held.lower()
+            short_id(held)
             for held in db.scalars(select(column).where(table.incident_id == incident_id).distinct())
             if held
         )

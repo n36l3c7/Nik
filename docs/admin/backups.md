@@ -10,12 +10,12 @@ Let Nik take, test and copy its own encrypted backups, restore one on the server
 
 ## What a backup is
 
-One file, `nik-YYYYMMDD-HHMMSS.nikbak`, encrypted from end to end. Beside it, `nik-….json` says in clear what it is and how its restore test went (no secret).
+One file, `nik-YYYYMMDD-HHMMSS.nikbak`, encrypted from end to end. Beside it, `nik-….json` says in clear what it is and how its restore test went (no secret). From 7.0 a folder `pool-<id>` beside the backups holds the big files that never change, written once ([below](#the-pool-beside-the-backups)): **it travels with the backups**.
 
 | In a backup | Not in a backup: keep it elsewhere |
 | --- | --- |
 | The whole database at one moment: incidents, accounts, settings, audit log, analyses, playbooks, connectors and their instances (their secrets stay under `SECRET_KEY`) | `.env` and `./secrets`, among them `SECRET_KEY` (unless you tick **Include SECRET_KEY inside the encrypted backup**) |
-| The whole store of files: samples (live malware), e-mails, captures, mailboxes, screenshots, rule files, decrypted and encrypted again under the passphrase | The TLS certificate and its key |
+| The whole store of files: samples (live malware), e-mails, **the originals of host evidence**, captures, mailboxes, screenshots, rule files, decrypted and encrypted again under the passphrase. The samples, e-mails and originals are in the pool folder, not in the `.nikbak` itself | The TLS certificate and its key |
 | A manifest: Nik version, database revision, row counts, the size and SHA-256 of every part | Your Compose overrides |
 
 A backup is read with its passphrase alone: the store key is not needed to restore. See [What to keep off the server](secrets.md#what-to-keep-off-the-server).
@@ -56,7 +56,7 @@ Never two at once, and none while a release is migrating the database. A file is
 
 ### Every backup is tested
 
-Right after it is written, each backup is restored for real: every chunk decrypted, every checksum compared, the database restored into a scratch database (dropped afterwards) and its row counts compared, every file of the store checked. A backup that fails is marked, not counted by the retention, and the administrators are told. The last good backup is never removed.
+Right after it is written, each backup is restored for real: every chunk decrypted, every checksum compared, the database restored into a scratch database (dropped afterwards) and its row counts compared, every file of the store checked. The files of the pool are read as [described below](#the-pool-beside-the-backups). A backup that fails is marked, not counted by the retention, and the administrators are told. The last good backup is never removed.
 
 ### What the administrators are told
 
@@ -71,7 +71,29 @@ NIK_BACKUP_DIR=/srv/nik-backups
 ```
 
 - Create it as the user that runs the stack; label it once under SELinux: `chcon -Rt container_file_t /srv/nik-backups`.
-- Room: about the database plus the store for each backup kept (samples barely compress). Each backup holds the whole store: twelve kept backups take about twelve times one. The page shows the figures; Nik refuses to start a backup there is no room for.
+- Room: the database for each backup kept, the rest of the store for each backup kept, and **the pool once**: a sample, an e-mail or an original is written once however many backups name it. The page shows the figures; Nik refuses to start a backup there is no room for (what the pool already holds is not counted).
+
+## The pool beside the backups
+
+From 7.0 a backup does not hold again every file of the store that is named by the SHA-256 of what it holds and never changes: the samples, the e-mails and the originals of host evidence (which can be tens of gigabytes). Each is written **once**, into a folder beside the backups, and a backup names the ones it needs.
+
+```text
+<backup directory>/
+  nik-20261124-023000.nikbak         the database, the rest of the store, and the names of the pool files it needs
+  nik-20261124-023000.json
+  pool-3f9a1c0d5b7e2a44/             the pool; the id is the generation
+    1c/1c7e…9b.nikblob               one file of the store, encrypted
+```
+
+- **It must travel with the `.nikbak`.** A backup, its passphrase and the pool folder beside it are all a restore needs, on any host. Copy the folder wherever you copy the backups. **[script]** A restore looks for every file the backup names **before it changes anything** and, if some are missing, stops and says how many and which are not in `pool-<id>` beside the backup ("Copy that folder from where the backups are kept, beside the backup").
+- **The copy off the server carries it.** The `automation` container sends the pool files a backup names, then the backup, to the same folder under the destination directory (`pool-<id>/…` beside the `nik-….nikbak`). A backup is not sent before its pool files are. What a backup alone named is removed there when the retention removes the backup; nothing is removed on a doubt.
+- **Only the new files are written.** The log line of a backup says how many are new in the pool and how many were already there. The first backup of 7.0 writes all of them.
+- **Generations and the passphrase.** The files of the pool are encrypted under a key of the pool (32 random bytes made by the server, kept with the backup settings under `SECRET_KEY` and carried by every backup that uses the pool). **Another passphrase starts another pool**: a passphrase you gave up must not open what is written after it. The next backup writes every file again, and the folder of the generation before goes when no kept backup names it. Plan the room for both for a while. A `SECRET_KEY` changed so that the key of the pool can no longer be read starts another pool too.
+- **Verification.** The restore test of a backup reads whole every file of the pool that was never read (the new ones, before the backup is called good), every file not read for a week, and a sample of the others (at most 20 files and 1 GiB). Every file is read at least once a week. A file that is not what its name says fails the test.
+- **Retention is careful.** A pool file is removed only when no backup you keep names it, and only when every backup whose file is here has its list: while one cannot be read (its passphrase is not known any more, its file is damaged), nothing is removed and the log says so.
+
+!!! note "A backup made by 7.0 is not read by 6.x"
+    A backup taken before 7.0 holds the whole store in itself and restores as it always did, in 7.0 and later.
 
 ## The copy off the server
 
@@ -115,7 +137,7 @@ In Nik, on the Backup page:
 
 ![The copy off the server, with Test the destination](../img/admin/backups-3-copy.png)
 
-Nik never trusts a host key on first sight: with no pinned key, or another key, nothing is sent and the administrators are told. A cut transfer is resumed; what arrived is checked against the local SHA-256. What the retention removes here is removed there. The second host ends up with `nik-….nikbak` and `nik-….json` for each backup kept.
+Nik never trusts a host key on first sight: with no pinned key, or another key, nothing is sent and the administrators are told. A cut transfer is resumed; what arrived is checked against the local SHA-256. What the retention removes here is removed there. The second host ends up with `nik-….nikbak` and `nik-….json` for each backup kept, and the folder `pool-<id>` beside them.
 
 The same destination and passphrase also carry the archive of the database log ([Recovery](recovery.md)).
 
@@ -140,6 +162,7 @@ deploy/restore.sh --inspect nik-20261120-023000          # only read it and say 
 | `--database-only` | Leave the store of files alone |
 | `--secret-key` | First write the `SECRET_KEY` the backup holds where this stack keeps its keys (the old one kept as `secret_key.before-restore` or `.env.before-restore`), and add the backup's audit keys to `AUDIT_KEY_PREVIOUS` |
 | `--no-start` | Leave the stack stopped |
+| `--as-copy` | This stack is a copy to try a release on: `NIK_COPY=true` is written first ([Try a release on a copy](try-on-a-copy.md)) |
 | `--yes` | Do not ask |
 
 After a restore:
@@ -157,6 +180,8 @@ To restore on a new host after the first one is gone, follow [Restore the last b
     python container.py list nik-20261120-023000.nikbak           # parts, sizes, checksums
     python container.py extract nik-20261120-023000.nikbak out/   # every part, and manifest.json
     ```
+
+    A backup of 7.0 that names files of the pool gives two more parts, `pool-key` and `store.pool` (one JSON line for each file: its path in the store, size and SHA-256). To read one file of the pool: `python container.py extract pool-<id>/<xx>/<sha256>.nikblob out/ --pool-key out/pool-key`; the file of the store it holds is the part `blob`.
 
     A clear header, then 1 MB chunks, each encrypted and authenticated with AES-256-GCM under a key derived from the passphrase with scrypt. Inside: `db/schema.json`, one `db/<table>.copy` per table in PostgreSQL `COPY` text format, and `store.tar`. It is not a `pg_dump`: a database holding anything Nik does not make (a view, a trigger, a function of yours) is refused, loudly.
 
@@ -197,5 +222,6 @@ To put a server back as it was, restore a backup instead.
 - [Recovery and standby](recovery.md) — go back to a moment, a standby host
 - [Keys and secrets](secrets.md#what-to-keep-off-the-server) — what to keep apart from the backups
 - [Upgrades](upgrades.md) — the snapshot before each upgrade
+- [Try a release on a copy](try-on-a-copy.md) — restore a backup into a copy that reaches nothing
 - [Security: backups](../reference/security.md#backups) — how backups are protected
 - [API: backups](../reference/api.md#backups-recovery-and-health)

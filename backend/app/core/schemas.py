@@ -148,7 +148,7 @@ class LoginOut(BaseModel):
     session: Optional[SessionState] = None
     notice: Optional[str] = None
     secondFactor: Optional[dict] = None
-    # What this server is (a copy of another says so): the app shows it from the first screen.
+    # What this server is (a copy of another says so): the app shows it once a person is signed in.
     server: Optional[dict] = None
 
 

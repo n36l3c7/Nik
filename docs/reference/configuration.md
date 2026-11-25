@@ -58,7 +58,9 @@ Every secret can also be given as a file: see `<NAME>_FILE`.
 | --- | --- | --- | --- |
 | <a id="SAMPLE_STORE"></a>`SAMPLE_STORE` | `./samples` | fixed (`/app/samples`) | Directory of the store of files (samples, e-mails, captures, mailboxes), each sealed under `STORE_KEY`. |
 | <a id="SAMPLE_MAX_MB"></a>`SAMPLE_MAX_MB` | 100 | `.env` | Largest sample or e-mail upload, in MB. |
-| <a id="ARTIFACT_MAX_MB"></a>`ARTIFACT_MAX_MB` | 500 | `.env` | Largest evidence file the server parses (`POST /api/incidents/{id}/upload`); larger is refused with 413. |
+| <a id="ARTIFACT_MAX_MB"></a>`ARTIFACT_MAX_MB` | 500 | `.env` | Largest evidence file `POST /api/incidents/{id}/upload` takes (the old route, kept for scripts); larger is refused with 413. |
+| <a id="EVIDENCE_MAX_MB"></a>`EVIDENCE_MAX_MB` | 8192 | `.env` | Largest file of host evidence sent in parts (`/api/uploads`, what the app uses): a `$MFT`, a `$J`, a large log. The free room of the store is checked before the transfer. |
+| <a id="COLLECTION_MAX_MB"></a>`COLLECTION_MAX_MB` | 20480 | `.env` | Largest collection (a KAPE or Velociraptor zip) sent in parts. The Compose file hands the same value to the worker (`FORENSICS_COLLECTION_MB`) as the bound on what it unpacks. |
 | <a id="PCAP_MAX_MB"></a>`PCAP_MAX_MB` | 500 | `.env` | Largest packet capture, in MB. |
 | <a id="MAILBOX_MAX_MB"></a>`MAILBOX_MAX_MB` | 2048 | `.env` | Largest mailbox (mbox, or a zip or tar of a Maildir), in MB. |
 | <a id="PST_MAX_MB"></a>`PST_MAX_MB` | 4096 | `.env` | Largest Outlook PST, in MB. Converted by `docview` on its `pst-work` volume, which needs about 2.5 times the PST free. The shipped nginx lets 4200 MB through for mailboxes: to raise this or `MAILBOX_MAX_MB` beyond it, raise `client_max_body_size` of the mailbox location in `frontend/nginx/nginx.conf` too. |
@@ -75,6 +77,7 @@ Every secret can also be given as a file: see `<NAME>_FILE`.
 | <a id="DOCVIEW_URL"></a>`DOCVIEW_URL`, `DOCVIEW_TOKEN` | — | URL fixed, token `.env` / secret | The document viewer (previews, PST). Without them **Preview** is disabled. |
 | <a id="BROWSER_URL"></a>`BROWSER_URL`, `BROWSER_TOKEN` | — | URL fixed, token `.env` / secret | The isolated browser. Without them HTML attachments and links do not open. |
 | <a id="PCAP_URL"></a>`PCAP_URL`, `PCAP_TOKEN` | — | URL fixed, token `.env` / secret | The packet capture worker. Without them captures are stored, not analysed. |
+| <a id="FORENSICS_URL"></a>`FORENSICS_URL`, <a id="FORENSICS_TOKEN"></a>`FORENSICS_TOKEN` | empty, — | URL fixed (`http://forensics:8760`), token `.env` / secret | The forensics worker, which reads the files of host evidence and runs the Sigma rules. With no URL the originals are kept and wait to be read. The token is made by `deploy/init-env.sh`. |
 | <a id="SANDBOX_URL"></a>`SANDBOX_URL`, `SANDBOX_TOKEN` | — | URL fixed, token `.env` / secret | The script sandbox. Without it a script step fails, saying the sandbox is not configured. |
 | <a id="SANDBOX_TIMEOUT"></a>`SANDBOX_TIMEOUT`, `SANDBOX_MAX_TIMEOUT` | 10, 60 | `.env` | How long a script may run, in seconds: by default, and at most (600 at the very most). |
 
@@ -116,6 +119,7 @@ Every secret can also be given as a file: see `<NAME>_FILE`.
 | <a id="LOG_LEVEL"></a>`LOG_LEVEL` | `INFO` | override | Verbosity of the backend log. |
 | <a id="WEB_CONCURRENCY"></a>`WEB_CONCURRENCY` | 2 (in the image) | override | Backend processes (gunicorn). |
 | <a id="API_STOP_GRACE"></a>`API_STOP_GRACE` | 20 | override | Seconds the backend gives requests in flight when asked to stop. Must stay under the `stop_grace_period` of `api` (40 s). |
+| <a id="NIK_COPY"></a>`NIK_COPY`, `NIK_COPY_OF` | `false`, empty | `.env` | This stack is a copy of another server, restored from its backup to try a release: it reaches nothing outside itself (no fetch, mirror, mail, webhook, playbook that starts by itself, copy off the server, shipping to a standby, syslog forwarding). `NIK_COPY_OF` is the name the banner **COPY of** shows (120 characters at most). Set by `deploy/restore.sh --as-copy`; never on a real server. See [Try a release on a copy](../admin/try-on-a-copy.md). |
 | <a id="NIK_WEB_TLS"></a>`NIK_WEB_TLS` | `web:443` | override | Where the backend reads the web certificate for the Health page. Empty when there is none; the host and port of your own proxy on a manual install. |
 | <a id="PROMETHEUS_MULTIPROC_DIR"></a>`PROMETHEUS_MULTIPROC_DIR` | `/tmp/nik-metrics` (in the image) | override | Where the backend processes add up their request counts, so `/api/metrics` gives the same totals whichever answers. |
 
@@ -126,7 +130,7 @@ Read by `docker-compose.yml` itself, from `.env`. The variables marked required 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | <a id="NIK_SECRETS_DIR"></a>`NIK_SECRETS_DIR` | — (`./secrets` on a new install) | The directory of the secrets as files, each mounted into the containers that use it. Unset on a server that keeps its secrets in `.env`. |
-| `DB_PASSWORD`, `SECRET_KEY`, `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN`, `SANDBOX_TOKEN` | required | The secrets (see above). Each worker token is different, long and random. |
+| `DB_PASSWORD`, `SECRET_KEY`, `ANALYZER_TOKEN`, `CAPA_TOKEN`, `DOCVIEW_TOKEN`, `BROWSER_TOKEN`, `PCAP_TOKEN`, `SANDBOX_TOKEN`, `FORENSICS_TOKEN` | required | The secrets (see above). Each worker token is different, long and random. |
 | <a id="WEB_TLS_PORT"></a>`WEB_TLS_PORT` | 8443 | Host port of the app (HTTPS). |
 | <a id="WEB_PORT"></a>`WEB_PORT` | 8080 | Host port for plain HTTP: only redirects to HTTPS. |
 | <a id="TLS_HOSTNAME"></a>`TLS_HOSTNAME` | `localhost` | Name in the self-signed certificate (CN and SAN): what users type. |
@@ -146,6 +150,7 @@ Read by `docker-compose.yml` itself, from `.env`. The variables marked required 
 | <a id="DOCVIEW_MEMORY"></a>`DOCVIEW_MEMORY`, `DOCVIEW_CPUS` | 2g, 1 | `docview` |
 | <a id="BROWSER_MEMORY"></a>`BROWSER_MEMORY`, `BROWSER_CPUS` | 2g, 2 | `browser` |
 | <a id="PCAP_MEMORY"></a>`PCAP_MEMORY`, `PCAP_CPUS` | 4g, 2 | `pcap` (sharkd keeps an open capture in memory: a few times its size) |
+| <a id="FORENSICS_MEMORY"></a>`FORENSICS_MEMORY`, `FORENSICS_CPUS` | 4g, 2 | `forensics` (each file is read in a process of its own, under `FORENSICS_JOB_MEMORY_MB`) |
 
 Container logs are rotated at 20 MB.
 
@@ -169,6 +174,21 @@ Rarely needed; the defaults suit a single server. Read by the worker containers 
 | <a id="SANDBOX_MEMORY_MB"></a>`SANDBOX_MEMORY_MB` | 256 (`.env`) | Memory one script may use, in MB. |
 | <a id="STOP_GRACE"></a>`ANALYZER_STOP_GRACE`, `CAPA_STOP_GRACE`, `DOCVIEW_STOP_GRACE`, `PCAP_STOP_GRACE` | 20 each | Seconds a worker gives its jobs when asked to stop. Must stay under the service's `stop_grace_period` (30 s). |
 | <a id="TLS_SELFSIGNED_DAYS"></a>`TLS_SELFSIGNED_DAYS` | 825 | Validity of the self-signed certificate. Read only when the certificate is made. |
+
+### The forensics worker
+
+Read by the `forensics` container. The first two are passed from `.env` by the Compose file; the others need an override of the service.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| <a id="FORENSICS_MAX_JOBS"></a>`FORENSICS_MAX_JOBS` (`.env`) | 2 | Files read at once; another request is answered busy and waits. |
+| <a id="FORENSICS_JOB_MEMORY_MB"></a>`FORENSICS_JOB_MEMORY_MB` (`.env`) | 1536 | Memory one file may use (its process is bounded by `RLIMIT_DATA`); a file made to exceed it ends that process, and is reported as read in part. |
+| <a id="FORENSICS_JOB_SECONDS"></a>`FORENSICS_JOB_SECONDS` | 21600 | CPU seconds one file may use. |
+| <a id="FORENSICS_SIGMA_SECONDS"></a>`FORENSICS_SIGMA_SECONDS` | 120 | Seconds a check or a try of Sigma rules may take. |
+| <a id="FORENSICS_FILES_MB"></a>`FORENSICS_FILES_MB` | 49152 | MB of originals the worker holds at once, in clear, on its volume `forensics-work`. |
+| <a id="FORENSICS_FILE_IDLE"></a>`FORENSICS_FILE_IDLE` | 900 | Seconds an original is kept after the last request for it. The volume is emptied when the worker starts. |
+| <a id="FORENSICS_STOP_GRACE"></a>`FORENSICS_STOP_GRACE` | 20 | Seconds the worker gives the files it reads when asked to stop. Must stay under the service's `stop_grace_period` (30 s). |
+| <a id="FORENSICS_PORT"></a>`FORENSICS_PORT`, `FORENSICS_WORK_DIR` | 8760, `/work` | Its port and its work folder: leave them. |
 
 ### Read by the scripts
 

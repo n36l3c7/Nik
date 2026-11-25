@@ -54,7 +54,7 @@
 #   --inspect          only read the file and say what it holds
 #   --no-start         leave the stack stopped at the end
 #   --as-copy          this stack is a copy of the server the backup comes from, to try a release on
-#                      (7.0, docs/admin/try-a-release.md): NIK_COPY=true is written into .env before
+#                      (7.0, docs/admin/try-on-a-copy.md): NIK_COPY=true is written into .env before
 #                      anything else, so the copy reaches nothing outside itself from its first start
 #                      (no fetch, no mirror, no mail, no webhook, no off-site backup, no standby, no
 #                      playbook that starts by itself). NIK_COPY_OF names the original in the banner

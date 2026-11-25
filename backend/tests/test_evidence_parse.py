@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.core.config import settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.core.models import EvidenceMark, EvidenceRecord, EvidenceSource
 from app.evidence import imports, originals, parse
 from app.main import app as fastapi_app
@@ -194,6 +194,23 @@ def test_records_another_file_already_gave_are_counted_not_stored_twice(incident
     assert [row.key for row in records_of(second)] == ["evtx:WKS-042:Security:3"]
 
 
+def test_the_ids_of_what_a_batch_stored_come_back_by_key_and_a_repeated_key_keeps_the_first(incident):
+    source_id = a_source(incident, b"ElfFile\x00 a batch")
+    with SessionLocal() as db:
+        source = db.get(EvidenceSource, source_id)
+        batch = [parse._row(event, source) for event in (record(1), record(2), record(2, summary="again"), record(3))]
+        placed: dict[str, int] = {}
+        assert parse._insert(db, batch, placed) == 3
+        db.commit()
+        # Nothing is stored twice, and nothing comes back for what was already there.
+        again: dict[str, int] = {}
+        assert parse._insert(db, batch, again) == 0 and again == {}
+        db.commit()
+    stored = {row.key: row for row in records_of(source_id)}
+    assert placed == {key: row.id for key, row in stored.items()} and len(placed) == 3
+    assert stored["evtx:WKS-042:Security:2"].summary == "logon 2"
+
+
 def test_reading_again_replaces_the_records_and_keeps_the_marks(incident, monkeypatch):
     source_id = a_source(incident, b"ElfFile\x00 again")
     worker_says(monkeypatch, [SOURCE, record(1), record(2), end(2, in_file=2)])
@@ -372,3 +389,22 @@ def test_an_incident_deleted_while_its_file_is_read_ends_the_reading_quietly(adm
     with SessionLocal() as db:
         kept = select(func.count()).select_from(EvidenceRecord).where(EvidenceRecord.source_id == source_id)
         assert db.scalar(kept) == 0
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="the limit of a statement is PostgreSQL's")
+def test_removing_the_records_of_a_file_or_an_incident_is_not_cut_short_by_the_limit_of_a_statement(incident):
+    from sqlalchemy import text
+
+    from app.core.models import Incident
+    from app.routers.incidents import remove_incident
+
+    source_id = a_source(incident, b"ElfFile\x00 to be removed")
+    with SessionLocal() as db:
+        assert db.scalar(text("SHOW statement_timeout")) != "0"
+        parse.clear(db, source_id)
+        assert db.scalar(text("SHOW statement_timeout")) == "0"
+        db.rollback()
+        assert db.scalar(text("SHOW statement_timeout")) != "0"
+        remove_incident(db, db.get(Incident, incident), "tester")
+        assert db.scalar(text("SHOW statement_timeout")) == "0"
+        db.rollback()

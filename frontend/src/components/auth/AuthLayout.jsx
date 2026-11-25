@@ -86,8 +86,8 @@ export default function AuthLayout({ title, subtitle, children }) {
           <StatusLine label="database" probe={db} okText={() => 'ready'} />
         </div>
         <p className="max-w-lg text-xs text-fg-muted">
-          Raw forensic files are parsed in your browser; only normalized entries reach the server. Every action is
-          recorded in the audit log under your name.
+          Evidence files are kept on the server as they were given and read there, in an isolated worker. Every action
+          is recorded in the audit log under your name.
         </p>
       </section>
 

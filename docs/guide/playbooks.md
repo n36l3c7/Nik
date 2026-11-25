@@ -41,6 +41,9 @@ Every change saves itself a moment later (*draft saved*). Undo and redo are ++ct
 
 Every kind of trigger is on [Triggers and events](triggers.md).
 
+!!! tip "React to a detection"
+    **Sigma rules match records of a host file** · `evidence.detected` starts a playbook when a file of [host evidence](host.md) has detections. A detection never changes the severity of the incident, so say here what should happen: add a condition on `{{ trigger.levelNumber }}` **is at least** `4` to act only on high and critical matches. See [Triggers and events](triggers.md#events-about-host-evidence).
+
 ### 4. Add nodes
 
 1. In the library, open **Flow** and drag **Approval** onto the canvas, under the trigger. Or click it: it lands after the selected node, joined to it.

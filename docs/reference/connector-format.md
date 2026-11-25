@@ -195,6 +195,7 @@ mappers/acme-desk.json              mappers and the classifier
 lists/vip_users.json                a list (items only when the pack carries them)
 dashboards/customer-cases.json      a dashboard
 preprocess_rules/drop-tests.json    a pre-processing rule
+sigma/windows/odd-logon.yml         a Sigma rule for host evidence: one rule document in each .yml, at any depth
 ```
 
 ### pack.yml
@@ -211,12 +212,15 @@ author: Acme
 requires:                # packs that must be installed first
   - { pack: acme-base, version: 1.0.0 }
 nik: ">=6.10"            # the oldest Nik it is for
+notice: |                # optional: the licence or the notice of what the pack carries (20,000 characters at most)
+  Rules by their authors, under the Detection Rule License 1.1.
 ```
 
 - `nik` is `>=` and a version (`">=6.0"`, `">=6.10"`); a pack for a later Nik is not offered.
 - An item is found again by its **name** (a connector by its id), never by a database id. Each file is what exporting that item alone gives.
 - Limits: 20 MB, 2 000 files, 100 MB unpacked, 5 MB an item; no path leaving the pack, no links, only these folders; YAML read without building objects.
-- Kinds are applied in this order: fields, lists, scripts, connectors, playbooks, incident types, mappers, pre-processing rules, dashboards.
+- Kinds are applied in this order: fields, lists, scripts, connectors, playbooks, incident types, mappers, pre-processing rules, dashboards, Sigma rules.
+- **Sigma rules** (7.0): the folder `sigma/`, in any depth, one rule document in each `.yml`; the `id` of the rule names it. They are given to the forensics worker 200 at a time. A rule arrives switched on when the worker can run it, its `status` is `stable` or `test` and its `level` is `medium` or more, and off otherwise. A rule a person changed keeps their text when the pack is updated, and **Reset** gives the pack's back. The `notice` is shown with the pack, and the report names the author of each rule that matched, as the licence of SigmaHQ asks.
 
 A pack never carries an instance, a credential, an allowed host or an opened class of data.
 

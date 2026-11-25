@@ -85,7 +85,18 @@ function Help({ os }) {
 }
 
 /** The events of the logs of Linux and macOS: a table of the server's records, kind syslog. */
-function Events({ incident, sources, canWrite, refresh, matter, onMatterChange, focusRule, ruleTitles }) {
+function Events({
+  incident,
+  sources,
+  canWrite,
+  refresh,
+  matter,
+  matterCount,
+  total,
+  onMatterChange,
+  focusRule,
+  ruleTitles,
+}) {
   const menu = useItemMenu(incident)
   const marks = useMarks(incident.id)
   const [filters, setFilters] = useState(() => (focusRule ? { rule: focusRule } : incidentRange(incident)))
@@ -272,6 +283,11 @@ function Events({ incident, sources, canWrite, refresh, matter, onMatterChange, 
         <Star className="h-3.5 w-3.5" aria-hidden="true" />
         Events that matter
       </button>
+      {matter && (
+        <span className="font-mono text-xs text-fg-muted">
+          {matterCount.toLocaleString('en-US')} of {total.toLocaleString('en-US')} events matter
+        </span>
+      )}
       <button
         type="button"
         aria-pressed={Boolean(filters.flagged)}
@@ -425,7 +441,7 @@ export default function SyslogLogs({ incident, os }) {
   const items = SECTIONS.map((item) => ({
     ...item,
     count: {
-      events: matter ? counts.matter : counts.records,
+      events: counts.records, // all of them, as "Events kept": the table says how many of them matter
       detections: found.data.total,
       processes: counts.processes,
       logons: counts.logons,
@@ -508,6 +524,8 @@ export default function SyslogLogs({ incident, os }) {
                 canWrite={canWrite}
                 refresh={version}
                 matter={matter}
+                matterCount={counts.matter}
+                total={counts.records}
                 onMatterChange={setMatter}
                 focusRule={focusRule}
                 ruleTitles={ruleTitles}

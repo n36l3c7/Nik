@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .. import work
 from ..core.config import settings
-from ..core.db import SessionLocal
+from ..core.db import SessionLocal, without_statement_limit
 from ..core.models import (
     EvidenceDetection,
     EvidenceLogon,
@@ -253,9 +253,10 @@ def _row(event: dict[str, Any], source: EvidenceSource) -> dict[str, Any] | None
     }
 
 
-def _insert(db: OrmSession, rows: list[dict[str, Any]]) -> int:
+def _insert(db: OrmSession, rows: list[dict[str, Any]], placed: dict[str, int] | None = None) -> int:
     """Store a batch, leaving out the records another file of the incident already gave (same key).
-    Returns how many were stored."""
+    Returns how many were stored. ``placed``, when given, is filled with the id of each record stored, by
+    key: what the detections and the processes of the batch need to name them, without asking again."""
     if not rows:
         return 0
     insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
@@ -265,14 +266,18 @@ def _insert(db: OrmSession, rows: list[dict[str, Any]]) -> int:
     table = EvidenceRecord.__table__
     # What comes back is what was stored: the rows a conflict left out give no id.
     stored = db.execute(
-        insert(table).on_conflict_do_nothing(index_elements=["incident_id", "key"]).returning(table.c.id),
+        insert(table).on_conflict_do_nothing(index_elements=["incident_id", "key"]).returning(table.c.id, table.c.key),
         unique,
-    )
-    return len(stored.all())
+    ).all()
+    if placed is not None:
+        placed.update((key, found) for found, key in stored)
+    return len(stored)
 
 
 def clear(db: OrmSession, source_id: str) -> None:
-    """Remove what a reading stored for the source (the caller commits). Marks stay: they are by key."""
+    """Remove what a reading stored for the source (the caller commits). Marks stay: they are by key. A file of millions
+    of records takes longer than a statement may, so the limit is lifted for the rest of the transaction."""
+    without_statement_limit(db)
     records = select(EvidenceRecord.id).where(EvidenceRecord.source_id == source_id)
     processes.detach(db, source_id)
     db.execute(delete(EvidenceDetection).where(EvidenceDetection.record_id.in_(records)))
@@ -350,16 +355,18 @@ def _read(source_id: str, claim: work.Claim | None = None) -> None:
     declared: dict[tuple[str, str], None] = {}
     undeclared = 0
     job = watching.job_name(WORK, source_id, getattr(claim, "attempts", 1) or 1)
+    placed: dict[str, int] = {}  # the ids of the records of the batch being stored, by key
 
     def flush() -> None:
         if not batch and not detected.pending and not held:
             return
         with SessionLocal() as db:
             try:
+                placed.clear()
                 if batch:
-                    counts["kept"] += _insert(db, batch)
-                detected.write(db)  # after the records they are of
-                held.write(db)  # so are the processes and the logons
+                    counts["kept"] += _insert(db, batch, placed)
+                detected.write(db, placed)  # after the records they are of
+                held.write(db, placed)  # so are the processes and the logons
                 db.commit()
             except IntegrityError:
                 # The rows these belong to are gone: the incident was deleted under the reading.

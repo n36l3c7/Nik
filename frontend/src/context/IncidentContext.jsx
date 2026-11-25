@@ -279,6 +279,8 @@ export function IncidentProvider({ children }) {
   const activeIncidentIdRef = useRef(activeIncidentId)
   // POST promises of the incidents created in this session (see whenSaved).
   const savedRef = useRef(new Map())
+  // Incidents this window is deleting right now.
+  const deletingRef = useRef(new Set())
   activeIncidentIdRef.current = activeIncidentId
 
   /** Store a full document in the cache (and its summary row in the list). */
@@ -728,12 +730,16 @@ export function IncidentProvider({ children }) {
   /** Delete an incident: it leaves the list once the server has deleted it. */
   const deleteIncident = useCallback(
     async (incidentId) => {
+      // What this window asks the server to delete is not "found gone" by a poll that arrives meanwhile.
+      deletingRef.current.add(incidentId)
       try {
         await api.del(incidentPath(incidentId))
       } catch (err) {
+        deletingRef.current.delete(incidentId)
         setStorageError(err?.message || 'Unable to delete the incident on the server.')
         return false
       }
+      deletingRef.current.delete(incidentId)
       setStorageError(null)
       queue.forget(incidentId)
       const remaining = incidentsRef.current.filter((i) => i.id !== incidentId)
@@ -745,6 +751,26 @@ export function IncidentProvider({ children }) {
         const next = remaining[0]?.id ?? null
         setActiveIncidentId(next)
         syncUrl(next, { replace: true })
+      }
+      return true
+    },
+    [forgetDocument, queue],
+  )
+
+  /**
+   * Somebody else deleted an incident this window knew (a request about it answered "Incident not found"):
+   * forget it, and leave it if it was open. False for an incident that is not known to be on the server
+   * (a new one still being saved, an address that names nothing), which is not a deletion.
+   */
+  const incidentGone = useCallback(
+    (incidentId) => {
+      if (deletingRef.current.has(incidentId) || !queue.isTracked(incidentId)) return false
+      queue.forget(incidentId)
+      setIncidents(incidentsRef.current.filter((row) => row.id !== incidentId))
+      forgetDocument(incidentId)
+      if (activeIncidentIdRef.current === incidentId) {
+        setActiveIncidentId(null)
+        syncUrl(null, { replace: true })
       }
       return true
     },
@@ -1195,6 +1221,7 @@ export function IncidentProvider({ children }) {
     setIncidentTriage,
     assignees,
     deleteIncident,
+    incidentGone,
     selectIncident,
     updateTabData,
     clearTabData,

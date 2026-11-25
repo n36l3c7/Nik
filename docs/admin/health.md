@@ -17,7 +17,7 @@ See at a glance whether the server is well, get told when it is not, scrape it w
 | Database | Engine, size and growth, connections, pool, longest transaction, schema revision |
 | Queues | What waits in each queue and for how long; schedules of playbooks; fetching |
 | Work in progress | What restarts left behind ([below](#work-in-progress)); bulk actions |
-| Workers | Each worker; the automation worker's last sign of life |
+| Workers | Each worker, the **forensics worker** among them; the automation worker's last sign of life |
 | Backups | Last good backup, last restore test, next backup, snapshots before upgrades; recovery to a moment and the second host |
 | Audit log | The chain; forwarding to syslog |
 | Sign-in | Whose word is taken for the client's address; second factor of the administrators |
@@ -62,16 +62,23 @@ Three rows say what restarts left behind:
 
 ![The Workers page with the state of each worker](../img/admin/health-2-workers.png)
 
-The backend checks every 30 seconds each worker it is configured with (analyzer, capa, document viewer, isolated browser, packet capture, script sandbox) and the automation container's heartbeat. A worker that has not answered for **two minutes without a break** is down: every admin gets one notification naming it, and one more when it is back. A container restarting for an update is back well within two minutes and tells nobody.
+The backend checks every 30 seconds each worker it is configured with (analyzer, capa, document viewer, isolated browser, packet capture, forensics, script sandbox) and the automation container's heartbeat. A worker that has not answered for **two minutes without a break** is down: every admin gets one notification naming it, and one more when it is back. A container restarting for an update is back well within two minutes and tells nobody.
 
 When a worker is down:
 
 ```sh
 docker compose ps
-docker compose logs -f <service>      # analyzer, capa, docview, browser, pcap, sandbox, automation
+docker compose logs -f <service>      # analyzer, capa, docview, browser, pcap, forensics, sandbox, automation
 ```
 
 A worker that is not configured (no `*_URL`, or `AUTOMATION_WORKER=off`) is not watched.
+
+!!! warning "When the forensics worker is down"
+    **Files of host evidence cannot be read.** What was sent is kept as it was given and waits; no Sigma rule is checked or run; a record cannot be opened in its original; the viewer, the search in a file and the unpacking of a collection do not answer. Nothing is lost. A file being read when the worker restarts is given again at once, and a file sent in parts goes on from where it stopped. If it keeps failing, look at `docker compose logs forensics` and at its memory (`FORENSICS_MEMORY`, `FORENSICS_JOB_MEMORY_MB`).
+
+### A server that is a copy
+
+A stack restored with `deploy/restore.sh --as-copy` (`NIK_COPY=true`) shows the banner **COPY of** the name of the original on every screen, and reaches nothing outside itself. The Health page has no row for it: the banner, and `server.copy` in `GET /api/auth/me`, are the sign. What it refuses and how to check it: [Try a release on a copy](try-on-a-copy.md). The warnings about the copy off the server and the standby do not apply to it.
 
 ## Storage
 

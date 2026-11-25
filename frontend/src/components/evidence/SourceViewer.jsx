@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import {
+  FIND_LIMIT,
   PAGE_BYTES,
+  charRange,
   copyTextOf,
   fieldRows,
+  findSummary,
   hexDump,
+  markedRows,
+  matchLine,
   neighbours,
   numberedLines,
   pageStartFor,
@@ -14,7 +19,7 @@ import {
   viewProblem,
   whereLine,
 } from '../../domain/sourceViewer.js'
-import { shortHash } from '../../domain/sourceFiles.js'
+import { hexOffset, shortHash } from '../../domain/sourceFiles.js'
 import { sizeText } from '../../domain/transfers.js'
 import { copyText } from '../../lib/download.js'
 import { useLayer } from '../../lib/layers.js'
@@ -164,6 +169,148 @@ function RecordView({ record, state, onPrev, onNext }) {
   )
 }
 
+/** Search in the whole original: a text (UTF-8 and UTF-16, any case) or hex bytes; a click on a match opens its page. */
+function FindBox({ incidentId, source, onPick, picked }) {
+  const [query, setQuery] = useState('')
+  const [kind, setKind] = useState('text')
+  const [state, setState] = useState({ busy: false, error: null, matches: [], next: null, asked: false, summary: null })
+  const controller = useRef(null)
+  useEffect(() => () => controller.current?.abort(), [])
+
+  // `from` is where to go on from; without it a new search starts at the top and replaces the list.
+  const run = async (from = null) => {
+    const q = query.trim()
+    if (!q) return
+    controller.current?.abort()
+    const mine = new AbortController()
+    controller.current = mine
+    setState((was) => ({ ...was, busy: true, error: null }))
+    try {
+      const answer = await evidence.sourceFind(incidentId, source.id, {
+        q,
+        as: kind,
+        from: from ?? 0,
+        limit: FIND_LIMIT,
+        signal: mine.signal,
+      })
+      const summary = findSummary(answer)
+      setState((was) => ({
+        busy: false,
+        error: null,
+        matches: from === null ? summary.matches : [...was.matches, ...summary.matches],
+        next: summary.more,
+        asked: true,
+        summary,
+      }))
+    } catch (error) {
+      if (error?.name === 'AbortError') return
+      setState((was) => ({ ...was, busy: false, error }))
+    }
+  }
+  const submit = (event) => {
+    event.preventDefault()
+    run()
+  }
+  const { busy, error, matches, next, asked, summary } = state
+  return (
+    <div className="border-b border-line-soft px-4 py-2">
+      <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
+        <label className="sr-only" htmlFor="viewer-find">
+          Search the whole file
+        </label>
+        <input
+          id="viewer-find"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={kind === 'hex' ? 'Bytes: 4d 5a 90 00' : 'Search the whole file'}
+          className="min-w-0 flex-1 border border-line bg-canvas px-2 py-1 font-mono text-[13px] text-fg placeholder:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        />
+        <Choice
+          label="Search for"
+          value={kind}
+          onChange={setKind}
+          options={[
+            { id: 'text', label: 'Text' },
+            { id: 'hex', label: 'Hex' },
+          ]}
+        />
+        <Button type="submit" variant="secondary" size="sm" disabled={busy || !query.trim()}>
+          {busy && !matches.length ? 'Searching…' : 'Search'}
+        </Button>
+      </form>
+      <p className="mt-1 text-xs text-fg-muted">
+        {kind === 'hex'
+          ? 'Exact bytes, written as hex digits.'
+          : 'Text is found in any case, as UTF-8 and as UTF-16 (the strings of an event log).'}
+      </p>
+      {error && (
+        <p role="alert" className="mt-1 text-[13px] text-high-fg">
+          {error.message || 'The search failed'}
+        </p>
+      )}
+      {asked && !error && (
+        <div aria-live="polite" className="mt-2">
+          <p
+            className={`text-[13px] ${summary.timedOut ? 'border border-med-line bg-med-soft px-2 py-1 text-med-fg' : 'text-fg-muted'}`}
+          >
+            {summary.timedOut || matches.length === 0
+              ? summary.note
+              : `${matches.length} shown${next !== null ? ', there are more.' : '.'}`}
+          </p>
+          {matches.length > 0 && (
+            <ul aria-label="Matches" className="mt-1 max-h-40 overflow-y-auto border border-line-soft">
+              {matches.map((match) => (
+                <li key={`${match.offset}-${match.encoding}`}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(match)}
+                    aria-current={picked?.offset === match.offset ? 'true' : undefined}
+                    className={`block w-full px-2 py-1 text-left font-mono text-xs hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${picked?.offset === match.offset ? 'bg-accent-soft' : ''}`}
+                  >
+                    {matchLine(match)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {next !== null && (
+            <Button className="mt-1" variant="secondary" size="sm" disabled={busy} onClick={() => run(next)}>
+              {busy ? 'Searching…' : `Next matches (from ${hexOffset(next)})`}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The page body with the match drawn: the characters of a text page, the rows of a dump. */
+function Marked({ page, as, body, mark }) {
+  if (!mark) return body
+  if (as === 'hex') {
+    const rows = markedRows(page.offset, mark.offset, mark.length)
+    if (!rows) return body
+    return body.split('\n').map((line, index) => (
+      <span key={index} className={index >= rows[0] && index <= rows[1] ? 'bg-accent-soft' : undefined}>
+        {line}
+        {'\n'}
+      </span>
+    ))
+  }
+  const range = charRange(body, page.offset, mark.offset, mark.length)
+  if (!range) return body
+  return (
+    <>
+      {body.slice(0, range.from)}
+      <mark data-testid="find-mark" className="bg-accent-soft text-fg outline outline-1 outline-accent">
+        {body.slice(range.from, range.to)}
+      </mark>
+      {body.slice(range.to)}
+    </>
+  )
+}
+
 /** The bytes of the original, a page of 64 KiB at a time, as text or as hex. */
 function FileView({ incidentId, source, start: first = 0 }) {
   const [as, setAs] = useState('text')
@@ -171,6 +318,7 @@ function FileView({ incidentId, source, start: first = 0 }) {
   const [jump, setJump] = useState('')
   const [jumpError, setJumpError] = useState('')
   const [state, setState] = useState({ key: '', page: null, error: null })
+  const [mark, setMark] = useState(null) // the match picked in the search: `{ offset, length }`
   const key = `${source.id}|${as}|${start}`
   useEffect(() => {
     const controller = new AbortController()
@@ -199,6 +347,10 @@ function FileView({ incidentId, source, start: first = 0 }) {
     }
     setJumpError('')
     setStart(pageStartFor(offset, size || offset + 1))
+  }
+  const pick = (match) => {
+    setMark({ offset: match.offset, length: match.length })
+    setStart(pageStartFor(match.offset, size || match.offset + 1))
   }
   const copy = async () => {
     if (!(await copyText(body))) return
@@ -253,6 +405,7 @@ function FileView({ incidentId, source, start: first = 0 }) {
           </Button>
         </span>
       </div>
+      <FindBox incidentId={incidentId} source={source} onPick={pick} picked={mark} />
       {jumpError && (
         <p role="alert" className="border-b border-line-soft px-4 py-1.5 text-[13px] text-high-fg">
           {jumpError}
@@ -285,7 +438,7 @@ function FileView({ incidentId, source, start: first = 0 }) {
             tabIndex={0}
             aria-label="Bytes of the original"
           >
-            {body}
+            <Marked page={page} as={as} body={body} mark={mark} />
           </pre>
         )}
       </div>
@@ -299,7 +452,8 @@ function FileView({ incidentId, source, start: first = 0 }) {
  *  - "This record": at the left what Nik extracted (`record.fields`, pairs or an object; without them
  *    the record is read from the server and its `data` is shown), at the right what the worker's viewer
  *    answers for it (`xml`, `fields`, `text` or `json`), cut notice included.
- *  - "Whole file": the bytes of the original as text or hex, 64 KiB a page, with a way to go to an offset.
+ *  - "Whole file": the bytes of the original as text or hex, 64 KiB a page, with a way to go to an offset
+ *    and a search over the whole file (a click on a match opens its page and marks it).
  *
  * Props: `incidentId`; `source` (`{ id, fileName, sha256?, size? }`); `record?` (`{ id, fields? }`: no
  * record, no "This record" tab); `onClose`; `onPrev?`, `onNext?` (the neighbours of the record in the list

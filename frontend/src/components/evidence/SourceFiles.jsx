@@ -6,6 +6,7 @@ import {
   canReadAgain,
   expectedOf,
   keptText,
+  notRecordsText,
   missingExpected,
   needsPolling,
   readBeforeProcesses,
@@ -157,6 +158,9 @@ export default function SourceFiles({
       await work()
       await refresh()
       changedRef.current?.()
+    } catch (failure) {
+      // A refusal is said on the page, not thrown at nobody (these run from buttons).
+      setError(failure?.message || 'That did not work.')
     } finally {
       setBusy(false)
     }
@@ -460,7 +464,10 @@ export default function SourceFiles({
                       )}
                     </td>
                     <td className="px-3 py-2 font-mono [overflow-wrap:anywhere]">{source.host || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums">
+                    <td
+                      className="whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums"
+                      title={notRecordsText(source) || undefined}
+                    >
                       {keptText(source)}
                     </td>
                     <td className="px-3 py-2">

@@ -3,7 +3,7 @@
 A custom Cortex XSOAR / XSIAM integration that drives the **Nik** forensic
 analysis platform through its REST API. Use it to query and manage incidents,
 add/remove notes, upload artifact files for server-side parsing, and read the
-audit log and detection settings — and optionally pull Nik incidents into XSOAR.
+audit log and shared settings — and optionally pull Nik incidents into XSOAR.
 
 Files in this folder:
 
@@ -163,10 +163,11 @@ Read the global audit log, newest-first.
 `incidentId`, `incidentName`.
 
 ### `nik-get-settings`
-Read the shared detection keywords and business hours.
+Read the shared settings: the business hours and their time zone.
 
-**Context:** `Nik.Settings` — `keywords[]` (label/pattern/severity/description)
-and `businessHours` (startHour/endHour/flagWeekends).
+**Context:** `Nik.Settings.businessHours` (startHour/endHour/flagWeekends/tz).
+Since Nik 7.0 the settings no longer carry `keywords` (detections are Sigma
+rules), so `Nik.Settings.keywords` is not returned any more.
 
 ## Fetch incidents (optional)
 

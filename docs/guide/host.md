@@ -1,94 +1,101 @@
 # Host evidence
 
-Import what was collected on a machine (endpoint artifacts, Windows event logs, browser history, shell history) and read it in one timeline with the rest of the incident.
+Import what was collected on a machine and read it in one place, with the original of every record one click away.
 
-These four kinds are in **Evidence**, beside the e-mails, samples, captures and addresses. They always belong to an incident: they cannot be analysed on their own.
+Host evidence is the files of a machine: event logs, browser history, shell history, endpoint artifacts, the NTFS tables of a disk, and whole collections made by a triage tool. It always belongs to an incident. It sits in **Evidence**, beside the e-mails, samples, captures and addresses.
 
-## Where each file is read
+| Page                              | What it reads                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| [Event Logs](eventlogs.md)        | Windows event logs; Linux and macOS logs. Detections, processes, logons and the lateral graph |
+| [Browser Forensics](browser.md)   | The history, downloads, bookmarks and shortcuts of six browsers                               |
+| [Command History](command-history.md) | The history files of Bash, Zsh, Fish and PowerShell                                           |
+| [Endpoint Artifacts](endpoint.md) | Registry hives, Prefetch, LNK, jump lists, SRUM and more                                      |
+| [Disk (NTFS)](disk.md)            | `$MFT` and `$J`                                                                               |
+| [Collections](collections.md)     | A KAPE or Velociraptor zip, a Plaso export                                                    |
 
-| Kind | Read | What reaches the server |
-|---|---|---|
-| **Endpoint Artifacts** (CSV or JSON of the script or a DFIR tool) | In your browser | The entries |
-| **Event Logs**, `.evtx` | On the server | The file, parsed there |
-| **Event Logs**, `nik-eventlogs.json` of the collection script | In your browser | The entries |
-| **Browser Forensics** (SQLite, JSON, plist, CSV/JSON export) | In your browser | The entries |
-| **Command History** (the shell's history file) | In your browser | The entries |
+Around them: the [source viewer](viewer.md), the [Timeline](timeline.md) and [Stacking](stacking.md). Rules that flag records are in [Detection and rules](detection.md).
 
-A file read in your browser never leaves your machine: only what was read from it does. The largest `.evtx` is 500 MB (`ARTIFACT_MAX_MB`).
+## Files are no longer read in your browser
 
-## The system of the incident
+Before 7.0 a browser history or a shell history was read on your machine, and only the entries went to the server. **That is gone.** Every file of host evidence is now sent to the server as it was given, and read there.
 
-The four kinds show the paths and the collection commands of one operating system. The first time one is opened on an incident that names none, Nik asks.
+1. The **original** is kept on the server, read-only, with its SHA-256. It is never changed.
+2. A worker container with no network access, **forensics**, reads it. Each file is read by a child process with limits on time and memory.
+3. What it read goes to the tables of the incident, and a **parse report** says what was read and what was not.
 
-1. Open **Evidence › Endpoint Artifacts** (or Event Logs, Browser Forensics, Command History).
-2. **Which system is this incident about?** Choose Windows, Linux or macOS.
-3. Press **Use**. It is saved on the incident and not asked again; change it with **Edit** in the incident's facts.
+Your file therefore leaves your machine and is kept, as e-mails and samples already were. Do not give Nik a file you may not store. The pages read the records from the server, a page at a time, so a big incident does not have to be loaded in your browser.
 
-**Back to the files** leaves without choosing; nothing is saved. Someone who may not change the incident can only go back.
+| Limit                     | Value    | Set by              |
+| ------------------------- | -------- | ------------------- |
+| One file of host evidence | 8192 MB  | `EVIDENCE_MAX_MB`   |
+| One collection (a zip)    | 20480 MB | `COLLECTION_MAX_MB` |
 
-![The question of the system](../img/guide/host-1-system.png)
+Big files go up in parts and can be resumed. Nik checks the free space before it takes a file. A file the incident already holds, with the same SHA-256 and the same source, is not read twice: the screen says **already imported** and **Show its row** opens the row it has. The API of 6.x for uploading (`POST /incidents/{id}/upload`) still works, up to 500 MB.
 
 ## Import a file
 
-1. Drop the file anywhere in the window: Nik proposes the kind and the source. See [Add evidence](evidence.md#drop-a-file).
-2. Or open the kind and use its **Sources** card (**Data sources** in Browser Forensics): it says where the file lives on the host, gives a native script that collects it, and has a drop zone for each source.
+1. Drop the file anywhere in the window, or press **Add a file…** at the top of the Evidence tab. Nik proposes the kind and the source. See [Add evidence](evidence.md#drop-a-file).
+2. Or open the kind and use its **Sources** table. It lists what the page expects, with where it lives on the machine, and **Add files** chooses one.
+3. A file given without a source is recognised by the server from its name and its first bytes. A disk image or a `.plaso` file is refused, with what to do: see [Collections](collections.md#what-is-refused).
 
-![The Sources card of Endpoint Artifacts, Persistence on Windows](../img/guide/host-2-sources.png)
+A dropped `.zip` or `.lnk` still goes to [Malware Analysis](malware.md), as before: use **Import a collection…** for a triage zip.
 
-Each source <span class="step">1</span> shows where it lives on the host, **Collection script** to copy, and its drop zone. In the picture, Run / RunOnce keys already holds a CSV of 2 rows.
+## The system of the incident
 
-## Endpoint Artifacts
+The pages show the paths and the collection commands of one operating system. The first time one is opened on an incident that names none, Nik asks.
 
-Four categories, chosen at the top:
+1. Open **Evidence › Event Logs** (or any other host page).
+2. **Which system is this incident about?** Choose Windows, Linux or macOS.
+3. Press **Use**. It is saved on the incident; change it with **Edit** in the incident's facts.
 
-| Category | Sources, for example |
-|---|---|
-| **Program Execution** | BAM/DAM last execution (Windows), KnowledgeC app usage (macOS) |
-| **Persistence** | Run / RunOnce keys, Scheduled Tasks, Services, Startup folder, WMI subscriptions (Windows); cron, SSH authorized_keys, shell rc / profile, enabled systemd units (Linux); LaunchAgent / LaunchDaemon, cron (macOS) |
-| **File & Folder Access** | GTK recently-used (Linux). Windows and macOS have no source here: LNK, JumpLists and ShellBags need third-party tools. |
-| **USB & Devices** | USBSTOR, setupapi log (Windows); kernel USB events (Linux) |
+**Back to the files** leaves without choosing.
 
-The sources offered depend on the incident's system. Any of them also takes the CSV or JSON a DFIR tool produces.
+![The question of the system](../img/guide/host-3-system.png)
 
-Each source says where it lives on the incident's system and offers a collection script. Import the CSV or JSON the script, or your DFIR tool, produces.
+## The sources table and the parse report
 
-The page shows the totals, **With timestamp**, **SOC detections** and **Flagged**, then the records. A clock marks activity outside business hours. Flag a record with **Flag as malicious**. The range can be set to the incident's suspicious window.
+Each page starts with its **Sources**: one row per file, with the host, **Kept / in file**, the state of the reading and the SHA-256. A grey row is a file the page expects and does not have yet.
 
-![Endpoint Artifacts: program execution read from a BAM export, four rows](../img/guide/host-3-endpoint.png)
+![The sources of Event Logs and the parse report of one file](../img/guide/host-1-report.png)
 
-## Event Logs
+1. **Report** opens the parse report of a file.
+2. **Download original** gives the file back, as it was given. It needs the permission `evidence.download` (the role **Evidence**). It comes in an encrypted zip, password `infected`, and each download is written to the audit log.
+3. **Analyse again** reads the original again with the current rules. Flags and notes stay.
+4. **Records in file**, **Kept** and **Skipped**: how many records the file holds, how many Nik kept, and how many it left out. The report also says how many were duplicates, which parts were skipped and why, and gives notes.
+5. **Detections**: the rules that matched this file. See [Detection and rules](detection.md).
 
-1. In **Sources — Windows event logs**, drop the `.evtx` files under **Raw logs (.evtx)**, or the JSON of the script under **Live host (collection script)**.
-2. Nik keeps about fifty event IDs that matter: logons, process creation, services, scheduled tasks, accounts, PowerShell, RDP, Defender, Sysmon. Records left in the file after a log was cleared are recovered and marked.
+**Remove** deletes the file and its records from the incident. A file with the same bytes can be added again.
 
-![Event Logs read from the JSON of the collection script: the logs, their coverage and the start of the logon sessions](../img/guide/host-4-eventlogs.png)
+A parser that is improved offers **Analyse again** on the files read by its older version. The parsers of event logs, Linux and macOS logs and Plaso exports became version 2 in 7.0 (they now write processes and logons): files read before offer it.
 
-- The table of logs: **Channel**, **Source**, **Covers**. A badge marks records recovered after a clear.
-- **Log coverage**: each log's span, its silences and clears, against the suspicious window.
-- **Logon sessions**: logons paired with their logoffs, with user, type, source and duration. A badge marks special privileges (4672).
-- **Events**, further down: filter by **Only flagged by SOC**, **High severity**, **Outside hours**, by category and by channel.
+## A file read in part
 
-A ruleset flags log clearing, brute force, RDP outside business hours and more. See [Detection and rules](detection.md).
+A file can stop being readable half way: a cut download, a damaged table. Nik keeps what it read before the break and says so in three places.
 
-## Browser Forensics
+- The row says **read in part**.
+- The incident's header says **1 file read in part**.
+- The Evidence list marks the kind with a yellow dot.
 
-One tab per browser (**Chrome**, **Firefox**, **Edge**, **Brave**, **Opera**, **Safari**), each with its **profiles**. **Rename profile** names one.
+![An event log cut in the middle: the row, the header and the list say so](../img/guide/host-2-partial.png)
 
-1. Open the browser's tab and the profile.
-2. In **Data sources**, import the history, downloads, bookmarks and shortcuts as the browser keeps them (Chrome's `History`, `Bookmarks`, `Shortcuts`; Firefox's `places.sqlite`; Safari's `History.db`, `Downloads.plist`, `Bookmarks.plist`), or a CSV/JSON export.
-3. Read **Events** (visits, searches, redirects, downloads), **Bookmarks** and **Shortcuts**.
+1. Read the report: it says where the file stopped and why.
+2. Get a whole copy and add it, if you can.
+3. Or press **Seen** and write a note. The warning goes away, and the note goes to the audit log and the War Room.
 
-![Browser Forensics: the events of a Chrome profile](../img/guide/host-5-browser.png)
+Nothing marks it seen for you.
 
-## Command History
+## Flags and notes
 
-One tab per shell: **Bash**, **Zsh**, **Fish**, **PowerShell**.
+On every record of every host page:
 
-1. Import the native history file (`.bash_history`, `.zsh_history`, `fish_history`, `ConsoleHost_history.txt`).
-2. Commands with a timestamp join the timeline.
-3. The detection engine marks download-and-execute, encoded payloads, reverse shells and other tradecraft.
+- The flag column marks a record as malicious (**Flag as malicious**). Flagged records go in the [report](reports.md).
+- **Add a note…** in the row's menu (right click) keeps a comment on the record.
 
-![Command History: a download from the attacker's address](../img/guide/host-6-commands.png)
+Flags and notes belong to a record's key, which is stable, so they stay when you press **Analyse again**.
+
+## Evidence from before 7.0
+
+Host evidence that was in an incident when you upgraded is moved to the tables in the background. Its files show **imported before 7.0**: there is no report and no original. Add the file again to have both.
 
 ## Addresses from the evidence
 
@@ -102,7 +109,30 @@ An address found in host evidence (a visited page, a bookmark, a download source
 
 ## Where it goes
 
-Every timestamped record joins the incident's **Timeline**, with the events inside the suspicious window standing out. Addresses, domains, URLs and hashes found in the records join its [Indicators](indicators.md).
+- Every timestamped record joins the incident's [Timeline](timeline.md).
+- Addresses, domains, URLs and hashes found in the records join the incident's [Indicators](indicators.md).
+- A match of a rule is a **detection**, shown on the record, in the report of its file and on the Timeline. A file with detections of level medium or higher adds one line to the War Room.
+
+## What Nik has and has not been tried on
+
+!!! warning "What Nik has and has not been tried on"
+    **Tried on real data:** an `.evtx` file of Windows; an `$MFT`, checked field by field against a volume written by `ntfs-3g`; registry hives (the public sample hives of the regipy project, Windows 7 and Windows 10); Prefetch, LNK, jump lists and SRUM (`SRUDB.dat`), by hand on the test files of Plaso.
+
+    **Tried on data made for the tests only:** `$J`; KAPE and Velociraptor zips; Plaso exports; Linux logs; the macOS unified log (the patterns of its messages were written from memory); anything from Windows 11 24H2.
+
+    **Known limits:**
+
+    - The `.LOG1` and `.LOG2` files of a registry hive are not applied: the newest changes of a hive that was not closed cleanly may be missing.
+    - SRUM logs are not replayed.
+    - ShimCache's time is the modification time of the file, not the time it ran.
+    - A correlation rule counts within one file.
+    - The same machine can be two nodes of the lateral graph, when it appears once by address and once by name.
+    - VHDX, VHD, E01 and `.plaso` files are not opened.
+    - A member of a zip that is encrypted with AES is not opened.
+
+    **Speed**, measured on a developer's machine with PostgreSQL 18, default settings, a disk volume: about 5,300 to 7,000 records a second at import (5,300 sustained over 10,000,000 records, loaded in 31 minutes); 300,000 processes linked and judged in about 90 seconds; a Sigma rule costs 0.05 ms a record with 3,000 rules loaded. At 1,000,000 records every screen answers in under 0.8 s; at 10,000,000, see [Size and speed](../admin/install.md#size-and-speed).
+
+    Your files may differ. Check what a parse report says, and keep the original.
 
 ## Related
 
@@ -110,4 +140,6 @@ Every timestamped record joins the incident's **Timeline**, with the events insi
 - [Summary, timeline and War Room](war-room.md)
 - [Detection and rules](detection.md)
 - [Indicators of an incident](indicators.md)
+- [Reports and exports](reports.md)
+- [Upgrading to 7.0](../admin/upgrades.md#upgrading-to-70)
 - [Architecture](../reference/architecture.md)

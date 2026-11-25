@@ -4,7 +4,7 @@ Run the whole Nik stack on one Linux host with Docker or Podman Compose, served 
 
 !!! note "You need"
     - A Linux host with Docker Engine and Compose, or Podman with `podman compose` / `podman-compose`, and `git`.
-    - Memory for the workers: each runs under its own limit (4 GB for the analyzer, capa and packet capture workers by default, see [Limits of the containers](../reference/configuration.md#limits-of-the-containers)).
+    - Memory for the workers: each runs under its own limit (4 GB for the analyzer, capa, packet capture and forensics workers by default, see [Limits of the containers](../reference/configuration.md#limits-of-the-containers)).
     - Disk for the store of files, the backups and the archive of the database log ([Backups](backups.md#where-backups-go), [Recovery](recovery.md#what-it-takes-on-the-disk)).
 
 ## Install
@@ -61,13 +61,14 @@ docker compose down -v         # stop AND delete every volume: database, files, 
 | `capa` | Capabilities of samples (capa) | internal, no route out |
 | `docview` | Previews of documents (LibreOffice, pdfium); converts Outlook PST files | internal, no route out |
 | `pcap` | Packet captures (Wireshark's engine) | internal, no route out |
+| `forensics` | Reads the files of host evidence (event logs, registry hives, a `$MFT`, browser databases, histories, collections), runs the Sigma rules on them and shows a record in its original. Read-only root, no capabilities, one process for each file | internal, no route out |
 | `browser` | The isolated browser (Chromium) for HTML attachments and addresses | a filtered way out of its own |
 
 Only the `api` container mounts the store of files and holds its key. The [Architecture](../reference/architecture.md) page shows how they connect; [Security](../reference/security.md#containment) says how each is locked down.
 
 ??? info "Running without some services"
     - **No playbooks:** set `AUTOMATION_WORKER=off` in `.env` and stop `automation` and `sandbox`. The Automations area then says the worker is not answering.
-    - **No analysis workers:** each view that needs one (Code, Capabilities, previews, the isolated browser, Network Analysis) says "not configured"; everything else works.
+    - **No analysis workers:** each view that needs one (Code, Capabilities, previews, the isolated browser, Network Analysis) says "not configured"; everything else works. **Without `forensics`** files of host evidence are kept and wait, unread, and no Sigma rule is checked or run: a stack without it holds evidence it cannot show.
     - **Starting a subset of services** by name: include `recovery` with `db`.
 
 ## Ports
@@ -163,8 +164,36 @@ Nothing is lost by a restart, and nothing is done twice. Playbook steps, analyse
     | A fetch | Goes on from where it was |
     | An analysis on a worker | Started again from the stored file within a minute |
     | An upload being received or parsed | Fails; the transfers tray offers **Try again** |
+    | A file of host evidence being read | The worker says it does not know the job as soon as it is back, and the backend gives the file again |
+    | A file of host evidence being sent in parts | The parts received are kept (a day); the transfer goes on from where it stopped |
 
     Work interrupted three times is set aside as failed. The [Health page](health.md#work-in-progress) counts it.
+
+## Size and speed
+
+Measured on a developer's machine: PostgreSQL 18, default settings, the database on a disk volume.
+
+| What | Measured |
+| --- | --- |
+| Import | about 5,300 to 7,000 records a second; 5,300 sustained over 10,000,000 records, loaded in 31 minutes |
+| Room | 10,000,000 records take about 11 GB of database |
+| 1,000,000 records | every screen answers in under 0.8 s |
+| 10,000,000 records | lists, search, filters, the summary, detections and the global search answer in under 0.4 s; the records of one host in about 3 s |
+| Deleting, archiving or analysing a file again | about a minute per million records |
+
+!!! warning "A known limit of 7.0"
+    At 10,000,000 records the **timeline histogram** takes about 7 s and the **stack of a column** 15 to 17 s: both read every record. Narrow the filters first.
+
+To measure your own server, from `backend/`, against a database that is migrated (`alembic upgrade head`) and that nobody uses:
+
+```sh
+python scripts/load_evidence.py --records 1000000 --max-seconds 5
+```
+
+It loads generated records, times the first page of each screen (`--runs` times each) and exits with 1 when one is slower than `--max-seconds`. `--keep` leaves the incident, `--skip-load --incident ID` times one you kept, `--files` and `--detections` shape the load.
+
+!!! danger "Never point it at a production database"
+    It creates an incident and its records and the first administrator when there is no user, and it deletes the incident when done (unless `--keep`). Use a copy or an empty database.
 
 ## Related
 
