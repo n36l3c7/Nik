@@ -18,8 +18,9 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 os.environ.setdefault("FORENSICS_TOKEN", "a token for the tests, long enough")
 
-from nik_forensics import finding  # noqa: E402
 from test_forensics import call, worker  # noqa: E402, F401 - the fixture is used by name
+
+from nik_forensics import finding  # noqa: E402
 
 
 def write(tmp_path, data: bytes) -> str:

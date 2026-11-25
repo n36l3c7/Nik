@@ -24,11 +24,12 @@ os.environ.setdefault("FORENSICS_TOKEN", "a token for the tests, long enough")
 
 import test_endpoint as ep  # noqa: E402
 import test_evtx as ev  # noqa: E402
+from test_eventlog_json import LOGON, SYSMON  # noqa: E402
+from test_forensics import call, worker  # noqa: E402, F401 - the fixture is used by name
+
 from nik_forensics import evtxscan, parsers, viewing  # noqa: E402
 from nik_forensics.context import Context  # noqa: E402
 from nik_forensics.parsers import BadLocator, ViewError, browser, endpoint, eventlog_json, evtx, history  # noqa: E402
-from test_eventlog_json import LOGON, SYSMON  # noqa: E402
-from test_forensics import call, worker  # noqa: E402, F401 - the fixture is used by name
 
 TOKEN = os.environ["FORENSICS_TOKEN"]
 

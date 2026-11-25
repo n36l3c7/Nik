@@ -15,12 +15,13 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from sigma_support import rule  # noqa: E402
+
 from nik_forensics import parsers  # noqa: E402
 from nik_forensics.context import Context  # noqa: E402
 from nik_forensics.parsers import BadLocator, ViewError, syslog  # noqa: E402
 from nik_forensics.parsers.syslog_parts import audit, messages  # noqa: E402
 from nik_forensics.sigma.engine import Engine  # noqa: E402
-from sigma_support import rule  # noqa: E402
 
 
 def ms(text: str) -> int:

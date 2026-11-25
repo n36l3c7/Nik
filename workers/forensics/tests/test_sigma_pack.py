@@ -16,10 +16,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
+from sigma_support import SYSMON, record
+
 from nik_forensics.parsers import syslog
 from nik_forensics.sigma import check
 from nik_forensics.sigma.engine import Engine
-from sigma_support import SYSMON, record
 
 HERE = Path(__file__).resolve()
 LEVELS = {"informational": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}

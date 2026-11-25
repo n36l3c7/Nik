@@ -18,6 +18,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ntfs_fixtures as fx  # noqa: E402
+
 from nik_forensics import parsers  # noqa: E402
 from nik_forensics.context import Context  # noqa: E402
 from nik_forensics.parsers import BadLocator, ViewError  # noqa: E402

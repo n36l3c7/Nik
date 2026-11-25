@@ -8,9 +8,10 @@ from __future__ import annotations
 import base64
 
 import pytest
+from sigma_support import SYSMON, names, one, record, rule
+
 from nik_forensics.sigma import logsource
 from nik_forensics.sigma.engine import Engine
-from sigma_support import SYSMON, names, one, record, rule
 
 # --------------------------------------------------------------------------- #
 # Modifiers                                                                   #

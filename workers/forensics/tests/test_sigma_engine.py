@@ -11,11 +11,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from sigma_support import correlation, names, record, rid, rule
+
 from nik_forensics.context import MAX_VALUE, Context
 from nik_forensics.sigma import check
 from nik_forensics.sigma.engine import Engine
 from nik_forensics.sigma.hours import BadHours, Hours
-from sigma_support import correlation, names, record, rid, rule
 
 SEC = {"channel": "Security"}
 

@@ -19,6 +19,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "tests"))
 
 import artifact_gen as gen  # noqa: E402
+
 from nik_forensics import parsers  # noqa: E402
 from nik_forensics.context import Context  # noqa: E402
 from nik_forensics.parsers import ViewError, prefetch  # noqa: E402

@@ -10,9 +10,10 @@ from __future__ import annotations
 import random
 import time
 
+from sigma_support import rule
+
 from nik_forensics.sigma import logsource
 from nik_forensics.sigma.engine import Engine
-from sigma_support import rule
 
 RULES = 3000
 RECORDS = 30000
